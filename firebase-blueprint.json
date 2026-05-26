@@ -1,0 +1,36 @@
+{
+  "entities": {
+    "Acolhimento": {
+      "title": "Acolhimento",
+      "description": "Formulário de triagem enviado pelos pacientes.",
+      "type": "object",
+      "properties": {
+        "nome": { "type": "string" },
+        "email": { "type": "string" },
+        "viaAcesso": { "type": "string", "enum": ["Particular", "Corporativo"] },
+        "empresa": { "type": "string" },
+        "fonteRenda": { "type": "string" },
+        "faixaSalarial": { "type": "string" },
+        "dependentes": { "type": "string" },
+        "planoSaude": { "type": "string" },
+        "escolaridade": { "type": "string" },
+        "moradia": { "type": "string" },
+        "comodos": { "type": "string" },
+        "internet": { "type": "string" },
+        "dispositivo": { "type": "string" },
+        "terapiaAnterior": { "type": "string" },
+        "motivo": { "type": "string" },
+        "status": { "type": "string", "enum": ["Aguardando Avaliação", "Triado"] },
+        "valorRef": { "type": "number" },
+        "createdAt": { "type": "timestamp" }
+      },
+      "required": ["nome", "email", "viaAcesso", "motivo", "createdAt", "status"]
+    }
+  },
+  "firestore": {
+    "acolhimentos": {
+      "schema": { "$ref": "#/entities/Acolhimento" },
+      "description": "Coleção de registros de acolhimento (público mas seguro para criação)."
+    }
+  }
+}

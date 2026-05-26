@@ -1,0 +1,88 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+    
+    function isValidAcolhimento(data) {
+      return data.keys().hasAll(['nome', 'email', 'viaAcesso', 'motivo', 'createdAt', 'status'])
+        && data.nome is string && data.nome.size() <= 200
+        && data.email is string && data.email.size() <= 200
+        && data.viaAcesso is string && data.viaAcesso.size() <= 50
+        && data.motivo is string && data.motivo.size() <= 1000
+        && data.status == 'Aguardando Avaliação'
+        && data.createdAt is timestamp;
+    }
+
+    function isValidEmpresaLead(data) {
+      return data.keys().hasAll(['nomeEmpresa', 'cnpj', 'ramoAtividade', 'local', 'colaboradores', 'email', 'telefone', 'createdAt'])
+        && data.nomeEmpresa is string
+        && data.cnpj is string
+        && data.ramoAtividade is string
+        && data.email is string
+        && data.createdAt is timestamp;
+    }
+
+    function isValidDoacao(data) {
+      return data.keys().hasAll(['nome', 'email', 'valor', 'status', 'createdAt'])
+        && data.nome is string
+        && data.email is string
+        && data.valor is number
+        && data.status is string
+        && data.createdAt is timestamp;
+    }
+
+    function isValidSolicitacaoDoacao(data) {
+      return data.keys().hasAll(['nome', 'email', 'telefone', 'motivo', 'status', 'createdAt'])
+        && data.nome is string
+        && data.email is string
+        && data.telefone is string
+        && data.motivo is string
+        && data.status is string
+        && data.createdAt is timestamp;
+    }
+
+    function isValidProfissionalLead(data) {
+      return data.keys().hasAll(['nome', 'crp', 'email', 'telefone', 'horasDisponiveis', 'motivacao', 'status', 'createdAt'])
+        && data.nome is string
+        && data.crp is string
+        && data.email is string
+        && data.telefone is string
+        && (data.horasDisponiveis is string || data.horasDisponiveis is number)
+        && data.motivacao is string
+        && data.status is string
+        && data.createdAt is timestamp;
+    }
+
+    match /users/{userId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    match /acolhimentos/{acolhimentoId} {
+      allow create: if isValidAcolhimento(request.resource.data);
+      allow read, update, delete: if request.auth != null;
+    }
+
+    match /empresa_leads/{leadId} {
+      allow create: if isValidEmpresaLead(request.resource.data);
+      allow read, update, delete: if request.auth != null;
+    }
+
+    match /doacoes/{doacaoId} {
+      allow create: if isValidDoacao(request.resource.data);
+      allow read, update, delete: if request.auth != null;
+    }
+    
+    match /solicitacoes_doacao/{solId} {
+      allow create: if isValidSolicitacaoDoacao(request.resource.data);
+      allow read, update, delete: if request.auth != null;
+    }
+    
+    match /profissionais_leads/{proId} {
+      allow create: if isValidProfissionalLead(request.resource.data);
+      allow read, update, delete: if request.auth != null;
+    }
+  }
+}
