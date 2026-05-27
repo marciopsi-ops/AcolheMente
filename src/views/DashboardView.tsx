@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { ArrowLeft, User, LayoutGrid, LogOut, CheckCircle2, Circle, Clock, Grip, XCircle, Search, FileText, HandHeart, HeartHandshake, ChevronRight, ChevronLeft, Info, HelpCircle, Briefcase, Map, Users, Mail, Phone, Send, Edit3, Trash2, History, CheckSquare, Plus, Sparkles } from "lucide-react";
+import { ArrowLeft, User, LayoutGrid, LogOut, CheckCircle2, Circle, Clock, Grip, XCircle, Search, FileText, HandHeart, HeartHandshake, ChevronRight, ChevronLeft, Info, HelpCircle, Briefcase, Map, Users, Mail, Phone, Send, Edit3, Trash2, History, CheckSquare, Plus } from "lucide-react";
 import { auth, db } from "../lib/firebase";
 import { GoogleAuthProvider, signInWithPopup, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut, User as FirebaseUser, getAuth, updatePassword } from "firebase/auth";
 import { doc, getDoc, setDoc, updateDoc, collection, onSnapshot, query, orderBy, serverTimestamp, deleteDoc } from "firebase/firestore";
@@ -58,6 +58,9 @@ interface ProfissionalLead {
   experiencia: string;
   horasDisponiveis: string;
   createdAt?: any;
+  status?: string;
+  ativo?: boolean;
+  [key: string]: any;
 }
 
 interface EmpresaLead {
@@ -72,6 +75,9 @@ interface EmpresaLead {
   email: string;
   telefone: string;
   createdAt?: any;
+  status?: string;
+  ativo?: boolean;
+  [key: string]: any;
   // Dashboard fields
   registrosDeReunioes?: string;
   servicosOferecidos?: string;
@@ -82,11 +88,11 @@ interface EmpresaLead {
 }
 
 const COLUMNS = [
-  { id: "Aguardando Avaliação", label: "Novos Acolhimentos", role: ["master", "triagem"] },
-  { id: "Em Triagem", label: "Em Análise", role: ["master", "triagem"] },
-  { id: "Aprovado", label: "Fila de Espera", role: ["master", "triagem", "profissional"] },
-  { id: "Em Atendimento", label: "Em Acompanhamento", role: ["master", "profissional"] },
-  { id: "Alta", label: "Alta / Finalizado", role: ["master", "profissional"] },
+  { id: "Aguardando Avaliação", label: "Novos Acolhimentos", role: ["master", "triagem"], tab: "kanban" },
+  { id: "Em Triagem", label: "Em Análise", role: ["master", "triagem"], tab: "kanban" },
+  { id: "Aprovado", label: "Fila de Espera", role: ["master", "triagem", "profissional"], tab: "kanban" },
+  { id: "Em Atendimento", label: "Em Acompanhamento", role: ["master", "profissional"], tab: "pacientes" },
+  { id: "Alta", label: "Alta / Finalizado", role: ["master", "profissional"], tab: "pacientes" },
 ];
 
 // Editable Field Component
@@ -111,7 +117,7 @@ export function DashboardView({ onNavigate }: { onNavigate: (view: 'landing' | '
   const [loadingObj, setLoadingObj] = useState(true);
 
   // Tabs
-  const [activeTab, setActiveTab] = useState<'kanban' | 'doacoes' | 'profissionais' | 'empresas' | 'tarefas'>('kanban');
+  const [activeTab, setActiveTab] = useState<'kanban' | 'doacoes' | 'profissionais' | 'empresas' | 'tarefas' | 'acessos' | 'pacientes' | 'pacientesAcolhidos' | 'perfil'>('kanban');
 
   // Search
   const [searchQuery, setSearchQuery] = useState("");
@@ -167,10 +173,7 @@ export function DashboardView({ onNavigate }: { onNavigate: (view: 'landing' | '
   const [selectedProfissional, setSelectedProfissional] = useState<ProfissionalLead | UserProfile | null>(null);
   const [selectedEmpresa, setSelectedEmpresa] = useState<EmpresaLead | null>(null);
 
-  // AI Search
-  const [isSearchingAI, setIsSearchingAI] = useState(false);
-  const [aiSearchQuery, setAiSearchQuery] = useState("");
-  const [filteredProfissionaisIds, setFilteredProfissionaisIds] = useState<string[] | null>(null);
+  const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
 
   // Psychologist State
   const [meusPacientes, setMeusPacientes] = useState<Acolhimento[]>([]);
@@ -249,39 +252,6 @@ export function DashboardView({ onNavigate }: { onNavigate: (view: 'landing' | '
     setOnboardingStep(0);
   };
 
-  const performAISearch = async () => {
-    if (!aiSearchQuery.trim()) {
-      setFilteredProfissionaisIds(null);
-      return;
-    }
-    setIsSearchingAI(true);
-    try {
-      const allProfs = [...profissionaisLeads, ...profissionaisAtivos].map(p => ({
-         id: 'id' in p ? p.id : p.uid,
-         nome: 'nome' in p ? p.nome : p.name,
-         especialidade: 'especialidade' in p ? p.especialidade : '',
-         cidade: 'cidade' in p ? p.cidade : '',
-         uf: p.uf || '',
-         miniBio: 'miniBio' in p ? p.miniBio : p.bio || '',
-         motivacao: 'motivacao' in p ? p.motivacao : '',
-         horasDisponiveis: 'horasDisponiveis' in p ? p.horasDisponiveis : ''
-      }));
-
-      const res = await fetch("/api/gemini/advanced-search", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: aiSearchQuery, datalist: allProfs })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      setFilteredProfissionaisIds(data.ids || []);
-    } catch (e: any) {
-      alert("Erro na busca por IA: " + e.message);
-    } finally {
-      setIsSearchingAI(false);
-    }
-  };
-
   useEffect(() => {
     let unsubCards: (() => void) | undefined;
     let unsubDoacoes: (() => void) | undefined;
@@ -298,6 +268,17 @@ export function DashboardView({ onNavigate }: { onNavigate: (view: 'landing' | '
         let currentUserProfile: UserProfile | null = null;
         if (snap.exists()) {
           currentUserProfile = snap.data() as UserProfile;
+          if (currentUserProfile.role === 'profissional' && currentUserProfile.ativo === false) {
+             await signOut(auth);
+             setAuthError("Sua conta está inativa. Entre em contato com o suporte.");
+             setUser(null);
+             setProfile(null);
+             setLoadingObj(false);
+             return;
+          }
+          if (currentUserProfile?.role === 'profissional') {
+            setActiveTab('pacientes');
+          }
           setProfile(currentUserProfile);
         }
         
@@ -348,13 +329,16 @@ export function DashboardView({ onNavigate }: { onNavigate: (view: 'landing' | '
             setProfissionaisLeads(list);
           });
           unsubProAtivos = onSnapshot(query(collection(db, "users")), (snapshot) => {
-            const list: UserProfile[] = [];
+            const listProfs: UserProfile[] = [];
+            const listAll: UserProfile[] = [];
             snapshot.forEach(d => {
               const data = d.data() as UserProfile;
               data.uid = d.id;
-              if (data.role === 'profissional') list.push(data);
+              listAll.push(data);
+              if (data.role === 'profissional') listProfs.push(data);
             });
-            setProfissionaisAtivos(list);
+            setProfissionaisAtivos(listProfs);
+            setAllUsers(listAll);
           });
           unsubEmpresas = onSnapshot(query(collection(db, "empresa_leads")), (snapshot) => {
             const list: EmpresaLead[] = [];
@@ -409,16 +393,44 @@ export function DashboardView({ onNavigate }: { onNavigate: (view: 'landing' | '
     setAuthError("");
     try {
       if (isLogin) {
-        await signInWithEmailAndPassword(auth, email, password);
+        const cred = await signInWithEmailAndPassword(auth, email, password);
+        // Ensure email/name are saved in DB if not already present
+        const userRef = doc(db, "users", cred.user.uid);
+        const snap = await getDoc(userRef);
+        if (snap.exists()) {
+           const d = snap.data();
+           if (d.role === 'profissional' && d.ativo === false) {
+             await signOut(auth);
+             setAuthError("Sua conta está inativa. Entre em contato com o suporte.");
+             return;
+           }
+           if (!d.email || (!d.name && cred.user.displayName)) {
+             await updateDoc(userRef, { email: cred.user.email || email, name: d.name || cred.user.displayName || "Usuário" });
+           }
+        } else {
+           // Document is missing (maybe due to previous rule failure), create it as profissional
+           await setDoc(userRef, {
+             role: "profissional",
+             name: cred.user.displayName || email.split('@')[0],
+             email: cred.user.email || email,
+             requirePasswordChange: false,
+             createdAt: new Date(),
+           });
+        }
       } else {
         const cred = await createUserWithEmailAndPassword(auth, email, password);
         await setDoc(doc(db, "users", cred.user.uid), {
           role,
-          name
+          name,
+          email: cred.user.email || email
         });
       }
     } catch (err: any) {
-      setAuthError(err.message || "Erro de autenticação.");
+      if (err.code === 'auth/operation-not-allowed') {
+         setAuthError("Você precisa habilitar o provedor de Email/Senha no console do Firebase Authentication (Build > Authentication > Sign-in method).");
+      } else {
+         setAuthError(err.message || "Erro de autenticação.");
+      }
     }
   };
 
@@ -432,11 +444,28 @@ export function DashboardView({ onNavigate }: { onNavigate: (view: 'landing' | '
       if (!snap.exists()) {
         await setDoc(userRef, {
           role: role || "profissional",
-          name: result.user.displayName || "Usuário"
+          name: result.user.displayName || "Usuário",
+          email: result.user.email || ""
         });
+      } else {
+        const d = snap.data();
+        if (d.role === 'profissional' && d.ativo === false) {
+           await signOut(auth);
+           setAuthError("Sua conta está inativa. Entre em contato com o suporte.");
+           return;
+        }
+        if (!d.email || (!d.name && result.user.displayName)) {
+          await updateDoc(userRef, { email: result.user.email || "", name: d.name || result.user.displayName || "Usuário" });
+        }
       }
     } catch (err: any) {
-      setAuthError(err.message || "Erro de autenticação com Google.");
+      if (err.code === 'auth/unauthorized-domain') {
+         setAuthError("Você precisa adicionar a URL deste painel na aba 'Authorized domains' no console do Firebase Authentication.");
+      } else if (err.code === 'auth/operation-not-allowed') {
+         setAuthError("Você precisa habilitar o provedor do Google no console do Firebase Authentication (Build > Authentication > Sign-in method).");
+      } else {
+         setAuthError(err.message || "Erro de autenticação com Google.");
+      }
     }
   };
 
@@ -465,6 +494,41 @@ export function DashboardView({ onNavigate }: { onNavigate: (view: 'landing' | '
     }
   };
 
+  // State for confirm modal
+  const [confirmConfig, setConfirmConfig] = useState<{isOpen: boolean, message: string, onConfirm: () => void} | null>(null);
+
+  const handleRoleChange = async (userId: string, newRole: Role) => {
+    if (!profile || profile.role !== 'master') return;
+    setConfirmConfig({
+      isOpen: true,
+      message: "Tem certeza que deseja alterar o nível de acesso deste usuário?",
+      onConfirm: async () => {
+        try {
+          await updateDoc(doc(db, "users", userId), { role: newRole });
+        } catch(err) {
+          console.error("Erro ao alterar nível de acesso:", err);
+          alert("Houve um erro ao tentar alterar o nível de acesso.");
+        }
+      }
+    });
+  };
+
+  const handleDeleteProfissional = async (id: string, formType: 'leads' | 'ativos') => {
+    if (!profile || profile.role !== 'master') return;
+    setConfirmConfig({
+      isOpen: true,
+      message: "Tem certeza que deseja excluir permanentemente este profissional?",
+      onConfirm: async () => {
+        try {
+          await deleteDoc(doc(db, formType === 'leads' ? "profissionais_leads" : "users", id));
+        } catch(err) {
+          console.error("Erro ao excluir profissional:", err);
+          alert("Houve um erro ao tentar excluir o profissional.");
+        }
+      }
+    });
+  };
+
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
   };
@@ -475,10 +539,24 @@ export function DashboardView({ onNavigate }: { onNavigate: (view: 'landing' | '
       if (property === 'ativo') {
         updates.statusUpdatedAt = serverTimestamp();
       }
+      
+      // Auto-assign status when changing profissional
+      if (property === 'profissionalId') {
+        if (value) {
+          // Atribuído a alguém
+          updates.status = 'Em Atendimento';
+          updates.notificacao = null; // Clear any waitlist notification
+        } else {
+          // Desatribuído
+          updates.status = 'Aprovado';
+          updates.notificacao = 'Desatribuído do profissional, necessita nova atribuição';
+        }
+      }
+      
       updates.updatedAt = serverTimestamp();
       await updateDoc(doc(db, "acolhimentos", id), updates);
       if (selectedCard && selectedCard.id === id) {
-        setSelectedCard({ ...selectedCard, [property]: value });
+        setSelectedCard({ ...selectedCard, ...updates });
       }
     } catch (error) {
       console.error(error);
@@ -496,6 +574,17 @@ export function DashboardView({ onNavigate }: { onNavigate: (view: 'landing' | '
        console.error(error);
        alert("Erro ao atualizar status");
     }
+  };
+
+  const handleUpdateSelfProfile = async (updates: Partial<UserProfile>) => {
+     if (!profile?.uid) return;
+     try {
+       await updateDoc(doc(db, "users", profile.uid), updates);
+       setProfile({...profile, ...updates});
+     } catch (err) {
+       console.error(err);
+       alert("Erro ao atualizar perfil.");
+     }
   };
 
   const handleCreateProfissional = async (e: React.FormEvent) => {
@@ -520,9 +609,13 @@ export function DashboardView({ onNavigate }: { onNavigate: (view: 'landing' | '
       
       const emailParams = `subject=Bem-vindo(a) à Plataforma Elo&body=Olá ${newProfName},%0A%0ASua conta foi criada no sistema.%0A%0ALink de Acesso: ${window.location.origin}%0AEmail: ${newProfEmail}%0ASenha Provisória: ${newProfPassword}%0A%0APor favor, acesse o sistema e redefina sua senha no primeiro acesso.`;
 
-      if (window.confirm("Conta de profissional criada com sucesso!\nDeseja enviar os dados de acesso por e-mail agora?")) {
-        window.open(`mailto:${newProfEmail}?${emailParams}`, '_blank');
-      }
+      setConfirmConfig({
+        isOpen: true,
+        message: "Conta de profissional criada com sucesso! Deseja enviar os dados de acesso por e-mail agora?",
+        onConfirm: () => {
+          window.open(`mailto:${newProfEmail}?${emailParams}`, '_blank');
+        }
+      });
       
       setShowNewProfissionalModal(false);
       setNewProfName("");
@@ -530,7 +623,11 @@ export function DashboardView({ onNavigate }: { onNavigate: (view: 'landing' | '
       setNewProfPassword("");
     } catch(err: any) {
       console.error(err);
-      alert("Erro ao criar conta: " + err.message);
+      if (err.code === 'auth/email-already-in-use') {
+         alert("Erro: Este e-mail já possui uma conta criada no Autenticador. Se não o visualizar na lista, peça para a pessoa tentar realizar o login normal ou utilizar a recuperação de senha.");
+      } else {
+         alert("Erro ao criar conta: " + err.message);
+      }
     }
   };
 
@@ -575,27 +672,21 @@ export function DashboardView({ onNavigate }: { onNavigate: (view: 'landing' | '
     s.telefone?.toLowerCase().includes(lowerQuery)
   );
 
-  const filteredLeads = profissionaisLeads.filter(l => {
-    if (filteredProfissionaisIds !== null) {
-      return filteredProfissionaisIds.includes(l.id!);
-    }
-    return !searchQuery || 
-      l.nome?.toLowerCase().includes(lowerQuery) || 
-      l.crp?.toLowerCase().includes(lowerQuery) ||
-      l.email?.toLowerCase().includes(lowerQuery) ||
-      l.telefone?.toLowerCase().includes(lowerQuery) ||
-      l.motivacao?.toLowerCase().includes(lowerQuery);
-  });
+  const filteredLeads = profissionaisLeads.filter(l => 
+    !searchQuery || 
+    l.nome?.toLowerCase().includes(lowerQuery) || 
+    l.crp?.toLowerCase().includes(lowerQuery) ||
+    l.email?.toLowerCase().includes(lowerQuery) ||
+    l.telefone?.toLowerCase().includes(lowerQuery) ||
+    l.motivacao?.toLowerCase().includes(lowerQuery)
+  );
 
-  const filteredAtivos = profissionaisAtivos.filter(p => {
-    if (filteredProfissionaisIds !== null) {
-      return filteredProfissionaisIds.includes(p.uid);
-    }
-    return !searchQuery || 
-      p.name?.toLowerCase().includes(lowerQuery) || 
-      p.email?.toLowerCase().includes(lowerQuery) ||
-      p.role?.toLowerCase().includes(lowerQuery);
-  });
+  const filteredAtivos = profissionaisAtivos.filter(p => 
+    !searchQuery || 
+    p.name?.toLowerCase().includes(lowerQuery) || 
+    p.email?.toLowerCase().includes(lowerQuery) ||
+    p.role?.toLowerCase().includes(lowerQuery)
+  );
 
   if (loadingObj) {
     return <div className="flex h-screen items-center justify-center bg-warm">Carregando...</div>;
@@ -749,7 +840,7 @@ export function DashboardView({ onNavigate }: { onNavigate: (view: 'landing' | '
   }
 
   // Determine which columns this role can see
-  const visibleColumns = COLUMNS.filter(c => c.role.includes(profile.role));
+  const visibleColumns = COLUMNS.filter(c => c.role.includes(profile.role) && (c.tab === activeTab || (activeTab === 'pacientesAcolhidos' && c.tab === 'pacientes') || profile.role === 'profissional'));
 
   const roleLabels = {
     master: "Gestor Master",
@@ -878,7 +969,7 @@ export function DashboardView({ onNavigate }: { onNavigate: (view: 'landing' | '
           </div>
         </div>
 
-        {profile.role === 'master' && (
+        {(profile.role === 'master' || profile.role === 'triagem') && (
           <div className="flex order-last w-full lg:w-auto lg:order-none items-center gap-1 sm:gap-2 bg-warm rounded-full p-1 border border-soft overflow-x-auto no-scrollbar">
             <button 
               onClick={() => setActiveTab('kanban')}
@@ -887,31 +978,66 @@ export function DashboardView({ onNavigate }: { onNavigate: (view: 'landing' | '
               Triagem
             </button>
             <button 
-              onClick={() => setActiveTab('doacoes')}
-              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap ${activeTab === 'doacoes' ? 'bg-white shadow-sm text-forest' : 'text-forest/70/70 hover:text-forest/70'}`}
+              onClick={() => setActiveTab('pacientesAcolhidos')}
+              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap ${activeTab === 'pacientesAcolhidos' ? 'bg-white shadow-sm text-forest' : 'text-forest/70/70 hover:text-forest/70'}`}
             >
-              Apoio Solidário
+              Pacientes
             </button>
+            {profile.role === 'master' && (
+              <button 
+                onClick={() => setActiveTab('doacoes')}
+                className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap ${activeTab === 'doacoes' ? 'bg-white shadow-sm text-forest' : 'text-forest/70/70 hover:text-forest/70'}`}
+              >
+                Apoio Solidário
+              </button>
+            )}
             <button 
               onClick={() => setActiveTab('profissionais')}
               className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap ${activeTab === 'profissionais' ? 'bg-white shadow-sm text-forest' : 'text-forest/70/70 hover:text-forest/70'}`}
             >
               Profissionais
             </button>
+            {profile.role === 'master' && (
+              <>
+                <button 
+                  onClick={() => setActiveTab('empresas')}
+                  className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap ${activeTab === 'empresas' ? 'bg-white shadow-sm text-forest' : 'text-forest/70/70 hover:text-forest/70'}`}
+                >
+                  Empresas
+                </button>
+                <button 
+                  onClick={() => setActiveTab('tarefas')}
+                  className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === 'tarefas' ? 'bg-white shadow-sm text-forest' : 'text-forest/70/70 hover:text-forest/70'}`}
+                >
+                  Tarefas
+                  {pendingTarefasCount > 0 && (
+                    <span className="bg-red-500 text-white text-[10px] w-4 h-4 flex items-center justify-center rounded-full font-bold ml-1">{pendingTarefasCount}</span>
+                  )}
+                </button>
+                <button 
+                  onClick={() => setActiveTab('acessos')}
+                  className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap ${activeTab === 'acessos' ? 'bg-white shadow-sm text-forest' : 'text-forest/70/70 hover:text-forest/70'}`}
+                >
+                  Acessos
+                </button>
+              </>
+            )}
+          </div>
+        )}
+
+        {profile.role === 'profissional' && (
+          <div className="flex order-last w-full lg:w-auto lg:order-none items-center gap-1 sm:gap-2 bg-warm rounded-full p-1 border border-soft overflow-x-auto no-scrollbar">
             <button 
-              onClick={() => setActiveTab('empresas')}
-              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap ${activeTab === 'empresas' ? 'bg-white shadow-sm text-forest' : 'text-forest/70/70 hover:text-forest/70'}`}
+              onClick={() => setActiveTab('pacientes')}
+              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap ${activeTab === 'pacientes' ? 'bg-white shadow-sm text-forest' : 'text-forest/70/70 hover:text-forest/70'}`}
             >
-              Empresas
+              Meus Pacientes
             </button>
             <button 
-              onClick={() => setActiveTab('tarefas')}
-              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === 'tarefas' ? 'bg-white shadow-sm text-forest' : 'text-forest/70/70 hover:text-forest/70'}`}
+              onClick={() => setActiveTab('perfil')}
+              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap ${activeTab === 'perfil' ? 'bg-white shadow-sm text-forest' : 'text-forest/70/70 hover:text-forest/70'}`}
             >
-              Tarefas
-              {pendingTarefasCount > 0 && (
-                <span className="bg-red-500 text-white text-[10px] w-4 h-4 flex items-center justify-center rounded-full font-bold ml-1">{pendingTarefasCount}</span>
-              )}
+              Meu Perfil
             </button>
           </div>
         )}
@@ -939,7 +1065,7 @@ export function DashboardView({ onNavigate }: { onNavigate: (view: 'landing' | '
       </nav>
 
       {/* Main Content */}
-      {profile.role === 'profissional' ? (
+      {profile.role === 'profissional' && activeTab === 'pacientes' ? (
         <div className="flex-1 overflow-auto p-6 md:p-8 flex flex-col gap-8 slide-up">
           <div className="max-w-5xl w-full mx-auto">
             <h2 className="font-serif text-3xl text-forest bg-white px-8 py-6 rounded-[2rem] shadow-sm border border-soft flex items-center gap-4 mb-8">
@@ -976,7 +1102,51 @@ export function DashboardView({ onNavigate }: { onNavigate: (view: 'landing' | '
             </div>
           </div>
         </div>
-      ) : activeTab === 'kanban' ? (
+      ) : profile.role === 'profissional' && activeTab === 'perfil' ? (
+        <div className="flex-1 overflow-auto p-6 md:p-8 flex flex-col gap-8 slide-up">
+          <div className="max-w-2xl w-full mx-auto">
+             <h2 className="font-serif text-3xl text-forest bg-white px-8 py-6 rounded-[2rem] shadow-sm border border-soft flex items-center gap-4 mb-8">
+              <User className="w-8 h-8 text-forest/70" />
+              Meu Perfil
+            </h2>
+            <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-soft flex flex-col gap-6">
+              <div>
+                <label className="text-xs uppercase font-bold tracking-wider text-forest/50">Nome Completo</label>
+                <input 
+                  type="text" 
+                  value={profile.name || ''} 
+                  onChange={(e) => setProfile({...profile, name: e.target.value})}
+                  className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
+                />
+              </div>
+              <div>
+                <label className="text-xs uppercase font-bold tracking-wider text-forest/50">Email</label>
+                <input 
+                  type="email" 
+                  value={profile.email || ''} 
+                  disabled
+                  className="w-full mt-2 px-4 py-3 bg-warm border border-soft rounded-xl text-forest/50 cursor-not-allowed"
+                />
+              </div>
+              <div>
+                <label className="text-xs uppercase font-bold tracking-wider text-forest/50">Telefone / WhatsApp</label>
+                <input 
+                  type="tel" 
+                  value={profile.telefone || ''} 
+                  onChange={(e) => setProfile({...profile, telefone: e.target.value})}
+                  className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
+                />
+              </div>
+              <button 
+                onClick={() => handleUpdateSelfProfile({ name: profile.name, telefone: profile.telefone })}
+                className="mt-4 px-6 py-3 bg-forest text-white rounded-xl font-bold uppercase tracking-wider text-sm hover:bg-forest/90 transition-colors self-start"
+              >
+                Salvar Alterações
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : (activeTab === 'kanban' || activeTab === 'pacientesAcolhidos') ? (
         <>
           <div className="flex-1 overflow-x-auto overflow-y-hidden p-6">
             <div className="flex h-full gap-6 shrink-0 w-max items-start">
@@ -1107,38 +1277,6 @@ export function DashboardView({ onNavigate }: { onNavigate: (view: 'landing' | '
         </div>
       ) : activeTab === 'profissionais' ? (
         <div className="flex-1 overflow-auto p-6 md:p-8 flex items-start flex-col gap-8 slide-up">
-           <div className="w-full flex flex-col sm:flex-row items-center gap-4 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 p-4 rounded-2xl shadow-sm">
-             <div className="flex items-center gap-3 w-full">
-               <Sparkles className="w-5 h-5 text-blue-600 shrink-0" />
-               <input 
-                  type="text"
-                  placeholder="Pesquise psicólogos usando Inteligência Artificial (ex: 'psicólogos em SP que atendem online e aceitam valor social')"
-                  value={aiSearchQuery}
-                  onChange={(e) => setAiSearchQuery(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && performAISearch()}
-                  className="bg-white/70 px-4 py-2 rounded-xl text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-300"
-               />
-             </div>
-             <button 
-               onClick={performAISearch}
-               disabled={isSearchingAI}
-               className="shrink-0 bg-blue-600 text-white font-semibold text-sm px-4 py-2 rounded-xl shadow hover:bg-blue-700 transition-colors disabled:opacity-50"
-             >
-               {isSearchingAI ? "Buscando..." : "Pesquisar"}
-             </button>
-             {filteredProfissionaisIds !== null && (
-               <button 
-                 onClick={() => {
-                   setFilteredProfissionaisIds(null);
-                   setAiSearchQuery("");
-                 }}
-                 className="shrink-0 text-blue-800 text-xs font-semibold underline hover:text-blue-900"
-               >
-                 Limpar
-               </button>
-             )}
-           </div>
-
            <div className="w-full flex flex-col gap-4">
             <h2 className="font-serif text-2xl text-forest bg-white px-6 py-4 rounded-2xl shadow-sm border border-soft flex items-center gap-3">
               <User className="w-6 h-6 text-forest/70" />
@@ -1185,7 +1323,14 @@ export function DashboardView({ onNavigate }: { onNavigate: (view: 'landing' | '
                            </>
                         ) : (
                            <>
-                             <span className="text-xs font-bold text-forest/70 uppercase">{lead.status}</span>
+                             <div className="flex items-center gap-2">
+                               <span className="text-xs font-bold text-forest/70 uppercase">{lead.status}</span>
+                               {lead.status === 'Aprovado' && (
+                                 <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${lead.ativo === false ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                                    {lead.ativo === false ? 'Inativo' : 'Ativo'}
+                                 </span>
+                               )}
+                             </div>
                              {lead.status === 'Aprovado' && (
                                 <button 
                                   onClick={() => {
@@ -1200,6 +1345,15 @@ export function DashboardView({ onNavigate }: { onNavigate: (view: 'landing' | '
                                 </button>
                              )}
                            </>
+                        )}
+                        {profile?.role === 'master' && (
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); handleDeleteProfissional(lead.id, 'leads'); }}
+                            className="text-xs font-semibold px-3 py-1.5 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors flex items-center justify-center gap-1 ml-2"
+                            title="Excluir Permanentemente"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
                         )}
                       </div>
                     </div>
@@ -1235,16 +1389,32 @@ export function DashboardView({ onNavigate }: { onNavigate: (view: 'landing' | '
                            {p.name.charAt(0)}
                         </div>
                         <div>
-                          <div className="text-sm font-semibold text-forest">{p.name || p.email}</div>
+                          <div className="text-sm font-semibold text-forest flex items-center gap-2">
+                             {p.name || p.email}
+                             <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${p.ativo === false ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                               {p.ativo === false ? 'Inativo' : 'Ativo'}
+                             </span>
+                          </div>
                           <div className="text-xs uppercase font-bold text-forest/70">{p.role}</div>
                         </div>
                       </div>
-                      <button 
-                        onClick={() => setSelectedProfissional(p)}
-                        className="text-xs font-semibold px-3 py-1.5 bg-sun text-forest rounded-lg hover:bg-sun-dark transition-colors flex items-center justify-center gap-1 shrink-0"
-                      >
-                        <FileText className="w-3 h-3" /> Ficha de Bordo
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button 
+                          onClick={() => setSelectedProfissional(p)}
+                          className="text-xs font-semibold px-3 py-1.5 bg-sun text-forest rounded-lg hover:bg-sun-dark transition-colors flex items-center justify-center gap-1 shrink-0"
+                        >
+                          <FileText className="w-3 h-3" /> Ficha de Bordo
+                        </button>
+                        {profile?.role === 'master' && (
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); handleDeleteProfissional(p.uid!, 'ativos'); }}
+                            className="text-xs font-semibold px-3 py-1.5 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors flex items-center justify-center gap-1 shrink-0"
+                            title="Excluir Permanentemente"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
                    </div>
                  ))
               )}
@@ -1373,6 +1543,45 @@ export function DashboardView({ onNavigate }: { onNavigate: (view: 'landing' | '
                 ));
               })()}
             </div>
+          </div>
+        </div>
+      ) : activeTab === 'acessos' ? (
+        <div className="flex-1 overflow-auto p-6 md:p-8 flex items-start flex-col gap-8 slide-up">
+          <div className="w-full flex items-center justify-between bg-white px-6 py-4 rounded-2xl shadow-sm border border-soft">
+            <h2 className="font-serif text-2xl text-forest flex items-center gap-3">
+              <Users className="w-6 h-6 text-forest/70" />
+              Níveis de Acesso
+            </h2>
+            <span className="text-xs font-semibold text-forest/50 bg-warm px-3 py-1 rounded-full uppercase tracking-wider">Gestor Master</span>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 w-full">
+            {allUsers.filter(u => (!searchQuery || u.name?.toLowerCase().includes(searchQuery.toLowerCase()) || u.email?.toLowerCase().includes(searchQuery.toLowerCase()) || u.role?.toLowerCase().includes(searchQuery.toLowerCase()))).map(u => (
+              <div key={u.uid} className="bg-white p-6 rounded-[2rem] shadow-sm border border-soft flex flex-col gap-4">
+                 <div className="flex items-start justify-between">
+                   <h3 className="font-semibold text-lg text-forest break-words leading-tight">{u.name}</h3>
+                 </div>
+                 {u.email && <div className="text-sm text-forest/70 truncate flex items-center gap-2"><Mail className="w-4 h-4 shrink-0"/> <span className="truncate">{u.email}</span></div>}
+                 
+                 <div className="mt-auto pt-4 border-t border-soft flex flex-col gap-1">
+                   <label className="text-[10px] uppercase font-bold tracking-wider text-forest/50">Papel / Nível de Acesso</label>
+                   <select 
+                     value={u.role} 
+                     onChange={(e) => handleRoleChange(u.uid!, e.target.value as Role)}
+                     className="w-full bg-warm border border-soft rounded-xl px-4 py-2 mt-1 text-sm text-forest font-semibold focus:outline-none focus:border-sun-dark focus:bg-white transition-colors cursor-pointer"
+                   >
+                      <option value="master">Administrador (Master)</option>
+                      <option value="triagem">Gestão de Triagem</option>
+                      <option value="profissional">Profissional / Psicólogo</option>
+                   </select>
+                 </div>
+              </div>
+            ))}
+            {allUsers.length === 0 && (
+              <div className="col-span-full text-center p-12 bg-white/50 border border-dashed border-soft rounded-[2rem] text-forest/70/70">
+                Nenhum usuário encontrado.
+              </div>
+            )}
           </div>
         </div>
       ) : null}
@@ -1523,7 +1732,7 @@ export function DashboardView({ onNavigate }: { onNavigate: (view: 'landing' | '
                     </div>
                   </section>
                   
-                  {profile.role !== 'profissional' && (
+                  {profile.role !== 'profissional' ? (
                     <section className="mt-8">
                       <div className="flex flex-col gap-2 p-4 bg-warm rounded-2xl border border-soft mt-2">
                          <label className="text-xs font-bold uppercase tracking-wider text-forest/70">Atribuir a Profissional Parceiro</label>
@@ -1537,6 +1746,28 @@ export function DashboardView({ onNavigate }: { onNavigate: (view: 'landing' | '
                              <option key={p.uid} value={p.uid}>{p.name} - {p.email}</option>
                            ))}
                          </select>
+                      </div>
+                    </section>
+                  ) : (
+                    <section className="mt-8">
+                      <div className="flex flex-col gap-2 p-4 bg-red-50 rounded-2xl border border-red-100 mt-2">
+                         <label className="text-xs font-bold uppercase tracking-wider text-red-900/70">Ações de Atendimento</label>
+                         <p className="text-xs text-red-900/60 mb-2">Caso não possa prosseguir com este atendimento, você pode devolver o paciente para a triagem.</p>
+                         <button 
+                           onClick={() => {
+                             setConfirmConfig({
+                               isOpen: true,
+                               message: 'Tem certeza que deseja devolver este paciente para a triagem?',
+                               onConfirm: () => {
+                                 handleUpdateAcolhimentoProperty(selectedCard.id, 'profissionalId', '');
+                                 setSelectedCard(null);
+                               }
+                             });
+                           }}
+                           className="px-4 py-2 bg-white text-red-600 border border-red-200 rounded-xl text-sm font-semibold hover:bg-red-50 transition-colors"
+                         >
+                           Desatribuir (Devolver para Triagem)
+                         </button>
                       </div>
                     </section>
                   )}
@@ -2113,6 +2344,36 @@ export function DashboardView({ onNavigate }: { onNavigate: (view: 'landing' | '
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Confimation Modal */}
+      {confirmConfig && (
+        <div className="fixed inset-0 bg-forest/20 backdrop-blur-sm z-[90] flex items-center justify-center p-4">
+          <div className="bg-white max-w-sm w-full rounded-[2rem] p-8 shadow-xl border border-soft flex flex-col items-center text-center">
+            <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mb-6">
+              <Trash2 className="w-8 h-8 text-red-500" />
+            </div>
+            <h3 className="text-xl font-serif text-forest mb-2">Atenção</h3>
+            <p className="text-forest/70 text-sm mb-8">{confirmConfig.message}</p>
+            <div className="flex w-full gap-3">
+              <button 
+                onClick={() => setConfirmConfig(null)}
+                className="flex-1 px-4 py-3 bg-warm text-forest rounded-xl font-semibold text-sm hover:bg-warm-dark transition-colors"
+              >
+                Cancelar
+              </button>
+              <button 
+                onClick={() => {
+                  confirmConfig.onConfirm();
+                  setConfirmConfig(null);
+                }}
+                className="flex-1 px-4 py-3 bg-red-500 text-white rounded-xl font-semibold text-sm hover:bg-red-600 transition-colors"
+              >
+                Confirmar
+              </button>
+            </div>
           </div>
         </div>
       )}

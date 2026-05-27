@@ -1,5 +1,5 @@
 import { Footer } from '../components/Footer';
-import { ArrowLeft, CheckCircle2, HeartHandshake, UserPlus, Clock, PiggyBank, Sparkles } from "lucide-react";
+import { ArrowLeft, CheckCircle2, HeartHandshake, UserPlus, Clock, PiggyBank } from "lucide-react";
 import React, { FormEvent, useState } from "react";
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 import { db, handleFirestoreError, OperationType } from "../lib/firebase";
@@ -16,38 +16,15 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
     cidade: '',
     uf: '',
     horasDisponiveis: '1 a 3 horas/mês',
-    motivacao: '',
-    miniBio: ''
+    motivacao: ''
   });
   
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isEnhancing, setIsEnhancing] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
-  };
-
-  const enhanceBio = async () => {
-    if (!formData.miniBio) return;
-    setIsEnhancing(true);
-    try {
-      const response = await fetch("/api/gemini/enhance-profile", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          prompt: `Melhore esta apresentação profissional de psicólogo para que fique mais atrativa, clara e acolhedora, sem inventar fatos: ${formData.miniBio}` 
-        }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Erro ao melhorar perfil");
-      setFormData(prev => ({ ...prev, miniBio: data.text }));
-    } catch (err: any) {
-      alert(err.message);
-    } finally {
-      setIsEnhancing(false);
-    }
   };
 
   const handleSubmit = async (e: FormEvent) => {
@@ -320,31 +297,6 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
                       onChange={handleChange}
                       className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest resize-none" 
                     />
-                  </div>
-
-                  <div className="flex flex-col gap-1">
-                    <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">Apresentação / Mini Bio (Opcional)</label>
-                    <div className="relative">
-                      <textarea 
-                        name="miniBio"
-                        rows={4}
-                        value={formData.miniBio}
-                        onChange={handleChange}
-                        placeholder="Conte um pouco sobre você e sua abordagem profissional..."
-                        className="w-full px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest resize-none" 
-                      />
-                      {formData.miniBio.length > 10 && (
-                         <button 
-                           type="button"
-                           onClick={enhanceBio}
-                           disabled={isEnhancing}
-                           className="absolute bottom-4 right-4 flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 text-blue-700 rounded-lg text-xs font-semibold shadow-sm hover:from-blue-100 hover:to-indigo-100 transition-all disabled:opacity-50"
-                         >
-                           <Sparkles className="w-3 h-3" />
-                           {isEnhancing ? 'Melhorando...' : 'Melhorar com IA'}
-                         </button>
-                      )}
-                    </div>
                   </div>
 
                   <button 
