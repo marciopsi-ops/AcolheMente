@@ -21,6 +21,8 @@ interface Acolhimento {
   id: string;
   nome: string;
   email: string;
+  telefone?: string;
+  valorSessao?: string;
   viaAcesso: string;
   motivo: string;
   status: string;
@@ -53,9 +55,18 @@ interface ProfissionalLead {
   telefone: string;
   crp: string;
   especialidade?: string;
+  abordagem?: string;
+  anoFormacao?: string;
+  publicosExperiencia?: string[];
+  publicosGosto?: string[];
+  outrosPublicosExperiencia?: string;
+  outrosPublicosGosto?: string;
+  bioCurta?: string;
+  instagramUrl?: string;
+  linkedinUrl?: string;
+  siteUrl?: string;
   cidade?: string;
   uf?: string;
-  experiencia: string;
   horasDisponiveis: string;
   createdAt?: any;
   status?: string;
@@ -148,6 +159,9 @@ export function DashboardView({ onNavigate }: { onNavigate: (view: 'landing' | '
   const [newProfName, setNewProfName] = useState("");
   const [newProfEmail, setNewProfEmail] = useState("");
   const [newProfPassword, setNewProfPassword] = useState("");
+  const [newProfRole, setNewProfRole] = useState<Role>("profissional");
+  const [useGoogleLogin, setUseGoogleLogin] = useState(false);
+  const [leadIdToConvert, setLeadIdToConvert] = useState<string | null>(null);
   const [isEditingCard, setIsEditingCard] = useState(false);
   
   const [templates, setTemplates] = useState([
@@ -267,7 +281,7 @@ export function DashboardView({ onNavigate }: { onNavigate: (view: 'landing' | '
         const snap = await getDoc(doc(db, "users", u.uid));
         let currentUserProfile: UserProfile | null = null;
         if (snap.exists()) {
-          currentUserProfile = snap.data() as UserProfile;
+          currentUserProfile = { ...snap.data(), uid: u.uid } as UserProfile;
           if (currentUserProfile.role === 'profissional' && currentUserProfile.ativo === false) {
              await signOut(auth);
              setAuthError("Sua conta está inativa. Entre em contato com o suporte.");
@@ -428,6 +442,10 @@ export function DashboardView({ onNavigate }: { onNavigate: (view: 'landing' | '
     } catch (err: any) {
       if (err.code === 'auth/operation-not-allowed') {
          setAuthError("Você precisa habilitar o provedor de Email/Senha no console do Firebase Authentication (Build > Authentication > Sign-in method).");
+      } else if (err.code === 'auth/email-already-in-use') {
+         setAuthError("Este e-mail já está em uso. Por favor, faça login com sua conta.");
+      } else if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+         setAuthError("E-mail ou senha incorretos.");
       } else {
          setAuthError(err.message || "Erro de autenticação.");
       }
@@ -463,6 +481,8 @@ export function DashboardView({ onNavigate }: { onNavigate: (view: 'landing' | '
          setAuthError("Você precisa adicionar a URL deste painel na aba 'Authorized domains' no console do Firebase Authentication.");
       } else if (err.code === 'auth/operation-not-allowed') {
          setAuthError("Você precisa habilitar o provedor do Google no console do Firebase Authentication (Build > Authentication > Sign-in method).");
+      } else if (err.code === 'auth/account-exists-with-different-credential') {
+         setAuthError("Este e-mail já está vinculado a outra forma de login (como senha). Por favor, use a opção correspondente ou vincule as contas.");
       } else {
          setAuthError(err.message || "Erro de autenticação com Google.");
       }
@@ -495,6 +515,7 @@ export function DashboardView({ onNavigate }: { onNavigate: (view: 'landing' | '
   };
 
   // State for confirm modal
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [confirmConfig, setConfirmConfig] = useState<{isOpen: boolean, message: string, onConfirm: () => void} | null>(null);
 
   const handleRoleChange = async (userId: string, newRole: Role) => {
@@ -545,10 +566,12 @@ export function DashboardView({ onNavigate }: { onNavigate: (view: 'landing' | '
         if (value) {
           // Atribuído a alguém
           updates.status = 'Em Atendimento';
+          updates.atribuicaoStatus = 'Pendente';
           updates.notificacao = null; // Clear any waitlist notification
         } else {
           // Desatribuído
           updates.status = 'Aprovado';
+          updates.atribuicaoStatus = null;
           updates.notificacao = 'Desatribuído do profissional, necessita nova atribuição';
         }
       }
@@ -579,8 +602,10 @@ export function DashboardView({ onNavigate }: { onNavigate: (view: 'landing' | '
   const handleUpdateSelfProfile = async (updates: Partial<UserProfile>) => {
      if (!profile?.uid) return;
      try {
-       await updateDoc(doc(db, "users", profile.uid), updates);
-       setProfile({...profile, ...updates});
+       const cleanUpdates = Object.fromEntries(Object.entries(updates).filter(([_, v]) => v !== undefined));
+       await updateDoc(doc(db, "users", profile.uid), cleanUpdates);
+       setProfile({...profile, ...cleanUpdates} as UserProfile);
+       setSuccessMsg("Perfil profissional salvo com sucesso!");
      } catch (err) {
        console.error(err);
        alert("Erro ao atualizar perfil.");
@@ -600,14 +625,27 @@ export function DashboardView({ onNavigate }: { onNavigate: (view: 'landing' | '
       await setDoc(doc(db, "users", cred.user.uid), {
         name: newProfName,
         email: newProfEmail,
-        role: "profissional",
+        role: newProfRole,
         requirePasswordChange: true,
         createdAt: new Date(),
       });
       
+      if (leadIdToConvert) {
+         try {
+           await deleteDoc(doc(db, "profissionais_leads", leadIdToConvert));
+         } catch (delErr) {
+           console.error("Erro ao remover lead após conversão", delErr);
+         }
+         setLeadIdToConvert(null);
+      }
+      
       await signOut(secondaryAuth);
       
-      const emailParams = `subject=Bem-vindo(a) à Plataforma Elo&body=Olá ${newProfName},%0A%0ASua conta foi criada no sistema.%0A%0ALink de Acesso: ${window.location.origin}%0AEmail: ${newProfEmail}%0ASenha Provisória: ${newProfPassword}%0A%0APor favor, acesse o sistema e redefina sua senha no primeiro acesso.`;
+      const emailBodyProvider = useGoogleLogin 
+         ? `Sua conta foi criada no sistema. Como você utiliza um e-mail do Google (Gmail), você pode acessar a plataforma clicando diretamente no botão "Entrar com Conta Google".`
+         : `Sua conta foi criada no sistema.\n\nLink de Acesso: ${window.location.origin}\nEmail: ${newProfEmail}\nSenha Provisória: ${newProfPassword}\n\nPor favor, acesse o sistema e redefina sua senha no primeiro acesso.`;
+
+      const emailParams = `subject=Bem-vindo(a) à Plataforma Elo&body=Olá ${newProfName},%0A%0A${encodeURIComponent(emailBodyProvider)}`;
 
       setConfirmConfig({
         isOpen: true,
@@ -621,10 +659,36 @@ export function DashboardView({ onNavigate }: { onNavigate: (view: 'landing' | '
       setNewProfName("");
       setNewProfEmail("");
       setNewProfPassword("");
+      setNewProfRole("profissional");
+      setUseGoogleLogin(false);
     } catch(err: any) {
       console.error(err);
       if (err.code === 'auth/email-already-in-use') {
-         alert("Erro: Este e-mail já possui uma conta criada no Autenticador. Se não o visualizar na lista, peça para a pessoa tentar realizar o login normal ou utilizar a recuperação de senha.");
+         const existingUser = allUsers.find(u => u.email?.toLowerCase() === newProfEmail.toLowerCase());
+         if (existingUser) {
+            try {
+               await updateDoc(doc(db, "users", existingUser.uid!), {
+                   role: newProfRole,
+                   statusUpdatedAt: serverTimestamp()
+               });
+               if (leadIdToConvert) {
+                  await deleteDoc(doc(db, "profissionais_leads", leadIdToConvert));
+                  setLeadIdToConvert(null);
+               }
+               alert("Este e-mail já possuía uma conta no sistema. O perfil foi vinculado e promovido a Profissional com sucesso!");
+               setShowNewProfissionalModal(false);
+               setNewProfName("");
+               setNewProfEmail("");
+               setNewProfPassword("");
+               setNewProfRole("profissional");
+               setUseGoogleLogin(false);
+            } catch (promoteErr) {
+               console.error(promoteErr);
+               alert("Erro ao promover conta existente a Profissional.");
+            }
+         } else {
+             alert("Aviso: O e-mail informado já possui uma conta mas não configurou o perfil completamente. Peça para a pessoa realizar o login (via Google ou e-mail correspondente) na tela inicial, assim o cadastro será finalizado.");
+         }
       } else {
          alert("Erro ao criar conta: " + err.message);
       }
@@ -657,6 +721,64 @@ export function DashboardView({ onNavigate }: { onNavigate: (view: 'landing' | '
     p.nomeDesejado?.toLowerCase().includes(lowerQuery) || 
     p.telefone?.toLowerCase().includes(lowerQuery)
   );
+
+  const getProfissionalNotifications = () => {
+    if (!profile || profile.role !== 'profissional') return [];
+    
+    const list: { id: string, type: 'assignment' | 'alert' | 'contract' | 'system', title: string, desc: string, patientName: string, patientObj: Acolhimento }[] = [];
+    
+    meusPacientes.forEach(p => {
+      // 1. New Assignment
+      if (!p.atribuicaoStatus || p.atribuicaoStatus === 'Pendente') {
+        list.push({
+          id: `${p.id}-pending`,
+          type: 'assignment',
+          title: 'Novo Paciente Atribuído',
+          desc: 'Um novo acolhido foi direcionado a você. Revise a ficha técnica e confirme aceitação do atendimento clínico.',
+          patientName: p.nomeDesejado || p.nomeCivil || p.nome,
+          patientObj: p
+        });
+      }
+      // 2. Clinical/Admin Notification
+      if (p.notificacao && p.notificacao.trim()) {
+        list.push({
+          id: `${p.id}-notif`,
+          type: 'alert',
+          title: 'Nota / Alerta Administrativo',
+          desc: p.notificacao,
+          patientName: p.nomeDesejado || p.nomeCivil || p.nome,
+          patientObj: p
+        });
+      }
+      // 3. Contract unsigned
+      if (!p.contratoAssinado) {
+        list.push({
+          id: `${p.id}-contract`,
+          type: 'contract',
+          title: 'Contrato Pendente',
+          desc: 'Contrato de Prestação de Serviços Psicológicos ainda não foi assinado por este paciente.',
+          patientName: p.nomeDesejado || p.nomeCivil || p.nome,
+          patientObj: p
+        });
+      }
+      // 4. Info change
+      if (p.updatedAt && p.createdAt && (p.updatedAt.toMillis?.() - p.createdAt.toMillis?.() > 4000)) {
+        list.push({
+          id: `${p.id}-updated`,
+          type: 'system',
+          title: 'Ficha Atualizada',
+          desc: 'Dados clínicos, histórico ou de contato alterados recentemente.',
+          patientName: p.nomeDesejado || p.nomeCivil || p.nome,
+          patientObj: p
+        });
+      }
+    });
+    
+    return list;
+  };
+
+  const profNotifications = getProfissionalNotifications();
+  const pendingProfNotificationsCount = profNotifications.length;
 
   const filteredDoacoes = doacoes.filter(d => 
     !searchQuery || 
@@ -934,17 +1056,16 @@ export function DashboardView({ onNavigate }: { onNavigate: (view: 'landing' | '
     );
   };
 
-  const pendingTarefasCount = 
-    acolhimentos.filter(a => a.notificacao).length +
-    profissionaisLeads.filter(p => p.notificacao).length +
-    profissionaisAtivos.filter(p => p.notificacao).length +
-    empresasLeads.filter(e => e.notificacao).length;
+  const pendingTriagemCount = acolhimentos.filter(a => a.notificacao && (!a.status || a.status === 'Aguardando Avaliação')).length;
+  const pendingPacientesCount = acolhimentos.filter(a => a.notificacao && a.status && a.status !== 'Aguardando Avaliação').length;
+  const pendingApoioSolidarioCount = solicitacoes.filter(s => s.status === 'Aguardando' || s.notificacao).length;
+  const pendingProfissionaisCount = profissionaisLeads.filter(p => !p.status || p.status === 'Aguardando Entrevista' || p.notificacao).length + profissionaisAtivos.filter(p => p.notificacao).length;
+  const pendingEmpresasCount = empresasLeads.filter(e => !e.status || e.status === 'Aguardando' || e.notificacao).length;
 
   const notificarTarget = 
     (activeTab === 'kanban' && selectedCard) ? selectedCard :
     (activeTab === 'profissionais' && selectedProfissional) ? selectedProfissional :
     (activeTab === 'empresas' && selectedEmpresa) ? selectedEmpresa :
-    (activeTab === 'tarefas') ? (selectedCard || selectedProfissional || selectedEmpresa) :
     (selectedCard || selectedEmpresa || selectedProfissional);
 
   return (
@@ -973,45 +1094,51 @@ export function DashboardView({ onNavigate }: { onNavigate: (view: 'landing' | '
           <div className="flex order-last w-full lg:w-auto lg:order-none items-center gap-1 sm:gap-2 bg-warm rounded-full p-1 border border-soft overflow-x-auto no-scrollbar">
             <button 
               onClick={() => setActiveTab('kanban')}
-              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap ${activeTab === 'kanban' ? 'bg-white shadow-sm text-forest' : 'text-forest/70/70 hover:text-forest/70'}`}
+              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === 'kanban' ? 'bg-white shadow-sm text-forest' : 'text-forest/70/70 hover:text-forest/70'}`}
             >
               Triagem
+              {pendingTriagemCount > 0 && (
+                <span className="bg-red-500 text-white text-[10px] w-4 h-4 flex items-center justify-center rounded-full font-bold ml-1">{pendingTriagemCount}</span>
+              )}
             </button>
             <button 
               onClick={() => setActiveTab('pacientesAcolhidos')}
-              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap ${activeTab === 'pacientesAcolhidos' ? 'bg-white shadow-sm text-forest' : 'text-forest/70/70 hover:text-forest/70'}`}
+              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === 'pacientesAcolhidos' ? 'bg-white shadow-sm text-forest' : 'text-forest/70/70 hover:text-forest/70'}`}
             >
               Pacientes
+              {pendingPacientesCount > 0 && (
+                <span className="bg-red-500 text-white text-[10px] w-4 h-4 flex items-center justify-center rounded-full font-bold ml-1">{pendingPacientesCount}</span>
+              )}
             </button>
             {profile.role === 'master' && (
               <button 
                 onClick={() => setActiveTab('doacoes')}
-                className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap ${activeTab === 'doacoes' ? 'bg-white shadow-sm text-forest' : 'text-forest/70/70 hover:text-forest/70'}`}
+                className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === 'doacoes' ? 'bg-white shadow-sm text-forest' : 'text-forest/70/70 hover:text-forest/70'}`}
               >
                 Apoio Solidário
+                {pendingApoioSolidarioCount > 0 && (
+                  <span className="bg-red-500 text-white text-[10px] w-4 h-4 flex items-center justify-center rounded-full font-bold ml-1">{pendingApoioSolidarioCount}</span>
+                )}
               </button>
             )}
             <button 
               onClick={() => setActiveTab('profissionais')}
-              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap ${activeTab === 'profissionais' ? 'bg-white shadow-sm text-forest' : 'text-forest/70/70 hover:text-forest/70'}`}
+              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === 'profissionais' ? 'bg-white shadow-sm text-forest' : 'text-forest/70/70 hover:text-forest/70'}`}
             >
               Profissionais
+              {pendingProfissionaisCount > 0 && (
+                <span className="bg-red-500 text-white text-[10px] w-4 h-4 flex items-center justify-center rounded-full font-bold ml-1">{pendingProfissionaisCount}</span>
+              )}
             </button>
             {profile.role === 'master' && (
               <>
                 <button 
                   onClick={() => setActiveTab('empresas')}
-                  className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap ${activeTab === 'empresas' ? 'bg-white shadow-sm text-forest' : 'text-forest/70/70 hover:text-forest/70'}`}
+                  className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === 'empresas' ? 'bg-white shadow-sm text-forest' : 'text-forest/70/70 hover:text-forest/70'}`}
                 >
                   Empresas
-                </button>
-                <button 
-                  onClick={() => setActiveTab('tarefas')}
-                  className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === 'tarefas' ? 'bg-white shadow-sm text-forest' : 'text-forest/70/70 hover:text-forest/70'}`}
-                >
-                  Tarefas
-                  {pendingTarefasCount > 0 && (
-                    <span className="bg-red-500 text-white text-[10px] w-4 h-4 flex items-center justify-center rounded-full font-bold ml-1">{pendingTarefasCount}</span>
+                  {pendingEmpresasCount > 0 && (
+                    <span className="bg-red-500 text-white text-[10px] w-4 h-4 flex items-center justify-center rounded-full font-bold ml-1">{pendingEmpresasCount}</span>
                   )}
                 </button>
                 <button 
@@ -1032,6 +1159,17 @@ export function DashboardView({ onNavigate }: { onNavigate: (view: 'landing' | '
               className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap ${activeTab === 'pacientes' ? 'bg-white shadow-sm text-forest' : 'text-forest/70/70 hover:text-forest/70'}`}
             >
               Meus Pacientes
+            </button>
+            <button 
+              onClick={() => setActiveTab('tarefasProfissional')}
+              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === 'tarefasProfissional' ? 'bg-white shadow-sm text-forest' : 'text-forest/70/70 hover:text-forest/70'}`}
+            >
+              Tarefas & Mensagens
+              {pendingProfNotificationsCount > 0 && (
+                <span className="bg-red-500 text-white text-[10px] w-4.5 h-4.5 flex items-center justify-center rounded-full font-bold">
+                  {pendingProfNotificationsCount}
+                </span>
+              )}
             </button>
             <button 
               onClick={() => setActiveTab('perfil')}
@@ -1081,15 +1219,35 @@ export function DashboardView({ onNavigate }: { onNavigate: (view: 'landing' | '
               ) : (
                 filteredMeusPacientes.map(p => (
                   <div key={p.id} className="bg-white p-6 rounded-[2rem] shadow-sm border border-soft flex flex-col gap-4 group hover:shadow-md transition-shadow">
-                    <div className="flex items-start justify-between">
+                    <div className="flex items-start justify-between gap-2">
                       <h4 className="font-semibold text-lg text-forest">{p.nomeDesejado || p.nomeCivil}</h4>
-                      <div className="text-[10px] text-forest/70/70 font-medium bg-warm px-2 py-1 rounded-md">{p.status}</div>
+                      <div className="flex flex-col items-end gap-1 shrink-0">
+                        <span className={`px-2 py-0.5 rounded font-bold text-[9px] uppercase tracking-wide leading-none ${
+                          p.atribuicaoStatus === 'Aceito' ? 'bg-[#34A853]/10 text-[#34A853]' :
+                          p.atribuicaoStatus === 'Rejeitado' ? 'bg-red-500/10 text-red-500' :
+                          'bg-amber-500/10 text-amber-500'
+                        }`}>
+                          {p.atribuicaoStatus || 'Pendente'}
+                        </span>
+                        <div className="text-[10px] text-forest/70 font-medium bg-warm px-2 py-1 rounded-md leading-none">{p.status}</div>
+                      </div>
                     </div>
                     <div className="text-sm text-forest/70 flex flex-col gap-2">
                        <span className="flex items-center gap-2"><User className="w-4 h-4"/> Idade: {p.idade}</span>
                        <span className="flex items-center gap-2"><Circle className="w-4 h-4"/> Gênero: {p.identidadeGenero}</span>
                        {p.telefone && <span className="flex items-center gap-2 mt-2 font-semibold text-forest">📞 {p.telefone}</span>}
                     </div>
+                    {p.motivo && (
+                      <div className="text-xs bg-warm p-3 rounded-xl border border-soft text-forest/80 line-clamp-3">
+                         <span className="font-bold block mb-1">Queixa / Motivo:</span>
+                         {p.motivo}
+                      </div>
+                    )}
+                    {p.valorSessao && (
+                      <div className="flex items-center justify-between bg-[#34A853]/10 text-[#34A853] px-3 py-2 rounded-xl text-xs font-bold border border-[#34A853]/20">
+                         Valor da Sessão Proposto: R$ {p.valorSessao}
+                      </div>
+                    )}
                     <button 
                       onClick={() => setSelectedCard(p)}
                       className="mt-2 w-full py-2 bg-warm text-forest/70 font-medium rounded-xl hover:bg-sun-dark hover:text-forest transition-colors"
@@ -1102,47 +1260,241 @@ export function DashboardView({ onNavigate }: { onNavigate: (view: 'landing' | '
             </div>
           </div>
         </div>
+      ) : profile.role === 'profissional' && activeTab === 'tarefasProfissional' ? (
+        <div className="flex-1 overflow-auto p-6 md:p-8 flex flex-col gap-8 slide-up">
+          <div className="max-w-4xl w-full mx-auto">
+            <h2 className="font-serif text-3xl text-forest bg-white px-8 py-6 rounded-[2rem] shadow-sm border border-soft flex items-center gap-4 mb-8">
+              <CheckSquare className="w-8 h-8 text-forest/70 animate-pulse" />
+              Central de Alertas e Mensagens
+            </h2>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {profNotifications.length === 0 ? (
+                <div className="col-span-full text-center p-12 bg-white/50 border border-dashed border-soft rounded-[2rem] text-forest/70 p-12">
+                  <span className="block text-4xl mb-3">🌟</span>
+                  Nenhuma mensagem ou alerta clínico pendente no momento. Tudo em ordem!
+                </div>
+              ) : (
+                profNotifications.map((notif) => (
+                  <div key={notif.id} className="bg-white p-6 rounded-[2rem] shadow-sm border border-soft flex flex-col justify-between gap-4 hover:shadow-md transition-shadow">
+                    <div className="flex items-center justify-between">
+                      <span className={`text-[9px] uppercase font-bold px-2.5 py-1 rounded-md ${
+                        notif.type === 'assignment' ? 'bg-amber-100 text-amber-700' :
+                        notif.type === 'alert' ? 'bg-red-50 text-red-700 border border-red-100 font-bold' :
+                        notif.type === 'contract' ? 'bg-blue-50 text-blue-700' :
+                        'bg-slate-100 text-slate-700'
+                      }`}>
+                        {notif.type === 'assignment' ? 'Novo Paciente' :
+                         notif.type === 'alert' ? 'Alerta Administrativo/Clínico' :
+                         notif.type === 'contract' ? 'Pendência de Contrato' :
+                         'Atualização'}
+                      </span>
+                      <span className="text-[10px] font-semibold text-forest/50">Paciente: {notif.patientName}</span>
+                    </div>
+                    
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-base text-forest mt-1">{notif.title}</h4>
+                      <p className="text-xs text-forest/70 mt-2 leading-relaxed bg-warm/50 p-3 rounded-xl border border-soft">
+                        {notif.desc}
+                      </p>
+                    </div>
+                    
+                    <button
+                      onClick={() => {
+                        setSelectedCard(notif.patientObj);
+                        setActiveTab('pacientes');
+                      }}
+                      className="mt-2 w-full py-2.5 bg-forest text-white text-xs font-bold uppercase tracking-wider rounded-xl hover:bg-forest/90 transition-colors"
+                    >
+                      Acessar Ficha do Paciente
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
       ) : profile.role === 'profissional' && activeTab === 'perfil' ? (
         <div className="flex-1 overflow-auto p-6 md:p-8 flex flex-col gap-8 slide-up">
-          <div className="max-w-2xl w-full mx-auto">
+          <div className="max-w-4xl w-full mx-auto">
              <h2 className="font-serif text-3xl text-forest bg-white px-8 py-6 rounded-[2rem] shadow-sm border border-soft flex items-center gap-4 mb-8">
               <User className="w-8 h-8 text-forest/70" />
-              Meu Perfil
+              Meu Perfil de Apresentação
             </h2>
-            <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-soft flex flex-col gap-6">
-              <div>
-                <label className="text-xs uppercase font-bold tracking-wider text-forest/50">Nome Completo</label>
-                <input 
-                  type="text" 
-                  value={profile.name || ''} 
-                  onChange={(e) => setProfile({...profile, name: e.target.value})}
-                  className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
+            <div className="bg-white p-8 sm:p-10 rounded-[2rem] shadow-sm border border-soft flex flex-col gap-8">
+              
+              {/* Profile Photo base64 component */}
+              <div className="flex flex-col sm:flex-row items-center gap-6 pb-6 border-b border-soft">
+                <div className="w-28 h-28 rounded-full overflow-hidden bg-forest/10 border-4 border-sun flex-shrink-0 flex items-center justify-center relative">
+                  {profile.photoUrl ? (
+                    <img src={profile.photoUrl} alt={profile.name} className="w-full h-full object-cover" />
+                  ) : (
+                    <User className="w-14 h-14 text-forest/70" />
+                  )}
+                </div>
+                <div className="flex flex-col gap-2 items-center sm:items-start">
+                  <h4 className="font-serif text-xl font-medium text-forest">Foto de Apresentação</h4>
+                  <p className="text-xs text-forest/60 max-w-sm text-center sm:text-left">Escolha uma foto quadrada, profissional e bem iluminada para os pacientes o identificarem.</p>
+                  
+                  <label className="mt-1 px-4 py-2 bg-warm hover:bg-soft text-forest text-xs font-bold uppercase tracking-wider rounded-xl cursor-pointer transition-colors border border-soft">
+                    Fazer Upload de Foto
+                    <input 
+                      type="file" 
+                      accept="image/*" 
+                      className="hidden" 
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          if (file.size > 800000) {
+                            alert("A imagem é muito grande. Escolha uma imagem de até 800KB.");
+                            return;
+                          }
+                          const reader = new FileReader();
+                          reader.onloadend = () => {
+                            setProfile((prev: any) => ({ ...prev, photoUrl: reader.result as string }));
+                          };
+                          reader.readAsDataURL(file);
+                        }
+                      }}
+                    />
+                  </label>
+                </div>
+              </div>
+
+              {/* Editing Form Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                <div>
+                  <label className="text-xs uppercase font-bold tracking-wider text-forest/50">Nome Completo</label>
+                  <input 
+                    type="text" 
+                    value={profile.name || ''} 
+                    onChange={(e) => setProfile({...profile, name: e.target.value})}
+                    className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs uppercase font-bold tracking-wider text-forest/50">Email</label>
+                  <input 
+                    type="email" 
+                    value={profile.email || ''} 
+                    disabled
+                    className="w-full mt-2 px-4 py-3 bg-warm border border-soft rounded-xl text-forest/50 cursor-not-allowed"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs uppercase font-bold tracking-wider text-forest/50">Telefone / WhatsApp Comercial</label>
+                  <input 
+                    type="tel" 
+                    value={profile.telefone || ''} 
+                    placeholder="Ex: 11999999999"
+                    onChange={(e) => setProfile({...profile, telefone: e.target.value})}
+                    className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs uppercase font-bold tracking-wider text-forest/50">CRP (Registro Profissional)</label>
+                  <input 
+                    type="text" 
+                    value={profile.crp || ''} 
+                    placeholder="Ex: 06/123456"
+                    onChange={(e) => setProfile({...profile, crp: e.target.value})}
+                    className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs uppercase font-bold tracking-wider text-forest/50">Abordagem / Especialidades</label>
+                  <input 
+                    type="text" 
+                    value={profile.especialidade || ''} 
+                    placeholder="Ex: TCC / Inteligência Emocional"
+                    onChange={(e) => setProfile({...profile, especialidade: e.target.value})}
+                    className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs uppercase font-bold tracking-wider text-forest/50">Disponibilidade de Horários</label>
+                  <input 
+                    type="text" 
+                    value={profile.horasDisponiveis || ''} 
+                    placeholder="Ex: Segundas e Terças das 14h às 20h"
+                    onChange={(e) => setProfile({...profile, horasDisponiveis: e.target.value})}
+                    className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs uppercase font-bold tracking-wider text-forest/50">Cidade</label>
+                  <input 
+                    type="text" 
+                    value={profile.cidade || ''} 
+                    placeholder="Ex: São Paulo"
+                    onChange={(e) => setProfile({...profile, cidade: e.target.value})}
+                    className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs uppercase font-bold tracking-wider text-forest/50">Estado (UF)</label>
+                  <input 
+                    type="text" 
+                    value={profile.uf || ''} 
+                    placeholder="Ex: SP"
+                    maxLength={2}
+                    onChange={(e) => setProfile({...profile, uf: e.target.value})}
+                    className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
+                  />
+                </div>
+              </div>
+
+              {/* Biography Section */}
+              <div className="flex flex-col gap-2">
+                <label className="text-xs uppercase font-bold tracking-wider text-forest/50">Mini-currículo & Biografia clínica</label>
+                <textarea 
+                  value={profile.biografia || ''} 
+                  onChange={(e) => setProfile({...profile, biografia: e.target.value})}
+                  placeholder="Escreva um breve texto sobre sua formação técnica, experiências profissionais e o estilo de sua conduta terapêutica..."
+                  className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark resize-none h-40 text-sm leading-relaxed"
                 />
               </div>
-              <div>
-                <label className="text-xs uppercase font-bold tracking-wider text-forest/50">Email</label>
-                <input 
-                  type="email" 
-                  value={profile.email || ''} 
-                  disabled
-                  className="w-full mt-2 px-4 py-3 bg-warm border border-soft rounded-xl text-forest/50 cursor-not-allowed"
-                />
+
+              {/* Action Buttons */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-6 border-t border-soft">
+                <button 
+                  onClick={() => handleUpdateSelfProfile({ 
+                    name: profile.name, 
+                    telefone: profile.telefone,
+                    crp: profile.crp,
+                    especialidade: profile.especialidade,
+                    horasDisponiveis: profile.horasDisponiveis,
+                    cidade: profile.cidade,
+                    uf: profile.uf,
+                    biografia: profile.biografia,
+                    photoUrl: profile.photoUrl || ''
+                  })}
+                  className="px-6 py-3.5 bg-forest text-white rounded-xl font-bold uppercase tracking-wider text-xs hover:bg-forest/90 transition-colors self-start w-full sm:w-auto text-center"
+                >
+                  Salvar Perfil Profissional
+                </button>
+                
+                {/* Share Landingpage Preview Box */}
+                {profile.uid && (() => {
+                  const shareLink = `${window.location.origin}?prof=${profile.uid}`;
+                  return (
+                    <div className="bg-warm/60 border border-soft rounded-xl p-3 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs w-full sm:max-w-md">
+                      <div className="truncate text-forest/70 max-w-[200px] font-mono select-all shrink">
+                        {shareLink}
+                      </div>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(shareLink);
+                          alert("Link de Apresentação copiado!");
+                        }}
+                        className="px-3 py-1.5 bg-sun-dark text-forest font-bold text-[10px] uppercase rounded-lg hover:bg-sun-dark-dark transition-colors shrink-0"
+                      >
+                        Copiar Link de Apresentação
+                      </button>
+                    </div>
+                  );
+                })()}
               </div>
-              <div>
-                <label className="text-xs uppercase font-bold tracking-wider text-forest/50">Telefone / WhatsApp</label>
-                <input 
-                  type="tel" 
-                  value={profile.telefone || ''} 
-                  onChange={(e) => setProfile({...profile, telefone: e.target.value})}
-                  className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
-                />
-              </div>
-              <button 
-                onClick={() => handleUpdateSelfProfile({ name: profile.name, telefone: profile.telefone })}
-                className="mt-4 px-6 py-3 bg-forest text-white rounded-xl font-bold uppercase tracking-wider text-sm hover:bg-forest/90 transition-colors self-start"
-              >
-                Salvar Alterações
-              </button>
             </div>
           </div>
         </div>
@@ -1189,10 +1541,35 @@ export function DashboardView({ onNavigate }: { onNavigate: (view: 'landing' | '
                       <h4 className="font-medium text-forest text-sm line-clamp-1">{card.nome}</h4>
                       <p className="text-xs text-forest/70/70 mt-1 line-clamp-2">{card.motivo.split(' - ')[0]}</p>
                       
+                      {card.valorSessao && (
+                        <div className="mt-2 text-[10px] font-bold text-[#34A853] bg-[#34A853]/10 px-2 py-1 rounded inline-block">
+                          Sessão: R$ {card.valorSessao}
+                        </div>
+                      )}
+
                       <div className="flex items-center gap-2 mt-4 text-[10px] text-forest/70 font-medium opacity-70">
                         <Clock className="w-3 h-3" />
                         {card.createdAt ? new Date(card.createdAt.toMillis()).toLocaleDateString('pt-BR') : 'Sem data'}
                       </div>
+
+                      {card.profissionalId && (() => {
+                        const assignedProf = allUsers.find(u => u.uid === card.profissionalId || u.id === card.profissionalId);
+                        const displayStatus = card.atribuicaoStatus || 'Pendente';
+                        return (
+                          <div className="mt-2.5 pt-2 border-t border-soft/50 flex flex-wrap justify-between items-center text-[10px] gap-1 shrink-0">
+                            <span className="text-forest/70 font-medium truncate max-w-[130px] flex items-center gap-1">
+                              👤 {assignedProf ? assignedProf.name : 'Indefinido'}
+                            </span>
+                            <span className={`px-1.5 py-0.5 rounded font-bold text-[9px] uppercase ${
+                              displayStatus === 'Aceito' ? 'bg-[#34A853]/10 text-[#34A853]' :
+                              displayStatus === 'Rejeitado' ? 'bg-red-500/10 text-red-500' :
+                              'bg-amber-500/10 text-amber-500'
+                            }`}>
+                              {displayStatus}
+                            </span>
+                          </div>
+                        );
+                      })()}
                     </div>
                   ))}
                   
@@ -1289,72 +1666,112 @@ export function DashboardView({ onNavigate }: { onNavigate: (view: 'landing' | '
                 </div>
               ) : (
                 filteredLeads.map(lead => (
-                  <div key={lead.id} className="bg-white p-5 rounded-2xl shadow-sm border border-soft flex flex-col md:flex-row items-start md:items-center justify-between group gap-4">
-                    <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 bg-sun-dark/10 text-forest/70 rounded-full flex items-center justify-center">
-                        <User className="w-6 h-6" />
+                  <div key={lead.id} className="bg-white p-6 rounded-2xl shadow-sm border border-soft flex flex-col gap-4 group hover:shadow-md transition-shadow">
+                    <div className="flex flex-col md:flex-row justify-between items-start gap-4">
+                      <div className="flex items-start gap-4">
+                        <div className="w-12 h-12 shrink-0 bg-sun-dark/10 text-forest/70 rounded-full flex items-center justify-center mt-1">
+                          <User className="w-6 h-6" />
+                        </div>
+                        <div>
+                          <h4 className="font-semibold text-base text-forest">{lead.nome} <span className="text-xs font-normal text-forest/70/70 ml-2">{lead.especialidade} {lead.crp ? ` • Reg: ${lead.crp}` : ''}</span></h4>
+                          <div className="text-xs text-forest/70/70 flex flex-wrap gap-2 items-center mt-1">
+                            <span>{lead.email}</span> • <span>{lead.telefone}</span> {lead.cidade && <span>• {lead.cidade}/{lead.uf}</span>}
+                          </div>
+                          <div className="text-xs mt-3 bg-warm p-3 rounded-xl border border-soft font-medium text-forest/80 line-clamp-2">
+                             <span className="font-bold opacity-70">Motivação:</span> "{lead.motivo || lead.motivacao}"
+                          </div>
+                        </div>
                       </div>
-                      <div>
-                        <h4 className="font-semibold text-sm text-forest">{lead.nome} <span className="text-xs font-normal text-forest/70/70 ml-2">{lead.especialidade} {lead.crp ? ` • Reg: ${lead.crp}` : ''}</span></h4>
-                        <div className="text-xs text-forest/70/70 flex gap-2 items-center mt-1">
-                          <span>{lead.email}</span> • <span>{lead.telefone}</span> {lead.cidade && <span>• {lead.cidade}/{lead.uf}</span>}
-                        </div>
-                        <div className="text-xs mt-2 bg-warm p-2 rounded-lg border border-soft font-medium text-forest/80 line-clamp-2">
-                           Motivação: "{lead.motivo || lead.motivacao}"
-                        </div>
+                      
+                      <div className="flex flex-col items-end gap-2 shrink-0 mt-2 md:mt-0">
+                        <span className="text-[10px] uppercase font-bold bg-forest/5 text-forest px-2 py-1 rounded-md inline-block">
+                           Disponível: {lead.horasDisponiveis}
+                        </span>
+                        <span className="text-[10px] font-bold text-forest/70 uppercase tracking-wider bg-warm px-2 py-1 rounded-md border border-soft/50">
+                          Status: {lead.status || 'Aguardando Entrevista'}
+                        </span>
                       </div>
                     </div>
-                    <div className="flex flex-col items-end gap-2 shrink-0">
-                      <span className="text-[10px] uppercase font-bold bg-forest/5 text-forest px-2 py-0.5 rounded-md inline-block">Disponível: {lead.horasDisponiveis}</span>
-                      
-                      <div className="flex flex-wrap gap-2 justify-end">
-                        <button 
-                          onClick={() => setSelectedProfissional(lead)}
-                          className="text-xs font-semibold px-3 py-1.5 bg-sun text-forest rounded-lg hover:bg-sun-dark transition-colors flex items-center justify-center gap-1"
-                        >
-                          <FileText className="w-3 h-3" /> Ficha de Bordo
-                        </button>
-                        {lead.status === 'Aguardando Avaliação' ? (
-                           <button onClick={() => handleUpdateLeadStatus(lead.id, 'Em Contato')} className="text-xs font-semibold px-3 py-1.5 bg-sun-dark text-forest rounded-lg hover:bg-sun-dark-dark transition-colors">Iniciar Contato</button>
-                        ) : lead.status === 'Em Contato' ? (
-                           <>
-                              <button onClick={() => handleUpdateLeadStatus(lead.id, 'Aprovado')} className="text-xs font-semibold px-3 py-1.5 bg-[#34A853] text-white rounded-lg transition-colors">Aprovar (Onboarding)</button>
-                              <button onClick={() => handleUpdateLeadStatus(lead.id, 'Rejeitado')} className="text-xs font-semibold px-3 py-1.5 bg-red-500 text-white rounded-lg transition-colors">Rejeitar</button>
-                           </>
-                        ) : (
-                           <>
-                             <div className="flex items-center gap-2">
-                               <span className="text-xs font-bold text-forest/70 uppercase">{lead.status}</span>
-                               {lead.status === 'Aprovado' && (
-                                 <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${lead.ativo === false ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                                    {lead.ativo === false ? 'Inativo' : 'Ativo'}
-                                 </span>
-                               )}
+                    
+                    {/* Progress Bar */}
+                    <div className="w-full mt-2 mb-2">
+                       <div className="flex w-full items-center justify-between gap-1 mb-1 relative">
+                          <div className="absolute top-1/2 left-0 w-full h-[2px] bg-soft -z-10 -translate-y-1/2"></div>
+                          <div className="absolute top-1/2 left-0 h-[2px] bg-[#34A853] -z-10 -translate-y-1/2 transition-all duration-500" style={{
+                            width: lead.status === 'Rejeitado' ? '0%' :
+                                   (!lead.status || lead.status === 'Aguardando Entrevista' || lead.status === 'Aguardando Avaliação') ? '0%' :
+                                   (lead.status === 'Aprovado' || lead.status === 'Stand-by') ? '33%' :
+                                   (lead.status === 'Aguardando Contrato') ? '66%' :
+                                   (lead.status === 'Aguardando Acesso') ? '100%' : '0%'
+                          }}></div>
+                          
+                          {[
+                            { label: 'Cadastro', active: lead.status !== 'Rejeitado' },
+                            { label: 'Entrevista', active: lead.status !== 'Rejeitado' && lead.status !== 'Aguardando Entrevista' && lead.status !== 'Aguardando Avaliação' && lead.status !== undefined && lead.status !== '' },
+                            { label: 'Contrato', active: lead.status === 'Aguardando Contrato' || lead.status === 'Aguardando Acesso' },
+                            { label: 'Acesso', active: lead.status === 'Aguardando Acesso' },
+                          ].map((step, idx) => (
+                             <div key={idx} className="flex flex-col items-center gap-1 bg-white px-2">
+                                <div className={`w-3 h-3 rounded-full border-2 transition-colors duration-500 ${step.active ? 'bg-[#34A853] border-[#34A853]' : (lead.status === 'Rejeitado' ? 'bg-red-200 border-red-300' : 'bg-white border-soft')}`} />
+                                <span className={`text-[9px] font-bold uppercase tracking-wider mt-0.5 ${step.active ? 'text-[#34A853]' : (lead.status === 'Rejeitado' ? 'text-red-400' : 'text-forest/40')}`}>
+                                  {step.label}
+                                </span>
                              </div>
-                             {lead.status === 'Aprovado' && (
-                                <button 
-                                  onClick={() => {
-                                    setNewProfName(lead.nome);
-                                    setNewProfEmail(lead.email);
-                                    setNewProfPassword(Math.random().toString(36).slice(-8)); // auto-generate password
-                                    setShowNewProfissionalModal(true);
-                                  }}
-                                  className="text-xs font-semibold px-3 py-1.5 bg-forest text-white rounded-lg hover:bg-forest/90 transition-colors flex items-center justify-center gap-1"
-                                >
-                                  <Plus className="w-3 h-3" /> Criar Conta de Acesso
-                                </button>
-                             )}
-                           </>
-                        )}
-                        {profile?.role === 'master' && (
-                          <button 
-                            onClick={(e) => { e.stopPropagation(); handleDeleteProfissional(lead.id, 'leads'); }}
-                            className="text-xs font-semibold px-3 py-1.5 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors flex items-center justify-center gap-1 ml-2"
-                            title="Excluir Permanentemente"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
-                        )}
+                          ))}
+                       </div>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row items-center justify-between w-full pt-4 border-t border-soft mt-2 gap-4">
+                      <button 
+                        onClick={() => setSelectedProfissional(lead)}
+                        className="w-full sm:w-auto text-xs font-semibold px-4 py-2 bg-sun text-forest rounded-xl hover:bg-sun-dark transition-colors flex items-center justify-center gap-2"
+                      >
+                        <FileText className="w-4 h-4" /> Ficha de Bordo
+                      </button>
+
+                      <div className="flex flex-wrap items-center justify-end gap-2 w-full sm:w-auto">
+                           {(lead.status === 'Aguardando Entrevista' || lead.status === 'Aguardando Avaliação' || !lead.status) && (
+                              <>
+                                <button onClick={() => handleUpdateLeadStatus(lead.id, 'Aprovado')} className="flex-1 sm:flex-none text-xs font-semibold px-4 py-2 bg-[#34A853]/10 text-[#34A853] rounded-xl transition-colors border border-[#34A853]/20 hover:bg-[#34A853] hover:text-white">Aprovar p/ Contrato</button>
+                                <button onClick={() => handleUpdateLeadStatus(lead.id, 'Stand-by')} className="flex-1 sm:flex-none text-xs font-semibold px-4 py-2 bg-amber-500/10 text-amber-600 rounded-xl transition-colors border border-amber-500/20 hover:bg-amber-500 hover:text-white">Stand-by</button>
+                                <button onClick={() => handleUpdateLeadStatus(lead.id, 'Rejeitado')} className="flex-1 sm:flex-none text-xs font-semibold px-4 py-2 bg-red-500/10 text-red-500 rounded-xl transition-colors border border-red-500/20 hover:bg-red-500 hover:text-white">Rejeitar</button>
+                              </>
+                           )}
+                           
+                           {(lead.status === 'Aprovado' || lead.status === 'Stand-by') && (
+                              <button onClick={() => handleUpdateLeadStatus(lead.id, 'Aguardando Contrato')} className="w-full sm:w-auto text-xs font-semibold px-4 py-2 bg-sun-dark text-forest rounded-xl hover:bg-sun-dark-dark transition-colors border border-sun-dark-dark/20 text-center">
+                                Solicitado Assinatura de Contrato
+                              </button>
+                           )}
+
+                           {lead.status === 'Aguardando Contrato' && (
+                              <button onClick={() => handleUpdateLeadStatus(lead.id, 'Aguardando Acesso')} className="w-full sm:w-auto text-xs font-semibold px-4 py-2 bg-[#34A853]/10 text-[#34A853] rounded-xl transition-colors border border-[#34A853]/20 hover:bg-[#34A853] hover:text-white">Marcar como Assinado</button>
+                           )}
+
+                           {lead.status === 'Aguardando Acesso' && (
+                              <button 
+                                onClick={() => {
+                                  setNewProfName(lead.nome);
+                                  setNewProfEmail(lead.email);
+                                  setNewProfPassword(Math.random().toString(36).slice(-8));
+                                  setLeadIdToConvert(lead.id);
+                                  setShowNewProfissionalModal(true);
+                                }}
+                                className="w-full sm:w-auto text-xs font-bold px-4 py-2 bg-forest text-white rounded-xl flex items-center justify-center gap-2 transition-colors hover:bg-forest/90"
+                              >
+                                <User className="w-4 h-4" /> Criar Acesso na Plataforma
+                              </button>
+                           )}
+
+                           {profile?.role === 'master' && (
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); handleDeleteProfissional(lead.id, 'leads'); }}
+                              className="text-xs font-semibold p-2 bg-red-50 text-red-600 rounded-xl hover:bg-red-100 transition-colors flex items-center justify-center gap-1 sm:ml-2"
+                              title="Excluir Permanentemente"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
                       </div>
                     </div>
                   </div>
@@ -1473,75 +1890,6 @@ export function DashboardView({ onNavigate }: { onNavigate: (view: 'landing' | '
                   </div>
                 ))
               )}
-            </div>
-          </div>
-        </div>
-      ) : activeTab === 'tarefas' ? (
-        <div className="flex-1 overflow-auto p-6 md:p-8 flex items-start flex-col gap-8 slide-up">
-          <div className="w-full flex flex-col gap-4">
-            <h2 className="font-serif text-2xl text-forest bg-white px-6 py-4 rounded-2xl shadow-sm border border-soft flex items-center gap-3">
-              <CheckSquare className="w-6 h-6 text-forest/70" />
-              Tarefas e Alertas
-            </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {(() => {
-                const tarefasList = [
-                  ...acolhimentos.filter(a => a.notificacao).map(a => ({ id: a.id!, area: 'Pacientes', type: 'Paciente', name: a.nome, desc: a.notificacao, obj: a, setAction: () => { setSelectedProfissional(null); setSelectedEmpresa(null); setSelectedCard(a); } })),
-                  ...profissionaisLeads.filter(a => a.notificacao).map(a => ({ id: a.id!, area: 'Profissionais', type: 'Candidato', name: a.nome, desc: a.notificacao, obj: a, setAction: () => { setSelectedCard(null); setSelectedEmpresa(null); setSelectedProfissional(a); } })),
-                  ...profissionaisAtivos.filter(a => a.notificacao).map(a => ({ id: a.uid!, area: 'Profissionais', type: 'Psicólogo Ativo', name: a.name, desc: a.notificacao, obj: a, setAction: () => { setSelectedCard(null); setSelectedEmpresa(null); setSelectedProfissional(a); } })),
-                  ...empresasLeads.filter(a => a.notificacao).map(a => ({ id: a.id!, area: 'Empresas', type: 'Empresa', name: a.nomeEmpresa, desc: a.notificacao, obj: a, setAction: () => { setSelectedCard(null); setSelectedProfissional(null); setSelectedEmpresa(a); } }))
-                ];
-
-                if (tarefasList.length === 0) {
-                  return (
-                    <div className="col-span-full text-center p-8 bg-white/50 border border-dashed border-soft rounded-2xl text-forest/70/70 text-sm">
-                      Nenhuma tarefa ou alerta registrado.
-                    </div>
-                  );
-                }
-
-                return tarefasList.map((t, idx) => (
-                  <div key={`${t.id}-${idx}`} className="bg-white p-5 rounded-2xl shadow-sm border border-soft flex flex-col gap-3 group relative hover:shadow-md transition-shadow">
-                    <div className="flex items-center justify-between">
-                      <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-md ${t.area === 'Pacientes' ? 'bg-amber-100 text-amber-700' : t.area === 'Profissionais' ? 'bg-sky-100 text-sky-700' : 'bg-purple-100 text-purple-700'}`}>
-                        {t.area}
-                      </span>
-                      <span className="text-[10px] text-forest/50 font-semibold">{t.type}</span>
-                    </div>
-                    <div className="flex flex-col">
-                      <h4 className="font-semibold text-lg text-forest">{t.name}</h4>
-                      <p className="text-xs text-red-600 mt-2 line-clamp-3 leading-relaxed bg-red-50 p-2 rounded-lg border border-red-100 font-medium">
-                        {t.desc}
-                      </p>
-                    </div>
-                    <div className="flex gap-2 w-full mt-2">
-                      <button 
-                        onClick={t.setAction}
-                        className="flex-1 py-2 bg-sun text-forest text-xs font-semibold rounded-xl hover:bg-sun-dark transition-colors flex items-center justify-center gap-1"
-                      >
-                        <FileText className="w-3 h-3" /> Ficha
-                      </button>
-                      <button 
-                        onClick={async () => {
-                           const colMap: Record<string, string> = {
-                              'Pacientes': 'acolhimentos',
-                              'Empresas': 'empresa_leads',
-                              'Profissionais': t.type === 'Psicólogo Ativo' ? 'users' : 'profissionais_leads'
-                           };
-                           const cName = colMap[t.area];
-                           if (!cName) return;
-                           try {
-                             await updateDoc(doc(db, cName, t.id), { notificacao: null });
-                           } catch (e) { console.error(e); }
-                        }}
-                        className="flex-1 py-2 bg-white border border-soft text-forest text-xs font-semibold rounded-xl hover:bg-slate-50 transition-colors flex items-center justify-center gap-1"
-                      >
-                        <CheckCircle2 className="w-3 h-3" /> Baixa
-                      </button>
-                    </div>
-                  </div>
-                ));
-              })()}
             </div>
           </div>
         </div>
@@ -1669,7 +2017,9 @@ export function DashboardView({ onNavigate }: { onNavigate: (view: 'landing' | '
                       <EditableField label="Data de Nascimento" value={selectedCard.dataNascimento} field="dataNascimento" onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)} isEditing={isEditingCard} />
                       <EditableField label="CPF" value={selectedCard.cpf} field="cpf" onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)} isEditing={isEditingCard} />
                       <EditableField label="E-mail" value={selectedCard.email} field="email" onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)} isEditing={isEditingCard} />
+                      <EditableField label="Telefone / WhatsApp" value={selectedCard.telefone} field="telefone" onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)} isEditing={isEditingCard} />
                       <EditableField label="Via de Acesso / Empresa" value={selectedCard.viaAcesso} field="viaAcesso" onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)} isEditing={isEditingCard} />
+                      <EditableField label="Valor da Sessão (R$)" value={selectedCard.valorSessao} field="valorSessao" onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)} isEditing={isEditingCard} />
                       <EditableField label="De onde nos conheceu" value={selectedCard.comoConheceu} field="comoConheceu" onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)} isEditing={isEditingCard} />
                       {selectedCard.tratamentoPara === 'Outra pessoa' && (
                         <>
@@ -1749,18 +2099,80 @@ export function DashboardView({ onNavigate }: { onNavigate: (view: 'landing' | '
                       </div>
                     </section>
                   ) : (
-                    <section className="mt-8">
-                      <div className="flex flex-col gap-2 p-4 bg-red-50 rounded-2xl border border-red-100 mt-2">
-                         <label className="text-xs font-bold uppercase tracking-wider text-red-900/70">Ações de Atendimento</label>
-                         <p className="text-xs text-red-900/60 mb-2">Caso não possa prosseguir com este atendimento, você pode devolver o paciente para a triagem.</p>
+                    <section className="mt-8 space-y-4">
+                      {/* Accept / Reject Status Selection */}
+                      <div className="flex flex-col gap-2 p-5 bg-warm rounded-2xl border border-soft mt-2">
+                         <label className="text-xs font-bold uppercase tracking-wider text-forest/70">Responder Encaminhamento</label>
+                         <p className="text-xs text-forest/60 mb-3">Indique se você aceita conduzir o tratamento clínico deste paciente.</p>
+                         <div className="grid grid-cols-2 gap-3">
+                           <button 
+                             onClick={async () => {
+                               await handleUpdateAcolhimentoProperty(selectedCard.id, 'atribuicaoStatus', 'Aceito');
+                             }}
+                             className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                               selectedCard.atribuicaoStatus === 'Aceito' 
+                                 ? 'bg-[#34A853] text-white shadow-sm' 
+                                 : 'bg-white text-forest border border-soft hover:bg-warm'
+                             }`}
+                           >
+                             <CheckCircle2 className="w-3.5 h-3.5" /> Aceitar Paciente
+                           </button>
+                           
+                           <button 
+                             onClick={() => {
+                               setConfirmConfig({
+                                 isOpen: true,
+                                 message: 'Deseja rejeitar este encaminhamento? O paciente voltará para a Fila de Espera/Triagem e o gestor será notificado.',
+                                 onConfirm: async () => {
+                                   try {
+                                     const updates = {
+                                       profissionalId: '',
+                                       status: 'Aprovado', // Fila de Espera
+                                       atribuicaoStatus: null,
+                                       notificacao: `Encaminhamento rejeitado pelo profissional ${profile.name || 'Parceiro'}. Retornou para a Fila de Espera.`
+                                     };
+                                     await updateDoc(doc(db, "acolhimentos", selectedCard.id), updates);
+                                     setSelectedCard(null);
+                                   } catch(e) {
+                                     console.error(e);
+                                     alert("Erro ao rejeitar encaminhamento.");
+                                   }
+                                 }
+                               });
+                             }}
+                             className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                               selectedCard.atribuicaoStatus === 'Rejeitado' 
+                                 ? 'bg-red-500 text-white shadow-sm' 
+                                 : 'bg-white text-red-600 border border-red-200 hover:bg-red-50'
+                             }`}
+                           >
+                             <XCircle className="w-3.5 h-3.5" /> Rejeitar Paciente
+                           </button>
+                         </div>
+                      </div>
+
+                      <div className="flex flex-col gap-2 p-4 bg-red-50 rounded-2xl border border-red-100">
+                         <label className="text-xs font-bold uppercase tracking-wider text-red-900/70">Devolver Paciente</label>
+                         <p className="text-xs text-red-900/60 mb-2">Caso já tenha aceitado, mas precise suspender o acompanhamento por qualquer motivo, devolva-o para triagem.</p>
                          <button 
                            onClick={() => {
                              setConfirmConfig({
                                isOpen: true,
-                               message: 'Tem certeza que deseja devolver este paciente para a triagem?',
-                               onConfirm: () => {
-                                 handleUpdateAcolhimentoProperty(selectedCard.id, 'profissionalId', '');
-                                 setSelectedCard(null);
+                               message: 'Tem certeza que deseja devolver este paciente para a triagem? Isso suspenderá o atendimento clínico.',
+                               onConfirm: async () => {
+                                 try {
+                                   const updates = {
+                                     profissionalId: '',
+                                     status: 'Aprovado', // Fila de Espera
+                                     atribuicaoStatus: null,
+                                     notificacao: `Atendimento interrompido/devolvido pelo profissional ${profile.name || 'Parceiro'}.`
+                                   };
+                                   await updateDoc(doc(db, "acolhimentos", selectedCard.id), updates);
+                                   setSelectedCard(null);
+                                 } catch(e) {
+                                   console.error(e);
+                                   alert("Erro ao devolver paciente.");
+                                 }
                                }
                              });
                            }}
@@ -1771,6 +2183,55 @@ export function DashboardView({ onNavigate }: { onNavigate: (view: 'landing' | '
                       </div>
                     </section>
                   )}
+
+                  {/* Show Professional presentation card inside Patient file */}
+                  {selectedCard.profissionalId && (() => {
+                    const matchedProf = allUsers.find(u => u.uid === selectedCard.profissionalId || u.id === selectedCard.profissionalId);
+                    if (!matchedProf) return null;
+                    const publicLink = `${window.location.origin}?prof=${matchedProf.uid || matchedProf.id || ''}`;
+                    return (
+                      <section className="mt-6 bg-white border border-soft p-5 rounded-2xl shadow-sm">
+                        <div className="flex items-center gap-4 mb-4">
+                          <div className="w-14 h-14 rounded-full overflow-hidden bg-forest/10 border-2 border-sun flex-shrink-0 flex items-center justify-center">
+                            {matchedProf.photoUrl ? (
+                              <img src={matchedProf.photoUrl} alt={matchedProf.name} className="w-full h-full object-cover" />
+                            ) : (
+                              <User className="w-7 h-7 text-forest/70" />
+                            )}
+                          </div>
+                          <div>
+                            <span className="text-[10px] font-bold text-sun-dark uppercase tracking-wider">Profissional Responsável</span>
+                            <h5 className="font-semibold text-forest text-sm leading-tight mt-0.5">{matchedProf.name}</h5>
+                            <p className="text-xs text-forest/70 font-mono mt-1">
+                              {matchedProf.especialidade || 'Psicólogo Clínico'} {matchedProf.crp ? ` • CRP: ${matchedProf.crp}` : ''}
+                            </p>
+                          </div>
+                        </div>
+                        
+                        {matchedProf.biografia && (
+                          <div className="bg-warm/50 p-3 rounded-xl text-xs text-forest/70/80 leading-relaxed italic mb-4 line-clamp-3">
+                            "{matchedProf.biografia}"
+                          </div>
+                        )}
+                        
+                        <div className="flex flex-col gap-2 mt-4">
+                          <div className="flex items-center justify-between p-2.5 bg-warm rounded-xl border border-soft text-xs text-forest/70">
+                            <span className="truncate max-w-[190px] font-mono select-all font-semibold">{publicLink}</span>
+                            <button
+                              onClick={() => {
+                                navigator.clipboard.writeText(publicLink);
+                                alert("Link de Apresentação copiado!");
+                              }}
+                              className="px-2.5 py-1 bg-forest text-white text-[10px] uppercase tracking-wider font-bold rounded-md hover:bg-forest/90 transition-colors shrink-0"
+                            >
+                              Copiar Link
+                            </button>
+                          </div>
+                          <span className="text-[9px] text-forest/70/50 mt-1">Envie esse link para que o paciente conheça o profissional antes da consulta.</span>
+                        </div>
+                      </section>
+                    );
+                  })()}
                   
                 </div>
 
@@ -2217,13 +2678,9 @@ export function DashboardView({ onNavigate }: { onNavigate: (view: 'landing' | '
               
               <div className="flex items-center gap-4 ml-4">
                 <button 
-                  onClick={() => {
-                    const link = `https://forms.gle/exemplo_profissional`;
-                    window.open(`https://wa.me/?text=${encodeURIComponent(`Olá! Por favor, preencha a ficha complementar de cadastro para psicólogos no link a seguir: ${link}`)}`, '_blank');
-                  }}
-                  className="text-xs text-forest underline hover:text-sun-dark transition-colors"
-                >
-                  Ficha Complementar
+                  onClick={() => setIsEditingCard(!isEditingCard)}
+                  className="flex items-center gap-2 text-amber-500 font-semibold text-sm hover:bg-amber-50 px-3 py-1.5 rounded-lg transition-colors">
+                  <Edit3 className="w-4 h-4" /> {isEditingCard ? 'Salvar Edição' : 'Editar'}
                 </button>
                 <div className="w-px h-4 bg-soft"></div>
                 <button 
@@ -2236,10 +2693,87 @@ export function DashboardView({ onNavigate }: { onNavigate: (view: 'landing' | '
                 >
                   Editar Contrato
                 </button>
+                <div className="w-px h-4 bg-soft"></div>
+                <button 
+                  onClick={() => {
+                    const profId = 'id' in selectedProfissional ? selectedProfissional.id : selectedProfissional.uid;
+                    const link = `${window.location.origin}/?prof=${profId}`;
+                    window.open(link, '_blank');
+                  }}
+                  className="flex items-center gap-2 text-xs font-semibold px-3 py-1.5 bg-forest text-white rounded-lg hover:bg-forest/90 transition-colors"
+                >
+                  <User className="w-3.5 h-3.5" /> Ver Perfil Público
+                </button>
               </div>
             </div>
 
             <div className="flex-1 overflow-y-auto p-6 lg:p-8 space-y-6">
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-6">
+                <div className="space-y-6">
+                  <section>
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-3 flex items-center gap-2">
+                      <User className="w-4 h-4" /> Informações Básicas
+                    </h4>
+                    <div className="space-y-3 ms-2">
+                      <EditableField label="Nome" value={'nome' in selectedProfissional ? selectedProfissional.nome : selectedProfissional.name} field={'nome' in selectedProfissional ? 'nome' : 'name'} onChange={(f, v) => handleUpdateProfissionalProperty('id' in selectedProfissional ? selectedProfissional.id : selectedProfissional.uid, f, v)} isEditing={isEditingCard} />
+                      <EditableField label="Telefone / WhatsApp" value={selectedProfissional.telefone} field="telefone" onChange={(f, v) => handleUpdateProfissionalProperty('id' in selectedProfissional ? selectedProfissional.id : selectedProfissional.uid, f, v)} isEditing={isEditingCard} />
+                      <EditableField label="E-mail" value={selectedProfissional.email} field="email" onChange={(f, v) => handleUpdateProfissionalProperty('id' in selectedProfissional ? selectedProfissional.id : selectedProfissional.uid, f, v)} isEditing={isEditingCard} />
+                      <EditableField label="Cidade" value={selectedProfissional.cidade} field="cidade" onChange={(f, v) => handleUpdateProfissionalProperty('id' in selectedProfissional ? selectedProfissional.id : selectedProfissional.uid, f, v)} isEditing={isEditingCard} />
+                      <EditableField label="Estado / UF" value={selectedProfissional.uf} field="uf" onChange={(f, v) => handleUpdateProfissionalProperty('id' in selectedProfissional ? selectedProfissional.id : selectedProfissional.uid, f, v)} isEditing={isEditingCard} />
+                      <EditableField label="Motivação" value={selectedProfissional.motivacao} field="motivacao" onChange={(f, v) => handleUpdateProfissionalProperty('id' in selectedProfissional ? selectedProfissional.id : selectedProfissional.uid, f, v)} isEditing={isEditingCard} />
+                      <EditableField label="Frase Curta (Bio tipo Instagram)" value={selectedProfissional.bioCurta} field="bioCurta" onChange={(f, v) => handleUpdateProfissionalProperty('id' in selectedProfissional ? selectedProfissional.id : selectedProfissional.uid, f, v)} isEditing={isEditingCard} />
+                      <EditableField label="Instagram URL" value={selectedProfissional.instagramUrl} field="instagramUrl" onChange={(f, v) => handleUpdateProfissionalProperty('id' in selectedProfissional ? selectedProfissional.id : selectedProfissional.uid, f, v)} isEditing={isEditingCard} />
+                      <EditableField label="LinkedIn URL" value={selectedProfissional.linkedinUrl} field="linkedinUrl" onChange={(f, v) => handleUpdateProfissionalProperty('id' in selectedProfissional ? selectedProfissional.id : selectedProfissional.uid, f, v)} isEditing={isEditingCard} />
+                      <EditableField label="Site ou Portfólio URL" value={selectedProfissional.siteUrl} field="siteUrl" onChange={(f, v) => handleUpdateProfissionalProperty('id' in selectedProfissional ? selectedProfissional.id : selectedProfissional.uid, f, v)} isEditing={isEditingCard} />
+                    </div>
+                  </section>
+                </div>
+                
+                <div className="space-y-6">
+                  <section>
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-3 flex items-center gap-2">
+                      <Briefcase className="w-4 h-4" /> Atuação e Formação
+                    </h4>
+                    <div className="space-y-3 ms-2">
+                      <EditableField label="CRP / Registro" value={selectedProfissional.crp} field="crp" onChange={(f, v) => handleUpdateProfissionalProperty('id' in selectedProfissional ? selectedProfissional.id : selectedProfissional.uid, f, v)} isEditing={isEditingCard} />
+                      <EditableField label="Horas Disponíveis" value={selectedProfissional.horasDisponiveis} field="horasDisponiveis" onChange={(f, v) => handleUpdateProfissionalProperty('id' in selectedProfissional ? selectedProfissional.id : selectedProfissional.uid, f, v)} isEditing={isEditingCard} />
+                      <EditableField label="Abordagens Psicológicas" value={selectedProfissional.abordagem} field="abordagem" onChange={(f, v) => handleUpdateProfissionalProperty('id' in selectedProfissional ? selectedProfissional.id : selectedProfissional.uid, f, v)} isEditing={isEditingCard} />
+                      <EditableField label="Especialidade / Pós-graduação" value={selectedProfissional.especialidade} field="especialidade" onChange={(f, v) => handleUpdateProfissionalProperty('id' in selectedProfissional ? selectedProfissional.id : selectedProfissional.uid, f, v)} isEditing={isEditingCard} />
+                      <EditableField label="Ano de formação / graduação" value={selectedProfissional.anoFormacao} field="anoFormacao" onChange={(f, v) => handleUpdateProfissionalProperty('id' in selectedProfissional ? selectedProfissional.id : selectedProfissional.uid, f, v)} isEditing={isEditingCard} />
+                      
+                      <div className="pt-2">
+                        <span className="block text-[10px] font-semibold uppercase text-forest/70/60 content-start">Experiência com Atendimento Clínico</span>
+                        {isEditingCard ? (
+                            <input 
+                              title="Separado por vírgula"
+                              value={selectedProfissional.publicosExperiencia?.join(', ') || ''}
+                              onChange={(e) => handleUpdateProfissionalProperty('id' in selectedProfissional ? selectedProfissional.id : selectedProfissional.uid, 'publicosExperiencia', e.target.value.split(',').map(s => s.trim()))}
+                              className="text-sm font-medium text-forest border-b border-sun-dark focus:outline-none bg-transparent w-full mt-1"
+                            />
+                        ) : (
+                          <span className="text-sm font-medium text-forest">{selectedProfissional.publicosExperiencia?.join(', ') || '-'} {selectedProfissional.outrosPublicosExperiencia ? `(Outros: ${selectedProfissional.outrosPublicosExperiencia})` : ''}</span>
+                        )}
+                      </div>
+                      
+                      <div className="pt-2">
+                        <span className="block text-[10px] font-semibold uppercase text-forest/70/60 content-start">Gosto de Atender</span>
+                        {isEditingCard ? (
+                          <input 
+                            title="Separado por vírgula"
+                            value={selectedProfissional.publicosGosto?.join(', ') || ''}
+                            onChange={(e) => handleUpdateProfissionalProperty('id' in selectedProfissional ? selectedProfissional.id : selectedProfissional.uid, 'publicosGosto', e.target.value.split(',').map(s => s.trim()))}
+                            className="text-sm font-medium text-forest border-b border-sun-dark focus:outline-none bg-transparent w-full mt-1"
+                          />
+                        ) : (
+                          <span className="text-sm font-medium text-forest">{selectedProfissional.publicosGosto?.join(', ') || '-'} {selectedProfissional.outrosPublicosGosto ? `(Outros: ${selectedProfissional.outrosPublicosGosto})` : ''}</span>
+                        )}
+                      </div>
+                    </div>
+                  </section>
+                </div>
+              </div>
+
               <section>
                  <h4 className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-3 flex items-center gap-2">
                    <Clock className="w-4 h-4" /> Registros de Reuniões e Contatos
@@ -2286,6 +2820,9 @@ export function DashboardView({ onNavigate }: { onNavigate: (view: 'landing' | '
                   setNewProfName("");
                   setNewProfEmail("");
                   setNewProfPassword("");
+                  setLeadIdToConvert(null);
+                  setUseGoogleLogin(false);
+                  setNewProfRole("profissional");
                 }} 
                 className="p-2 text-forest/70 hover:text-red-500 rounded-full hover:bg-white transition-colors"
                 type="button"
@@ -2316,22 +2853,63 @@ export function DashboardView({ onNavigate }: { onNavigate: (view: 'landing' | '
                   placeholder="email@exemplo.com"
                 />
               </div>
-              <div>
-                <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Senha Provisória</label>
+              <div className="flex items-center gap-2 mt-4">
                 <input 
-                  type="password" 
-                  required
-                  minLength={6}
-                  value={newProfPassword}
-                  onChange={(e) => setNewProfPassword(e.target.value)}
-                  className="w-full text-sm bg-warm/50 border border-soft px-4 py-2.5 rounded-xl focus:outline-none focus:border-sun-dark text-forest"
-                  placeholder="Mínimo 6 caracteres"
+                  type="checkbox" 
+                  id="googleLoginCheck" 
+                  checked={useGoogleLogin} 
+                  onChange={(e) => {
+                    setUseGoogleLogin(e.target.checked);
+                    if (e.target.checked && !newProfPassword) {
+                      setNewProfPassword(Math.random().toString(36).slice(-8));
+                    }
+                  }}
+                  className="w-4 h-4 text-[#34A853] rounded focus:ring-[#34A853]"
                 />
+                <label htmlFor="googleLoginCheck" className="text-sm font-semibold text-forest">
+                  Utilizar conta Google (Login via Gmail)
+                </label>
               </div>
+
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Nível de Acesso (Papel)</label>
+                <select 
+                  className="w-full text-sm bg-warm/50 border border-soft px-4 py-2.5 rounded-xl focus:outline-none focus:border-sun-dark text-forest"
+                  value={newProfRole}
+                  onChange={(e) => setNewProfRole(e.target.value as Role)}
+                >
+                  <option value="profissional">Profissional (Psicólogo)</option>
+                  <option value="triagem">Triagem (Avaliação Inicial)</option>
+                  <option value="master">Gestor (Master)</option>
+                </select>
+              </div>
+
+              {!useGoogleLogin && (
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Senha Provisória</label>
+                  <input 
+                    type="password" 
+                    required={!useGoogleLogin}
+                    minLength={6}
+                    value={newProfPassword}
+                    onChange={(e) => setNewProfPassword(e.target.value)}
+                    className="w-full text-sm bg-warm/50 border border-soft px-4 py-2.5 rounded-xl focus:outline-none focus:border-sun-dark text-forest"
+                    placeholder="Mínimo 6 caracteres"
+                  />
+                </div>
+              )}
               <div className="pt-4 flex justify-end gap-3">
                 <button 
                   type="button"
-                  onClick={() => setShowNewProfissionalModal(false)}
+                  onClick={() => {
+                    setShowNewProfissionalModal(false);
+                    setNewProfName("");
+                    setNewProfEmail("");
+                    setNewProfPassword("");
+                    setLeadIdToConvert(null);
+                    setUseGoogleLogin(false);
+                    setNewProfRole("profissional");
+                  }}
                   className="px-5 py-2 text-forest font-semibold text-sm hover:underline"
                 >
                   Cancelar
@@ -2344,6 +2922,25 @@ export function DashboardView({ onNavigate }: { onNavigate: (view: 'landing' | '
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Success Modal */}
+      {successMsg && (
+        <div className="fixed inset-0 bg-forest/20 backdrop-blur-sm z-[90] flex items-center justify-center p-4">
+          <div className="bg-white max-w-sm w-full rounded-[2rem] p-8 shadow-xl border border-soft flex flex-col items-center text-center animate-in zoom-in-95">
+            <div className="w-16 h-16 bg-[#34A853]/10 rounded-full flex items-center justify-center mb-6">
+              <CheckCircle2 className="w-8 h-8 text-[#34A853]" />
+            </div>
+            <h3 className="text-xl font-serif text-forest mb-2">Sucesso!</h3>
+            <p className="text-forest/70 text-sm mb-8">{successMsg}</p>
+            <button 
+              onClick={() => setSuccessMsg(null)}
+              className="w-full px-4 py-3 bg-forest text-white rounded-xl font-bold uppercase tracking-wider text-sm hover:bg-forest/90 transition-colors"
+            >
+              Fechar
+            </button>
           </div>
         </div>
       )}

@@ -37,7 +37,7 @@ export function DoacaoView({ onNavigate }: { onNavigate: (view: 'landing' | 'aco
       });
       setDoacaoStep('success');
     } catch (error) {
-      setDoacaoError(handleFirestoreError(error, OperationType.WRITE));
+      setDoacaoError(handleFirestoreError(error, OperationType.WRITE, "doacoes"));
     } finally {
       setIsDoacaoSubmitting(false);
     }
@@ -55,7 +55,7 @@ export function DoacaoView({ onNavigate }: { onNavigate: (view: 'landing' | 'aco
       });
       setSolStep('success');
     } catch (error) {
-      setSolError(handleFirestoreError(error, OperationType.WRITE));
+      setSolError(handleFirestoreError(error, OperationType.WRITE, "solicitacoes_doacao"));
     } finally {
       setIsSolSubmitting(false);
     }

@@ -15,6 +15,7 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
   // Form Data
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [telefone, setTelefone] = useState("");
   const [accessType, setAccessType] = useState<AccessType>("");
   const [companyCode, setCompanyCode] = useState("");
 
@@ -52,7 +53,7 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
     if (step === 1) {
       if (!tratamentoPara) return;
       if (tratamentoPara === "Outra pessoa" && !idadeTratamento) return;
-      if (!name || !email || !cpf || !dataNascimento || !accessType || !comoConheceu) return;
+      if (!name || !email || !telefone || !cpf || !dataNascimento || !accessType || !comoConheceu) return;
       if (tratamentoPara === "Outra pessoa" && (!responsavelNome || !responsavelCpf)) return;
       if (accessType === "Corporativo" && !companyCode) return;
       setStep(accessType === "Particular" ? 2 : 4);
@@ -70,6 +71,7 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
         await addDoc(collection(db, "acolhimentos"), {
           nome: name,
           email,
+          telefone,
           cpf,
           dataNascimento,
           tratamentoPara,
@@ -303,6 +305,18 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
                             placeholder="seu@email.com"
+                            className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark focus:ring-1 focus:ring-sun-dark transition-all text-forest"
+                          />
+                        </div>
+
+                        <div className="animate-in fade-in slide-in-from-top-2">
+                          <label className="block text-sm font-semibold uppercase tracking-wider text-forest/70 mb-2">Telefone / WhatsApp {tratamentoPara === 'Outra pessoa' ? '(para contato)' : ''}</label>
+                          <input 
+                            required
+                            type="tel" 
+                            value={telefone}
+                            onChange={(e) => setTelefone(e.target.value)}
+                            placeholder="(00) 00000-0000"
                             className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark focus:ring-1 focus:ring-sun-dark transition-all text-forest"
                           />
                         </div>

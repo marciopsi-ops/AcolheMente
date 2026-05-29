@@ -9,13 +9,19 @@ import psicologoHero from '../assets/images/psicologo_hero_1779248488070.png';
 export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'landing' | 'acolhimento' | 'dashboard' | 'profile' | 'empresa' | 'doacao' | 'profissional') => void }) {
   const [formData, setFormData] = useState({
     nome: '',
-    especialidade: 'Psicólogo(a)',
+    especialidade: '',
+    abordagem: '',
+    anoFormacao: '',
     crp: '',
     email: '',
     telefone: '',
     cidade: '',
     uf: '',
     horasDisponiveis: '1 a 3 horas/mês',
+    publicosExperiencia: [] as string[],
+    publicosGosto: [] as string[],
+    outrosPublicosExperiencia: '',
+    outrosPublicosGosto: '',
     motivacao: ''
   });
   
@@ -27,6 +33,17 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
     setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
   };
 
+  const handleCheckboxChange = (field: 'publicosExperiencia' | 'publicosGosto', value: string) => {
+    setFormData(prev => {
+      const current = prev[field];
+      if (current.includes(value)) {
+        return { ...prev, [field]: current.filter(v => v !== value) };
+      } else {
+        return { ...prev, [field]: [...current, value] };
+      }
+    });
+  };
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
@@ -35,13 +52,13 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
     try {
       await addDoc(collection(db, "profissionais_leads"), {
         ...formData,
-        status: 'Aguardando Avaliação',
+        status: 'Aguardando Entrevista',
         notificacao: 'Novo cadastro de psicólogo voluntário/candidato.',
         createdAt: serverTimestamp()
       });
       setIsSuccess(true);
     } catch (error) {
-      setErrorMsg(handleFirestoreError(error, OperationType.WRITE));
+      setErrorMsg(handleFirestoreError(error, OperationType.WRITE, "profissionais_leads"));
     } finally {
       setIsSubmitting(false);
     }
@@ -162,19 +179,41 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
                     </div>
                     
                     <div className="flex flex-col gap-1">
-                      <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">Área de Atuação / Formação *</label>
-                      <select 
+                      <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">Abordagens Psicológicas de Atendimento *</label>
+                      <input 
                         required 
+                        name="abordagem"
+                        value={formData.abordagem}
+                        onChange={handleChange}
+                        className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest" 
+                        placeholder="Ex: TCC, Psicanálise, Humanista..." 
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="flex flex-col gap-1">
+                      <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">Ano de formação / graduação *</label>
+                      <input 
+                        required
+                        type="number"
+                        name="anoFormacao"
+                        value={formData.anoFormacao}
+                        onChange={handleChange}
+                        className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest" 
+                        placeholder="Ex: 2015" 
+                      />
+                    </div>
+                    
+                    <div className="flex flex-col gap-1">
+                      <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">Especialidade / Pós-graduação</label>
+                      <input 
                         name="especialidade"
                         value={formData.especialidade}
                         onChange={handleChange}
-                        className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest appearance-none" 
-                      >
-                        <option value="Psicólogo(a)">Psicólogo(a)</option>
-                        <option value="Psicanalista">Psicanalista</option>
-                        <option value="Terapeuta Integrativo(a)">Terapeuta Integrativo(a)</option>
-                        <option value="Outro">Outro</option>
-                      </select>
+                        className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest" 
+                        placeholder="Ex: Especialidade em saúde mental..." 
+                      />
                     </div>
                   </div>
 
@@ -233,8 +272,69 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
                       />
                     </div>
                   </div>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+                  {/* Multiple Choice Audiences */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 border-t border-soft pt-6 mt-2">
+                    <div className="flex flex-col gap-3">
+                      <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2 leading-relaxed">
+                        Tempo de experiência com atendimento clínico de:
+                      </label>
+                      <div className="flex flex-col gap-2 px-2">
+                        {['Adulto', 'Idoso', 'Criança', 'Adolescente', 'Casal', 'Família', 'Outros'].map(op => (
+                          <label key={`exp-${op}`} className="flex items-center gap-2 text-sm text-forest cursor-pointer w-fit">
+                            <input 
+                              type="checkbox" 
+                              checked={formData.publicosExperiencia.includes(op)}
+                              onChange={() => handleCheckboxChange('publicosExperiencia', op)}
+                              className="accent-sun-dark w-4 h-4 cursor-pointer" 
+                            />
+                            {op}
+                          </label>
+                        ))}
+                        {formData.publicosExperiencia.includes('Outros') && (
+                          <input 
+                            type="text"
+                            name="outrosPublicosExperiencia"
+                            placeholder="Especifique outros públicos"
+                            value={formData.outrosPublicosExperiencia}
+                            onChange={handleChange}
+                            className="w-full mt-1 border-b border-soft bg-transparent focus:outline-none focus:border-sun-dark text-sm py-2 px-1"
+                          />
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-3">
+                      <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2 leading-relaxed">
+                        Gosto de atender:
+                      </label>
+                      <div className="flex flex-col gap-2 px-2">
+                        {['Adulto', 'Idoso', 'Criança', 'Adolescente', 'Casal', 'Família', 'Outros'].map(op => (
+                          <label key={`gosto-${op}`} className="flex items-center gap-2 text-sm text-forest cursor-pointer w-fit">
+                            <input 
+                              type="checkbox" 
+                              checked={formData.publicosGosto.includes(op)}
+                              onChange={() => handleCheckboxChange('publicosGosto', op)}
+                              className="accent-sun-dark w-4 h-4 cursor-pointer" 
+                            />
+                            {op}
+                          </label>
+                        ))}
+                        {formData.publicosGosto.includes('Outros') && (
+                          <input 
+                            type="text"
+                            name="outrosPublicosGosto"
+                            placeholder="Especifique outros públicos"
+                            value={formData.outrosPublicosGosto}
+                            onChange={handleChange}
+                            className="w-full mt-1 border-b border-soft bg-transparent focus:outline-none focus:border-sun-dark text-sm py-2 px-1"
+                          />
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 border-t border-soft pt-6 mt-2">
                     <div className="flex flex-col gap-1">
                       <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">Cidade *</label>
                       <input 

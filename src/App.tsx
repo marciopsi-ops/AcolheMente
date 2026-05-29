@@ -5,6 +5,7 @@
 import { ArrowRight, Briefcase, Leaf, User, HeartHandshake, Map, ClipboardList, SearchCheck, MessageCircleHeart } from "lucide-react";
 import { useState } from "react";
 import { AcolhimentoView } from "./views/AcolhimentoView";
+import { PublicProfProfileView } from "./views/PublicProfProfileView";
 import { DashboardView } from "./views/DashboardView";
 import { EmpresaView } from "./views/EmpresaView";
 import { DoacaoView } from "./views/DoacaoView";
@@ -16,6 +17,20 @@ import homeHero from './assets/images/home_hero_1779248444791.png';
 
 export default function App() {
   const [currentView, setCurrentView] = useState<'landing' | 'acolhimento' | 'dashboard' | 'profile' | 'empresa' | 'doacao' | 'profissional'>('landing');
+
+  // Verify if a professional search query parameter is present (public profile presentation mode)
+  const params = new URLSearchParams(window.location.search);
+  const publicProfUid = params.get('prof');
+
+  const handleBackFromPublicProfile = () => {
+    // Clear URL parameters elegantly and route back to landing page
+    window.history.pushState({}, '', window.location.origin);
+    setCurrentView('landing');
+  };
+
+  if (publicProfUid) {
+    return <PublicProfProfileView profUid={publicProfUid} onBack={handleBackFromPublicProfile} />;
+  }
 
   if (currentView === 'landing') {
     return <LandingPage onNavigate={setCurrentView} />;

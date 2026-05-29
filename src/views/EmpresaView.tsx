@@ -40,7 +40,7 @@ export function EmpresaView({ onNavigate }: { onNavigate: (view: 'landing' | 'ac
       });
       setIsSuccess(true);
     } catch (error) {
-      setErrorMsg(handleFirestoreError(error, OperationType.WRITE));
+      setErrorMsg(handleFirestoreError(error, OperationType.WRITE, "empresa_leads"));
     } finally {
       setIsSubmitting(false);
     }
