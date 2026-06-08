@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { ArrowLeft, User, Phone, MapPin, Calendar, Award, Heart, CheckCircle2, Instagram, Linkedin, Globe } from "lucide-react";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "../lib/firebase";
+import logoImage from '../assets/images/logo_acolhe.jpeg';
 
 export function PublicProfProfileView({ profUid, onBack }: { profUid: string; onBack: () => void }) {
   const [prof, setProf] = useState<any>(null);
@@ -73,6 +74,9 @@ export function PublicProfProfileView({ profUid, onBack }: { profUid: string; on
           <ArrowLeft className="w-4 h-4" /> Voltar para Home
         </button>
         <div className="flex items-center gap-2">
+          <div className="w-6 h-6 rounded-full overflow-hidden shrink-0">
+             <img src={logoImage} alt="AcolheMente Logo" className="w-full h-full object-cover" />
+          </div>
           <span className="font-serif font-semibold text-sm sm:text-base tracking-tight">AcolheMente</span>
           <span className="text-[10px] sm:text-xs text-forest/60 px-2 py-0.5 rounded-full bg-forest/5 font-semibold">Parceiro</span>
         </div>

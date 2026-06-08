@@ -5,6 +5,7 @@ import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 import { db, handleFirestoreError, OperationType } from "../lib/firebase";
 
 import doacaoHero from '../assets/images/doacao_hero_1779248473818.png';
+import logoImage from '../assets/images/logo_acolhe.jpeg';
 
 export function DoacaoView({ onNavigate }: { onNavigate: (view: 'landing' | 'acolhimento' | 'dashboard' | 'profile' | 'empresa' | 'doacao') => void }) {
   const [activeTab, setActiveTab] = useState<'intro' | 'doar' | 'preciso'>('intro');
@@ -68,7 +69,12 @@ export function DoacaoView({ onNavigate }: { onNavigate: (view: 'landing' | 'aco
           <button onClick={() => onNavigate('landing')} className="text-forest/70 hover:text-forest transition-colors p-2 -ml-2 rounded-full hover:bg-forest/5">
             <ArrowLeft className="w-6 h-6" />
           </button>
-          <span className="font-serif text-2xl font-semibold tracking-tight text-forest">AcolheMente <span className="text-forest/70 font-medium opacity-70">Apoio Solidário</span></span>
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-full overflow-hidden shrink-0">
+               <img src={logoImage} alt="AcolheMente Logo" className="w-full h-full object-cover" />
+            </div>
+            <span className="font-serif text-2xl font-semibold tracking-tight text-forest">AcolheMente <span className="text-forest/70 font-medium opacity-70">Apoio Solidário</span></span>
+          </div>
         </div>
       </nav>
 

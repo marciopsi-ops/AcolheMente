@@ -20,7 +20,7 @@ export function Footer({ onNavigate }: { onNavigate?: (view: any) => void }) {
             <span className="font-serif text-2xl font-semibold tracking-tight text-forest">AcolheMente</span>
           </div>
           <p className="text-forest/80 text-sm leading-relaxed">
-            Uma iniciativa focada em democratizar o acesso à saúde mental. Nossa história começa na vontade de criar uma ponte humanizada entre psicoterapeutas qualificados e quem busca acolhimento, ajudando pessoas através de valores sociais ou benefícios corporativos.
+            Uma iniciativa focada em democratizar o acesso à saúde mental. Nossa história começa na vontade de criar uma ponte humanizada entre psicoterapeutas qualificados e quem busca acolhimento, ajudando pessoas através de valores acessíveis ou benefícios corporativos.
           </p>
         </div>
 

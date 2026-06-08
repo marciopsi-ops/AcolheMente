@@ -1,10 +1,11 @@
 import { Footer } from '../components/Footer';
-import { ArrowLeft, Briefcase, Building2, CheckCircle2, HeartHandshake, TrendingUp } from "lucide-react";
+import { ArrowLeft, Briefcase, Building2, CheckCircle2, HeartHandshake, TrendingUp, Sparkles, UserCheck, Coins, ArrowRight } from "lucide-react";
 import React, { FormEvent, useState } from "react";
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 import { db, handleFirestoreError, OperationType } from "../lib/firebase";
 
 import empresaHero from '../assets/images/empresa_hero_1779248461788.png';
+import logoImage from '../assets/images/logo_acolhe.jpeg';
 
 export function EmpresaView({ onNavigate }: { onNavigate: (view: 'landing' | 'acolhimento' | 'dashboard' | 'profile' | 'empresa') => void }) {
   const [formData, setFormData] = useState({
@@ -54,7 +55,12 @@ export function EmpresaView({ onNavigate }: { onNavigate: (view: 'landing' | 'ac
           <button onClick={() => onNavigate('landing')} className="text-forest/70 hover:text-forest transition-colors p-2 -ml-2 rounded-full hover:bg-forest/5">
             <ArrowLeft className="w-6 h-6" />
           </button>
-          <span className="font-serif text-2xl font-semibold tracking-tight text-forest">AcolheMente <span className="text-forest/70 font-medium opacity-70">Para Empresas</span></span>
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-full overflow-hidden shrink-0">
+               <img src={logoImage} alt="AcolheMente Logo" className="w-full h-full object-cover" />
+            </div>
+            <span className="font-serif text-2xl font-semibold tracking-tight text-forest">AcolheMente <span className="text-forest/70 font-medium opacity-70">Para Empresas</span></span>
+          </div>
         </div>
       </nav>
 
@@ -77,9 +83,7 @@ export function EmpresaView({ onNavigate }: { onNavigate: (view: 'landing' | 'ac
               <div className="w-full lg:w-1/2 flex justify-center lg:justify-end">
                  <img src={empresaHero} alt="Ilustração Empresa e RH" className="w-full max-w-lg object-contain rounded-3xl mix-blend-multiply" referrerPolicy="no-referrer" />
               </div>
-            </div>
-            
-            <div className="w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-8">
+            </div>            <div className="w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-8">
               <div className="bg-white p-6 rounded-3xl border border-soft flex flex-col gap-3 shadow-sm shadow-sun-dark/5">
                 <Building2 className="w-8 h-8 text-sun-dark" />
                 <h3 className="font-semibold text-lg text-forest">Adequação à NR1</h3>
@@ -100,6 +104,100 @@ export function EmpresaView({ onNavigate }: { onNavigate: (view: 'landing' | 'ac
                 <h3 className="font-semibold text-lg text-forest">Carga Otimizada</h3>
                 <p className="text-sm text-forest/70">Planos flexíveis com excelente custo-benefício para subsidiar sua operação.</p>
               </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Mapa Mental do Cuidado Psicossocial */}
+        <section className="w-full px-6 md:px-12 py-16 bg-[#FAF8F5] flex justify-center border-b border-soft">
+          <div className="max-w-4xl w-full flex flex-col items-center">
+            <div className="text-center max-w-2xl mb-12 flex flex-col items-center gap-3">
+              <span className="px-3 py-1 bg-sun-light text-forest text-[10px] font-bold uppercase tracking-[0.2em] w-fit rounded">
+                Ecossistema na Prática
+              </span>
+              <h2 className="font-serif text-3xl md:text-4xl text-forest font-medium">
+                Cuidado Psicossocial & Compliance NR1
+              </h2>
+              <p className="text-sm text-forest/80 leading-relaxed">
+                Mais do que relatórios burocráticos, nossa plataforma habilita um canal de suporte humanizado e confidencial. Seus colaboradores ganham acesso integral ao nosso qualificado ecossistema de psicólogos e terapeutas.
+              </p>
+            </div>
+
+            {/* Mapa Mental Visual / Linha do Tempo */}
+            <div className="relative w-full grid grid-cols-1 md:grid-cols-4 gap-6">
+              {/* Passo 1 */}
+              <div className="bg-white p-6 rounded-3xl border border-soft flex flex-col gap-4 relative shadow-sm hover:shadow-md transition-all">
+                <div className="absolute top-4 right-4 text-xs font-mono font-bold text-sun-dark bg-sun-light/50 px-2 py-0.5 rounded-full">
+                  Passo 1
+                </div>
+                <div className="w-10 h-10 bg-warm/50 text-forest rounded-2xl flex items-center justify-center font-bold">
+                  <Building2 className="w-5 h-5 text-forest" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-base text-forest mb-1">Adesão Corporativa</h4>
+                  <p className="text-xs text-forest/70 leading-relaxed">
+                    Sua empresa oficializa as práticas de compliance e disponibiliza a plataforma para todos os colaboradores regulamentados.
+                  </p>
+                </div>
+              </div>
+
+              {/* Passo 2 */}
+              <div className="bg-white p-6 rounded-3xl border border-soft flex flex-col gap-4 relative shadow-sm hover:shadow-md transition-all">
+                <div className="absolute top-4 right-4 text-xs font-mono font-bold text-sun-dark bg-sun-light/50 px-2 py-0.5 rounded-full">
+                  Passo 2
+                </div>
+                <div className="w-10 h-10 bg-warm/50 text-forest rounded-2xl flex items-center justify-center font-bold">
+                  <Sparkles className="w-5 h-5 text-forest" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-base text-forest mb-1">Iniciativa Segura</h4>
+                  <p className="text-xs text-forest/70 leading-relaxed">
+                    Em sigilo absoluto e quando sentir necessidade, o colaborador faz contato de forma autônoma e discreta.
+                  </p>
+                </div>
+              </div>
+
+              {/* Passo 3 */}
+              <div className="bg-white p-6 rounded-3xl border border-soft flex flex-col gap-4 relative shadow-sm hover:shadow-md transition-all">
+                <div className="absolute top-4 right-4 text-xs font-mono font-bold text-sun-dark bg-sun-light/50 px-2 py-0.5 rounded-full">
+                  Passo 3
+                </div>
+                <div className="w-10 h-10 bg-warm/50 text-forest rounded-2xl flex items-center justify-center font-bold">
+                  <UserCheck className="w-5 h-5 text-forest" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-base text-forest mb-1">Triagem Dedicada</h4>
+                  <p className="text-xs text-forest/70 leading-relaxed">
+                    O paciente passa por um processo de acolhimento e triagem humana de forma 100% estruturada usando o acesso corporativo.
+                  </p>
+                </div>
+              </div>
+
+              {/* Passo 4 - Destaque do benefício financeiro / valor social */}
+              <div className="bg-emerald-50 p-6 rounded-3xl border border-emerald-100 flex flex-col gap-4 relative shadow-sm hover:shadow-md transition-all">
+                <div className="absolute top-4 right-4 text-xs font-mono font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+                  Passo 4
+                </div>
+                <div className="w-10 h-10 bg-emerald-100 text-emerald-800 rounded-2xl flex items-center justify-center font-bold">
+                  <Coins className="w-5 h-5 text-emerald-700" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-base text-emerald-900 mb-1">Acesso Subsidiado</h4>
+                  <p className="text-xs text-emerald-800 leading-relaxed font-medium">
+                    O profissional da triagem encaminha o paciente ao psicólogo especialista, cobrando do colaborador um <strong>valor de tarifa acessível imbatível</strong>, drasticamente menor que no mercado clínico comum.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Aviso em Destaque */}
+            <div className="mt-8 p-5 bg-white border border-soft rounded-2xl max-w-2xl w-full flex flex-col sm:flex-row items-center gap-4 text-center sm:text-left shadow-sm">
+              <div className="p-3 bg-sun-light rounded-full text-forest shrink-0">
+                <Sparkles className="w-5 h-5" />
+              </div>
+              <p className="text-xs text-forest/80 leading-relaxed">
+                <strong>Alinhamento Estratégico:</strong> Este mecanismo reduz drasticamente a barreira financeira para o funcionário, garantindo engajamento preventivo de saúde mental e preenchendo todos os requisitos legais exigidos pela regulamentação da <strong>NR1</strong>.
+              </p>
             </div>
           </div>
         </section>

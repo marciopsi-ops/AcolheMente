@@ -5,6 +5,7 @@ import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 import { db, handleFirestoreError, OperationType } from "../lib/firebase";
 
 import pacienteHero from '../assets/images/paciente_hero_1779248505864.png';
+import logoImage from '../assets/images/logo_acolhe.jpeg';
 
 type AccessType = "Particular" | "Corporativo" | "";
 
@@ -127,7 +128,7 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
         </button>
         <div className="flex items-center gap-3 absolute left-1/2 -translate-x-1/2">
           <div className="w-8 h-8 bg-sun rounded-full flex items-center justify-center text-forest overflow-hidden">
-            <img src="/logo.png" alt="AcolheMente Logo" className="w-full h-full object-cover" />
+            <img src={logoImage} alt="AcolheMente Logo" className="w-full h-full object-cover" />
           </div>
           <span className="font-serif text-xl font-semibold tracking-tight text-forest hidden sm:block">
             AcolheMente

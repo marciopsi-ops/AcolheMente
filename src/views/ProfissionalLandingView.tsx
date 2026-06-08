@@ -5,6 +5,7 @@ import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 import { db, handleFirestoreError, OperationType } from "../lib/firebase";
 
 import psicologoHero from '../assets/images/psicologo_hero_1779248488070.png';
+import logoImage from '../assets/images/logo_acolhe.jpeg';
 
 export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'landing' | 'acolhimento' | 'dashboard' | 'profile' | 'empresa' | 'doacao' | 'profissional') => void }) {
   const [formData, setFormData] = useState({
@@ -74,7 +75,7 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
           </button>
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 bg-sun rounded-full flex items-center justify-center text-forest overflow-hidden">
-              <img src="/logo.png" alt="AcolheMente Logo" className="w-full h-full object-cover" />
+              <img src={logoImage} alt="AcolheMente Logo" className="w-full h-full object-cover" />
             </div>
             <span className="font-serif text-2xl font-semibold tracking-tight text-forest">AcolheMente <span className="text-forest/70 font-medium">Para Psicólogos</span></span>
           </div>
