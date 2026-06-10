@@ -1,10 +1,10 @@
 import { Footer } from '../components/Footer';
 import { ArrowLeft, Briefcase, Building2, CheckCircle2, HeartHandshake, TrendingUp, Sparkles, UserCheck, Coins, ArrowRight } from "lucide-react";
 import React, { FormEvent, useState } from "react";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, getDocs, query, where } from "firebase/firestore";
 import { db, handleFirestoreError, OperationType } from "../lib/firebase";
 
-import empresaHero from '../assets/images/empresa_hero_1779248461788.png';
+import empresaHero from '../assets/images/empresa_hero_photo_1781024092529.png';
 import logoImage from '../assets/images/logo_acolhe.jpeg';
 
 export function EmpresaView({ onNavigate }: { onNavigate: (view: 'landing' | 'acolhimento' | 'dashboard' | 'profile' | 'empresa') => void }) {
@@ -34,6 +34,14 @@ export function EmpresaView({ onNavigate }: { onNavigate: (view: 'landing' | 'ac
     setErrorMsg('');
 
     try {
+      const q = query(collection(db, "empresa_leads"), where("email", "==", formData.email));
+      const querySnapshot = await getDocs(q);
+      if (!querySnapshot.empty) {
+        setErrorMsg("Este email já aparece em nossa triagem ou em nosso banco de dados.");
+        setIsSubmitting(false);
+        return;
+      }
+
       await addDoc(collection(db, "empresa_leads"), {
         ...formData,
         notificacao: 'Nova empresa interessada.',
@@ -212,7 +220,7 @@ export function EmpresaView({ onNavigate }: { onNavigate: (view: 'landing' | 'ac
                 </div>
                 <h2 className="font-serif text-3xl text-forest mb-4">Interesse Registrado!</h2>
                 <p className="text-forest/70/80 max-w-md mx-auto mb-8 text-lg">
-                  Nossa equipe de parcerias já recebeu seus dados e entrará em contato em até 1 dia útil para montar uma proposta ideal.
+                  Nossa equipe de parcerias já recebeu seus dados e entrará em contato em até 24h para montar uma proposta ideal.
                 </p>
                 <button 
                   onClick={() => onNavigate('landing')}

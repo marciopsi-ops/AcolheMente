@@ -33,6 +33,9 @@ import {
   Link2,
   Copy,
   DollarSign,
+  X,
+  UserPlus,
+  Heart,
 } from "lucide-react";
 import { auth, db } from "../lib/firebase";
 import {
@@ -110,6 +113,7 @@ interface ProfissionalLead {
   email: string;
   telefone: string;
   crp: string;
+  cpf?: string;
   especialidade?: string;
   abordagem?: string;
   anoFormacao?: string;
@@ -247,6 +251,7 @@ export function DashboardView({
 
   // Auth form
   const [isLogin, setIsLogin] = useState(true);
+  const [showRegisterChoice, setShowRegisterChoice] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
@@ -331,6 +336,7 @@ export function DashboardView({
     emailSuporte: "",
     fraseSuporte: "",
     faixasValores: ["", "", "", "", ""],
+    cidadesRodape: "",
   });
 
   // Psychologist State
@@ -1238,11 +1244,7 @@ export function DashboardView({
           <h2 className="font-serif text-3xl font-medium text-forest mb-2">
             Restrito
           </h2>
-          <p className="text-forest/70 mb-6">
-            {isLogin
-              ? "Acesse sua conta."
-              : "Crie uma conta para simular acessos."}
-          </p>
+          <p className="text-forest/70 mb-6">Acesse sua conta.</p>
 
           {authError && (
             <div className="p-3 mb-4 bg-red-50 text-red-600 rounded-lg text-sm">
@@ -1251,37 +1253,6 @@ export function DashboardView({
           )}
 
           <form onSubmit={handleAuth} className="flex flex-col gap-4">
-            {!isLogin && (
-              <>
-                <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-forest/70 mb-1">
-                    Nome
-                  </label>
-                  <input
-                    required
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    className="w-full px-4 py-2 bg-warm border border-soft rounded-lg focus:outline-none focus:border-sun-dark text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-forest/70 mb-1">
-                    Acesso (Perfil)
-                  </label>
-                  <select
-                    value={role}
-                    onChange={(e) => setRole(e.target.value as Role)}
-                    className="w-full px-4 py-2 bg-warm border border-soft rounded-lg focus:outline-none focus:border-sun-dark text-sm"
-                  >
-                    <option value="master">Gestor Master</option>
-                    <option value="triagem">Gestor de Triagem</option>
-                    <option value="profissional">
-                      Profissional / Psicólogo
-                    </option>
-                  </select>
-                </div>
-              </>
-            )}
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-forest/70 mb-1">
                 E-mail
@@ -1311,7 +1282,7 @@ export function DashboardView({
               type="submit"
               className="w-full py-3 mt-2 bg-sun-dark text-forest rounded-full font-semibold shadow-md hover:bg-sun-dark-dark transition-all"
             >
-              {isLogin ? "Entrar" : "Criar Conta"}
+              Entrar
             </button>
           </form>
 
@@ -1348,25 +1319,56 @@ export function DashboardView({
             Entrar com Google
           </button>
 
-          <div className="mt-4 text-center">
-            {!isLogin && (
-              <p className="text-xs text-forest/70 mb-2">
-                Ao usar Google para nova conta, usaremos o Perfil selecionado
-                acima.
-              </p>
-            )}
-          </div>
-
           <div className="mt-2 text-center text-sm text-forest/70">
-            {isLogin ? "Primeiro acesso? " : "Já possui conta? "}
+            Primeiro acesso?{" "}
             <button
-              onClick={() => setIsLogin(!isLogin)}
+              onClick={() => setShowRegisterChoice(true)}
               className="font-semibold underline underline-offset-4"
             >
-              {isLogin ? "Criar acesso restrito" : "Acessar sistema"}
+              Cadastre-se
             </button>
           </div>
         </div>
+
+        {showRegisterChoice && (
+          <div className="fixed inset-0 z-[100] bg-forest/80 flex items-center justify-center p-4">
+            <div className="bg-white rounded-[32px] w-full max-w-sm p-8 shadow-2xl relative flex flex-col gap-4">
+              <button
+                onClick={() => setShowRegisterChoice(false)}
+                className="absolute top-6 right-6 text-forest/50 hover:text-forest"
+              >
+                <X className="w-5 h-5" />
+              </button>
+              <h3 className="font-serif text-2xl text-forest mb-2">Quem é você?</h3>
+              
+              <button
+                onClick={() => onNavigate("profissional")}
+                className="w-full p-4 border border-soft rounded-xl text-left hover:bg-warm hover:border-sun transition-colors flex items-center gap-3"
+              >
+                <div className="w-10 h-10 rounded-full bg-sun/30 flex items-center justify-center text-forest">
+                  <UserPlus className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="font-semibold text-forest">Sou psicólogo/ Terapeuta</div>
+                  <div className="text-xs text-forest/70">Quero atender na plataforma</div>
+                </div>
+              </button>
+
+              <button
+                onClick={() => onNavigate("acolhimento")}
+                className="w-full p-4 border border-soft rounded-xl text-left hover:bg-warm hover:border-sun transition-colors flex items-center gap-3"
+              >
+                <div className="w-10 h-10 rounded-full bg-sun/30 flex items-center justify-center text-forest">
+                  <Heart className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="font-semibold text-forest">Sou paciente e quero iniciar meu acolhimento</div>
+                  <div className="text-xs text-forest/70">Buscar um profissional</div>
+                </div>
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -2094,6 +2096,28 @@ export function DashboardView({
                     </div>
                   </div>
 
+                  <div className="bg-warm/30 p-6 rounded-2xl border border-soft space-y-4">
+                    <h4 className="text-sm font-bold uppercase tracking-wider text-forest/70 border-b border-soft pb-2 mb-4">
+                      Rodapé do Site
+                    </h4>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] font-semibold uppercase text-forest/70/60 ml-2">
+                        Cidades de Atuação
+                      </label>
+                      <input
+                        className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
+                        placeholder="Ex: Brasil • São Paulo • online"
+                        value={globalConfigs.cidadesRodape || ""}
+                        onChange={(e) =>
+                          handleUpdateConfiguracoesProperty(
+                            "cidadesRodape",
+                            e.target.value,
+                          )
+                        }
+                      />
+                    </div>
+                  </div>
+
                   <div className="flex justify-end">
                     <button
                       onClick={handleSaveConfiguracoes}
@@ -2572,6 +2596,20 @@ export function DashboardView({
                 </div>
                 <div>
                   <label className="text-xs uppercase font-bold tracking-wider text-forest/50">
+                    CPF
+                  </label>
+                  <input
+                    type="text"
+                    value={profile.cpf || ""}
+                    placeholder="Ex: 000.000.000-00"
+                    onChange={(e) =>
+                      setProfile({ ...profile, cpf: e.target.value })
+                    }
+                    className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs uppercase font-bold tracking-wider text-forest/50">
                     Abordagem / Especialidades
                   </label>
                   <input
@@ -2655,6 +2693,7 @@ export function DashboardView({
                       name: profile.name,
                       telefone: profile.telefone,
                       crp: profile.crp,
+                      cpf: profile.cpf,
                       especialidade: profile.especialidade,
                       horasDisponiveis: profile.horasDisponiveis,
                       cidade: profile.cidade,
@@ -5028,6 +5067,21 @@ export function DashboardView({
                         label="CRP / Registro"
                         value={selectedProfissional.crp}
                         field="crp"
+                        onChange={(f, v) =>
+                          handleUpdateProfissionalProperty(
+                            "id" in selectedProfissional
+                              ? selectedProfissional.id
+                              : selectedProfissional.uid,
+                            f,
+                            v,
+                          )
+                        }
+                        isEditing={isEditingCard}
+                      />
+                      <EditableField
+                        label="CPF"
+                        value={selectedProfissional.cpf}
+                        field="cpf"
                         onChange={(f, v) =>
                           handleUpdateProfissionalProperty(
                             "id" in selectedProfissional

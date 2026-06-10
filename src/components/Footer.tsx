@@ -1,6 +1,28 @@
 import { Map, Mail, Phone, HeartHandshake, Leaf, User } from "lucide-react";
+import { useEffect, useState } from "react";
+import { doc, getDoc } from "firebase/firestore";
+import { db } from "../lib/firebase";
+import logoImage from "../assets/images/logo_acolhe.jpeg";
 
 export function Footer({ onNavigate }: { onNavigate?: (view: any) => void }) {
+  const [cidades, setCidades] = useState("Brasil • São Paulo • online");
+
+  useEffect(() => {
+    const fetchConfigs = async () => {
+      try {
+        const snap = await getDoc(doc(db, "configuracoes", "master"));
+        if (snap.exists() && snap.data().cidadesRodape) {
+          setCidades(snap.data().cidadesRodape);
+        }
+      } catch (err: any) {
+        if (err.code !== 'permission-denied') {
+          console.error("Error fetching configs for footer", err);
+        }
+      }
+    };
+    fetchConfigs();
+  }, []);
+
   const handleNav = (view: string) => {
     if (onNavigate) {
       onNavigate(view);
@@ -15,7 +37,7 @@ export function Footer({ onNavigate }: { onNavigate?: (view: any) => void }) {
         <div className="flex flex-col gap-4">
           <div className="flex items-center gap-3 mb-2">
             <div className="w-10 h-10 bg-sun rounded-full flex items-center justify-center text-forest overflow-hidden">
-              <img src="/logo.png" alt="AcolheMente Logo" className="w-full h-full object-cover" />
+              <img src={logoImage} alt="AcolheMente Logo" className="w-full h-full object-cover" />
             </div>
             <span className="font-serif text-2xl font-semibold tracking-tight text-forest">AcolheMente</span>
           </div>
@@ -74,11 +96,22 @@ export function Footer({ onNavigate }: { onNavigate?: (view: any) => void }) {
         </div>
       </div>
 
+      {/* Informações Éticas */}
+      <div className="w-full max-w-[1440px] border-t border-soft pt-8 mb-8 flex flex-col md:flex-row justify-between gap-6 text-xs text-forest/60">
+        <div className="max-w-3xl leading-relaxed">
+          <strong>Nota Ética:</strong> Os profissionais cadastrados atuam em conformidade com o Código de Ética Profissional do Psicólogo (Resolução CFP nº 010/2005) e demais resoluções do Conselho Federal de Psicologia (CFP). Todos os psicólogos e terapeutas possuem registro ativo em seus respectivos Conselhos Regionais de Psicologia (CRP) ou associação de classe.
+        </div>
+        <div className="flex md:flex-col items-center md:items-end justify-center gap-1.5 md:gap-1">
+          <span className="font-semibold text-forest/80 uppercase tracking-[0.25em] text-[10px]">Uma iniciativa de</span>
+          <span className="font-bold text-forest tracking-wide">ELO Soluções Humanas</span>
+        </div>
+      </div>
+
       {/* Bottom Footer */}
       <div className="w-full max-w-[1440px] border-t border-soft pt-8 flex flex-col md:flex-row justify-between items-center gap-4 text-[10px] text-forest/50 uppercase tracking-[0.2em] font-bold text-center md:text-left">
         <div>© {new Date().getFullYear()} AcolheMente • Plataforma de Cuidado Acessível</div>
         <div>Feito por profissionais de saúde para pessoas</div>
-        <div>Brasília • São Paulo • Remoto</div>
+        <div>{cidades}</div>
       </div>
     </footer>
   );

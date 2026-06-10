@@ -1,10 +1,10 @@
 import { Footer } from '../components/Footer';
 import { ArrowLeft, CheckCircle2, HeartHandshake, QrCode, ClipboardList, HandHeart } from "lucide-react";
 import { FormEvent, useState } from "react";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, getDocs, query, where } from "firebase/firestore";
 import { db, handleFirestoreError, OperationType } from "../lib/firebase";
 
-import doacaoHero from '../assets/images/doacao_hero_1779248473818.png';
+import doacaoHero from '../assets/images/doacao_hero_photo_1781024105563.png';
 import logoImage from '../assets/images/logo_acolhe.jpeg';
 
 export function DoacaoView({ onNavigate }: { onNavigate: (view: 'landing' | 'acolhimento' | 'dashboard' | 'profile' | 'empresa' | 'doacao') => void }) {
@@ -49,6 +49,14 @@ export function DoacaoView({ onNavigate }: { onNavigate: (view: 'landing' | 'aco
     setIsSolSubmitting(true);
     setSolError('');
     try {
+      const q = query(collection(db, "solicitacoes_doacao"), where("email", "==", solForm.email));
+      const querySnapshot = await getDocs(q);
+      if (!querySnapshot.empty) {
+        setSolError("Este email já aparece em nossa triagem ou em nosso banco de dados.");
+        setIsSolSubmitting(false);
+        return;
+      }
+
       await addDoc(collection(db, "solicitacoes_doacao"), {
         ...solForm,
         status: 'Aguardando',

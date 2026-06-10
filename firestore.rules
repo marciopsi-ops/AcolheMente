@@ -67,30 +67,30 @@ service cloud.firestore {
 
     match /acolhimentos/{acolhimentoId} {
       allow create: if isValidAcolhimento(request.resource.data);
-      allow read, update, delete: if request.auth != null;
+      allow read, update, delete: if true;
     }
 
     match /empresa_leads/{leadId} {
       allow create: if isValidEmpresaLead(request.resource.data);
-      allow read, update, delete: if request.auth != null;
+      allow read, update, delete: if true;
     }
 
     match /doacoes/{doacaoId} {
       allow create: if isValidDoacao(request.resource.data);
-      allow read, update, delete: if request.auth != null;
+      allow read, update, delete: if true;
     }
     
     match /solicitacoes_doacao/{solId} {
       allow create: if isValidSolicitacaoDoacao(request.resource.data);
-      allow read, update, delete: if request.auth != null;
+      allow read, update, delete: if true;
     }
     
     match /profissionais_leads/{proId} {
       allow create: if isValidProfissionalLead(request.resource.data);
-      allow read, update, delete: if request.auth != null;
+      allow read, update, delete: if true;
     }
     match /configuracoes/{configId} {
-      allow read: if request.auth != null;
+      allow read: if true;
       allow write: if request.auth != null && isMaster();
     }
   }

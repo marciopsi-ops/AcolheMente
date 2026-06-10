@@ -1,10 +1,10 @@
 import { Footer } from '../components/Footer';
 import { ArrowLeft, CheckCircle2, HeartHandshake, UserPlus, Clock, PiggyBank } from "lucide-react";
 import React, { FormEvent, useState } from "react";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, getDocs, query, where } from "firebase/firestore";
 import { db, handleFirestoreError, OperationType } from "../lib/firebase";
 
-import psicologoHero from '../assets/images/psicologo_hero_1779248488070.png';
+import psicologoHero from '../assets/images/psicologo_hero_photo_1781024080247.png';
 import logoImage from '../assets/images/logo_acolhe.jpeg';
 
 export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'landing' | 'acolhimento' | 'dashboard' | 'profile' | 'empresa' | 'doacao' | 'profissional') => void }) {
@@ -14,6 +14,7 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
     abordagem: '',
     anoFormacao: '',
     crp: '',
+    cpf: '',
     email: '',
     telefone: '',
     cidade: '',
@@ -51,6 +52,14 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
     setErrorMsg('');
 
     try {
+      const q = query(collection(db, "profissionais_leads"), where("email", "==", formData.email));
+      const querySnapshot = await getDocs(q);
+      if (!querySnapshot.empty) {
+        setErrorMsg("Este email já aparece em nossa triagem ou em nosso banco de dados.");
+        setIsSubmitting(false);
+        return;
+      }
+
       await addDoc(collection(db, "profissionais_leads"), {
         ...formData,
         status: 'Aguardando Entrevista',
@@ -141,7 +150,7 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
                 </div>
                 <h2 className="font-serif text-3xl text-forest mb-4">Cadastro Realizado!</h2>
                 <p className="text-forest/80 max-w-md mx-auto mb-8 text-lg">
-                  Muito obrigado pela iniciativa em fazer parte. Nossa equipe realizará a validação dos dados e entrará em contato para ativar sua conta na plataforma.
+                  Muito obrigado pela iniciativa em fazer parte. Nossa equipe realizará a validação dos dados e entrará em contato para ativar sua conta na plataforma em até 24h.
                 </p>
                 <button 
                   onClick={() => onNavigate('landing')}
@@ -218,7 +227,7 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div className="flex flex-col gap-1">
                       <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">CRP / Registro (Se houver)</label>
                       <input 
@@ -229,9 +238,21 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
                         placeholder="00/00000" 
                       />
                     </div>
+
+                    <div className="flex flex-col gap-1">
+                      <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">CPF *</label>
+                      <input 
+                        required
+                        name="cpf"
+                        value={formData.cpf}
+                        onChange={handleChange}
+                        className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest" 
+                        placeholder="000.000.000-00" 
+                      />
+                    </div>
                     
                     <div className="flex flex-col gap-1">
-                      <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">Horas mensais disponíveis *</label>
+                      <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">Horas mens. disponíveis *</label>
                       <select 
                         required 
                         name="horasDisponiveis"
@@ -278,7 +299,7 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6 border-t border-soft pt-6 mt-2">
                     <div className="flex flex-col gap-3">
                       <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2 leading-relaxed">
-                        Tempo de experiência com atendimento clínico de:
+                        Experiência de no mínimo um ano com atendimento clínico de:
                       </label>
                       <div className="flex flex-col gap-2 px-2">
                         {['Adulto', 'Idoso', 'Criança', 'Adolescente', 'Casal', 'Família', 'Outros'].map(op => (

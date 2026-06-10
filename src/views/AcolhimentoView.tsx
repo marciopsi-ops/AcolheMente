@@ -1,10 +1,10 @@
 import { ArrowLeft, CheckCircle2, Leaf } from "lucide-react";
 import { Footer } from "../components/Footer";
 import { FormEvent, useState } from "react";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, getDocs, query, where } from "firebase/firestore";
 import { db, handleFirestoreError, OperationType } from "../lib/firebase";
 
-import pacienteHero from '../assets/images/paciente_hero_1779248505864.png';
+import pacienteHero from '../assets/images/paciente_hero_laptop_1781044669495.png';
 import logoImage from '../assets/images/logo_acolhe.jpeg';
 
 type AccessType = "Particular" | "Corporativo" | "";
@@ -69,6 +69,14 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
       setIsSubmitting(true);
       
       try {
+        const q = query(collection(db, "acolhimentos"), where("email", "==", email));
+        const querySnapshot = await getDocs(q);
+        if (!querySnapshot.empty) {
+          alert("Este email já aparece em nossa triagem ou em nosso banco de dados.");
+          setIsSubmitting(false);
+          return;
+        }
+
         await addDoc(collection(db, "acolhimentos"), {
           nome: name,
           email,
@@ -149,7 +157,7 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
               </div>
               <h2 className="font-serif text-3xl md:text-4xl font-medium text-forest mb-4">Acolhimento Recebido!</h2>
               <p className="text-forest/70 max-w-md mb-8 leading-relaxed">
-                Agradecemos a confiança, {name.split(' ')[0]}. Nossa equipe de triagem já recebeu suas informações e está preparando o encaminhamento ideal.
+                Agradecemos a confiança, {name.split(' ')[0]}. Nossa equipe de triagem já recebeu suas informações e está preparando o encaminhamento ideal em até 24h.
               </p>
               <div className="p-6 bg-warm rounded-2xl border border-soft text-sm text-forest/80 mb-8 max-w-sm">
                 Acompanhe o e-mail <strong>{email}</strong> para conferir os próximos passos. Verifique também a sua caixa de spam.

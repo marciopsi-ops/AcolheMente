@@ -12,8 +12,16 @@ import {
   ClipboardList,
   SearchCheck,
   MessageCircleHeart,
+  Activity,
+  Aperture,
+  Box,
+  Cloud,
+  Globe,
+  Layers,
+  Zap,
 } from "lucide-react";
 import { useState } from "react";
+import { motion } from "motion/react";
 import { AcolhimentoView } from "./views/AcolhimentoView";
 import { PublicProfProfileView } from "./views/PublicProfProfileView";
 import { DashboardView } from "./views/DashboardView";
@@ -23,8 +31,18 @@ import { ProfissionalLandingView } from "./views/ProfissionalLandingView";
 
 import { Footer } from "./components/Footer";
 
-import homeHero from "./assets/images/home_hero_1779248444791.png";
+import homeHero from "./assets/images/home_hero_photo_parda_1781024318036.png";
 import logoImage from "./assets/images/logo_acolhe.jpeg";
+
+const COMPANY_LOGOS = [
+  { icon: Activity, name: "VitaTech Health" },
+  { icon: Aperture, name: "Nexus Healthcare" },
+  { icon: Box, name: "BlockCorp Solutions" },
+  { icon: Cloud, name: "Cloud9 Logistics" },
+  { icon: Globe, name: "Global Reach Inc." },
+  { icon: Layers, name: "Stack Innovations" },
+  { icon: Zap, name: "Zapp Power" },
+];
 
 export default function App() {
   const params = new URLSearchParams(window.location.search);
@@ -180,7 +198,7 @@ function LandingPage({
 
             <p className="text-lg md:text-xl text-forest/80 max-w-xl leading-relaxed">
               Uma ponte humanizada entre psicoterapeutas e quem busca
-              acolhimento. Do particular com valores acessíveis ao benefício
+              acolhimento. Do particular, com valores acessíveis, ao benefício
               para empresas.
             </p>
           </div>
@@ -196,7 +214,13 @@ function LandingPage({
 
         {/* Jornada Section integrata aqui */}
         <section className="w-full px-6 md:px-12 flex flex-col items-center">
-          <div className="w-full max-w-[1200px] flex flex-col items-center mb-6 bg-white p-6 md:p-10 rounded-[40px] border border-soft shadow-sm">
+          <motion.div 
+            initial={{ opacity: 0, y: 30 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: "-50px" }}
+            transition={{ duration: 0.6 }}
+            className="w-full max-w-[1200px] flex flex-col items-center mb-6 bg-white p-6 md:p-10 rounded-[40px] border border-soft shadow-sm"
+          >
             <div className="flex items-center gap-4 mb-4">
               <Map className="w-8 h-8 text-forest" />
               <h2 className="font-serif text-3xl md:text-4xl text-forest text-center">
@@ -215,7 +239,13 @@ function LandingPage({
 
               <div className="flex flex-col gap-6 md:gap-8 relative z-10 w-full">
                 {/* Step 1 */}
-                <div className="bg-warm/80 p-6 md:p-8 rounded-[32px] border border-white shadow-xl shadow-forest/5 flex flex-col md:flex-row items-center md:items-start gap-6 relative group hover:-translate-y-1 transition-transform duration-300">
+                <motion.div 
+                  initial={{ opacity: 0, x: -30 }}
+                  whileInView={{ opacity: 1, x: 0 }}
+                  viewport={{ once: true, margin: "-50px" }}
+                  transition={{ duration: 0.5, delay: 0.1 }}
+                  className="bg-warm/80 p-6 md:p-8 rounded-[32px] border border-white shadow-xl shadow-forest/5 flex flex-col md:flex-row items-center md:items-start gap-6 relative group hover:-translate-y-1 transition-transform duration-300"
+                >
                   <div className="w-16 h-16 shrink-0 bg-sun rounded-full flex items-center justify-center shadow-sm text-forest border border-sun group-hover:scale-110 transition-transform">
                     <ClipboardList className="w-8 h-8" />
                   </div>
@@ -231,10 +261,16 @@ function LandingPage({
                       informe o código fornecido pela sua empresa parceira.
                     </p>
                   </div>
-                </div>
+                </motion.div>
 
                 {/* Step 2 */}
-                <div className="bg-warm/80 p-6 md:p-8 rounded-[32px] border border-white shadow-xl shadow-forest/5 flex flex-col md:flex-row items-center md:items-start gap-6 relative group hover:-translate-y-1 transition-transform duration-300">
+                <motion.div 
+                  initial={{ opacity: 0, x: -30 }}
+                  whileInView={{ opacity: 1, x: 0 }}
+                  viewport={{ once: true, margin: "-50px" }}
+                  transition={{ duration: 0.5, delay: 0.3 }}
+                  className="bg-warm/80 p-6 md:p-8 rounded-[32px] border border-white shadow-xl shadow-forest/5 flex flex-col md:flex-row items-center md:items-start gap-6 relative group hover:-translate-y-1 transition-transform duration-300"
+                >
                   <div className="w-16 h-16 shrink-0 bg-sun rounded-full flex items-center justify-center shadow-sm text-forest border border-sun group-hover:scale-110 transition-transform">
                     <SearchCheck className="w-8 h-8" />
                   </div>
@@ -250,10 +286,16 @@ function LandingPage({
                       para direcioná-lo ao profissional ideal.
                     </p>
                   </div>
-                </div>
+                </motion.div>
 
                 {/* Step 3 */}
-                <div className="bg-warm/80 p-6 md:p-8 rounded-[32px] border border-white shadow-xl shadow-forest/5 flex flex-col md:flex-row items-center md:items-start gap-6 relative group hover:-translate-y-1 transition-transform duration-300">
+                <motion.div 
+                  initial={{ opacity: 0, x: -30 }}
+                  whileInView={{ opacity: 1, x: 0 }}
+                  viewport={{ once: true, margin: "-50px" }}
+                  transition={{ duration: 0.5, delay: 0.5 }}
+                  className="bg-warm/80 p-6 md:p-8 rounded-[32px] border border-white shadow-xl shadow-forest/5 flex flex-col md:flex-row items-center md:items-start gap-6 relative group hover:-translate-y-1 transition-transform duration-300"
+                >
                   <div className="w-16 h-16 shrink-0 bg-sun rounded-full flex items-center justify-center shadow-sm text-forest border border-sun group-hover:scale-110 transition-transform">
                     <MessageCircleHeart className="w-8 h-8" />
                   </div>
@@ -269,10 +311,10 @@ function LandingPage({
                       cuidado num ambiente seguro.
                     </p>
                   </div>
-                </div>
+                </motion.div>
               </div>
             </div>
-          </div>
+          </motion.div>
 
           {/* Stats */}
           <div className="mt-8 mb-12 flex flex-wrap justify-center gap-8 sm:gap-16 border-t border-soft pt-12 w-full max-w-4xl mx-auto">
@@ -304,9 +346,13 @@ function LandingPage({
         </section>
 
         {/* Corporate Benefit and Professional Features Section */}
-        <section className="w-full bg-warm pb-16 flex flex-col items-center">
+        <section className="w-full bg-warm pb-16 flex flex-col items-center overflow-hidden">
           <div className="w-full max-w-[1440px] px-6 md:px-12 grid grid-cols-1 md:grid-cols-2 gap-8">
-            <div
+            <motion.div
+              initial={{ opacity: 0, x: -40 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true, margin: "-50px" }}
+              transition={{ duration: 0.6 }}
               onClick={() => onNavigate("empresa")}
               className="w-full relative p-12 bg-sun text-forest rounded-[40px] shadow-xl shadow-sun/20 flex flex-col gap-6 justify-between group cursor-pointer hover:-translate-y-1 transition-transform duration-300"
             >
@@ -333,9 +379,13 @@ function LandingPage({
                   <ArrowRight className="w-5 h-5" />
                 </div>
               </div>
-            </div>
+            </motion.div>
 
-            <div
+            <motion.div
+              initial={{ opacity: 0, x: 40 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true, margin: "-50px" }}
+              transition={{ duration: 0.6, delay: 0.2 }}
               onClick={() => onNavigate("profissional")}
               className="w-full relative p-12 bg-white text-forest rounded-[40px] border border-soft shadow-xl shadow-forest/5 flex flex-col gap-6 justify-between group cursor-pointer hover:-translate-y-1 transition-transform duration-300"
             >
@@ -356,13 +406,45 @@ function LandingPage({
 
               <div className="flex items-center gap-4 mt-4">
                 <span className="text-sm font-bold uppercase tracking-wider text-forest underline underline-offset-4 decoration-forest/30 group-hover:decoration-forest transition-all">
-                  Sou Psicólogo
+                  SOU PSICÓLOGO/ TERAPEUTA
                 </span>
                 <div className="w-12 h-12 rounded-full border border-soft flex items-center justify-center text-forest group-hover:bg-sun group-hover:text-forest transition-colors">
                   <ArrowRight className="w-5 h-5" />
                 </div>
               </div>
-            </div>
+            </motion.div>
+          </div>
+        </section>
+
+        {/* Trusted By Carousel */}
+        <section className="w-full bg-white py-16 flex flex-col items-center overflow-hidden border-t border-soft">
+          <div className="w-full max-w-[1440px] px-6 md:px-12 mb-10 flex justify-center">
+            <h2 className="font-serif text-2xl md:text-3xl text-forest/70 text-center relative max-w-xl">
+              Empresas que confiam na AcolheMente
+              <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 w-12 h-1 bg-sun rounded-full" />
+            </h2>
+          </div>
+          
+          <div className="w-full relative flex overflow-x-hidden group">
+            <div className="absolute inset-y-0 left-0 w-32 bg-gradient-to-r from-white to-transparent z-10 pointer-events-none" />
+            <div className="absolute inset-y-0 right-0 w-32 bg-gradient-to-l from-white to-transparent z-10 pointer-events-none" />
+            
+            <motion.div
+              animate={{ x: ["0%", "-50%"] }}
+              transition={{
+                repeat: Infinity,
+                ease: "linear",
+                duration: 20,
+              }}
+              className="flex whitespace-nowrap min-w-max py-4"
+            >
+              {[...COMPANY_LOGOS, ...COMPANY_LOGOS, ...COMPANY_LOGOS].map((Logo, idx) => (
+                <div key={idx} className="flex items-center gap-3 px-12 opacity-60 grayscale hover:grayscale-0 hover:opacity-100 transition-all duration-300">
+                  <Logo.icon className="w-8 h-8 text-forest" />
+                  <span className="font-sans font-bold text-xl text-forest tracking-tighter">{Logo.name}</span>
+                </div>
+              ))}
+            </motion.div>
           </div>
         </section>
       </main>
