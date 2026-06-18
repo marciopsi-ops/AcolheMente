@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { EventosServicosView } from "./EventosServicosView";
 import {
   ArrowLeft,
   User,
@@ -23,6 +24,7 @@ import {
   Mail,
   Phone,
   Send,
+  Calendar,
   Edit3,
   Trash2,
   History,
@@ -225,7 +227,7 @@ export function DashboardView({
   onNavigate,
 }: {
   onNavigate: (
-    view: "landing" | "acolhimento" | "dashboard" | "profile",
+    view: "landing" | "acolhimento" | "dashboard" | "profile" | "empresa" | "doacao" | "profissional",
   ) => void;
 }) {
   const [user, setUser] = useState<FirebaseUser | null>(null);
@@ -243,11 +245,15 @@ export function DashboardView({
     | "acessos"
     | "pacientes"
     | "pacientesAcolhidos"
+    | "tarefasProfissional"
     | "perfil"
+    | "eventos"
+    | "servicos"
   >("kanban");
 
   // Search
   const [searchQuery, setSearchQuery] = useState("");
+  const [triagemViewMode, setTriagemViewMode] = useState<"kanban" | "table">("table");
 
   // Auth form
   const [isLogin, setIsLogin] = useState(true);
@@ -773,10 +779,18 @@ export function DashboardView({
 
     // Update status
     try {
+      const currentPaciente = acolhimentos.find((a) => a.id === id);
+      const notifAnterior = currentPaciente?.notificacao ? currentPaciente.notificacao + '\n\n' : '';
+      const nowStr = new Date().toLocaleString("pt-BR");
+      const authName = profile?.name || "Parceiro";
+
       const updates: any = { status: newStatus };
       if (newStatus === "Em Atendimento" && profile.role === "profissional") {
         updates.profissionalId = user.uid;
       }
+      
+      updates.notificacao = `${notifAnterior}[${nowStr}] Movido para "${newStatus}" por ${authName}.`;
+
       await updateDoc(doc(db, "acolhimentos", id), updates);
     } catch (err) {
       console.error(err);
@@ -790,6 +804,13 @@ export function DashboardView({
     message: string;
     onConfirm: () => void;
   } | null>(null);
+  const [devolverModalConfig, setDevolverModalConfig] = useState<{
+    isOpen: boolean;
+    pacienteId: string;
+    pacienteName: string;
+  } | null>(null);
+  const [motivoDevolucao, setMotivoDevolucao] = useState("");
+  const [motivoDevolucaoOutro, setMotivoDevolucaoOutro] = useState("");
 
   const handleRoleChange = async (userId: string, newRole: Role) => {
     if (!profile || profile.role !== "master") return;
@@ -840,24 +861,28 @@ export function DashboardView({
     value: any,
   ) => {
     try {
+      const currentPaciente = acolhimentos.find((a) => a.id === id);
       const updates: any = { [property]: value };
       if (property === "ativo") {
         updates.statusUpdatedAt = serverTimestamp();
       }
 
+      const nowStr = new Date().toLocaleString("pt-BR");
+
       // Auto-assign status when changing profissional
       if (property === "profissionalId") {
+        const notifAnterior = currentPaciente?.notificacao ? currentPaciente.notificacao + '\n\n' : '';
         if (value) {
           // Atribuído a alguém
           updates.status = "Em Atendimento";
           updates.atribuicaoStatus = "Pendente";
-          updates.notificacao = null; // Clear any waitlist notification
+          const profName = profissionaisAtivos.find(p => p.id === value)?.name || 'Parceiro';
+          updates.notificacao = `${notifAnterior}[${nowStr}] Atribuído ao profissional ${profName}. Aguardando aceite.`;
         } else {
           // Desatribuído
-          updates.status = "Aprovado";
+          updates.status = "Aguardando Avaliação";
           updates.atribuicaoStatus = null;
-          updates.notificacao =
-            "Desatribuído do profissional, necessita nova atribuição";
+          updates.notificacao = `${notifAnterior}[${nowStr}] Desatribuído do profissional pelo Gestor. Retornou à Triagem.`;
         }
       }
 
@@ -1746,6 +1771,18 @@ export function DashboardView({
                 </button>
               </>
             )}
+            <button
+              onClick={() => setActiveTab("eventos")}
+              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "eventos" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
+            >
+              Eventos da Plataforma
+            </button>
+            <button
+              onClick={() => setActiveTab("servicos")}
+              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "servicos" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
+            >
+              Serviços da Rede
+            </button>
           </div>
         )}
 
@@ -1764,10 +1801,22 @@ export function DashboardView({
               Meus Pacientes
             </button>
             <button
+              onClick={() => setActiveTab("eventos")}
+              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "eventos" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
+            >
+              Eventos
+            </button>
+            <button
+              onClick={() => setActiveTab("servicos")}
+              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "servicos" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
+            >
+              Serviços da Rede
+            </button>
+            <button
               onClick={() => setActiveTab("tarefasProfissional")}
               className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "tarefasProfissional" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
             >
-              Tarefas & Mensagens
+              Mensagens
               {pendingProfNotificationsCount > 0 && (
                 <span className="bg-red-500 text-white text-[10px] w-4.5 h-4.5 flex items-center justify-center rounded-full font-bold">
                   {pendingProfNotificationsCount}
@@ -2331,7 +2380,7 @@ export function DashboardView({
                         <span className="font-semibold text-forest/60 uppercase tracking-wider text-[10px]">
                           Queixa / Motivo
                         </span>
-                        <p className="line-clamp-3 bg-warm/30 p-3 rounded-lg border border-soft">
+                        <p className="whitespace-pre-wrap max-h-[120px] overflow-y-auto bg-warm/30 p-3 rounded-lg border border-soft custom-scrollbar">
                           {p.motivo}
                         </p>
                       </div>
@@ -2668,6 +2717,20 @@ export function DashboardView({
                     className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
                   />
                 </div>
+                <div>
+                  <label className="text-xs uppercase font-bold tracking-wider text-forest/50">
+                    Chave PIX
+                  </label>
+                  <input
+                    type="text"
+                    value={profile.pixKey || ""}
+                    placeholder="Ex: CPF, Email ou Celular (Para pagamentos de Serviços)"
+                    onChange={(e) =>
+                      setProfile({ ...profile, pixKey: e.target.value })
+                    }
+                    className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
+                  />
+                </div>
               </div>
 
               {/* Biography Section */}
@@ -2685,6 +2748,21 @@ export function DashboardView({
                 />
               </div>
 
+              {/* Motivacao Projeto Section */}
+              <div className="flex flex-col gap-2 pt-6 border-t border-soft">
+                <label className="text-xs uppercase font-bold tracking-wider text-forest/50">
+                  Porque faço parte desse projeto?
+                </label>
+                <textarea
+                  value={profile.motivacaoProjeto || ""}
+                  onChange={(e) =>
+                    setProfile({ ...profile, motivacaoProjeto: e.target.value })
+                  }
+                  placeholder="Conte um pouco sobre suas motivações para participar desta rede de psicólogos e o que esse projeto significa para você..."
+                  className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark resize-none h-32 text-sm leading-relaxed"
+                />
+              </div>
+
               {/* Action Buttons */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-6 border-t border-soft">
                 <button
@@ -2699,7 +2777,9 @@ export function DashboardView({
                       cidade: profile.cidade,
                       uf: profile.uf,
                       biografia: profile.biografia,
+                      motivacaoProjeto: profile.motivacaoProjeto,
                       photoUrl: profile.photoUrl || "",
+                      pixKey: profile.pixKey,
                     })
                   }
                   className="px-4 sm:px-6 py-2.5 sm:py-3.5 bg-forest text-white rounded-xl font-bold uppercase tracking-wider text-[10px] sm:text-xs hover:bg-forest/90 transition-colors self-start w-full sm:w-auto text-center"
@@ -2733,12 +2813,124 @@ export function DashboardView({
           </div>
         </div>
       ) : activeTab === "kanban" || activeTab === "pacientesAcolhidos" ? (
-        <>
-          <div className="flex-1 overflow-x-auto overflow-y-hidden p-6">
-            <div className="flex h-full gap-6 shrink-0 w-max items-start">
+        <div className="flex-1 flex flex-col h-full bg-warm overflow-hidden">
+          <div className="flex justify-between items-center px-6 pt-6 pb-2 shrink-0">
+            <h2 className="font-serif text-2xl text-forest flex items-center gap-2">
+              {activeTab === "kanban" ? "Triagem" : "Pacientes"}
+            </h2>
+            <div className="bg-white border border-soft rounded-full p-1 flex">
+              <button
+                onClick={() => setTriagemViewMode("kanban")}
+                className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                  triagemViewMode === "kanban"
+                    ? "bg-sun text-forest shadow-sm"
+                    : "text-forest/60 hover:text-forest"
+                }`}
+              >
+                Kanban
+              </button>
+              <button
+                onClick={() => setTriagemViewMode("table")}
+                className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                  triagemViewMode === "table"
+                    ? "bg-sun text-forest shadow-sm"
+                    : "text-forest/60 hover:text-forest"
+                }`}
+              >
+                Planilha
+              </button>
+            </div>
+          </div>
+          
+          {triagemViewMode === "table" ? (
+            <div className="flex-1 overflow-auto p-6">
+              <div className="bg-white border border-soft rounded-2xl shadow-sm overflow-hidden">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-warm/50 border-b border-soft">
+                    <tr>
+                      <th className="px-4 py-3 font-semibold text-forest/70">Nome</th>
+                      <th className="px-4 py-3 font-semibold text-forest/70">Contato</th>
+                      <th className="px-4 py-3 font-semibold text-forest/70">Idade</th>
+                      <th className="px-4 py-3 font-semibold text-forest/70">Status</th>
+                      <th className="px-4 py-3 font-semibold text-forest/70">Data de Cadastro</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...filteredAcolhimentos]
+                      .filter((a) =>
+                        activeTab === "kanban"
+                          ? visibleColumns.some((c) => c.id === (a.status || "Aguardando Avaliação"))
+                          : (!a.status || a.status !== "Aguardando Avaliação")
+                      )
+                      .sort((a, b) => {
+                         const nomeA = a.nomeDesejado || a.nomeCivil || a.nome || "";
+                         const nomeB = b.nomeDesejado || b.nomeCivil || b.nome || "";
+                         return nomeA.localeCompare(nomeB);
+                      })
+                      .map((p) => {
+                         const rawStatus = p.status || "Aguardando Avaliação";
+                         const displayStatus = p.atribuicaoStatus ? `${rawStatus} (${p.atribuicaoStatus})` : rawStatus;
+                         return (
+                          <tr
+                            key={p.id}
+                            onClick={() => setSelectedCard(p)}
+                            className="border-b border-soft last:border-0 hover:bg-warm/30 cursor-pointer transition-colors"
+                          >
+                            <td className="px-4 py-3">
+                              <div className="font-semibold text-forest capitalize">
+                                {(p.nomeDesejado || p.nomeCivil || p.nome)?.toLowerCase()}
+                              </div>
+                              {(p.nomeDesejado) && (
+                                <div className="text-[10px] text-forest/60 truncate max-w-[150px] capitalize">
+                                  Nome Civil: {(p.nomeCivil || p.nome)?.toLowerCase()}
+                                </div>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-forest/80">
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <Mail className="w-3.5 h-3.5 text-forest/40" />
+                                <span className="truncate max-w-[120px]">
+                                  {p.email}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1.5 shrink-0 mt-1">
+                                <Phone className="w-3.5 h-3.5 text-forest/40" />
+                                <span className="truncate max-w-[120px]">
+                                  {p.telefone}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 text-forest/80">
+                              {p.idadeTratamento || "-"}
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                                rawStatus === "Aguardando Avaliação" ? "bg-sun/30 text-sun-dark-dark" :
+                                rawStatus === "Em Triagem" ? "bg-blue-100 text-blue-800" :
+                                rawStatus === "Em Atendimento" ? "bg-green-100 text-green-800" :
+                                rawStatus === "Alta" ? "bg-forest/10 text-forest" :
+                                rawStatus === "Aprovado" ? "bg-purple-100 text-purple-800" :
+                                "bg-gray-100 text-gray-800"
+                              }`}>
+                                {displayStatus}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-forest/60">
+                              {formatDate(p.createdAt)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : (
+            <div className="flex-1 overflow-x-auto overflow-y-hidden p-6">
+              <div className="flex h-full gap-6 shrink-0 w-max items-start">
               {visibleColumns.map((col) => {
                 const colCards = filteredAcolhimentos.filter(
-                  (a) => a.status === col.id,
+                  (a) => (a.status || "Aguardando Avaliação") === col.id,
                 );
                 return (
                   <div
@@ -2801,7 +2993,7 @@ export function DashboardView({
                             )}
                           </div>
 
-                          <div className="text-[10px] text-forest/80 line-clamp-2 mt-2 bg-warm/30 p-2 rounded-lg border border-soft leading-tight">
+                          <div className="text-[10px] text-forest/80 max-h-24 overflow-y-auto mt-2 bg-warm/30 p-2 rounded-lg border border-soft leading-tight custom-scrollbar">
                             <span className="font-bold block mb-[2px] text-forest/60">
                               Motivo/Queixa:
                             </span>
@@ -2876,7 +3068,8 @@ export function DashboardView({
               })}
             </div>
           </div>
-        </>
+          )}
+        </div>
       ) : activeTab === "doacoes" ? (
         <div className="flex-1 overflow-auto p-6 md:p-8 flex items-start flex-col lg:flex-row gap-8 slide-up">
           <div className="w-full lg:w-1/2 flex flex-col gap-4">
@@ -2956,7 +3149,7 @@ export function DashboardView({
                           : ""}
                       </div>
                     </div>
-                    <div className="text-xs text-forest/70/80 bg-warm p-3 rounded-lg border border-soft leading-relaxed line-clamp-3">
+                    <div className="text-xs text-forest/70/80 bg-warm p-3 rounded-lg border border-soft leading-relaxed whitespace-pre-wrap max-h-32 overflow-y-auto custom-scrollbar">
                       "{s.motivo}"
                     </div>
                     <div className="flex justify-between items-center mt-1">
@@ -3013,7 +3206,7 @@ export function DashboardView({
                               </span>
                             )}
                           </div>
-                          <div className="text-xs mt-3 bg-warm p-3 rounded-xl border border-soft font-medium text-forest/80 line-clamp-2">
+                          <div className="text-xs mt-3 bg-warm p-3 rounded-xl border border-soft font-medium text-forest/80 whitespace-pre-wrap max-h-32 overflow-y-auto custom-scrollbar">
                             <span className="font-bold opacity-70">
                               Motivação:
                             </span>{" "}
@@ -3452,12 +3645,14 @@ export function DashboardView({
             )}
           </div>
         </div>
+      ) : activeTab === "eventos" || activeTab === "servicos" ? (
+        <EventosServicosView activeSection={activeTab} profile={profile} />
       ) : null}
 
       {/* Card Details Modal */}
       {selectedCard && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-forest/20 backdrop-blur-sm animate-in fade-in">
-          <div className="bg-white rounded-3xl w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl border border-soft overflow-hidden animate-in zoom-in-95">
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-forest/20 backdrop-blur-sm animate-in fade-in py-4">
+          <div className="bg-white rounded-3xl w-full max-w-5xl max-h-[95vh] flex flex-col shadow-2xl border border-soft overflow-hidden animate-in zoom-in-95">
             <div className="px-6 py-4 flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-soft bg-warm/50 gap-2">
               <div className="flex flex-col">
                 <h3 className="font-serif text-2xl text-forest">
@@ -3953,111 +4148,54 @@ export function DashboardView({
                     </section>
                   ) : (
                     <section className="mt-8 space-y-4">
-                      {/* Accept / Reject Status Selection */}
-                      <div className="flex flex-col gap-2 p-5 bg-warm rounded-2xl border border-soft mt-2">
-                        <label className="text-xs font-bold uppercase tracking-wider text-forest/70">
-                          Responder Encaminhamento
+                      <div className="mt-8">
+                        <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-3 block">
+                          Controle de Vínculo
                         </label>
-                        <p className="text-xs text-forest/60 mb-3">
-                          Indique se você aceita conduzir o tratamento clínico
-                          deste paciente.
-                        </p>
-                        <div className="grid grid-cols-2 gap-3">
-                          <button
-                            onClick={async () => {
-                              await handleUpdateAcolhimentoProperty(
-                                selectedCard.id,
-                                "atribuicaoStatus",
-                                "Aceito",
-                              );
-                            }}
-                            className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-                              selectedCard.atribuicaoStatus === "Aceito"
-                                ? "bg-[#34A853] text-white shadow-sm"
-                                : "bg-white text-forest border border-soft hover:bg-warm"
-                            }`}
-                          >
-                            <CheckCircle2 className="w-3.5 h-3.5" /> Aceitar
-                            Paciente
-                          </button>
+                        <div className="flex flex-col gap-3 p-5 bg-warm rounded-2xl border border-soft mt-2">
+                          <p className="text-xs text-forest/60 mb-2">
+                            Confirme o vínculo clínico abaixo. Caso necessite devolver este paciente para a Triagem, utilize o botão secundário e deixe uma observação (opcional).
+                          </p>
+                          <div className="grid grid-cols-2 gap-3">
+                            <button
+                              disabled={selectedCard.atribuicaoStatus === "Aceito"}
+                              onClick={async () => {
+                                const notifAnterior = selectedCard.notificacao ? selectedCard.notificacao + '\n\n' : '';
+                                const nowStr = new Date().toLocaleString("pt-BR");
+                                const authName = profile?.name || "Parceiro";
+                                const updates = {
+                                  atribuicaoStatus: "Aceito",
+                                  notificacao: `${notifAnterior}[${nowStr}] Encaminhamento ACEITO pelo profissional ${authName}.`,
+                                };
+                                await updateDoc(doc(db, "acolhimentos", selectedCard.id), updates);
+                                setSelectedCard({ ...selectedCard, ...updates });
+                              }}
+                              className={`px-4 py-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                                selectedCard.atribuicaoStatus === "Aceito"
+                                  ? "bg-[#34A853] text-white shadow-sm disabled:opacity-100" // visually look disabled but fully opaque
+                                  : "bg-white text-forest border border-soft hover:bg-[#34A853]/10 hover:text-[#34A853] hover:border-[#34A853]/30"
+                              }`}
+                            >
+                              <CheckCircle2 className="w-4 h-4" /> 
+                              {selectedCard.atribuicaoStatus === "Aceito" ? "Paciente Aceito" : "Aceitar Paciente"}
+                            </button>
 
-                          <button
-                            onClick={() => {
-                              setConfirmConfig({
-                                isOpen: true,
-                                message:
-                                  "Deseja rejeitar este encaminhamento? O paciente voltará para a Fila de Espera/Triagem e o gestor será notificado.",
-                                onConfirm: async () => {
-                                  try {
-                                    const updates = {
-                                      profissionalId: "",
-                                      status: "Aprovado", // Fila de Espera
-                                      atribuicaoStatus: null,
-                                      notificacao: `Encaminhamento rejeitado pelo profissional ${profile.name || "Parceiro"}. Retornou para a Fila de Espera.`,
-                                    };
-                                    await updateDoc(
-                                      doc(db, "acolhimentos", selectedCard.id),
-                                      updates,
-                                    );
-                                    setSelectedCard(null);
-                                  } catch (e) {
-                                    console.error(e);
-                                    alert("Erro ao rejeitar encaminhamento.");
-                                  }
-                                },
-                              });
-                            }}
-                            className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-                              selectedCard.atribuicaoStatus === "Rejeitado"
-                                ? "bg-red-500 text-white shadow-sm"
-                                : "bg-white text-red-600 border border-red-200 hover:bg-red-50"
-                            }`}
-                          >
-                            <XCircle className="w-3.5 h-3.5" /> Rejeitar
-                            Paciente
-                          </button>
+                            <button
+                              onClick={() => {
+                                setDevolverModalConfig({
+                                  isOpen: true,
+                                  pacienteId: selectedCard.id,
+                                  pacienteName: (selectedCard as any).nomeCompleto || "Paciente",
+                                });
+                              }}
+                              className="px-4 py-3 bg-white text-red-600 border border-red-200 rounded-xl text-xs sm:text-sm font-semibold hover:bg-red-50 transition-colors"
+                            >
+                              {selectedCard.atribuicaoStatus === "Aceito" 
+                                ? "Devolver/Desatribuir" 
+                                : "Devolver Paciente"}
+                            </button>
+                          </div>
                         </div>
-                      </div>
-
-                      <div className="flex flex-col gap-2 p-4 bg-red-50 rounded-2xl border border-red-100">
-                        <label className="text-xs font-bold uppercase tracking-wider text-red-900/70">
-                          Devolver Paciente
-                        </label>
-                        <p className="text-xs text-red-900/60 mb-2">
-                          Caso já tenha aceitado, mas precise suspender o
-                          acompanhamento por qualquer motivo, devolva-o para
-                          triagem.
-                        </p>
-                        <button
-                          onClick={() => {
-                            setConfirmConfig({
-                              isOpen: true,
-                              message:
-                                "Tem certeza que deseja devolver este paciente para a triagem? Isso suspenderá o atendimento clínico.",
-                              onConfirm: async () => {
-                                try {
-                                  const updates = {
-                                    profissionalId: "",
-                                    status: "Aprovado", // Fila de Espera
-                                    atribuicaoStatus: null,
-                                    notificacao: `Atendimento interrompido/devolvido pelo profissional ${profile.name || "Parceiro"}.`,
-                                  };
-                                  await updateDoc(
-                                    doc(db, "acolhimentos", selectedCard.id),
-                                    updates,
-                                  );
-                                  setSelectedCard(null);
-                                } catch (e) {
-                                  console.error(e);
-                                  alert("Erro ao devolver paciente.");
-                                }
-                              },
-                            });
-                          }}
-                          className="px-4 py-2 bg-white text-red-600 border border-red-200 rounded-xl text-sm font-semibold hover:bg-red-50 transition-colors"
-                        >
-                          Desatribuir (Devolver para Triagem)
-                        </button>
                       </div>
                     </section>
                   )}
@@ -4104,8 +4242,15 @@ export function DashboardView({
                           </div>
 
                           {matchedProf.biografia && (
-                            <div className="bg-warm/50 p-3 rounded-xl text-xs text-forest/70/80 leading-relaxed italic mb-4 line-clamp-3">
+                            <div className="bg-warm/50 p-3 rounded-xl text-xs text-forest/70/80 leading-relaxed italic mb-4 whitespace-pre-wrap max-h-32 overflow-y-auto custom-scrollbar">
                               "{matchedProf.biografia}"
+                            </div>
+                          )}
+
+                          {matchedProf.motivacaoProjeto && (
+                            <div className="bg-warm/50 p-3 rounded-xl text-xs text-forest/70/80 leading-relaxed italic mb-4 whitespace-pre-wrap max-h-32 overflow-y-auto custom-scrollbar">
+                              <span className="font-semibold block mb-1">Por que faço parte deste projeto?</span>
+                              "{matchedProf.motivacaoProjeto}"
                             </div>
                           )}
 
@@ -4376,8 +4521,8 @@ export function DashboardView({
 
       {/* Histórico Financeiro Modal */}
       {showFinanceiroModal && selectedCard && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center px-4 bg-forest/20 backdrop-blur-sm animate-in fade-in">
-          <div className="bg-white rounded-3xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl border border-soft overflow-hidden animate-in zoom-in-95">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center px-4 bg-forest/20 backdrop-blur-sm animate-in fade-in py-4">
+          <div className="bg-white rounded-3xl w-full max-w-5xl max-h-[95vh] flex flex-col shadow-2xl border border-soft overflow-hidden animate-in zoom-in-95">
             <div className="px-6 py-4 flex justify-between items-center border-b border-soft">
               <h3 className="font-serif text-2xl text-forest">
                 Histórico: {selectedCard.nome}
@@ -4503,8 +4648,8 @@ export function DashboardView({
 
       {/* Empresa Details Modal */}
       {selectedEmpresa && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-forest/20 backdrop-blur-sm animate-in fade-in">
-          <div className="bg-white rounded-3xl w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl border border-soft overflow-hidden animate-in zoom-in-95">
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-forest/20 backdrop-blur-sm animate-in fade-in py-4">
+          <div className="bg-white rounded-3xl w-full max-w-5xl max-h-[95vh] flex flex-col shadow-2xl border border-soft overflow-hidden animate-in zoom-in-95">
             <div className="px-6 py-4 flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-soft bg-warm/50 gap-2">
               <div className="flex flex-col">
                 <h3 className="font-serif text-2xl text-forest">
@@ -4785,8 +4930,8 @@ export function DashboardView({
 
       {/* Profissional Details Modal */}
       {selectedProfissional && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-forest/20 backdrop-blur-sm animate-in fade-in">
-          <div className="bg-white rounded-3xl w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl border border-soft overflow-hidden animate-in zoom-in-95">
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-forest/20 backdrop-blur-sm animate-in fade-in py-4">
+          <div className="bg-white rounded-3xl w-full max-w-5xl max-h-[95vh] flex flex-col shadow-2xl border border-soft overflow-hidden animate-in zoom-in-95">
             <div className="px-6 py-4 flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-soft bg-warm/50 gap-2">
               <div className="flex flex-col">
                 <h3 className="font-serif text-2xl text-forest">
@@ -5455,6 +5600,78 @@ export function DashboardView({
                 className="flex-1 px-4 py-2.5 sm:py-3 bg-red-500 text-white rounded-xl font-semibold text-xs sm:text-sm hover:bg-red-600 transition-colors"
               >
                 Confirmar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Devolver Paciente Modal */}
+      {devolverModalConfig && (
+        <div className="fixed inset-0 bg-forest/20 backdrop-blur-sm z-[90] flex items-center justify-center p-4">
+          <div className="bg-white max-w-md w-full rounded-[2rem] p-8 shadow-xl border border-soft flex flex-col">
+            <h3 className="text-xl font-serif text-forest mb-2">Devolver Paciente</h3>
+            <p className="text-forest/70 text-sm mb-6">
+              Você está devolvendo o(a) paciente <span className="font-semibold">{devolverModalConfig.pacienteName}</span> para a triagem. Esta ação o recolocará na Fila de Espera.
+            </p>
+
+            <div className="flex flex-col gap-4 mb-8">
+              <div>
+                <label className="text-xs uppercase font-bold tracking-wider text-forest/70 mb-2 block">
+                  Observação (Opcional)
+                </label>
+                <textarea
+                  rows={4}
+                  value={motivoDevolucaoOutro}
+                  onChange={(e) => setMotivoDevolucaoOutro(e.target.value)}
+                  className="w-full px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors text-sm custom-scrollbar"
+                  placeholder="Deixe uma observação do motivo para o gestor..."
+                />
+              </div>
+            </div>
+
+            <div className="flex w-full gap-3">
+              <button
+                onClick={() => {
+                  setDevolverModalConfig(null);
+                  setMotivoDevolucaoOutro("");
+                }}
+                className="flex-1 px-4 py-2.5 sm:py-3 bg-warm text-forest rounded-xl font-semibold text-xs sm:text-sm hover:bg-warm-dark transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={async () => {
+                  const observacaoFinal = motivoDevolucaoOutro.trim();
+
+                  try {
+                    const currentPaciente = acolhimentos.find(a => a.id === devolverModalConfig.pacienteId);
+                    const notificacaoAnterior = currentPaciente?.notificacao ? currentPaciente.notificacao + '\n\n' : '';
+                    const nowStr = new Date().toLocaleString("pt-BR");
+
+                    const textoMotivo = observacaoFinal ? ` Observação: ${observacaoFinal}` : '';
+
+                    const updates = {
+                      profissionalId: "",
+                      status: "Aguardando Avaliação", // Triagem
+                      atribuicaoStatus: null,
+                      notificacao: `${notificacaoAnterior}[${nowStr}] Atendimento devolvido pelo profissional ${profile?.name || "Parceiro"}.${textoMotivo} Retornou para a Triagem.`,
+                    };
+                    await updateDoc(
+                      doc(db, "acolhimentos", devolverModalConfig.pacienteId),
+                      updates,
+                    );
+                    setSelectedCard(null);
+                    setDevolverModalConfig(null);
+                    setMotivoDevolucaoOutro("");
+                  } catch (e) {
+                    console.error(e);
+                    alert("Erro ao devolver paciente.");
+                  }
+                }}
+                className="flex-1 px-4 py-2.5 sm:py-3 bg-red-500 text-white rounded-xl font-semibold text-xs sm:text-sm hover:bg-red-600 transition-colors"
+              >
+                Confirmar e Devolver
               </button>
             </div>
           </div>

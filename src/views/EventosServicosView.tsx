@@ -1,0 +1,607 @@
+import React, { useState, useEffect } from "react";
+import { collection, query, onSnapshot, addDoc, deleteDoc, doc, updateDoc, serverTimestamp, orderBy } from "firebase/firestore";
+import { db } from "../lib/firebase";
+import { Calendar, Clock, Plus, Trash2, Briefcase, X, Edit3, User, Share2 } from "lucide-react";
+
+interface UserProfile {
+  id?: string;
+  uid?: string;
+  name?: string;
+  email?: string;
+  role?: string;
+  [key: string]: any;
+}
+
+interface EventosServicosViewProps {
+  profile: UserProfile;
+  activeSection: "eventos" | "servicos";
+}
+
+export function EventosServicosView({ profile, activeSection }: EventosServicosViewProps) {
+  const [eventos, setEventos] = useState<any[]>([]);
+  const [servicos, setServicos] = useState<any[]>([]);
+
+  const [isEventModalOpen, setIsEventModalOpen] = useState(false);
+  const [isServiceModalOpen, setIsServiceModalOpen] = useState(false);
+
+  const [editingEventId, setEditingEventId] = useState<string | null>(null);
+  const [editingServiceId, setEditingServiceId] = useState<string | null>(null);
+  const [subscribingItem, setSubscribingItem] = useState<any>(null);
+
+  // Formulário de Evento
+  const [eventoForm, setEventoForm] = useState({
+    titulo: "",
+    tipo: "",
+    descricao: "",
+    data: "",
+    hora: "",
+  });
+
+  // Formulário de Serviço
+  const [servicoForm, setServicoForm] = useState({
+    titulo: "",
+    tipo: "", // Supervisão, Sublocação, etc
+    descricao: "",
+    contato: "",
+    data: "",
+    hora: "",
+    linkInscricao: "",
+    valor: "",
+    isGratuito: false,
+  });
+
+  const pullProfileInfo = () => {
+    const infos = [];
+    if (profile.whatsapp) infos.push(`WhatsApp: ${profile.whatsapp}`);
+    if (profile.phone && !profile.whatsapp) infos.push(`Telefone: ${profile.phone}`);
+    if (profile.email) infos.push(`Email: ${profile.email}`);
+    
+    setServicoForm(prev => ({
+      ...prev,
+      contato: infos.join("\n") || prev.contato
+    }));
+  };
+
+  useEffect(() => {
+    const qEventos = query(collection(db, "eventos"), orderBy("createdAt", "desc"));
+    const unsubEventos = onSnapshot(qEventos, (snap) => {
+      setEventos(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, (error) => {
+      console.error("Error in eventos snapshot:", error);
+    });
+
+    const qServicos = query(collection(db, "servicos"), orderBy("createdAt", "desc"));
+    const unsubServicos = onSnapshot(qServicos, (snap) => {
+      setServicos(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, (error) => {
+      console.error("Error in servicos snapshot:", error);
+    });
+
+    return () => {
+      unsubEventos();
+      unsubServicos();
+    };
+  }, []);
+
+  const handleCreateEvento = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (profile.role !== "master" && profile.role !== "triagem") return;
+
+    try {
+      if (editingEventId) {
+        await updateDoc(doc(db, "eventos", editingEventId), {
+          ...eventoForm,
+          criadorNome: profile.name,
+          criadorFoto: profile.photoUrl || profile.photo || null,
+          criadorPixKey: profile.pixKey || null,
+        });
+      } else {
+        await addDoc(collection(db, "eventos"), {
+          ...eventoForm,
+          criadorId: profile.uid || profile.id,
+          criadorNome: profile.name,
+          criadorFoto: profile.photoUrl || profile.photo || null,
+          criadorPixKey: profile.pixKey || null,
+          createdAt: serverTimestamp(),
+        });
+      }
+      setIsEventModalOpen(false);
+      setEditingEventId(null);
+      setEventoForm({ titulo: "", tipo: "", descricao: "", data: "", hora: "" });
+    } catch (error) {
+      console.error(error);
+      alert("Erro ao salvar evento.");
+    }
+  };
+
+  const handleEditEvento = (ev: any) => {
+    setEventoForm({
+      titulo: ev.titulo || "",
+      tipo: ev.tipo || "",
+      descricao: ev.descricao || "",
+      data: ev.data || "",
+      hora: ev.hora || "",
+    });
+    setEditingEventId(ev.id);
+    setIsEventModalOpen(true);
+  };
+
+  const handleRemoveEvento = async (id: string) => {
+    if (profile.role !== "master" && profile.role !== "triagem") return;
+    if (confirm("Deseja realmente remover este evento?")) {
+      await deleteDoc(doc(db, "eventos", id));
+    }
+  };
+
+  const handleShareEvento = (ev: any) => {
+    const url = window.location.href; // could add query param like ?eventoId=ev.id later if needed
+    navigator.clipboard.writeText(url).then(() => {
+      alert("Link do evento copiado para a área de transferência!");
+    }).catch(err => {
+      console.error("Erro ao copiar link:", err);
+    });
+  };
+
+  const handleCreateServico = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      if (editingServiceId) {
+        await updateDoc(doc(db, "servicos", editingServiceId), {
+          ...servicoForm,
+          criadorNome: profile.name,
+          criadorFoto: profile.photoUrl || profile.photo || null,
+          criadorPixKey: profile.pixKey || null,
+          criadorContato: profile.telefone || profile.whatsapp || profile.email || "",
+        });
+      } else {
+        await addDoc(collection(db, "servicos"), {
+          ...servicoForm,
+          criadorId: profile.uid || profile.id,
+          criadorNome: profile.name,
+          criadorFoto: profile.photoUrl || profile.photo || null,
+          criadorPixKey: profile.pixKey || null,
+          criadorContato: profile.telefone || profile.whatsapp || profile.email || "",
+          createdAt: serverTimestamp(),
+        });
+      }
+      setIsServiceModalOpen(false);
+      setEditingServiceId(null);
+      setServicoForm({ titulo: "", tipo: "", descricao: "", contato: "", data: "", hora: "", linkInscricao: "", valor: "", isGratuito: false });
+    } catch (error) {
+      console.error(error);
+      alert("Erro ao salvar serviço.");
+    }
+  };
+
+  const getProfileContactStr = () => {
+    const infos = [];
+    if (profile.whatsapp) infos.push(`WhatsApp: ${profile.whatsapp}`);
+    if (profile.phone && !profile.whatsapp) infos.push(`Telefone: ${profile.phone}`);
+    if (profile.email) infos.push(`Email: ${profile.email}`);
+    return infos.join("\n");
+  };
+
+  const handleEditServico = (svc: any) => {
+    setServicoForm({
+      titulo: svc.titulo || "",
+      tipo: svc.tipo || "",
+      descricao: svc.descricao || "",
+      contato: svc.contato || getProfileContactStr(),
+      data: svc.data || "",
+      hora: svc.hora || "",
+      linkInscricao: svc.linkInscricao || "",
+      valor: svc.valor || "",
+      isGratuito: svc.isGratuito || false,
+    });
+    setEditingServiceId(svc.id);
+    setIsServiceModalOpen(true);
+  };
+
+  const handleRemoveServico = async (id: string, criadorId: string) => {
+    // Gestor ou o criador podem remover
+    if (profile.role === "master" || profile.role === "triagem" || (profile.uid || profile.id) === criadorId) {
+      if (confirm("Deseja realmente remover este serviço?")) {
+        await deleteDoc(doc(db, "servicos", id));
+      }
+    }
+  };
+
+  const isGestor = profile.role === "master" || profile.role === "triagem";
+
+  const handleSubscribeConfirm = () => {
+    const professionalName = profile.name || "Profissional";
+    const professionalContact = profile.telefone || profile.whatsapp || profile.email || "Sem contato informado";
+    const contactText = `Nome: ${professionalName}\nCargo/Perfil: Profissional\nContato: ${professionalContact}`;
+
+    if (subscribingItem?.isGratuito || !subscribingItem?.valor) {
+        alert(`Inscrição Confirmada!\n\nEnvie os seguintes dados para o responsável (${subscribingItem?.criadorContato || "Contato não informado"}):\n\n${contactText}`);
+    } else {
+        alert(`Envie o comprovante de pagamento para a chave PIX: ${subscribingItem?.criadorPixKey || 'Não informada'}\n\nConfirme sua presença no evento através do contato do profissional que publicou (${subscribingItem?.criadorContato || "Contato não informado"}).\n\nDados a enviar:\n${contactText}`);
+    }
+    setSubscribingItem(null);
+  };
+
+  return (
+    <div className="flex-1 overflow-auto p-6 md:p-8 flex flex-col gap-8 slide-up bg-warm">
+      {activeSection === "eventos" && (
+        <>
+          <div className="w-full flex items-center justify-between bg-white px-6 py-4 rounded-2xl shadow-sm border border-soft">
+            <h2 className="font-serif text-2xl text-forest flex items-center gap-3">
+              <Calendar className="w-6 h-6 text-forest/70" />
+              Eventos da Plataforma
+            </h2>
+            {isGestor && (
+              <button 
+                onClick={() => {
+                  setEditingEventId(null);
+                  setEventoForm({ titulo: "", tipo: "", descricao: "", data: "", hora: "" });
+                  setIsEventModalOpen(true);
+                }}
+                className="flex items-center gap-2 bg-sun text-forest font-semibold text-sm px-4 py-2 rounded-xl hover:bg-sun-dark transition-colors"
+              >
+                <Plus className="w-4 h-4" /> Novo Evento
+              </button>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 w-full">
+            {eventos.map((ev) => {
+              const profileId = profile.uid || profile.id;
+              const isCreator = profileId === ev.criadorId;
+
+              return (
+              <div key={ev.id} className="bg-white p-6 rounded-[2rem] shadow-sm border border-soft flex flex-col gap-4 relative">
+                {isGestor && (
+                  <div className="absolute top-4 right-4 flex items-center gap-2 z-10">
+                    <button 
+                      onClick={() => handleEditEvento(ev)}
+                      className="bg-blue-50 text-blue-600 p-2 rounded-full hover:bg-blue-100 transition-colors"
+                      title="Editar evento"
+                    >
+                      <Edit3 className="w-4 h-4" />
+                    </button>
+                    <button 
+                      onClick={() => handleRemoveEvento(ev.id)}
+                      className="bg-red-50 text-red-600 p-2 rounded-full hover:bg-red-100 transition-colors"
+                      title="Remover evento"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
+                <div className="bg-warm/50 -mx-6 -mt-6 p-6 rounded-t-[2rem] border-b border-soft pt-12 sm:pt-6">
+                  {ev.tipo && <span className="text-xs font-semibold text-sun-dark-dark bg-sun/30 px-3 py-1 rounded-full uppercase tracking-wider mb-2 inline-block">{ev.tipo}</span>}
+                  <h3 className="font-serif text-xl text-forest leading-tight pr-8">{ev.titulo}</h3>
+                </div>
+                <p className="text-sm text-forest/70 whitespace-pre-wrap flex-1">{ev.descricao}</p>
+                
+                <div className="flex items-center justify-between mt-auto pt-4 border-t border-soft text-xs font-medium text-forest/60">
+                  <span className="flex items-center gap-1.5"><Calendar className="w-3.5 h-3.5" /> {ev.data}</span>
+                  <span className="flex items-center gap-1.5"><Clock className="w-3.5 h-3.5" /> {ev.hora}</span>
+                </div>
+
+                <div className="pt-3 border-t border-soft mt-3 flex items-center gap-3 justify-between">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-8 h-8 rounded-full bg-forest/10 overflow-hidden flex-shrink-0 flex items-center justify-center border border-soft">
+                      {ev.criadorFoto ? <img src={ev.criadorFoto} alt={ev.criadorNome} className="w-full h-full object-cover" /> : <User className="w-4 h-4 text-forest/50"/>}
+                    </div>
+                    <div className="flex flex-col flex-1 overflow-hidden">
+                      <span className="text-[10px] text-forest/50 leading-tight uppercase font-semibold tracking-wider">Sobre mim</span>
+                      <span className="text-xs font-semibold text-forest truncate">{ev.criadorNome}</span>
+                    </div>
+                  </div>
+                  {!isCreator && ev.criadorId && (
+                     <a href={`${window.location.origin}?prof=${ev.criadorId}`} target="_blank" rel="noopener noreferrer" className="flex-shrink-0 px-3 py-1.5 text-xs text-forest bg-warm font-semibold rounded-lg border border-soft hover:bg-soft transition-colors ml-2">Ver Perfil</a>
+                  )}
+                </div>
+                
+                <div className="flex items-center gap-2 mt-2">
+                  {profile.role === "profissional" && !isCreator && (
+                    <button 
+                      onClick={() => setSubscribingItem(ev)}
+                      className="flex-1 py-2 bg-warm text-forest font-semibold rounded-xl text-sm border border-soft hover:bg-forest hover:text-white transition-colors"
+                    >
+                      Me Inscrever
+                    </button>
+                  )}
+                  <button onClick={() => handleShareEvento(ev)} className="p-2 border border-soft rounded-xl text-forest/70 hover:bg-forest hover:text-white transition-colors bg-warm ml-auto" title="Compartilhar evento">
+                    <Share2 className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+            )})}
+            {eventos.length === 0 && (
+              <div className="col-span-full p-8 text-center text-forest/60 bg-white/50 border border-dashed border-soft rounded-2xl">
+                Nenhum evento da plataforma no momento.
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {activeSection === "servicos" && (
+        <>
+          <div className="w-full flex items-center justify-between bg-white px-6 py-4 rounded-2xl shadow-sm border border-soft">
+            <h2 className="font-serif text-2xl text-forest flex items-center gap-3">
+              <Briefcase className="w-6 h-6 text-forest/70" />
+              Serviços para Psicólogos
+            </h2>
+            <button 
+              onClick={() => {
+                setEditingServiceId(null);
+                setServicoForm({ titulo: "", tipo: "", descricao: "", contato: getProfileContactStr(), data: "", hora: "", linkInscricao: "", valor: "", isGratuito: false });
+                setIsServiceModalOpen(true);
+              }}
+              className="flex items-center gap-2 bg-sun text-forest font-semibold text-sm px-4 py-2 rounded-xl hover:bg-sun-dark transition-colors"
+            >
+              <Plus className="w-4 h-4" /> Ofertar Serviço
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 w-full">
+            {servicos.map((svc) => {
+              const profileId = profile.uid || profile.id;
+              const isCreator = profileId === svc.criadorId;
+              const canRemove = isCreator || isGestor;
+
+              return (
+                <div key={svc.id} className="bg-white p-6 rounded-[2rem] shadow-sm border border-soft flex flex-col gap-4 relative">
+                   {canRemove && (
+                    <div className="absolute top-4 right-4 flex items-center gap-2 z-10">
+                      {(isCreator || isGestor) && (
+                        <button 
+                          onClick={() => handleEditServico(svc)}
+                          className="bg-blue-50 text-blue-600 p-2 rounded-full hover:bg-blue-100 transition-colors"
+                          title="Editar Serviço"
+                        >
+                          <Edit3 className="w-4 h-4" />
+                        </button>
+                      )}
+                      <button 
+                        onClick={() => handleRemoveServico(svc.id, svc.criadorId)}
+                        className="bg-red-50 text-red-600 p-2 rounded-full hover:bg-red-100 transition-colors"
+                        title="Remover Serviço"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
+                  <div className="flex justify-between items-start pr-10">
+                    <span className="text-xs font-semibold text-purple-800 bg-purple-100 px-3 py-1 rounded-full uppercase tracking-wider">{svc.tipo || "Serviço"}</span>
+                    {isCreator && <span className="text-[10px] text-forest/50 bg-warm px-2 py-0.5 rounded border border-soft">Meu Serviço</span>}
+                  </div>
+                  <h3 className="font-serif text-xl text-forest">{svc.titulo}</h3>
+                  <p className="text-sm text-forest/70 flex-1 whitespace-pre-wrap">{svc.descricao}</p>
+                  
+                  {svc.contato && (
+                    <div className="bg-warm/50 p-3 rounded-xl border border-soft text-xs text-forest/80 mt-2 mb-2 whitespace-pre-wrap">
+                       <span className="font-semibold block mb-1">Contato:</span>
+                       {svc.contato}
+                    </div>
+                  )}
+
+                  { (svc.data || svc.hora || svc.valor || svc.isGratuito) && (
+                    <div className="flex flex-col gap-1.5 mt-auto pt-4 border-t border-soft text-xs font-medium text-forest/60">
+                      { (svc.data || svc.hora) && (
+                        <div className="flex items-center gap-4">
+                          {svc.data && <span className="flex items-center gap-1.5"><Calendar className="w-3.5 h-3.5" /> {svc.data}</span>}
+                          {svc.hora && <span className="flex items-center gap-1.5"><Clock className="w-3.5 h-3.5" /> {svc.hora}</span>}
+                        </div>
+                      )}
+                      { (svc.isGratuito || svc.valor) && (
+                         <div className="flex items-center gap-1.5 mt-1">
+                           <span className="font-semibold text-forest">Valor:</span>
+                           <span className={svc.isGratuito ? "text-emerald-600 font-bold" : ""}>{svc.isGratuito ? "Gratuito" : svc.valor}</span>
+                         </div>
+                      )}
+                    </div>
+                  )}
+
+                  {svc.linkInscricao && (
+                     <a href={svc.linkInscricao} target="_blank" rel="noopener noreferrer" className="w-full text-center py-2 bg-forest text-white font-semibold rounded-xl text-sm border border-forest hover:bg-forest/90 transition-colors block">
+                       Acessar Link / Inscrição
+                     </a>
+                  )}
+
+                  <div className="mt-2 pt-4 border-t border-soft flex items-center justify-between">
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      <div className="w-8 h-8 rounded-full overflow-hidden bg-forest/20 flex items-center justify-center text-forest font-bold text-xs flex-shrink-0">
+                        {svc.criadorFoto ? <img src={svc.criadorFoto} alt={svc.criadorNome} className="w-full h-full object-cover" /> : <User className="w-4 h-4"/>}
+                      </div>
+                      <div className="flex flex-col min-w-0">
+                         <span className="text-[10px] text-forest/50 leading-tight uppercase font-semibold tracking-wider">Sobre mim</span>
+                         <span className="text-xs font-semibold text-forest truncate">{isCreator ? "Você" : svc.criadorNome}</span>
+                      </div>
+                    </div>
+                    {!isCreator && (
+                      <a href={`${window.location.origin}?prof=${svc.criadorId}`} target="_blank" rel="noopener noreferrer" className="flex-shrink-0 px-3 py-1.5 text-xs text-forest bg-warm font-semibold rounded-lg border border-soft hover:bg-soft transition-colors ml-2">Ver Perfil</a>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 mt-2">
+                    {profile.role === "profissional" && !isCreator && (
+                      <button 
+                        onClick={() => setSubscribingItem(svc)}
+                        className="flex-1 py-2 bg-warm text-forest font-semibold rounded-xl text-sm border border-soft hover:bg-forest hover:text-white transition-colors"
+                      >
+                        Me Inscrever
+                      </button>
+                    )}
+                    <button onClick={() => handleShareEvento(svc)} className="p-2 border border-soft rounded-xl text-forest/70 hover:bg-forest hover:text-white transition-colors bg-warm ml-auto" title="Compartilhar">
+                      <Share2 className="w-5 h-5" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+             {servicos.length === 0 && (
+              <div className="col-span-full p-8 text-center text-forest/60 bg-white/50 border border-dashed border-soft rounded-2xl">
+                Nenhum serviço oferecido no momento.
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* Modais de Edição */}
+      {isEventModalOpen && (
+        <div className="fixed inset-0 bg-forest/20 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white max-w-lg w-full rounded-[2rem] p-6 sm:p-8 shadow-xl flex flex-col items-start relative border border-soft max-h-[90vh] overflow-y-auto">
+             <button 
+              onClick={() => setIsEventModalOpen(false)}
+              className="absolute top-6 right-6 text-forest/40 hover:text-forest"
+            >
+              <X className="w-5 h-5"/>
+            </button>
+            <h3 className="text-xl font-serif text-forest mb-6">{editingEventId ? "Editar Evento" : "Criar Novo Evento"}</h3>
+            <form onSubmit={handleCreateEvento} className="w-full flex flex-col gap-4">
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Título do Evento</label>
+                <input required type="text" value={eventoForm.titulo} onChange={e => setEventoForm({...eventoForm, titulo: e.target.value})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                   <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Tipo</label>
+                   <input required type="text" placeholder="Ex: Palestra, Workshop..." value={eventoForm.tipo} onChange={e => setEventoForm({...eventoForm, tipo: e.target.value})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest" />
+                </div>
+                <div>
+                   <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Data</label>
+                   <input required type="date" value={eventoForm.data} onChange={e => setEventoForm({...eventoForm, data: e.target.value})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest" />
+                </div>
+              </div>
+              <div>
+                 <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Hora</label>
+                 <input required type="time" value={eventoForm.hora} onChange={e => setEventoForm({...eventoForm, hora: e.target.value})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest" />
+              </div>
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Descrição</label>
+                <textarea required rows={4} value={eventoForm.descricao} onChange={e => setEventoForm({...eventoForm, descricao: e.target.value})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest" />
+              </div>
+              <button disabled={!eventoForm.titulo || !eventoForm.descricao || !eventoForm.data} type="submit" className="w-full mt-4 py-3 bg-sun text-forest font-bold rounded-xl hover:bg-sun-dark transition-colors disabled:opacity-50">
+                {editingEventId ? "Salvar Alterações" : "Publicar Evento"}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {isServiceModalOpen && (
+        <div className="fixed inset-0 bg-forest/20 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white max-w-lg w-full rounded-[2rem] p-6 sm:p-8 shadow-xl flex flex-col items-start relative border border-soft max-h-[90vh] overflow-y-auto">
+             <button 
+              onClick={() => setIsServiceModalOpen(false)}
+              className="absolute top-6 right-6 text-forest/40 hover:text-forest"
+            >
+              <X className="w-5 h-5"/>
+            </button>
+            <h3 className="text-xl font-serif text-forest mb-6">{editingServiceId ? "Editar Serviço" : "Ofertar um Serviço"}</h3>
+            <form onSubmit={handleCreateServico} className="w-full flex flex-col gap-4">
+               <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Título do Serviço</label>
+                <input required type="text" placeholder="Ex: Supervisão Clínica em TCC" value={servicoForm.titulo} onChange={e => setServicoForm({...servicoForm, titulo: e.target.value})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest" />
+              </div>
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Tipo de Serviço</label>
+                <input required type="text" placeholder="Ex: Supervisão, Sublocação, Cursos..." value={servicoForm.tipo} onChange={e => setServicoForm({...servicoForm, tipo: e.target.value})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest" />
+              </div>
+               <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Descrição Detalhada</label>
+                <textarea required rows={4} value={servicoForm.descricao} onChange={e => setServicoForm({...servicoForm, descricao: e.target.value})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest custom-scrollbar" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                 <div>
+                   <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Data (Opcional)</label>
+                   <input type="date" value={servicoForm.data} onChange={e => setServicoForm({...servicoForm, data: e.target.value})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest" />
+                </div>
+                <div>
+                   <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Hora (Opcional)</label>
+                   <input type="time" value={servicoForm.hora} onChange={e => setServicoForm({...servicoForm, hora: e.target.value})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest" />
+                </div>
+              </div>
+              <div className="grid grid-cols-5 gap-4 items-end">
+                <div className="col-span-3">
+                  <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Valor (Opcional)</label>
+                  <input type="text" disabled={servicoForm.isGratuito} placeholder="Ex: R$ 150,00" value={servicoForm.valor} onChange={e => setServicoForm({...servicoForm, valor: e.target.value})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest disabled:opacity-50" />
+                </div>
+                <div className="col-span-2 flex items-center justify-center p-3 bg-white border border-soft rounded-xl shadow-sm h-[48px]">
+                  <label className="flex items-center gap-2 text-sm font-semibold text-forest cursor-pointer w-full justify-center">
+                    <input type="checkbox" checked={servicoForm.isGratuito} onChange={e => {
+                        const checked = e.target.checked;
+                        setServicoForm({...servicoForm, isGratuito: checked, valor: checked ? "" : servicoForm.valor});
+                    }} className="w-4 h-4 accent-forest" />
+                    Gratuito
+                  </label>
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Link de Inscrição / Mais Informações (Opcional)</label>
+                <input type="url" placeholder="https://" value={servicoForm.linkInscricao} onChange={e => setServicoForm({...servicoForm, linkInscricao: e.target.value})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest" />
+              </div>
+               <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs font-bold uppercase tracking-wider text-forest/70 block">Informações de Contato / Outros (Opcional)</label>
+                  <button type="button" onClick={pullProfileInfo} className="text-[10px] text-blue-600 bg-blue-50 hover:bg-blue-100 px-2 py-1 rounded font-semibold transition-colors">
+                    Puxar do meu perfil
+                  </button>
+                </div>
+                <textarea rows={2} value={servicoForm.contato} onChange={e => setServicoForm({...servicoForm, contato: e.target.value})} placeholder="Email, WhatsApp, Endereço..." className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest custom-scrollbar" />
+              </div>
+               <button disabled={!servicoForm.titulo || !servicoForm.descricao || !servicoForm.tipo} type="submit" className="w-full mt-4 py-3 bg-sun text-forest font-bold rounded-xl hover:bg-sun-dark transition-colors disabled:opacity-50">
+                {editingServiceId ? "Salvar Alterações" : "Publicar Serviço"}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+      {subscribingItem && (
+        <div className="fixed inset-0 bg-forest/20 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white max-w-md w-full rounded-[2rem] p-6 sm:p-8 shadow-xl flex flex-col items-start relative border border-soft max-h-[90vh] overflow-y-auto">
+            <button 
+              onClick={() => setSubscribingItem(null)}
+              className="absolute top-6 right-6 text-forest/40 hover:text-forest"
+            >
+              <X className="w-5 h-5"/>
+            </button>
+            <h3 className="text-xl font-serif text-forest mb-6">Confirmação de Inscrição</h3>
+            
+            <div className="w-full flex flex-col gap-4 text-sm text-forest/80 mb-6">
+              <p>Inscrição para: <strong>{subscribingItem.titulo}</strong></p>
+              
+              {!subscribingItem.isGratuito && subscribingItem.valor && (
+                <div className="bg-sun/30 p-4 rounded-xl border border-sun">
+                  <p className="font-semibold text-sun-dark-dark mb-2">Instruções de Pagamento</p>
+                  <p className="text-xs mb-1">Para confirmar sua vaga, pague o valor de <strong className="text-forest">{subscribingItem.valor}</strong> para a chave PIX abaixo:</p>
+                  <div className="px-3 py-2 bg-white rounded border border-soft font-mono select-all text-sm mb-2 break-all text-center">
+                    {subscribingItem.criadorPixKey || "Chave PIX não informada pelo organizador."}
+                  </div>
+                  {subscribingItem.criadorPixKey && (
+                    <button 
+                      onClick={() => {
+                        navigator.clipboard.writeText(subscribingItem.criadorPixKey);
+                        alert("Chave PIX copiada!");
+                      }} 
+                      className="w-full text-[10px] font-bold uppercase tracking-wider text-forest bg-warm hover:bg-soft py-1.5 rounded transition-colors"
+                    >
+                      Copiar Chave PIX
+                    </button>
+                  )}
+                </div>
+              )}
+
+              <p className="text-xs">
+                Ao clicar em confirmar, um resumo dos seus dados preenchidos no Meu Perfil 
+                (Nome Completo, E-mail, Telefone/WhatsApp) estará pronto para ser enviado ao criador: <strong>{subscribingItem.criadorNome}</strong>.
+              </p>
+            </div>
+            
+            <button 
+              onClick={handleSubscribeConfirm}
+              className="w-full py-3 bg-forest text-white font-bold rounded-xl hover:bg-forest/90 transition-colors"
+            >
+              Ciente, Ver Dados a Enviar
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

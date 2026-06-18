@@ -190,6 +190,17 @@ export function PublicProfProfileView({ profUid, onBack }: { profUid: string; on
               <p className="text-sm text-forest/50 italic py-6">O profissional ainda não incluiu um mini-currículo.</p>
             )}
 
+            {prof.motivacaoProjeto && (
+              <>
+                <div className="mt-4 flex items-center gap-3 border-b border-soft/60 pb-4">
+                  <h2 className="font-serif text-xl sm:text-2xl font-semibold text-forest">Porque faço parte desse projeto?</h2>
+                </div>
+                <div className="text-sm sm:text-base leading-relaxed text-forest/80 whitespace-pre-line space-y-4">
+                  {prof.motivacaoProjeto}
+                </div>
+              </>
+            )}
+
             <div className="mt-6 pt-6 border-t border-soft/60 grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="flex gap-3 items-start bg-warm/30 p-4 rounded-2xl border border-soft">
                 <CheckCircle2 className="w-5 h-5 text-sun-dark shrink-0 mt-0.5" />
