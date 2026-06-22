@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { EventosServicosView } from "./EventosServicosView";
+import { ComplianceModal } from "../components/ComplianceModal";
 import {
   ArrowLeft,
   User,
@@ -31,6 +32,7 @@ import {
   CheckSquare,
   Plus,
   BarChart2,
+  RefreshCw,
   Building2,
   Link2,
   Copy,
@@ -38,6 +40,7 @@ import {
   X,
   UserPlus,
   Heart,
+  ShieldAlert,
 } from "lucide-react";
 import { auth, db } from "../lib/firebase";
 import {
@@ -193,6 +196,88 @@ const COLUMNS = [
   },
 ];
 
+// Debounced components to prevent laggy typing due to frequent parent re-renders and db syncs
+const DebouncedInput = ({
+  value,
+  onChange,
+  className,
+  placeholder,
+  type = "text",
+  disabled = false,
+  maxLength,
+}: {
+  value: string;
+  onChange: (val: string) => void;
+  className?: string;
+  placeholder?: string;
+  type?: string;
+  disabled?: boolean;
+  maxLength?: number;
+}) => {
+  const [localVal, setLocalVal] = useState(value);
+
+  useEffect(() => {
+    setLocalVal(value);
+  }, [value]);
+
+  return (
+    <input
+      type={type}
+      disabled={disabled}
+      placeholder={placeholder}
+      className={className}
+      maxLength={maxLength}
+      value={localVal || ""}
+      onChange={(e) => setLocalVal(e.target.value)}
+      onBlur={() => {
+        if (localVal !== value) {
+          onChange(localVal);
+        }
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          (e.target as HTMLInputElement).blur();
+        }
+      }}
+    />
+  );
+};
+
+const DebouncedTextArea = ({
+  value,
+  onChange,
+  className,
+  placeholder,
+  maxLength,
+}: {
+  value: string;
+  onChange: (val: string) => void;
+  className?: string;
+  placeholder?: string;
+  maxLength?: number;
+}) => {
+  const [localVal, setLocalVal] = useState(value);
+
+  useEffect(() => {
+    setLocalVal(value);
+  }, [value]);
+
+  return (
+    <textarea
+      placeholder={placeholder}
+      className={className}
+      maxLength={maxLength}
+      value={localVal || ""}
+      onChange={(e) => setLocalVal(e.target.value)}
+      onBlur={() => {
+        if (localVal !== value) {
+          onChange(localVal);
+        }
+      }}
+    />
+  );
+};
+
 // Editable Field Component
 const EditableField = ({
   label,
@@ -206,22 +291,40 @@ const EditableField = ({
   field: string;
   onChange: (f: string, v: any) => void;
   isEditing: boolean;
-}) => (
-  <div>
-    <span className="block text-[10px] font-semibold uppercase text-forest/70/60">
-      {label}
-    </span>
-    {isEditing ? (
-      <input
-        value={value || ""}
-        onChange={(e) => onChange(field, e.target.value)}
-        className="text-sm font-medium text-forest border-b border-sun-dark focus:outline-none bg-transparent w-full"
-      />
-    ) : (
-      <span className="text-sm font-medium text-forest">{value || "-"}</span>
-    )}
-  </div>
-);
+}) => {
+  const [localValue, setLocalValue] = useState(value);
+
+  useEffect(() => {
+    setLocalValue(value);
+  }, [value]);
+
+  return (
+    <div>
+      <span className="block text-[10px] font-semibold uppercase text-forest/70/60">
+        {label}
+      </span>
+      {isEditing ? (
+        <input
+          value={localValue || ""}
+          onChange={(e) => setLocalValue(e.target.value)}
+          onBlur={() => {
+            if (localValue !== value) {
+              onChange(field, localValue);
+            }
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              (e.target as HTMLInputElement).blur();
+            }
+          }}
+          className="text-sm font-medium text-forest border-b border-sun-dark focus:outline-none bg-transparent w-full"
+        />
+      ) : (
+        <span className="text-sm font-medium text-forest">{value || "-"}</span>
+      )}
+    </div>
+  );
+};
 
 export function DashboardView({
   onNavigate,
@@ -334,6 +437,9 @@ export function DashboardView({
     [],
   );
   const [empresasLeads, setEmpresasLeads] = useState<EmpresaLead[]>([]);
+  const [complianceMessages, setComplianceMessages] = useState<any[]>([]);
+  const [isReconciling, setIsReconciling] = useState(false);
+  const [showComplianceModal, setShowComplianceModal] = useState(false);
 
   const [selectedProfissional, setSelectedProfissional] = useState<
     ProfissionalLead | UserProfile | null
@@ -450,6 +556,7 @@ export function DashboardView({
     let unsubMeusPacientes: (() => void) | undefined;
     let unsubEmpresas: (() => void) | undefined;
     let unsubConfig: (() => void) | undefined;
+    let unsubComplianceMsg: (() => void) | undefined;
 
     const unsub = onAuthStateChanged(auth, async (u) => {
       setUser(u);
@@ -606,6 +713,23 @@ export function DashboardView({
               setEmpresasLeads(list);
             },
           );
+          
+          if (hasMaster || hasTriagem) {
+            unsubComplianceMsg = onSnapshot(
+              query(collection(db, "compliance")),
+              (snapshot) => {
+                const list: any[] = [];
+                snapshot.forEach((d) =>
+                  list.push({ id: d.id, ...d.data() })
+                );
+                list.sort(
+                  (a, b) =>
+                    b.createdAt?.toMillis?.() - a.createdAt?.toMillis?.() || 0,
+                );
+                setComplianceMessages(list);
+              }
+            );
+          }
         }
 
         setLoadingObj(false);
@@ -618,6 +742,7 @@ export function DashboardView({
         if (unsubMeusPacientes) unsubMeusPacientes();
         if (unsubEmpresas) unsubEmpresas();
         if (unsubConfig) unsubConfig();
+        if (unsubComplianceMsg) unsubComplianceMsg();
         unsubCards = undefined;
         unsubDoacoes = undefined;
         unsubSol = undefined;
@@ -625,6 +750,7 @@ export function DashboardView({
         unsubProAtivos = undefined;
         unsubMeusPacientes = undefined;
         unsubEmpresas = undefined;
+        unsubComplianceMsg = undefined;
         setProfile(null);
         setActiveRoleView(null);
         setAcolhimentos([]);
@@ -648,6 +774,7 @@ export function DashboardView({
       if (unsubMeusPacientes) unsubMeusPacientes();
       if (unsubEmpresas) unsubEmpresas();
       if (unsubConfig) unsubConfig();
+      if (unsubComplianceMsg) unsubComplianceMsg();
     };
   }, []);
 
@@ -962,6 +1089,50 @@ export function DashboardView({
   const handleCreateProfissional = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      let actualLeadId = leadIdToConvert;
+      if (!actualLeadId && newProfEmail) {
+        const matched = profissionaisLeads.find(
+          (l) => l.email?.toLowerCase().trim() === newProfEmail.toLowerCase().trim()
+        );
+        if (matched) {
+          actualLeadId = matched.id;
+        }
+      }
+
+      let leadData: any = {};
+      if (actualLeadId) {
+        try {
+          const leadDoc = await getDoc(doc(db, "profissionais_leads", actualLeadId));
+          if (leadDoc.exists()) {
+            const data = leadDoc.data();
+            leadData = {
+              telefone: data.telefone || "",
+              crp: data.crp || "",
+              cpf: data.cpf || "",
+              cidade: data.cidade || "",
+              uf: data.uf || "",
+              motivacao: data.motivacao || data.motivo || "",
+              bioCurta: data.bioCurta || "",
+              instagramUrl: data.instagramUrl || "",
+              linkedinUrl: data.linkedinUrl || "",
+              siteUrl: data.siteUrl || "",
+              abordagem: data.abordagem || "",
+              especialidade: data.especialidade || "",
+              anoFormacao: data.anoFormacao || "",
+              horasDisponiveis: data.horasDisponiveis || "",
+              publicosExperiencia: data.publicosExperiencia || [],
+              publicosGosto: data.publicosGosto || [],
+              outrosPublicosExperiencia: data.outrosPublicosExperiencia || "",
+              outrosPublicosGosto: data.outrosPublicosGosto || "",
+              registrosDeReunioes: data.registrosDeReunioes || "",
+              notificacao: data.notificacao || "",
+            };
+          }
+        } catch (leadFetchErr) {
+          console.error("Erro ao obter dados do lead para migrar:", leadFetchErr);
+        }
+      }
+
       // Usar uma instância secundária para não deslogar o Gestor
       const secondaryApp = initializeApp(
         firebaseConfig,
@@ -982,11 +1153,12 @@ export function DashboardView({
         role: newProfRole,
         requirePasswordChange: true,
         createdAt: new Date(),
+        ...leadData,
       });
 
-      if (leadIdToConvert) {
+      if (actualLeadId) {
         try {
-          await deleteDoc(doc(db, "profissionais_leads", leadIdToConvert));
+          await deleteDoc(doc(db, "profissionais_leads", actualLeadId));
         } catch (delErr) {
           console.error("Erro ao remover lead após conversão", delErr);
         }
@@ -1024,12 +1196,58 @@ export function DashboardView({
         );
         if (existingUser) {
           try {
-            await updateDoc(doc(db, "users", existingUser.uid!), {
+            const existingUpdates: any = {
               role: newProfRole,
               statusUpdatedAt: serverTimestamp(),
-            });
-            if (leadIdToConvert) {
-              await deleteDoc(doc(db, "profissionais_leads", leadIdToConvert));
+            };
+            
+            // Check lookup again in exception handler in case lead data wasn't matched earlier
+            let actualLeadIdExc = leadIdToConvert;
+            if (!actualLeadIdExc && newProfEmail) {
+              const matched = profissionaisLeads.find(
+                (l) => l.email?.toLowerCase().trim() === newProfEmail.toLowerCase().trim()
+              );
+              if (matched) {
+                actualLeadIdExc = matched.id;
+              }
+            }
+
+            if (actualLeadIdExc) {
+              try {
+                const leadDoc = await getDoc(doc(db, "profissionais_leads", actualLeadIdExc));
+                if (leadDoc.exists()) {
+                  const data = leadDoc.data();
+                  Object.assign(existingUpdates, {
+                    telefone: data.telefone || "",
+                    crp: data.crp || "",
+                    cpf: data.cpf || "",
+                    cidade: data.cidade || "",
+                    uf: data.uf || "",
+                    motivacao: data.motivacao || data.motivo || "",
+                    bioCurta: data.bioCurta || "",
+                    instagramUrl: data.instagramUrl || "",
+                    linkedinUrl: data.linkedinUrl || "",
+                    siteUrl: data.siteUrl || "",
+                    abordagem: data.abordagem || "",
+                    especialidade: data.especialidade || "",
+                    anoFormacao: data.anoFormacao || "",
+                    horasDisponiveis: data.horasDisponiveis || "",
+                    publicosExperiencia: data.publicosExperiencia || [],
+                    publicosGosto: data.publicosGosto || [],
+                    outrosPublicosExperiencia: data.outrosPublicosExperiencia || "",
+                    outrosPublicosGosto: data.outrosPublicosGosto || "",
+                    registrosDeReunioes: data.registrosDeReunioes || "",
+                    notificacao: data.notificacao || "",
+                  });
+                }
+              } catch (exLeadErr) {
+                console.error("Erro ao obter dados do lead para promover:", exLeadErr);
+              }
+            }
+
+            await updateDoc(doc(db, "users", existingUser.uid!), existingUpdates);
+            if (actualLeadIdExc) {
+              await deleteDoc(doc(db, "profissionais_leads", actualLeadIdExc));
               setLeadIdToConvert(null);
             }
             alert(
@@ -1053,6 +1271,70 @@ export function DashboardView({
       } else {
         alert("Erro ao criar conta: " + err.message);
       }
+    }
+  };
+
+  const handleReconcileExistingProfs = async () => {
+    if (profissionaisAtivos.length === 0) {
+      alert("Nenhum profissional ativo cadastrado na plataforma para sincronizar.");
+      return;
+    }
+    
+    const confirm = window.confirm(
+      "Esta ação irá procurar por formulários de inscrição pendentes (Leads) que possuam o mesmo e-mail de profissionais ativos e preencher as informações que ainda estiverem vazias no perfil deles (como CRP, CPF, telefone, especialidade, abordagem, cidade, estado, biografia, etc.). Deseja continuar?"
+    );
+    if (!confirm) return;
+
+    setIsReconciling(true);
+    let updatedCount = 0;
+    
+    try {
+      for (const prof of profissionaisAtivos) {
+        if (!prof.email) continue;
+        
+        // Find matching lead by email
+        const matchingLead = profissionaisLeads.find(
+          (lead) => lead.email?.toLowerCase().trim() === prof.email?.toLowerCase().trim()
+        );
+        
+        if (matchingLead) {
+          const fieldsToMerge = [
+            "telefone", "crp", "cpf", "cidade", "uf", "motivacao", "bioCurta", 
+            "instagramUrl", "linkedinUrl", "siteUrl", "abordagem", "especialidade", 
+            "anoFormacao", "horasDisponiveis", "publicosExperiencia", "publicosGosto", 
+            "outrosPublicosExperiencia", "outrosPublicosGosto", "registrosDeReunioes", 
+            "notificacao"
+          ];
+          
+          const updates: any = {};
+          let hasNewData = false;
+          
+          for (const field of fieldsToMerge) {
+            const leadVal = matchingLead[field];
+            const profVal = prof[field];
+            
+            const isProfEmpty = profVal === undefined || profVal === null || profVal === "" || (Array.isArray(profVal) && profVal.length === 0);
+            const isLeadNotEmpty = leadVal !== undefined && leadVal !== null && leadVal !== "" && (!Array.isArray(leadVal) || leadVal.length > 0);
+            
+            if (isProfEmpty && isLeadNotEmpty) {
+              updates[field] = leadVal;
+              hasNewData = true;
+            }
+          }
+          
+          if (hasNewData) {
+            await updateDoc(doc(db, "users", prof.uid!), updates);
+            updatedCount++;
+          }
+        }
+      }
+      
+      alert(`Sincronização concluída! ${updatedCount} profissional(is) atualizado(s) com dados do formulário de inscrição.`);
+    } catch (error) {
+      console.error("Erro na reconciliação de dados dos profissionais:", error);
+      alert("Houve um erro ao sincronizar os dados dos profissionais.");
+    } finally {
+      setIsReconciling(false);
     }
   };
 
@@ -1980,6 +2262,17 @@ export function DashboardView({
                   {pendingEmpresasCount > 0 && (
                     <span className="bg-red-500 text-white text-[10px] w-4 h-4 flex items-center justify-center rounded-full font-bold ml-1">
                       {pendingEmpresasCount}
+                    </span>
+                  )}
+                </button>
+                <button
+                  onClick={() => setActiveTab("compliance")}
+                  className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "compliance" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
+                >
+                  Compliance
+                  {complianceMessages.filter((m) => m.status === "Pendente").length > 0 && (
+                    <span className="bg-red-500 text-white text-[10px] w-4 h-4 flex items-center justify-center rounded-full font-bold ml-1">
+                      {complianceMessages.filter((m) => m.status === "Pendente").length}
                     </span>
                   )}
                 </button>
@@ -3014,6 +3307,12 @@ export function DashboardView({
                     {globalConfigs.emailSuporte}
                   </a>
                 )}
+                <button
+                  onClick={() => setShowComplianceModal(true)}
+                  className="w-full md:w-auto px-3 py-2.5 bg-white text-forest hover:bg-sun-dark rounded-full text-[10px] md:text-xs font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-2 text-center shadow-sm"
+                >
+                  <ShieldAlert className="w-4 h-4 shrink-0" /> Ouvidoria
+                </button>
               </div>
             </div>
           </div>
@@ -3090,11 +3389,11 @@ export function DashboardView({
                     <label className="text-xs uppercase font-bold tracking-wider text-forest/60">
                       Nome Completo
                     </label>
-                    <input
+                    <DebouncedInput
                       type="text"
                       value={profile.name || ""}
-                      onChange={(e) =>
-                        setProfile({ ...profile, name: e.target.value })
+                      onChange={(val) =>
+                        setProfile({ ...profile, name: val })
                       }
                       className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors text-sm text-forest"
                     />
@@ -3114,12 +3413,12 @@ export function DashboardView({
                     <label className="text-xs uppercase font-bold tracking-wider text-forest/60">
                       Telefone / WhatsApp Comercial
                     </label>
-                    <input
+                    <DebouncedInput
                       type="tel"
                       value={profile.telefone || ""}
                       placeholder="Ex: 11999999999"
-                      onChange={(e) =>
-                        setProfile({ ...profile, telefone: e.target.value })
+                      onChange={(val) =>
+                        setProfile({ ...profile, telefone: val })
                       }
                       className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors text-sm text-forest"
                     />
@@ -3128,12 +3427,12 @@ export function DashboardView({
                     <label className="text-xs uppercase font-bold tracking-wider text-forest/60">
                       CPF
                     </label>
-                    <input
+                    <DebouncedInput
                       type="text"
                       value={profile.cpf || ""}
                       placeholder="Ex: 000.000.000-00"
-                      onChange={(e) =>
-                        setProfile({ ...profile, cpf: e.target.value })
+                      onChange={(val) =>
+                        setProfile({ ...profile, cpf: val })
                       }
                       className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors text-sm text-forest"
                     />
@@ -3142,12 +3441,12 @@ export function DashboardView({
                     <label className="text-xs uppercase font-bold tracking-wider text-forest/60">
                       Chave PIX (Para Recebimento de Serviços)
                     </label>
-                    <input
+                    <DebouncedInput
                       type="text"
                       value={profile.pixKey || ""}
                       placeholder="Ex: CPF, Email, Celular ou Aleatória"
-                      onChange={(e) =>
-                        setProfile({ ...profile, pixKey: e.target.value })
+                      onChange={(val) =>
+                        setProfile({ ...profile, pixKey: val })
                       }
                       className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors text-sm text-forest"
                     />
@@ -3156,12 +3455,12 @@ export function DashboardView({
                     <label className="text-xs uppercase font-bold tracking-wider text-forest/60">
                       CRP (Registro Profissional)
                     </label>
-                    <input
+                    <DebouncedInput
                       type="text"
                       value={profile.crp || ""}
                       placeholder="Ex: 06/123456"
-                      onChange={(e) =>
-                        setProfile({ ...profile, crp: e.target.value })
+                      onChange={(val) =>
+                        setProfile({ ...profile, crp: val })
                       }
                       className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors text-sm text-forest"
                     />
@@ -3180,12 +3479,12 @@ export function DashboardView({
                     <label className="text-xs uppercase font-bold tracking-wider text-forest/60">
                       Ano de Formação / Graduação
                     </label>
-                    <input
+                    <DebouncedInput
                       type="number"
                       value={profile.anoFormacao || ""}
                       placeholder="Ex: 2018"
-                      onChange={(e) =>
-                        setProfile({ ...profile, anoFormacao: e.target.value })
+                      onChange={(val) =>
+                        setProfile({ ...profile, anoFormacao: val })
                       }
                       className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors text-sm text-forest"
                     />
@@ -3194,12 +3493,12 @@ export function DashboardView({
                     <label className="text-xs uppercase font-bold tracking-wider text-forest/60">
                       Abordagens Psicológicas principais
                     </label>
-                    <input
+                    <DebouncedInput
                       type="text"
                       value={profile.abordagem || ""}
                       placeholder="Ex: TCC, Psicanálise, Gestalt-terapia, Humanista..."
-                      onChange={(e) =>
-                        setProfile({ ...profile, abordagem: e.target.value })
+                      onChange={(val) =>
+                        setProfile({ ...profile, abordagem: val })
                       }
                       className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors text-sm text-forest"
                     />
@@ -3208,12 +3507,12 @@ export function DashboardView({
                     <label className="text-xs uppercase font-bold tracking-wider text-forest/60">
                       Especialidades / Pós-graduações
                     </label>
-                    <input
+                    <DebouncedInput
                       type="text"
                       value={profile.especialidade || ""}
                       placeholder="Ex: Terapia de Casal, Neuropsicologia, etc"
-                      onChange={(e) =>
-                        setProfile({ ...profile, especialidade: e.target.value })
+                      onChange={(val) =>
+                        setProfile({ ...profile, especialidade: val })
                       }
                       className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors text-sm text-forest"
                     />
@@ -3240,12 +3539,12 @@ export function DashboardView({
                     <label className="text-xs uppercase font-bold tracking-wider text-forest/60">
                       Cidade de Atendimento
                     </label>
-                    <input
+                    <DebouncedInput
                       type="text"
                       value={profile.cidade || ""}
                       placeholder="Ex: São Paulo"
-                      onChange={(e) =>
-                        setProfile({ ...profile, cidade: e.target.value })
+                      onChange={(val) =>
+                        setProfile({ ...profile, cidade: val })
                       }
                       className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors text-sm text-forest"
                     />
@@ -3254,13 +3553,13 @@ export function DashboardView({
                     <label className="text-xs uppercase font-bold tracking-wider text-forest/60">
                       Estado (UF)
                     </label>
-                    <input
+                    <DebouncedInput
                       type="text"
                       value={profile.uf || ""}
                       placeholder="Ex: SP"
                       maxLength={2}
-                      onChange={(e) =>
-                        setProfile({ ...profile, uf: e.target.value.toUpperCase() })
+                      onChange={(val) =>
+                        setProfile({ ...profile, uf: val.toUpperCase() })
                       }
                       className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors text-sm text-forest"
                     />
@@ -3306,11 +3605,11 @@ export function DashboardView({
                       })}
                     </div>
                     {Array.isArray(profile.publicosExperiencia) && profile.publicosExperiencia.includes('Outros') && (
-                      <input
+                      <DebouncedInput
                         type="text"
                         placeholder="Especifique outros públicos de experiência"
                         value={profile.outrosPublicosExperiencia || ""}
-                        onChange={(e) => setProfile({ ...profile, outrosPublicosExperiencia: e.target.value })}
+                        onChange={(val) => setProfile({ ...profile, outrosPublicosExperiencia: val })}
                         className="w-full mt-2 px-3 py-2 bg-white border border-soft rounded-lg text-xs focus:outline-none focus:border-sun-dark"
                       />
                     )}
@@ -3347,11 +3646,11 @@ export function DashboardView({
                       })}
                     </div>
                     {Array.isArray(profile.publicosGosto) && profile.publicosGosto.includes('Outros') && (
-                      <input
+                      <DebouncedInput
                         type="text"
                         placeholder="Especifique outros públicos de afinidade"
                         value={profile.outrosPublicosGosto || ""}
-                        onChange={(e) => setProfile({ ...profile, outrosPublicosGosto: e.target.value })}
+                        onChange={(val) => setProfile({ ...profile, outrosPublicosGosto: val })}
                         className="w-full mt-2 px-3 py-2 bg-white border border-soft rounded-lg text-xs focus:outline-none focus:border-sun-dark"
                       />
                     )}
@@ -3373,10 +3672,10 @@ export function DashboardView({
                   <p className="text-[11px] text-forest/50 -mt-1 leading-relaxed">
                     Este texto será visível em sua página de apresentação externa para pacientes interessados na rede.
                   </p>
-                  <textarea
+                  <DebouncedTextArea
                     value={profile.biografia || ""}
-                    onChange={(e) =>
-                      setProfile({ ...profile, biografia: e.target.value })
+                    onChange={(val) =>
+                      setProfile({ ...profile, biografia: val })
                     }
                     placeholder="Escreva um breve resumo da sua jornada, abordagem técnica, nichos principais de estudo e como é o estilo da sua conduta psicoterapêutica..."
                     className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark resize-none h-44 text-sm leading-relaxed text-forest"
@@ -3387,10 +3686,10 @@ export function DashboardView({
                   <label className="text-xs uppercase font-bold tracking-wider text-forest/60">
                     Porque faço parte desse projeto? (Minhas motivações associadas)
                   </label>
-                  <textarea
+                  <DebouncedTextArea
                     value={profile.motivacaoProjeto || ""}
-                    onChange={(e) =>
-                      setProfile({ ...profile, motivacaoProjeto: e.target.value })
+                    onChange={(val) =>
+                      setProfile({ ...profile, motivacaoProjeto: val })
                     }
                     placeholder="Conte o que impulsiona o seu voluntariado ou parceria com o AcolheMente..."
                     className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark resize-none h-32 text-sm leading-relaxed text-forest"
@@ -4084,12 +4383,23 @@ export function DashboardView({
                 <CheckCircle2 className="w-6 h-6 text-forest/70" />
                 Profissionais Ativos na Plataforma
               </h2>
-              <button
-                onClick={() => setShowNewProfissionalModal(true)}
-                className="px-4 py-2 bg-sun-dark text-forest text-sm font-semibold rounded-full hover:bg-sun-dark-dark transition-colors flex items-center gap-2"
-              >
-                <Plus className="w-4 h-4" /> Nova Conta de Profissional
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={handleReconcileExistingProfs}
+                  disabled={isReconciling}
+                  className="px-4 py-2 bg-purple-50 text-purple-700 hover:bg-purple-100 disabled:opacity-50 text-sm font-semibold rounded-full transition-colors flex items-center gap-2 border border-purple-200/50"
+                  title="Sincronizar dados preenchidos no formulário de inscrição para o perfil ativo dos profissionais"
+                >
+                  <RefreshCw className={`w-4 h-4 ${isReconciling ? "animate-spin" : ""}`} />
+                  {isReconciling ? "Sincronizando..." : "Sincronizar Leads"}
+                </button>
+                <button
+                  onClick={() => setShowNewProfissionalModal(true)}
+                  className="px-4 py-2 bg-sun-dark text-forest text-sm font-semibold rounded-full hover:bg-sun-dark-dark transition-colors flex items-center gap-2"
+                >
+                  <Plus className="w-4 h-4" /> Nova Conta de Profissional
+                </button>
+              </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {filteredAtivos.length === 0 ? (
@@ -4267,6 +4577,93 @@ export function DashboardView({
                 ))
               )}
             </div>
+          </div>
+        </div>
+      ) : activeTab === "compliance" ? (
+        <div className="flex-1 overflow-auto p-6 md:p-8 flex items-start flex-col gap-8 slide-up">
+          <div className="w-full flex items-center justify-between bg-white px-6 py-4 rounded-2xl shadow-sm border border-soft">
+            <h2 className="font-serif text-2xl text-forest flex items-center gap-3">
+              <ShieldAlert className="w-6 h-6 text-forest/70" />
+              Ouvidoria e Compliance
+            </h2>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 w-full">
+            {complianceMessages.length === 0 ? (
+              <div className="col-span-full p-12 text-center text-forest/70 bg-white/50 border border-dashed border-soft rounded-[2xl]">
+                Nenhuma mensagem de compliance/ouvidoria submetida até o momento.
+              </div>
+            ) : (
+              complianceMessages.map((msg) => (
+                <div key={msg.id} className="bg-white p-6 rounded-[2rem] shadow-sm border border-soft flex flex-col gap-4 relative">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <span className="text-xs font-bold uppercase tracking-wider text-forest/50">Tipo</span>
+                      <h3 className={`font-semibold text-lg leading-tight mt-1 ${msg.tipo === "Denúncia" ? "text-red-600" : msg.tipo === "Reclamação" ? "text-orange-600" : "text-forest"}`}>
+                        {msg.tipo}
+                      </h3>
+                    </div>
+                    <select
+                      value={msg.status}
+                      onChange={async (e) => {
+                        const val = e.target.value;
+                        try {
+                          await updateDoc(doc(db, "compliance", msg.id), { status: val });
+                        } catch (err) {
+                          console.error(err);
+                          alert("Erro ao atualizar status.");
+                        }
+                      }}
+                      className={`text-xs font-bold rounded-lg px-2 py-1 border-0 ring-1 ring-inset focus:ring-2 focus:ring-inset ${
+                        msg.status === "Pendente"
+                          ? "bg-orange-50 text-orange-700 ring-orange-200 focus:ring-orange-500"
+                          : msg.status === "Em Análise"
+                            ? "bg-blue-50 text-blue-700 ring-blue-200 focus:ring-blue-500"
+                            : "bg-green-50 text-green-700 ring-green-200 focus:ring-green-500"
+                      }`}
+                    >
+                      <option value="Pendente">Pendente</option>
+                      <option value="Em Análise">Em Análise</option>
+                      <option value="Resolvido">Resolvido</option>
+                    </select>
+                  </div>
+
+                  <div className="flex flex-col gap-2 text-sm text-forest/80 bg-warm/30 p-4 rounded-xl">
+                    <p className="whitespace-pre-wrap">{msg.mensagem}</p>
+                  </div>
+
+                  <div className="flex flex-col gap-1 mt-auto pt-4 border-t border-soft">
+                    <span className="text-xs font-bold text-forest/50 uppercase tracking-widest">Remetente</span>
+                    <span className="font-medium text-forest text-sm">
+                      {msg.userName} ({msg.userRole})
+                    </span>
+                    {msg.userEmail && (
+                      <a href={`mailto:${msg.userEmail}`} className="text-sm font-semibold text-sun-dark hover:underline">
+                        {msg.userEmail}
+                      </a>
+                    )}
+                    <span className="text-xs text-forest/50 mt-1">
+                      Data: {msg.createdAt ? formatDate(msg.createdAt) : "N/I"}
+                    </span>
+                  </div>
+                  
+                  <button
+                    onClick={async () => {
+                      if (window.confirm("Deseja mesmo excluir esta denúncia permanentemente?")) {
+                        try {
+                          await deleteDoc(doc(db, "compliance", msg.id));
+                        } catch (err) {
+                          console.error(err);
+                        }
+                      }
+                    }}
+                    className="absolute top-6 right-[90px] text-red-500 p-1 hover:bg-red-50 rounded-lg transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ))
+            )}
           </div>
         </div>
       ) : activeTab === "acessos" ? (
@@ -4757,13 +5154,13 @@ export function DashboardView({
                           Motivo Declarado
                         </span>
                         {isEditingCard ? (
-                          <textarea
+                          <DebouncedTextArea
                             value={selectedCard.motivo || ""}
-                            onChange={(e) =>
+                            onChange={(val) =>
                               handleUpdateAcolhimentoProperty(
                                 selectedCard.id,
                                 "motivo",
-                                e.target.value,
+                                val,
                               )
                             }
                             className="w-full bg-transparent text-sm text-forest border-b border-sun-dark focus:outline-none resize-none h-16"
@@ -5454,14 +5851,14 @@ export function DashboardView({
                       <label className="text-[10px] font-semibold uppercase text-forest/70/60 ml-2">
                         CNPJ
                       </label>
-                      <input
+                      <DebouncedInput
                         className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark"
                         value={selectedEmpresa.cnpj || ""}
-                        onChange={(e) =>
+                        onChange={(val) =>
                           handleUpdateEmpresaProperty(
                             selectedEmpresa.id,
                             "cnpj",
-                            e.target.value,
+                            val,
                           )
                         }
                       />
@@ -5473,14 +5870,14 @@ export function DashboardView({
                       <label className="text-[10px] font-semibold uppercase text-forest/70/60 ml-2">
                         Telefone
                       </label>
-                      <input
+                      <DebouncedInput
                         className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark"
                         value={selectedEmpresa.telefone || ""}
-                        onChange={(e) =>
+                        onChange={(val) =>
                           handleUpdateEmpresaProperty(
                             selectedEmpresa.id,
                             "telefone",
-                            e.target.value,
+                            val,
                           )
                         }
                       />
@@ -5489,15 +5886,15 @@ export function DashboardView({
                       <label className="text-[10px] font-semibold uppercase text-forest/70/60 ml-2">
                         E-mail
                       </label>
-                      <input
+                      <DebouncedInput
                         type="email"
                         className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark"
                         value={selectedEmpresa.email || ""}
-                        onChange={(e) =>
+                        onChange={(val) =>
                           handleUpdateEmpresaProperty(
                             selectedEmpresa.id,
                             "email",
-                            e.target.value,
+                            val,
                           )
                         }
                       />
@@ -5539,15 +5936,15 @@ export function DashboardView({
                       <label className="text-[10px] font-semibold uppercase text-forest/70/60 ml-2">
                         Valores Acertados
                       </label>
-                      <input
+                      <DebouncedInput
                         className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark"
                         placeholder="Ex: Ref. R$ 5k/mês"
                         value={selectedEmpresa.valoresAcertados || ""}
-                        onChange={(e) =>
+                        onChange={(val) =>
                           handleUpdateEmpresaProperty(
                             selectedEmpresa.id,
                             "valoresAcertados",
-                            e.target.value,
+                            val,
                           )
                         }
                       />
@@ -5556,15 +5953,15 @@ export function DashboardView({
                       <label className="text-[10px] font-semibold uppercase text-forest/70/60 ml-2">
                         Emissão de NF (Data/Modo)
                       </label>
-                      <input
+                      <DebouncedInput
                         className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark"
                         placeholder="Ex: Todo dia 05"
                         value={selectedEmpresa.emissaoNf || ""}
-                        onChange={(e) =>
+                        onChange={(val) =>
                           handleUpdateEmpresaProperty(
                             selectedEmpresa.id,
                             "emissaoNf",
-                            e.target.value,
+                            val,
                           )
                         }
                       />
@@ -5577,15 +5974,15 @@ export function DashboardView({
                 <h4 className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-3 flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4" /> Serviços Oferecidos
                 </h4>
-                <textarea
+                <DebouncedTextArea
                   className="w-full text-sm bg-warm/50 border border-soft px-4 py-3 rounded-2xl focus:outline-none focus:border-sun-dark resize-none h-24"
                   placeholder="Liste os serviços, convênios ou palestras acordadas..."
                   value={selectedEmpresa.servicosOferecidos || ""}
-                  onChange={(e) =>
+                  onChange={(val) =>
                     handleUpdateEmpresaProperty(
                       selectedEmpresa.id,
                       "servicosOferecidos",
-                      e.target.value,
+                      val,
                     )
                   }
                 />
@@ -5595,15 +5992,15 @@ export function DashboardView({
                 <h4 className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-3 flex items-center gap-2">
                   <Clock className="w-4 h-4" /> Registros de Reuniões e Contatos
                 </h4>
-                <textarea
+                <DebouncedTextArea
                   className="w-full text-sm bg-warm/50 border border-soft px-4 py-3 rounded-2xl focus:outline-none focus:border-sun-dark resize-none h-32"
                   placeholder="Reunião 10/10: Empresa gostou da proposta..."
                   value={selectedEmpresa.registrosDeReunioes || ""}
-                  onChange={(e) =>
+                  onChange={(val) =>
                     handleUpdateEmpresaProperty(
                       selectedEmpresa.id,
                       "registrosDeReunioes",
-                      e.target.value,
+                      val,
                     )
                   }
                 />
@@ -5613,15 +6010,15 @@ export function DashboardView({
                 <h4 className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-3 flex items-center gap-2">
                   <Info className="w-4 h-4" /> Alertas / Notificações Internas
                 </h4>
-                <textarea
+                <DebouncedTextArea
                   className="w-full text-sm bg-red-50/50 border border-red-100 px-4 py-3 rounded-2xl focus:outline-none focus:border-red-300 resize-none h-24 text-red-900 placeholder:text-red-900/50"
                   placeholder="Ex: Cobrar assinatura do aditivo até sexta."
                   value={selectedEmpresa.notificacao || ""}
-                  onChange={(e) =>
+                  onChange={(val) =>
                     handleUpdateEmpresaProperty(
                       selectedEmpresa.id,
                       "notificacao",
-                      e.target.value,
+                      val,
                     )
                   }
                 />
@@ -5706,6 +6103,57 @@ export function DashboardView({
                 <Trash2 className="w-4 h-4" />{" "}
                 {selectedProfissional.ativo === false ? "Ativar" : "Inativar"}
               </button>
+
+              {"uid" in selectedProfissional && (
+                <button
+                  onClick={async () => {
+                    const lead = profissionaisLeads.find(
+                      (l) => l.email?.toLowerCase().trim() === selectedProfissional.email?.toLowerCase().trim()
+                    );
+                    if (!lead) {
+                      alert("Nenhum formulário de cadastro correspondente encontrado para este e-mail.");
+                      return;
+                    }
+                    if (window.confirm("Deseja importar informações preenchidas no formulário de inscrição por este profissional? Campos que já possuírem informação não serão sobrescritos.")) {
+                      const fieldsToMerge = [
+                        "telefone", "crp", "cpf", "cidade", "uf", "motivacao", "bioCurta", 
+                        "instagramUrl", "linkedinUrl", "siteUrl", "abordagem", "especialidade", 
+                        "anoFormacao", "horasDisponiveis", "publicosExperiencia", "publicosGosto", 
+                        "outrosPublicosExperiencia", "outrosPublicosGosto", "registrosDeReunioes", 
+                        "notificacao"
+                      ];
+                      
+                      const updates: any = {};
+                      let hasNewData = false;
+                      
+                      for (const field of fieldsToMerge) {
+                        const leadVal = lead[field];
+                        const profVal = selectedProfissional[field];
+                        
+                        const isProfEmpty = profVal === undefined || profVal === null || profVal === "" || (Array.isArray(profVal) && profVal.length === 0);
+                        const isLeadNotEmpty = leadVal !== undefined && leadVal !== null && leadVal !== "" && (!Array.isArray(leadVal) || leadVal.length > 0);
+                        
+                        if (isProfEmpty && isLeadNotEmpty) {
+                          updates[field] = leadVal;
+                          hasNewData = true;
+                        }
+                      }
+                      
+                      if (hasNewData) {
+                        const profId = selectedProfissional.uid!;
+                        await updateDoc(doc(db, "users", profId), updates);
+                        setSelectedProfissional({ ...selectedProfissional, ...updates });
+                        alert("Dados do formulário importados com sucesso!");
+                      } else {
+                        alert("Todas as informações do formulário já constam nesta Ficha de Bordo.");
+                      }
+                    }
+                  }}
+                  className="flex items-center gap-1.5 text-purple-600 font-semibold text-sm hover:bg-purple-50 px-3 py-1.5 rounded-lg transition-colors border border-purple-200"
+                >
+                  <RefreshCw className="w-4 h-4" /> Importar do Formulário
+                </button>
+              )}
 
               <div className="flex items-center gap-4 ml-4">
                 <button
@@ -6087,17 +6535,17 @@ export function DashboardView({
                 <h4 className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-3 flex items-center gap-2">
                   <Clock className="w-4 h-4" /> Registros de Reuniões e Contatos
                 </h4>
-                <textarea
+                <DebouncedTextArea
                   className="w-full text-sm bg-warm/50 border border-soft px-4 py-3 rounded-2xl focus:outline-none focus:border-sun-dark resize-none h-32"
                   placeholder="Anotações de entrevistas, alinhamentos, feedback..."
                   value={selectedProfissional.registrosDeReunioes || ""}
-                  onChange={(e) =>
+                  onChange={(val) =>
                     handleUpdateProfissionalProperty(
                       "id" in selectedProfissional
                         ? selectedProfissional.id
                         : selectedProfissional.uid,
                       "registrosDeReunioes",
-                      e.target.value,
+                      val,
                     )
                   }
                 />
@@ -6107,17 +6555,17 @@ export function DashboardView({
                 <h4 className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-3 flex items-center gap-2">
                   <Info className="w-4 h-4" /> Alertas / Notificações Internas
                 </h4>
-                <textarea
+                <DebouncedTextArea
                   className="w-full text-sm bg-red-50/50 border border-red-100 px-4 py-3 rounded-2xl focus:outline-none focus:border-red-300 resize-none h-24 text-red-900 placeholder:text-red-900/50"
                   placeholder="Ex: Verificar CRP, documentação incompleta..."
                   value={selectedProfissional.notificacao || ""}
-                  onChange={(e) =>
+                  onChange={(val) =>
                     handleUpdateProfissionalProperty(
                       "id" in selectedProfissional
                         ? selectedProfissional.id
                         : selectedProfissional.uid,
                       "notificacao",
-                      e.target.value,
+                      val,
                     )
                   }
                 />
@@ -6388,6 +6836,16 @@ export function DashboardView({
             </div>
           </div>
         </div>
+      )}
+
+      {showComplianceModal && (
+        <ComplianceModal
+          onClose={() => setShowComplianceModal(false)}
+          userId={profile?.uid || profile?.id}
+          userRole={profile?.role || currentRole}
+          userName={profile?.name}
+          userEmail={profile?.email}
+        />
       )}
     </div>
   );

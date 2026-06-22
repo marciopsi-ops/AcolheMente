@@ -3,9 +3,11 @@ import { useEffect, useState } from "react";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import logoImage from "../assets/images/logo_acolhe.jpeg";
+import { ComplianceModal } from "./ComplianceModal";
 
 export function Footer({ onNavigate }: { onNavigate?: (view: any) => void }) {
   const [cidades, setCidades] = useState("Brasil • São Paulo • online");
+  const [showComplianceModal, setShowComplianceModal] = useState(false);
 
   useEffect(() => {
     const fetchConfigs = async () => {
@@ -65,7 +67,11 @@ export function Footer({ onNavigate }: { onNavigate?: (view: any) => void }) {
             <li><a href="#" onClick={(e) => e.preventDefault()} className="hover:text-forest transition-colors">Termos de Uso</a></li>
             <li><a href="#" onClick={(e) => e.preventDefault()} className="hover:text-forest transition-colors">Política de Privacidade</a></li>
             <li><a href="#" onClick={(e) => e.preventDefault()} className="hover:text-forest transition-colors">Contrato de Prestação</a></li>
-            <li><a href="#" onClick={(e) => e.preventDefault()} className="hover:text-forest transition-colors">Compliance e NR1</a></li>
+            <li>
+              <button onClick={() => setShowComplianceModal(true)} className="hover:text-forest transition-colors text-left">
+                Ouvidoria e Compliance
+              </button>
+            </li>
           </ul>
         </div>
 
@@ -113,6 +119,10 @@ export function Footer({ onNavigate }: { onNavigate?: (view: any) => void }) {
         <div>Feito por profissionais de saúde para pessoas</div>
         <div>{cidades}</div>
       </div>
+
+      {showComplianceModal && (
+        <ComplianceModal onClose={() => setShowComplianceModal(false)} />
+      )}
     </footer>
   );
 }
