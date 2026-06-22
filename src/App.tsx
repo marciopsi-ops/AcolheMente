@@ -19,11 +19,15 @@ import {
   Globe,
   Layers,
   Zap,
+  X,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "motion/react";
+import { onAuthStateChanged } from "firebase/auth";
+import { auth } from "./lib/firebase";
 import { AcolhimentoView } from "./views/AcolhimentoView";
 import { PublicProfProfileView } from "./views/PublicProfProfileView";
+import { PublicServiceView } from "./views/PublicServiceView";
 import { DashboardView } from "./views/DashboardView";
 import { EmpresaView } from "./views/EmpresaView";
 import { DoacaoView } from "./views/DoacaoView";
@@ -47,6 +51,8 @@ const COMPANY_LOGOS = [
 export default function App() {
   const params = new URLSearchParams(window.location.search);
   const publicProfUid = params.get("prof");
+  const publicServiceId = params.get("servico");
+  const publicEventoId = params.get("evento");
   const viewParam = params.get("view") as any;
 
   const [currentView, setCurrentView] = useState<
@@ -69,13 +75,44 @@ export default function App() {
         "profissional",
       ].includes(viewParam)
       ? viewParam
-      : "landing",
+      : auth.currentUser
+        ? "dashboard"
+        : "landing",
   );
 
+  const [user, setUser] = useState<any>(null);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      if (u) {
+        // Redireciona para o painel se estiver logado e na landing page
+        setCurrentView((prev) => (prev === "landing" ? "dashboard" : prev));
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const [showDoacaoConfirm, setShowDoacaoConfirm] = useState(false);
+
+  const handleNavigate = (view: any) => {
+    if (view === "doacao") {
+      setShowDoacaoConfirm(true);
+    } else if (view === "landing" && auth.currentUser) {
+      setCurrentView("dashboard");
+    } else {
+      setCurrentView(view);
+    }
+  };
+
   const handleBackFromPublicProfile = () => {
-    // Clear URL parameters elegantly and route back to landing page
+    // Clear URL parameters elegantly and route back
     window.history.pushState({}, "", window.location.origin);
-    setCurrentView("landing");
+    if (auth.currentUser) {
+      setCurrentView("dashboard");
+    } else {
+      setCurrentView("landing");
+    }
   };
 
   if (publicProfUid) {
@@ -87,48 +124,133 @@ export default function App() {
     );
   }
 
+  if (publicServiceId || publicEventoId) {
+    return (
+      <PublicServiceView
+        serviceId={publicServiceId}
+        eventId={publicEventoId}
+        onBack={handleBackFromPublicProfile}
+      />
+    );
+  }
+
+  let content;
+
   if (currentView === "landing") {
-    return <LandingPage onNavigate={setCurrentView} />;
-  }
-
-  if (currentView === "acolhimento") {
-    return <AcolhimentoView onNavigate={setCurrentView} />;
-  }
-
-  if (currentView === "dashboard") {
-    return <DashboardView onNavigate={setCurrentView} />;
-  }
-
-  if (currentView === "empresa") {
-    return <EmpresaView onNavigate={setCurrentView} />;
-  }
-
-  if (currentView === "doacao") {
-    return <DoacaoView onNavigate={setCurrentView} />;
-  }
-
-  if (currentView === "profissional") {
-    return <ProfissionalLandingView onNavigate={setCurrentView} />;
+    content = <LandingPage onNavigate={handleNavigate} />;
+  } else if (currentView === "acolhimento") {
+    content = <AcolhimentoView onNavigate={handleNavigate} />;
+  } else if (currentView === "dashboard") {
+    content = <DashboardView onNavigate={handleNavigate} />;
+  } else if (currentView === "empresa") {
+    content = <EmpresaView onNavigate={handleNavigate} />;
+  } else if (currentView === "doacao") {
+    content = <DoacaoView onNavigate={handleNavigate} />;
+  } else if (currentView === "profissional") {
+    content = <ProfissionalLandingView onNavigate={handleNavigate} />;
+  } else {
+    content = (
+      <div className="flex h-screen items-center justify-center bg-warm">
+        <div className="text-center flex flex-col items-center gap-6">
+          <h2 className="text-4xl font-serif text-forest mb-2">
+            View: {currentView}
+          </h2>
+          <p className="text-forest/70 max-w-md">
+            Esta simulação de view será substituída pelo dashboard do firebase e
+            pelo portal do paciente/profissional futuramente.
+          </p>
+          <button
+            onClick={() => setCurrentView("landing")}
+            className="px-6 py-2 border border-sun-dark text-sun-dark text-sm font-semibold uppercase tracking-wider rounded-full hover:bg-sun hover:text-forest transition-colors"
+          >
+            Voltar para Home
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className="flex h-screen items-center justify-center bg-warm">
-      <div className="text-center flex flex-col items-center gap-6">
-        <h2 className="text-4xl font-serif text-forest mb-2">
-          View: {currentView}
-        </h2>
-        <p className="text-forest/70 max-w-md">
-          Esta simulação de view será substituída pelo dashboard do firebase e
-          pelo portal do paciente/profissional futuramente.
-        </p>
-        <button
-          onClick={() => setCurrentView("landing")}
-          className="px-6 py-2 border border-sun-dark text-sun-dark text-sm font-semibold uppercase tracking-wider rounded-full hover:bg-sun hover:text-forest transition-colors"
-        >
-          Voltar para Home
-        </button>
-      </div>
-    </div>
+    <>
+      {content}
+
+      {showDoacaoConfirm && (
+        <div className="fixed inset-0 bg-forest/45 backdrop-blur-md flex items-center justify-center z-[9999] p-4">
+          <div className="max-w-md w-full bg-white rounded-[2.5rem] p-8 md:p-10 border border-soft shadow-2xl flex flex-col items-center text-center gap-6 relative animate-[scaleUp_0.3s_ease-out]">
+            <button
+              onClick={() => setShowDoacaoConfirm(false)}
+              className="absolute top-6 right-6 p-2 text-forest/40 hover:text-forest hover:bg-forest/5 rounded-full transition-all duration-200"
+              title="Fechar"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            
+            <div className="w-16 h-16 bg-sun-light rounded-full flex items-center justify-center text-forest shadow-sm">
+              <HeartHandshake className="w-8 h-8 text-forest" />
+            </div>
+            
+            <div className="flex flex-col gap-2">
+              <h3 className="font-serif text-2xl font-semibold tracking-tight text-forest">
+                Como funciona a sua doação?
+              </h3>
+              <p className="text-xs text-forest/70 leading-relaxed max-w-sm">
+                Sua generosidade financia acolhimento profissional de verdade. Veja como sua doação de sessão será processada:
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-4 text-left w-full bg-warm/30 p-5 rounded-2xl border border-soft/50 my-1">
+              <div className="flex gap-3 items-start">
+                <span className="text-xs shrink-0 bg-sun text-forest rounded-full w-5 h-5 flex items-center justify-center font-bold">1</span>
+                <div>
+                  <h4 className="text-xs font-bold text-forest py-0.5">Fundo de Apoio Solidário</h4>
+                  <p className="text-[11px] text-forest/75 leading-relaxed">
+                    100% da sua doação é direcionada para custear consultas psicológicas de pessoas em vulnerabilidade social inscritas na nossa lista de espera.
+                  </p>
+                </div>
+              </div>
+              
+              <div className="flex gap-3 items-start">
+                <span className="text-xs shrink-0 bg-sun text-forest rounded-full w-5 h-5 flex items-center justify-center font-bold">2</span>
+                <div>
+                  <h4 className="text-xs font-bold text-forest py-0.5">Segurança via PIX</h4>
+                  <p className="text-[11px] text-forest/75 leading-relaxed">
+                    Ao prosseguir, você escolhe o valor (cada R$ 50 ajuda a viabilizar atendimentos) e geramos um QR Code PIX oficial e seguro para realizar o pagamento.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex gap-3 items-start">
+                <span className="text-xs shrink-0 bg-sun text-forest rounded-full w-5 h-5 flex items-center justify-center font-bold">3</span>
+                <div>
+                  <h4 className="text-xs font-bold text-forest py-0.5">Envio do Comprovante</h4>
+                  <p className="text-[11px] text-forest/75 leading-relaxed">
+                    Você pode anexar o comprovante na hora. Assim, garantimos integridade e você pode solicitar relatórios de impacto social no e-mail informado.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-3 w-full">
+              <button
+                onClick={() => setShowDoacaoConfirm(false)}
+                className="flex-1 py-3 px-6 border-2 border-soft hover:bg-warm text-forest/75 rounded-full font-bold text-xs transition-colors"
+              >
+                Agora Não
+              </button>
+              <button
+                onClick={() => {
+                  setShowDoacaoConfirm(false);
+                  setCurrentView("doacao");
+                }}
+                className="flex-1 py-3 px-6 bg-forest hover:bg-forest/90 text-white rounded-full font-bold text-xs shadow-md shadow-forest/10 hover:shadow-lg transition-all flex items-center justify-center gap-2"
+              >
+                Quero Doar <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { ArrowLeft, User, Phone, MapPin, Calendar, Award, Heart, CheckCircle2, Instagram, Linkedin, Globe } from "lucide-react";
+import { ArrowLeft, User, Phone, MapPin, Calendar, Award, Heart, CheckCircle2, Instagram, Linkedin, Globe, Share2 } from "lucide-react";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import logoImage from '../assets/images/logo_acolhe.jpeg';
@@ -119,6 +119,18 @@ export function PublicProfProfileView({ profUid, onBack }: { profUid: string; on
                   <Globe className="w-4 h-4" />
                 </a>
               )}
+              <button 
+                onClick={() => {
+                  const url = `${window.location.origin}?prof=${profUid}`;
+                  navigator.clipboard.writeText(url).then(() => {
+                    alert("Link do perfil copiado com sucesso!");
+                  }).catch(e => console.error(e));
+                }}
+                className="p-2 bg-warm rounded-full text-forest/70 hover:text-forest hover:bg-soft transition-colors shadow-sm" 
+                title="Compartilhar Perfil"
+              >
+                <Share2 className="w-4 h-4" />
+              </button>
             </div>
 
             {prof.crp && (

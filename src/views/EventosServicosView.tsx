@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { collection, query, onSnapshot, addDoc, deleteDoc, doc, updateDoc, serverTimestamp, orderBy } from "firebase/firestore";
 import { db } from "../lib/firebase";
-import { Calendar, Clock, Plus, Trash2, Briefcase, X, Edit3, User, Share2 } from "lucide-react";
+import { Calendar, Clock, Plus, Trash2, Briefcase, X, Edit3, User, Share2, ExternalLink, CreditCard } from "lucide-react";
 
 interface UserProfile {
   id?: string;
@@ -134,9 +134,18 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
   };
 
   const handleShareEvento = (ev: any) => {
-    const url = window.location.href; // could add query param like ?eventoId=ev.id later if needed
+    const url = `${window.location.origin}?evento=${ev.id}`;
     navigator.clipboard.writeText(url).then(() => {
-      alert("Link do evento copiado para a área de transferência!");
+      alert("Link público do evento copiado com sucesso!");
+    }).catch(err => {
+      console.error("Erro ao copiar link:", err);
+    });
+  };
+
+  const handleShareServico = (svc: any) => {
+    const url = `${window.location.origin}?servico=${svc.id}`;
+    navigator.clipboard.writeText(url).then(() => {
+      alert("Link público do serviço copiado com sucesso!");
     }).catch(err => {
       console.error("Erro ao copiar link:", err);
     });
@@ -250,7 +259,7 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
               const isCreator = profileId === ev.criadorId;
 
               return (
-              <div key={ev.id} className="bg-white p-6 rounded-[2rem] shadow-sm border border-soft flex flex-col gap-4 relative">
+              <div key={ev.id} className="bg-white p-6 rounded-[2rem] shadow-md border border-soft hover:shadow-lg transition-all duration-300 flex flex-col gap-5 relative">
                 {isGestor && (
                   <div className="absolute top-4 right-4 flex items-center gap-2 z-10">
                     <button 
@@ -269,43 +278,88 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
                     </button>
                   </div>
                 )}
-                <div className="bg-warm/50 -mx-6 -mt-6 p-6 rounded-t-[2rem] border-b border-soft pt-12 sm:pt-6">
-                  {ev.tipo && <span className="text-xs font-semibold text-sun-dark-dark bg-sun/30 px-3 py-1 rounded-full uppercase tracking-wider mb-2 inline-block">{ev.tipo}</span>}
-                  <h3 className="font-serif text-xl text-forest leading-tight pr-8">{ev.titulo}</h3>
-                </div>
-                <p className="text-sm text-forest/70 whitespace-pre-wrap flex-1">{ev.descricao}</p>
                 
-                <div className="flex items-center justify-between mt-auto pt-4 border-t border-soft text-xs font-medium text-forest/60">
-                  <span className="flex items-center gap-1.5"><Calendar className="w-3.5 h-3.5" /> {ev.data}</span>
-                  <span className="flex items-center gap-1.5"><Clock className="w-3.5 h-3.5" /> {ev.hora}</span>
+                {/* Header Row */}
+                <div>
+                  <div className="flex items-center justify-between gap-2 mb-2 pr-16">
+                    {ev.tipo ? (
+                      <span className="text-[10px] font-bold text-sun-dark-dark bg-sun/25 px-2.5 py-1 rounded-full uppercase tracking-wider mb-1 inline-block">
+                        {ev.tipo}
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-bold text-forest/60 bg-forest/5 px-2.5 py-1 rounded-full uppercase tracking-wider mb-1 inline-block">
+                        Evento
+                      </span>
+                    )}
+                    {isCreator && <span className="text-[9px] text-forest/50 bg-warm px-2 py-0.5 rounded border border-soft font-bold">Meu Evento</span>}
+                  </div>
+                  <h3 className="font-serif text-xl font-bold text-forest leading-snug tracking-tight">{ev.titulo}</h3>
                 </div>
 
-                <div className="pt-3 border-t border-soft mt-3 flex items-center gap-3 justify-between">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-8 h-8 rounded-full bg-forest/10 overflow-hidden flex-shrink-0 flex items-center justify-center border border-soft">
+                {/* Description */}
+                <p className="text-xs text-forest/75 leading-relaxed whitespace-pre-wrap flex-1 bg-warm/15 p-3.5 rounded-2xl border border-soft/30">
+                  {ev.descricao}
+                </p>
+                
+                {/* Information organized in lines (Rows) */}
+                <div className="bg-warm/25 rounded-2xl border border-soft/50 p-4 flex flex-col gap-2.5 text-xs text-forest/85">
+                  <div className="flex items-center justify-between py-1 border-b border-soft/30">
+                    <span className="text-forest/50 font-medium flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5 text-forest/40" /> Data:
+                    </span>
+                    <span className="font-semibold text-forest/90">{ev.data || "A combinar"}</span>
+                  </div>
+                  
+                  <div className="flex items-center justify-between py-1 border-b border-soft/30">
+                    <span className="text-forest/50 font-medium flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5 text-forest/40" /> Horário:
+                    </span>
+                    <span className="font-semibold text-forest/90">{ev.hora || "A combinar"}</span>
+                  </div>
+
+                  <div className="flex items-center justify-between py-1">
+                    <span className="text-forest/50 font-medium flex items-center gap-1.5">
+                      <User className="w-3.5 h-3.5 text-forest/40" /> Criador:
+                    </span>
+                    <span className="font-semibold text-forest/90 truncate max-w-[150px]">{ev.criadorNome}</span>
+                  </div>
+                </div>
+
+                {/* Footer and Creator */}
+                <div className="pt-2 flex items-center gap-3 justify-between">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-full bg-forest/10 overflow-hidden flex-shrink-0 flex items-center justify-center border-2 border-sun">
                       {ev.criadorFoto ? <img src={ev.criadorFoto} alt={ev.criadorNome} className="w-full h-full object-cover" /> : <User className="w-4 h-4 text-forest/50"/>}
                     </div>
-                    <div className="flex flex-col flex-1 overflow-hidden">
-                      <span className="text-[10px] text-forest/50 leading-tight uppercase font-semibold tracking-wider">Sobre mim</span>
-                      <span className="text-xs font-semibold text-forest truncate">{ev.criadorNome}</span>
-                    </div>
+                    <span className="text-xs font-semibold text-forest truncate">{ev.criadorNome}</span>
                   </div>
                   {!isCreator && ev.criadorId && (
-                     <a href={`${window.location.origin}?prof=${ev.criadorId}`} target="_blank" rel="noopener noreferrer" className="flex-shrink-0 px-3 py-1.5 text-xs text-forest bg-warm font-semibold rounded-lg border border-soft hover:bg-soft transition-colors ml-2">Ver Perfil</a>
+                     <a href={`${window.location.origin}?prof=${ev.criadorId}`} target="_blank" rel="noopener noreferrer" className="flex-shrink-0 px-3 py-1.5 text-xs text-forest bg-warm font-semibold rounded-xl border border-soft hover:bg-soft transition-colors tracking-wide">Ver Perfil</a>
                   )}
                 </div>
                 
-                <div className="flex items-center gap-2 mt-2">
+                {/* Actions Row */}
+                <div className="flex items-center gap-2 pt-2 border-t border-soft/60">
                   {profile.role === "profissional" && !isCreator && (
                     <button 
                       onClick={() => setSubscribingItem(ev)}
-                      className="flex-1 py-2 bg-warm text-forest font-semibold rounded-xl text-sm border border-soft hover:bg-forest hover:text-white transition-colors"
+                      className="flex-1 py-2.5 bg-forest hover:bg-forest/90 text-white font-serif font-semibold rounded-xl text-xs transition-colors shadow-sm"
                     >
                       Me Inscrever
                     </button>
                   )}
-                  <button onClick={() => handleShareEvento(ev)} className="p-2 border border-soft rounded-xl text-forest/70 hover:bg-forest hover:text-white transition-colors bg-warm ml-auto" title="Compartilhar evento">
-                    <Share2 className="w-5 h-5" />
+                  {isCreator && (
+                    <a 
+                      href={`${window.location.origin}?evento=${ev.id}`}
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="flex-1 text-center py-2 bg-forest/5 hover:bg-forest text-forest hover:text-white font-semibold rounded-xl text-xs border border-forest/20 transition-all duration-200 flex items-center justify-center gap-1.5"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" /> Página Pública
+                    </a>
+                  )}
+                  <button onClick={() => handleShareEvento(ev)} className="p-2 border border-soft rounded-xl text-forest/70 hover:bg-forest hover:text-white transition-colors bg-warm" title="Compartilhar evento">
+                    <Share2 className="w-4 h-4" />
                   </button>
                 </div>
               </div>
@@ -345,7 +399,7 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
               const canRemove = isCreator || isGestor;
 
               return (
-                <div key={svc.id} className="bg-white p-6 rounded-[2rem] shadow-sm border border-soft flex flex-col gap-4 relative">
+                <div key={svc.id} className="bg-white p-6 rounded-[2rem] shadow-md border border-soft hover:shadow-lg transition-all duration-300 flex flex-col gap-5 relative">
                    {canRemove && (
                     <div className="absolute top-4 right-4 flex items-center gap-2 z-10">
                       {(isCreator || isGestor) && (
@@ -366,68 +420,102 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
                       </button>
                     </div>
                   )}
-                  <div className="flex justify-between items-start pr-10">
-                    <span className="text-xs font-semibold text-purple-800 bg-purple-100 px-3 py-1 rounded-full uppercase tracking-wider">{svc.tipo || "Serviço"}</span>
-                    {isCreator && <span className="text-[10px] text-forest/50 bg-warm px-2 py-0.5 rounded border border-soft">Meu Serviço</span>}
+
+                  {/* Header Row */}
+                  <div>
+                    <div className="flex items-center justify-between gap-2 mb-2 pr-16">
+                      <span className="text-[10px] font-bold text-purple-800 bg-purple-50 border border-purple-200 px-2.5 py-1 rounded-full uppercase tracking-wider">
+                        {svc.tipo || "Serviço"}
+                      </span>
+                      {isCreator && <span className="text-[9px] text-forest/50 bg-warm px-2 py-0.5 rounded border border-soft font-bold">Meu Serviço</span>}
+                    </div>
+                    <h3 className="font-serif text-xl font-bold text-forest leading-snug tracking-tight">{svc.titulo}</h3>
                   </div>
-                  <h3 className="font-serif text-xl text-forest">{svc.titulo}</h3>
-                  <p className="text-sm text-forest/70 flex-1 whitespace-pre-wrap">{svc.descricao}</p>
-                  
-                  {svc.contato && (
-                    <div className="bg-warm/50 p-3 rounded-xl border border-soft text-xs text-forest/80 mt-2 mb-2 whitespace-pre-wrap">
-                       <span className="font-semibold block mb-1">Contato:</span>
-                       {svc.contato}
-                    </div>
-                  )}
 
-                  { (svc.data || svc.hora || svc.valor || svc.isGratuito) && (
-                    <div className="flex flex-col gap-1.5 mt-auto pt-4 border-t border-soft text-xs font-medium text-forest/60">
-                      { (svc.data || svc.hora) && (
-                        <div className="flex items-center gap-4">
-                          {svc.data && <span className="flex items-center gap-1.5"><Calendar className="w-3.5 h-3.5" /> {svc.data}</span>}
-                          {svc.hora && <span className="flex items-center gap-1.5"><Clock className="w-3.5 h-3.5" /> {svc.hora}</span>}
+                  {/* Description */}
+                  <p className="text-xs text-forest/75 leading-relaxed whitespace-pre-wrap flex-1 bg-warm/15 p-3.5 rounded-2xl border border-soft/30">
+                    {svc.descricao}
+                  </p>
+
+                  {/* Information organized in lines (Rows) */}
+                  <div className="bg-warm/25 rounded-2xl border border-soft/50 p-4 flex flex-col gap-2.5 text-xs text-forest/85">
+                    {svc.data && (
+                      <div className="flex items-center justify-between py-1 border-b border-soft/30">
+                        <span className="text-forest/50 font-medium flex items-center gap-1.5">
+                          <Calendar className="w-3.5 h-3.5 text-forest/40" /> Data:
+                        </span>
+                        <span className="font-semibold text-forest/90">{svc.data}</span>
+                      </div>
+                    )}
+                    
+                    {svc.hora && (
+                      <div className="flex items-center justify-between py-1 border-b border-soft/30">
+                        <span className="text-forest/50 font-medium flex items-center gap-1.5">
+                          <Clock className="w-3.5 h-3.5 text-forest/40" /> Horário:
+                        </span>
+                        <span className="font-semibold text-forest/90">{svc.hora}</span>
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between py-1 border-b border-soft/30">
+                      <span className="text-forest/50 font-medium flex items-center gap-1.5">
+                        <CreditCard className="w-3.5 h-3.5 text-forest/40" /> Valor:
+                      </span>
+                      <span className={`font-semibold ${svc.isGratuito ? "text-emerald-600 font-bold" : "text-forest/90"}`}>
+                        {svc.isGratuito ? "Gratuito" : (svc.valor || "A combinar")}
+                      </span>
+                    </div>
+
+                    {svc.contato && (
+                      <div className="py-1">
+                        <span className="text-forest/50 font-medium flex items-center gap-1.5 mb-1 block">
+                          Contato para Inscrição:
+                        </span>
+                        <div className="text-[11px] font-mono text-forest/90 bg-white/70 p-2 rounded-xl border border-soft/40 break-all select-all">
+                          {svc.contato}
                         </div>
-                      )}
-                      { (svc.isGratuito || svc.valor) && (
-                         <div className="flex items-center gap-1.5 mt-1">
-                           <span className="font-semibold text-forest">Valor:</span>
-                           <span className={svc.isGratuito ? "text-emerald-600 font-bold" : ""}>{svc.isGratuito ? "Gratuito" : svc.valor}</span>
-                         </div>
-                      )}
-                    </div>
-                  )}
+                      </div>
+                    )}
+                  </div>
 
-                  {svc.linkInscricao && (
-                     <a href={svc.linkInscricao} target="_blank" rel="noopener noreferrer" className="w-full text-center py-2 bg-forest text-white font-semibold rounded-xl text-sm border border-forest hover:bg-forest/90 transition-colors block">
-                       Acessar Link / Inscrição
-                     </a>
-                  )}
-
-                  <div className="mt-2 pt-4 border-t border-soft flex items-center justify-between">
-                    <div className="flex items-center gap-2 flex-1 min-w-0">
-                      <div className="w-8 h-8 rounded-full overflow-hidden bg-forest/20 flex items-center justify-center text-forest font-bold text-xs flex-shrink-0">
+                  {/* Creator Info */}
+                  <div className="pt-2 flex items-center gap-3 justify-between">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-8 h-8 rounded-full overflow-hidden bg-forest/20 flex items-center justify-center text-forest font-bold text-xs flex-shrink-0 border border-soft">
                         {svc.criadorFoto ? <img src={svc.criadorFoto} alt={svc.criadorNome} className="w-full h-full object-cover" /> : <User className="w-4 h-4"/>}
                       </div>
                       <div className="flex flex-col min-w-0">
-                         <span className="text-[10px] text-forest/50 leading-tight uppercase font-semibold tracking-wider">Sobre mim</span>
+                         <span className="text-[10px] text-forest/50 leading-tight uppercase font-semibold tracking-wider">Criador</span>
                          <span className="text-xs font-semibold text-forest truncate">{isCreator ? "Você" : svc.criadorNome}</span>
                       </div>
                     </div>
                     {!isCreator && (
-                      <a href={`${window.location.origin}?prof=${svc.criadorId}`} target="_blank" rel="noopener noreferrer" className="flex-shrink-0 px-3 py-1.5 text-xs text-forest bg-warm font-semibold rounded-lg border border-soft hover:bg-soft transition-colors ml-2">Ver Perfil</a>
+                      <a href={`${window.location.origin}?prof=${svc.criadorId}`} target="_blank" rel="noopener noreferrer" className="flex-shrink-0 px-3 py-1.5 text-xs text-forest bg-warm font-semibold rounded-xl border border-soft hover:bg-soft transition-colors tracking-wide">Ver Perfil</a>
                     )}
                   </div>
-                  <div className="flex items-center gap-2 mt-2">
+
+                  {/* Actions Row */}
+                  <div className="flex items-center gap-2 pt-2 border-t border-soft/60">
                     {profile.role === "profissional" && !isCreator && (
                       <button 
                         onClick={() => setSubscribingItem(svc)}
-                        className="flex-1 py-2 bg-warm text-forest font-semibold rounded-xl text-sm border border-soft hover:bg-forest hover:text-white transition-colors"
+                        className="flex-1 py-2.5 bg-forest hover:bg-forest/90 text-white font-serif font-semibold rounded-xl text-xs transition-colors shadow-sm"
                       >
                         Me Inscrever
                       </button>
                     )}
-                    <button onClick={() => handleShareEvento(svc)} className="p-2 border border-soft rounded-xl text-forest/70 hover:bg-forest hover:text-white transition-colors bg-warm ml-auto" title="Compartilhar">
-                      <Share2 className="w-5 h-5" />
+                    {isCreator && (
+                      <a 
+                        href={`${window.location.origin}?servico=${svc.id}`}
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="flex-1 text-center py-2 bg-gradient-to-r from-purple-50 to-purple-100/50 hover:from-purple-100 hover:to-purple-200/50 text-purple-900 border border-purple-200/40 font-semibold rounded-xl text-xs transition-all duration-250 flex items-center justify-center gap-1.5"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5 text-purple-700" /> Página Pública
+                      </a>
+                    )}
+                    <button onClick={() => handleShareServico(svc)} className="p-2 border border-soft rounded-xl text-forest/70 hover:bg-forest hover:text-white transition-colors bg-warm" title="Compartilhar">
+                      <Share2 className="w-4 h-4" />
                     </button>
                   </div>
                 </div>

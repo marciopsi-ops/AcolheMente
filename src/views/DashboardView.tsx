@@ -232,7 +232,11 @@ export function DashboardView({
 }) {
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [activeRoleView, setActiveRoleView] = useState<Role | null>(null);
   const [loadingObj, setLoadingObj] = useState(true);
+
+  const currentRole = activeRoleView || profile?.role || "profissional";
+  const modifiedProfile = profile ? { ...profile, role: currentRole } : null;
 
   // Tabs
   const [activeTab, setActiveTab] = useState<
@@ -254,6 +258,8 @@ export function DashboardView({
   // Search
   const [searchQuery, setSearchQuery] = useState("");
   const [triagemViewMode, setTriagemViewMode] = useState<"kanban" | "table">("table");
+  const [msgFilterTab, setMsgFilterTab] = useState<"all" | "assignment" | "alert" | "system" | "contract">("all");
+  const [msgSearchQuery, setMsgSearchQuery] = useState("");
 
   // Auth form
   const [isLogin, setIsLogin] = useState(true);
@@ -462,13 +468,21 @@ export function DashboardView({
             );
             setUser(null);
             setProfile(null);
+            setActiveRoleView(null);
             setLoadingObj(false);
             return;
           }
+          
+          // Normalize roles array for legacy compatibility
+          if (!currentUserProfile.roles || !Array.isArray(currentUserProfile.roles)) {
+            currentUserProfile.roles = [currentUserProfile.role || "profissional"];
+          }
+
           if (currentUserProfile?.role === "profissional") {
             setActiveTab("pacientes");
           }
           setProfile(currentUserProfile);
+          setActiveRoleView(currentUserProfile.role);
         }
 
         unsubConfig = onSnapshot(
@@ -480,10 +494,12 @@ export function DashboardView({
           },
         );
 
-        if (
-          currentUserProfile?.role === "master" ||
-          currentUserProfile?.role === "triagem"
-        ) {
+        const uRoles = currentUserProfile?.roles || [];
+        const hasMaster = uRoles.includes("master") || currentUserProfile?.role === "master";
+        const hasTriagem = uRoles.includes("triagem") || currentUserProfile?.role === "triagem";
+        const hasProfissional = uRoles.includes("profissional") || currentUserProfile?.role === "profissional";
+
+        if (hasMaster || hasTriagem) {
           // Listen to acolhimentos
           const q = query(collection(db, "acolhimentos"));
           unsubCards = onSnapshot(q, (snapshot) => {
@@ -499,7 +515,7 @@ export function DashboardView({
           });
         }
 
-        if (currentUserProfile?.role === "profissional") {
+        if (hasProfissional) {
           // Listen to assigned acolhimentos
           const qq = query(collection(db, "acolhimentos"));
           unsubMeusPacientes = onSnapshot(qq, (snapshot) => {
@@ -518,7 +534,7 @@ export function DashboardView({
           });
         }
 
-        if (currentUserProfile?.role === "master") {
+        if (hasMaster) {
           unsubDoacoes = onSnapshot(
             query(collection(db, "doacoes")),
             (snapshot) => {
@@ -610,6 +626,7 @@ export function DashboardView({
         unsubMeusPacientes = undefined;
         unsubEmpresas = undefined;
         setProfile(null);
+        setActiveRoleView(null);
         setAcolhimentos([]);
         setDoacoes([]);
         setSolicitacoes([]);
@@ -775,7 +792,7 @@ export function DashboardView({
 
     // Check role permission for column drops conceptually
     const colConfig = COLUMNS.find((c) => c.id === newStatus);
-    if (!colConfig || !colConfig.role.includes(profile.role)) return;
+    if (!colConfig || !colConfig.role.includes(currentRole)) return;
 
     // Update status
     try {
@@ -785,7 +802,7 @@ export function DashboardView({
       const authName = profile?.name || "Parceiro";
 
       const updates: any = { status: newStatus };
-      if (newStatus === "Em Atendimento" && profile.role === "profissional") {
+      if (newStatus === "Em Atendimento" && currentRole === "profissional") {
         updates.profissionalId = user.uid;
       }
       
@@ -812,18 +829,36 @@ export function DashboardView({
   const [motivoDevolucao, setMotivoDevolucao] = useState("");
   const [motivoDevolucaoOutro, setMotivoDevolucaoOutro] = useState("");
 
-  const handleRoleChange = async (userId: string, newRole: Role) => {
-    if (!profile || profile.role !== "master") return;
+  const handleRolesChange = async (userId: string, newRoles: Role[]) => {
+    const isUserMaster = profile?.roles ? profile.roles.includes("master") : profile?.role === "master";
+    if (!profile || !isUserMaster) return;
+
+    if (newRoles.length === 0) {
+      alert("É necessário selecionar pelo menos um nível de acesso.");
+      return;
+    }
+
     setConfirmConfig({
       isOpen: true,
       message:
-        "Tem certeza que deseja alterar o nível de acesso deste usuário?",
+        "Tem certeza que deseja alterar as permissões de acesso deste usuário?",
       onConfirm: async () => {
         try {
-          await updateDoc(doc(db, "users", userId), { role: newRole });
+          // Determine primary role for compatibility
+          let primaryRole: Role = "profissional";
+          if (newRoles.includes("master")) {
+            primaryRole = "master";
+          } else if (newRoles.includes("triagem")) {
+            primaryRole = "triagem";
+          }
+
+          await updateDoc(doc(db, "users", userId), {
+            roles: newRoles,
+            role: primaryRole,
+          });
         } catch (err) {
           console.error("Erro ao alterar nível de acesso:", err);
-          alert("Houve um erro ao tentar alterar o nível de acesso.");
+          alert("Houve um erro ao tentar alterar os níveis de acesso.");
         }
       },
     });
@@ -833,7 +868,7 @@ export function DashboardView({
     id: string,
     formType: "leads" | "ativos",
   ) => {
-    if (!profile || profile.role !== "master") return;
+    if (!profile || currentRole !== "master") return;
     setConfirmConfig({
       isOpen: true,
       message:
@@ -1053,7 +1088,7 @@ export function DashboardView({
   );
 
   const getProfissionalNotifications = () => {
-    if (!profile || profile.role !== "profissional") return [];
+    if (!profile || currentRole !== "profissional") return [];
 
     const list: {
       id: string;
@@ -1062,64 +1097,249 @@ export function DashboardView({
       desc: string;
       patientName: string;
       patientObj: Acolhimento;
+      date: string;
+      timestamp: number;
+      isProfileAlert?: boolean;
     }[] = [];
 
+    const formatDateVal = (ts: any) => {
+      if (!ts) return "Sem data";
+      if (typeof ts.toMillis === "function") {
+        return new Date(ts.toMillis()).toLocaleString("pt-BR");
+      }
+      if (ts instanceof Date) {
+        return ts.toLocaleString("pt-BR");
+      }
+      return String(ts);
+    };
+
+    const getMillisVal = (ts: any) => {
+      if (!ts) return Date.now();
+      if (typeof ts.toMillis === "function") return ts.toMillis();
+      if (ts instanceof Date) return ts.getTime();
+      return Date.now();
+    };
+
+    const parseLogDateToMillis = (dateStr: string, fallback: any) => {
+      try {
+        const cleaned = dateStr.trim();
+        const parts = cleaned.split(/,?\s+/);
+        if (parts.length >= 2) {
+          const dateParts = parts[0].split("/");
+          const timeParts = parts[1].split(":");
+          if (dateParts.length === 3 && timeParts.length >= 2) {
+            const day = parseInt(dateParts[0], 10);
+            const month = parseInt(dateParts[1], 10) - 1;
+            const year = parseInt(dateParts[2], 10);
+            const hour = parseInt(timeParts[0], 10);
+            const minute = parseInt(timeParts[1], 10);
+            const second = timeParts[2] ? parseInt(timeParts[2], 10) : 0;
+            return new Date(year, month, day, hour, minute, second).getTime();
+          }
+        }
+      } catch (e) {}
+      return getMillisVal(fallback);
+    };
+
     meusPacientes.forEach((p) => {
-      // 1. New Assignment
+      const pName = p.nomeDesejado || p.nomeCivil || p.nome || "Não informado";
+
+      // 1. New Assignment (if Pendente or not set)
       if (!p.atribuicaoStatus || p.atribuicaoStatus === "Pendente") {
         list.push({
           id: `${p.id}-pending`,
           type: "assignment",
           title: "Novo Paciente Atribuído",
-          desc: "Um novo acolhido foi direcionado a você. Revise a ficha técnica e confirme aceitação do atendimento clínico.",
-          patientName: p.nomeDesejado || p.nomeCivil || p.nome,
+          desc: "Um novo acolhido foi direcionado a você. Revise a ficha e decida sobre o aceite.",
+          patientName: pName,
           patientObj: p,
+          date: formatDateVal(p.updatedAt || p.createdAt),
+          timestamp: getMillisVal(p.updatedAt || p.createdAt),
         });
       }
-      // 2. Clinical/Admin Notification
-      if (p.notificacao && p.notificacao.trim()) {
-        list.push({
-          id: `${p.id}-notif`,
-          type: "alert",
-          title: "Nota / Alerta Administrativo",
-          desc: p.notificacao,
-          patientName: p.nomeDesejado || p.nomeCivil || p.nome,
-          patientObj: p,
-        });
-      }
-      // 3. Contract unsigned
+
+      // 2. Contract pending
       if (!p.contratoAssinado) {
         list.push({
           id: `${p.id}-contract`,
           type: "contract",
           title: "Contrato Pendente",
-          desc: "Contrato de Prestação de Serviços Psicológicos ainda não foi assinado por este paciente.",
-          patientName: p.nomeDesejado || p.nomeCivil || p.nome,
+          desc: "Contrato de Prestação de Serviços Psicológicos pendente de assinatura.",
+          patientName: pName,
           patientObj: p,
+          date: formatDateVal(p.createdAt),
+          timestamp: getMillisVal(p.createdAt),
         });
       }
-      // 4. Info change
+
+      // 3. Info changed recently
       if (
         p.updatedAt &&
         p.createdAt &&
-        p.updatedAt.toMillis?.() - p.createdAt.toMillis?.() > 4000
+        getMillisVal(p.updatedAt) - getMillisVal(p.createdAt) > 4000
       ) {
         list.push({
           id: `${p.id}-updated`,
           type: "system",
           title: "Ficha Atualizada",
-          desc: "Dados clínicos, histórico ou de contato alterados recentemente.",
-          patientName: p.nomeDesejado || p.nomeCivil || p.nome,
+          desc: "Dados cadastrais, contato ou informações clínicas sofreram atualizações recentes.",
+          patientName: pName,
           patientObj: p,
+          date: formatDateVal(p.updatedAt),
+          timestamp: getMillisVal(p.updatedAt),
+        });
+      }
+
+      // 4. Clinical/Admin Notification Log (split into individual chronolog entries)
+      if (p.notificacao && p.notificacao.trim()) {
+        const blocks = p.notificacao.split(/\n+/).map((b) => b.trim()).filter(Boolean);
+        blocks.forEach((block, idx) => {
+          const dateMatch = block.match(/^\[(.*?)\]/);
+          let dateStr = "";
+          let text = block;
+          let calculatedTimestamp = getMillisVal(p.updatedAt || p.createdAt);
+
+          if (dateMatch) {
+            dateStr = dateMatch[1];
+            text = block.replace(/^\[.*?\]/, "").trim();
+            calculatedTimestamp = parseLogDateToMillis(dateStr, p.updatedAt || p.createdAt);
+          } else {
+            dateStr = formatDateVal(p.updatedAt || p.createdAt);
+          }
+
+          const isSystemLog =
+            block.includes("Movido para") ||
+            block.includes("Atribuído") ||
+            block.includes("Desatribuído") ||
+            block.includes("devolvido") ||
+            block.includes("status") ||
+            block.includes("triagem");
+
+          list.push({
+            id: `${p.id}-notif-log-${idx}`,
+            type: isSystemLog ? "system" : "alert",
+            title: isSystemLog ? "Movimentação de Sistema" : "Mensagem da Gestão",
+            desc: text,
+            patientName: pName,
+            patientObj: p,
+            date: dateStr,
+            timestamp: calculatedTimestamp,
+          });
         });
       }
     });
 
-    return list;
+    // Validate professional profile registration fields
+    const missingFields: { name: string; label: string }[] = [];
+    if (!profile.photoUrl) missingFields.push({ name: "photoUrl", label: "Foto de Perfil & Divulgação" });
+    if (!profile.telefone || !profile.telefone.trim()) missingFields.push({ name: "telefone", label: "Telefone / WhatsApp Comercial" });
+    if (!profile.cpf || !profile.cpf.trim()) missingFields.push({ name: "cpf", label: "CPF" });
+    if (!profile.pixKey || !profile.pixKey.trim()) missingFields.push({ name: "pixKey", label: "Chave PIX" });
+    if (!profile.crp || !profile.crp.trim()) missingFields.push({ name: "crp", label: "CRP (Registro Profissional)" });
+    if (!profile.anoFormacao) missingFields.push({ name: "anoFormacao", label: "Ano de Formação / Graduação" });
+    if (!profile.abordagem || !profile.abordagem.trim()) missingFields.push({ name: "abordagem", label: "Abordagem Principal" });
+    if (!profile.especialidade || !profile.especialidade.trim()) missingFields.push({ name: "especialidade", label: "Especialidades" });
+    if (!profile.cidade || !profile.cidade.trim()) missingFields.push({ name: "cidade", label: "Cidade de Atendimento" });
+    if (!profile.uf || !profile.uf.trim()) missingFields.push({ name: "uf", label: "Estado (UF)" });
+    if (!profile.biografia || !profile.biografia.trim()) missingFields.push({ name: "biografia", label: "Mini-currículo & Biografia clínica" });
+    if (!profile.motivacaoProjeto || !profile.motivacaoProjeto.trim()) missingFields.push({ name: "motivacaoProjeto", label: "Motivações para o projeto" });
+    
+    const xp = Array.isArray(profile.publicosExperiencia) ? profile.publicosExperiencia : [];
+    if (xp.length === 0) missingFields.push({ name: "publicosExperiencia", label: "Experiência com Públicos" });
+
+    const gosto = Array.isArray(profile.publicosGosto) ? profile.publicosGosto : [];
+    if (gosto.length === 0) missingFields.push({ name: "publicosGosto", label: "Afinidade de atendimento clínico" });
+
+    if (missingFields.length > 0) {
+      // 1. General alert summarizing all missing fields
+      list.push({
+        id: "profile-missing-summary",
+        type: "alert",
+        title: "Ficha Cadastral Incompleta",
+        desc: `Sua Ficha Cadastral possui ${missingFields.length} campos pendentes de preenchimento (${missingFields.map(f => f.label).join(", ")}). Clique para regularizar no seu painel.`,
+        patientName: "Seu Cadastro",
+        patientObj: { id: "profile" } as any,
+        date: "Pendente",
+        timestamp: Date.now() + 100000, // Top priority temporal float
+        isProfileAlert: true,
+      } as any);
+
+      // 2. Specific individual alerts for critical missing fields so they are very visible
+      if (!profile.photoUrl) {
+        list.push({
+          id: "profile-missing-photoUrl-detail",
+          type: "alert",
+          title: "Pendência: Foto de Perfil não cadastrada",
+          desc: "Sua foto de divulgação clínica está vazia. Uma boa foto profissional ajuda muito na identificação e no acolhimento de pacientes.",
+          patientName: "Seu Cadastro",
+          patientObj: { id: "profile" } as any,
+          date: "Pendente",
+          timestamp: Date.now() + 99000,
+          isProfileAlert: true,
+        } as any);
+      }
+      if (!profile.telefone || !profile.telefone.trim()) {
+        list.push({
+          id: "profile-missing-telefone-detail",
+          type: "alert",
+          title: "Pendência: WhatsApp / Contato comercial",
+          desc: "Seu Telefone / WhatsApp comercial de contato está ausente. Pacientes de encaminhamento e a coordenação não têm como falar com você.",
+          patientName: "Seu Cadastro",
+          patientObj: { id: "profile" } as any,
+          date: "Pendente",
+          timestamp: Date.now() + 98000,
+          isProfileAlert: true,
+        } as any);
+      }
+      if (!profile.crp || !profile.crp.trim()) {
+        list.push({
+          id: "profile-missing-crp-detail",
+          type: "alert",
+          title: "Pendência: Registro CRP em branco",
+          desc: "Seu número CRP não foi preenchido. Precisamos desta informação para regularizar seus registros e validar seus atendimentos.",
+          patientName: "Seu Cadastro",
+          patientObj: { id: "profile" } as any,
+          date: "Pendente",
+          timestamp: Date.now() + 97000,
+          isProfileAlert: true,
+        } as any);
+      }
+      if (!profile.cpf || !profile.cpf.trim()) {
+        list.push({
+          id: "profile-missing-cpf-detail",
+          type: "alert",
+          title: "Pendência: CPF não informado",
+          desc: "Seu CPF não foi informado. Este dado é necessário para a prestação de assessoria jurídica e faturamento no AcolheMente.",
+          patientName: "Seu Cadastro",
+          patientObj: { id: "profile" } as any,
+          date: "Pendente",
+          timestamp: Date.now() + 96000,
+          isProfileAlert: true,
+        } as any);
+      }
+      if (!profile.biografia || !profile.biografia.trim()) {
+        list.push({
+          id: "profile-missing-biografia-detail",
+          type: "alert",
+          title: "Pendência: Mini-currículo / Apresentação clínica",
+          desc: "Sua biografia clínica está vazia. Escreva um pequeno resumo sobre sua jornada para que pacientes que visitam seu perfil o conheçam.",
+          patientName: "Seu Cadastro",
+          patientObj: { id: "profile" } as any,
+          date: "Pendente",
+          timestamp: Date.now() + 95000,
+          isProfileAlert: true,
+        } as any);
+      }
+    }
+
+    // Sort by timestamp descending (newest first)
+    return list.sort((a, b) => b.timestamp - a.timestamp);
   };
 
   const profNotifications = getProfissionalNotifications();
-  const pendingProfNotificationsCount = profNotifications.length;
+  const pendingProfNotificationsCount = profNotifications.filter(
+    (n) => n.type === "assignment" || n.type === "contract" || n.isProfileAlert
+  ).length;
 
   const filteredDoacoes = doacoes.filter(
     (d) =>
@@ -1503,10 +1723,10 @@ export function DashboardView({
   // Determine which columns this role can see
   const visibleColumns = COLUMNS.filter(
     (c) =>
-      c.role.includes(profile.role) &&
+      c.role.includes(currentRole) &&
       (c.tab === activeTab ||
         (activeTab === "pacientesAcolhidos" && c.tab === "pacientes") ||
-        profile.role === "profissional"),
+        currentRole === "profissional"),
   );
 
   const roleLabels = {
@@ -1525,7 +1745,7 @@ export function DashboardView({
           "Este é o seu painel de controle. Aqui você acompanha as solicitações, agendamentos e cadastros em tempo real.",
         icon: <HelpCircle className="w-12 h-12 text-forest/70/80 mb-4" />,
       },
-      profile.role === "master"
+      currentRole === "master"
         ? {
             title: "Gestão Completa",
             content:
@@ -1688,15 +1908,15 @@ export function DashboardView({
                 /
               </span>
               <span className="hidden sm:inline-block">
-                {roleLabels[profile.role]}
+                {roleLabels[currentRole]}
               </span>
             </span>
           </div>
         </div>
 
-        {(profile.role === "master" || profile.role === "triagem") && (
+        {(currentRole === "master" || currentRole === "triagem") && (
           <div className="flex order-last w-full lg:w-auto lg:order-none items-center gap-1 sm:gap-2 bg-warm rounded-full p-1 border border-soft overflow-x-auto no-scrollbar">
-            {profile.role === "master" && (
+            {currentRole === "master" && (
               <button
                 onClick={() => setActiveTab("estatisticas")}
                 className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "estatisticas" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
@@ -1726,7 +1946,7 @@ export function DashboardView({
                 </span>
               )}
             </button>
-            {profile.role === "master" && (
+            {currentRole === "master" && (
               <button
                 onClick={() => setActiveTab("doacoes")}
                 className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "doacoes" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
@@ -1750,7 +1970,7 @@ export function DashboardView({
                 </span>
               )}
             </button>
-            {profile.role === "master" && (
+            {currentRole === "master" && (
               <>
                 <button
                   onClick={() => setActiveTab("empresas")}
@@ -1786,7 +2006,7 @@ export function DashboardView({
           </div>
         )}
 
-        {profile.role === "profissional" && (
+        {currentRole === "profissional" && (
           <div className="flex order-last w-full lg:w-auto lg:order-none items-center gap-1 sm:gap-2 bg-warm rounded-full p-1 border border-soft overflow-x-auto no-scrollbar">
             <button
               onClick={() => setActiveTab("estatisticas")}
@@ -1816,7 +2036,7 @@ export function DashboardView({
               onClick={() => setActiveTab("tarefasProfissional")}
               className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "tarefasProfissional" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
             >
-              Mensagens
+              Alertas e Pendências
               {pendingProfNotificationsCount > 0 && (
                 <span className="bg-red-500 text-white text-[10px] w-4.5 h-4.5 flex items-center justify-center rounded-full font-bold">
                   {pendingProfNotificationsCount}
@@ -1844,6 +2064,30 @@ export function DashboardView({
         </div>
 
         <div className="flex items-center gap-2 sm:gap-4">
+          {profile?.roles && profile.roles.length > 1 && (
+            <div className="flex items-center gap-1 bg-warm border border-soft rounded-full p-0.5 shadow-sm shrink-0">
+              {profile.roles.map((r: Role) => (
+                <button
+                  key={r}
+                  onClick={() => {
+                    setActiveRoleView(r);
+                    if (r === "profissional") {
+                      setActiveTab("pacientes");
+                    } else if (r === "master" || r === "triagem") {
+                      setActiveTab("kanban");
+                    }
+                  }}
+                  className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase transition-all whitespace-nowrap ${
+                    currentRole === r
+                      ? "bg-forest text-white shadow-xs"
+                      : "text-forest/60 hover:text-forest"
+                  }`}
+                >
+                  {r === "master" ? "Master" : r === "triagem" ? "Triagem" : "Psicólogo"}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="flex items-center gap-2 text-xs sm:text-sm text-forest font-medium bg-warm px-3 py-1.5 rounded-full border border-soft max-w-[120px] sm:max-w-none truncate">
             <User className="w-4 h-4 text-forest/70 shrink-0" />
             <span className="truncate">{profile.name}</span>
@@ -1858,7 +2102,7 @@ export function DashboardView({
       </nav>
 
       {/* Main Content */}
-      {(profile.role === "master" || profile.role === "triagem") &&
+      {(currentRole === "master" || currentRole === "triagem") &&
       activeTab === "estatisticas" ? (
         <div className="flex-1 overflow-auto p-6 md:p-8 flex flex-col gap-8 slide-up">
           <div className="max-w-7xl w-full mx-auto space-y-8">
@@ -2048,7 +2292,7 @@ export function DashboardView({
               </div>
             </div>
 
-            {profile.role === "master" && (
+            {currentRole === "master" && (
               <div className="bg-white p-8 rounded-[2rem] border border-soft shadow-sm mt-8">
                 <h2 className="font-serif text-2xl text-forest mb-6 flex items-center gap-3">
                   <Info className="w-6 h-6 text-forest/70" />
@@ -2180,7 +2424,7 @@ export function DashboardView({
             )}
           </div>
         </div>
-      ) : profile.role === "profissional" && activeTab === "estatisticas" ? (
+      ) : currentRole === "profissional" && activeTab === "estatisticas" ? (
         <div className="flex-1 overflow-auto p-6 md:p-8 flex flex-col gap-8 slide-up">
           <div className="max-w-5xl w-full mx-auto space-y-8">
             <h2 className="font-serif text-3xl text-forest bg-white px-8 py-6 rounded-[2rem] shadow-sm border border-soft flex items-center gap-4">
@@ -2301,7 +2545,7 @@ export function DashboardView({
             </div>
           </div>
         </div>
-      ) : profile.role === "profissional" && activeTab === "pacientes" ? (
+      ) : currentRole === "profissional" && activeTab === "pacientes" ? (
         <div className="flex-1 overflow-auto p-6 md:p-8 flex flex-col gap-8 slide-up">
           <div className="max-w-5xl w-full mx-auto">
             <h2 className="font-serif text-3xl text-forest bg-white px-8 py-6 rounded-[2rem] shadow-sm border border-soft flex items-center gap-4 mb-8">
@@ -2315,168 +2559,414 @@ export function DashboardView({
                   Nenhum paciente encaminhado no momento.
                 </div>
               ) : (
-                filteredMeusPacientes.map((p) => (
-                  <div
-                    key={p.id}
-                    className="bg-white p-6 rounded-[2rem] shadow-sm border border-soft flex flex-col gap-4 group hover:shadow-md transition-shadow"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex flex-col gap-1">
-                        <h4 className="font-semibold text-lg text-forest break-words">
+                filteredMeusPacientes.map((p) => {
+                  const entryDate = p.createdAt
+                    ? new Date(
+                        p.createdAt.toMillis
+                          ? p.createdAt.toMillis()
+                          : p.createdAt.seconds * 1000,
+                      ).toLocaleDateString()
+                    : "Desconhecida";
+
+                  return (
+                    <div
+                      key={p.id}
+                      className="bg-white p-6 rounded-[2rem] shadow-md border border-soft hover:shadow-lg transition-all duration-300 flex flex-col gap-5 relative group"
+                    >
+                      {/* Header Row */}
+                      <div>
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <span className="text-[10px] font-bold text-forest/70 bg-warm px-2.5 py-1 rounded-full uppercase tracking-wider">
+                            Paciente
+                          </span>
+                          <span
+                            className={`px-2 py-1 rounded font-bold text-[9px] uppercase tracking-wide leading-none ${
+                              p.atribuicaoStatus === "Aceito"
+                                ? "bg-[#34A853]/10 text-[#34A853]"
+                                : p.atribuicaoStatus === "Rejeitado"
+                                  ? "bg-red-500/10 text-red-500"
+                                  : "bg-amber-500/10 text-amber-500"
+                            }`}
+                          >
+                            {p.atribuicaoStatus || "Pendente"}
+                          </span>
+                        </div>
+                        <h4 className="font-serif text-xl font-bold text-forest leading-snug tracking-tight">
                           {p.nomeDesejado ||
                             p.nomeCivil ||
                             p.nome ||
                             "Paciente não identificado"}
                         </h4>
-                        <div className="text-[10px] text-forest/70 font-semibold uppercase tracking-wider bg-warm px-2 py-1 rounded-md self-start">
-                          Entrada:{" "}
-                          {p.createdAt
-                            ? new Date(
-                                p.createdAt.toMillis
-                                  ? p.createdAt.toMillis()
-                                  : p.createdAt.seconds * 1000,
-                              ).toLocaleDateString()
-                            : "Desconhecida"}
-                        </div>
                       </div>
-                      <div className="flex flex-col items-end gap-1 shrink-0">
-                        <span
-                          className={`px-2 py-0.5 rounded font-bold text-[9px] uppercase tracking-wide leading-none ${
-                            p.atribuicaoStatus === "Aceito"
-                              ? "bg-[#34A853]/10 text-[#34A853]"
-                              : p.atribuicaoStatus === "Rejeitado"
-                                ? "bg-red-500/10 text-red-500"
-                                : "bg-amber-500/10 text-amber-500"
-                          }`}
-                        >
-                          {p.atribuicaoStatus || "Pendente"}
-                        </span>
-                        <div className="text-[10px] text-forest/70 font-medium bg-warm px-2 py-1 rounded-md leading-none whitespace-nowrap">
-                          {p.status}
-                        </div>
-                      </div>
-                    </div>
 
-                    <div className="text-sm text-forest/80 flex flex-col gap-3 mt-2 bg-warm/50 p-4 rounded-xl border border-soft">
-                      <span className="flex items-center gap-3 font-medium">
-                        <User className="w-4 h-4 text-forest/60" /> Idade:{" "}
-                        {p.idade || "N/I"}
-                      </span>
-                      <span className="flex items-center gap-3 font-medium">
-                        <Circle className="w-4 h-4 text-forest/60" /> Gênero:{" "}
-                        {p.identidadeGenero || "N/I"}
-                      </span>
-                      <div className="h-px w-full bg-soft/50 my-1"></div>
-                      {p.telefone && (
-                        <span className="flex items-center gap-3 font-semibold text-forest">
-                          <Phone className="w-4 h-4 text-forest/60" />{" "}
-                          {p.telefone}
-                        </span>
+                      {/* Information organized in lines (Rows) */}
+                      <div className="bg-warm/25 rounded-2xl border border-soft/50 p-4 flex flex-col gap-2.5 text-xs text-forest/85">
+                        <div className="flex items-center justify-between py-1 border-b border-soft/30">
+                          <span className="text-forest/50 font-medium flex items-center gap-1.5">
+                            <Calendar className="w-3.5 h-3.5 text-forest/40" /> Entrada:
+                          </span>
+                          <span className="font-semibold text-forest/90">{entryDate}</span>
+                        </div>
+
+                        <div className="flex items-center justify-between py-1 border-b border-soft/30">
+                          <span className="text-forest/50 font-medium flex items-center gap-1.5">
+                            <User className="w-3.5 h-3.5 text-forest/40" /> Idade:
+                          </span>
+                          <span className="font-semibold text-forest/90">{p.idade || "Não informada"}</span>
+                        </div>
+
+                        <div className="flex items-center justify-between py-1 border-b border-soft/30">
+                          <span className="text-forest/50 font-medium flex items-center gap-1.5">
+                            <Circle className="w-3.5 h-3.5 text-forest/40" /> Gênero:
+                          </span>
+                          <span className="font-semibold text-forest/90">{p.identidadeGenero || "Não informado"}</span>
+                        </div>
+
+                        {p.telefone && (
+                          <div className="flex items-center justify-between py-1 border-b border-soft/30">
+                            <span className="text-forest/50 font-medium flex items-center gap-1.5">
+                              <Phone className="w-3.5 h-3.5 text-forest/40" /> Telefone:
+                            </span>
+                            <span className="font-semibold text-forest/90">{p.telefone}</span>
+                          </div>
+                        )}
+
+                        <div className="flex items-center justify-between py-1">
+                          <span className="text-forest/50 font-medium flex items-center gap-1.5">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-forest/40" /> Progresso:
+                          </span>
+                          <span className="font-semibold text-forest/70 bg-white/60 px-2 py-0.5 rounded border border-soft/40 text-[10px]">
+                            {p.status}
+                          </span>
+                        </div>
+                      </div>
+
+                      {p.motivo && (
+                        <div className="text-xs flex flex-col gap-1.5 text-forest/80">
+                          <span className="font-semibold text-forest/60 uppercase tracking-wider text-[10px]">
+                            Queixa / Motivo
+                          </span>
+                          <p className="whitespace-pre-wrap max-h-[120px] overflow-y-auto bg-warm/15 p-3.5 rounded-2xl border border-soft/30 custom-scrollbar leading-relaxed">
+                            {p.motivo}
+                          </p>
+                        </div>
                       )}
+
+                      {p.valorSessao && (
+                        <div className="flex items-center justify-between bg-emerald-50 text-emerald-700 px-4 py-3 rounded-2xl text-xs font-bold border border-emerald-100 shadow-sm">
+                          <span className="flex items-center gap-1.5">
+                            <DollarSign className="w-4 h-4 text-emerald-600" /> Valor Acertado:
+                          </span>
+                          <span className="text-sm">R$ {p.valorSessao}</span>
+                        </div>
+                      )}
+
+                      <button
+                        onClick={() => setSelectedCard(p)}
+                        className="w-full py-2.5 bg-forest hover:bg-forest/90 text-white font-serif font-semibold rounded-xl text-xs transition-colors flex items-center justify-center gap-2 shadow-sm"
+                      >
+                        <FileText className="w-4 h-4" />
+                        Ficha do Paciente
+                      </button>
                     </div>
-
-                    {p.motivo && (
-                      <div className="text-xs flex flex-col gap-1 text-forest/80">
-                        <span className="font-semibold text-forest/60 uppercase tracking-wider text-[10px]">
-                          Queixa / Motivo
-                        </span>
-                        <p className="whitespace-pre-wrap max-h-[120px] overflow-y-auto bg-warm/30 p-3 rounded-lg border border-soft custom-scrollbar">
-                          {p.motivo}
-                        </p>
-                      </div>
-                    )}
-
-                    {p.valorSessao && (
-                      <div className="mt-auto flex items-center justify-between bg-emerald-50 text-emerald-700 px-4 py-3 rounded-xl text-xs font-bold border border-emerald-100 shadow-sm">
-                        <span>Valor Acertado:</span>
-                        <span className="text-sm">R$ {p.valorSessao}</span>
-                      </div>
-                    )}
-                    <button
-                      onClick={() => setSelectedCard(p)}
-                      className="mt-2 w-full py-2.5 bg-sun text-forest font-bold text-xs uppercase tracking-wider rounded-xl hover:bg-sun-dark transition-colors flex items-center justify-center gap-2"
-                    >
-                      <FileText className="w-4 h-4" />
-                      Ficha do Paciente
-                    </button>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>
         </div>
-      ) : profile.role === "profissional" &&
+      ) : currentRole === "profissional" &&
         activeTab === "tarefasProfissional" ? (
         <div className="flex-1 overflow-auto p-6 md:p-8 flex flex-col gap-8 slide-up">
-          <div className="max-w-4xl w-full mx-auto">
-            <h2 className="font-serif text-3xl text-forest bg-white px-8 py-6 rounded-[2rem] shadow-sm border border-soft flex items-center gap-4 mb-8">
-              <CheckSquare className="w-8 h-8 text-forest/70 animate-pulse" />
-              Central de Alertas e Mensagens
-            </h2>
+          <div className="max-w-7xl w-full mx-auto flex flex-col gap-8">
+            
+            {/* Header section with totalizers */}
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+              <div>
+                <h2 className="font-serif text-3xl font-medium text-forest">
+                  Alertas e Pendências
+                </h2>
+                <p className="text-xs text-forest/70 mt-1">
+                  Planilha de monitoramento de vínculos, pendências de contratos, pareceres de triagem e comunicações da coordenação.
+                </p>
+              </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {profNotifications.length === 0 ? (
-                <div className="col-span-full text-center p-12 bg-white/50 border border-dashed border-soft rounded-[2rem] text-forest/70 p-12">
-                  <span className="block text-4xl mb-3">🌟</span>
-                  Nenhuma mensagem ou alerta clínico pendente no momento. Tudo
-                  em ordem!
+              {/* Minimal metrics cells */}
+              <div className="flex items-center gap-3 bg-white p-3 rounded-2xl border border-soft shadow-xs shrink-0 text-xs">
+                <div className="px-3 py-1 bg-amber-50 text-amber-700 border border-amber-100 rounded-lg text-center">
+                  <span className="block font-bold text-sm">
+                    {profNotifications.filter((n) => n.type === "assignment").length}
+                  </span>
+                  <span>Novos Recebidos</span>
                 </div>
-              ) : (
-                profNotifications.map((notif) => (
-                  <div
-                    key={notif.id}
-                    className="bg-white p-6 rounded-[2rem] shadow-sm border border-soft flex flex-col justify-between gap-4 hover:shadow-md transition-shadow"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span
-                        className={`text-[9px] uppercase font-bold px-2.5 py-1 rounded-md ${
-                          notif.type === "assignment"
-                            ? "bg-amber-100 text-amber-700"
-                            : notif.type === "alert"
-                              ? "bg-red-50 text-red-700 border border-red-100 font-bold"
-                              : notif.type === "contract"
-                                ? "bg-blue-50 text-blue-700"
-                                : "bg-slate-100 text-slate-700"
+                <div className="h-8 w-px bg-soft"></div>
+                <div className="px-3 py-1 bg-red-50 text-red-700 border border-red-100 rounded-lg text-center">
+                  <span className="block font-bold text-sm">
+                    {profNotifications.filter((n) => n.type === "alert").length}
+                  </span>
+                  <span>Alertas Clínicos</span>
+                </div>
+                <div className="h-8 w-px bg-soft"></div>
+                <div className="px-3 py-1 bg-blue-50 text-blue-700 border border-blue-100 rounded-lg text-center">
+                  <span className="block font-bold text-sm">
+                    {profNotifications.filter((n) => n.type === "contract").length}
+                  </span>
+                  <span>Faltam Contratos</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Main Spreadsheet Control Engine */}
+            <div className="bg-white border border-soft rounded-[2rem] shadow-sm overflow-hidden flex flex-col">
+              
+              {/* Filter controls table bar */}
+              <div className="p-5 border-b border-soft bg-warm/30 flex flex-col lg:flex-row items-center justify-between gap-4">
+                
+                {/* Spreadsheet category pills */}
+                <div className="flex flex-wrap items-center gap-1.5 self-start lg:self-center">
+                  {[
+                    { id: "all", name: "Todos" },
+                    { id: "assignment", name: "Novos Pacientes" },
+                    { id: "alert", name: "Alertas da Gestão" },
+                    { id: "system", name: "Movimentações" },
+                    { id: "contract", name: "Contratos" }
+                  ].map((tab) => {
+                    const count = tab.id === "all" 
+                      ? profNotifications.length 
+                      : profNotifications.filter(n => n.type === tab.id).length;
+                    const isActive = msgFilterTab === tab.id;
+                    return (
+                      <button
+                        key={tab.id}
+                        onClick={() => setMsgFilterTab(tab.id as any)}
+                        className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                          isActive 
+                            ? "bg-forest text-white shadow-xs" 
+                            : "bg-white text-forest/70 hover:text-forest hover:bg-white/80 border border-soft"
                         }`}
                       >
-                        {notif.type === "assignment"
-                          ? "Novo Paciente"
-                          : notif.type === "alert"
-                            ? "Alerta Administrativo/Clínico"
-                            : notif.type === "contract"
-                              ? "Pendência de Contrato"
-                              : "Atualização"}
-                      </span>
-                      <span className="text-[10px] font-semibold text-forest/50">
-                        Paciente: {notif.patientName}
-                      </span>
-                    </div>
+                        {tab.name}
+                        {count > 0 && (
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
+                            isActive 
+                              ? "bg-red-500 text-white shadow-xs" 
+                              : "bg-red-100 text-red-700 border border-red-200"
+                          }`}>
+                            {count}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
 
-                    <div className="flex-1">
-                      <h4 className="font-semibold text-base text-forest mt-1">
-                        {notif.title}
-                      </h4>
-                      <p className="text-xs text-forest/70 mt-2 leading-relaxed bg-warm/50 p-3 rounded-xl border border-soft">
-                        {notif.desc}
-                      </p>
-                    </div>
-
+                {/* Search query inside the table */}
+                <div className="w-full lg:w-72 relative self-end lg:self-center">
+                  <Search className="w-4 h-4 text-forest/40 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={msgSearchQuery}
+                    onChange={(e) => setMsgSearchQuery(e.target.value)}
+                    placeholder="Filtrar planilha..."
+                    className="w-full pl-9 pr-4 py-2 bg-white text-xs text-forest placeholder:text-forest/30 border border-soft rounded-full focus:outline-none focus:border-forest/40 focus:ring-1 focus:ring-forest/40 transition-colors"
+                  />
+                  {msgSearchQuery && (
                     <button
-                      onClick={() => {
-                        setSelectedCard(notif.patientObj);
-                        setActiveTab("pacientes");
-                      }}
-                      className="mt-2 w-full py-2.5 bg-forest text-white text-xs font-bold uppercase tracking-wider rounded-xl hover:bg-forest/90 transition-colors"
+                      onClick={() => setMsgSearchQuery("")}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 hover:bg-soft rounded-full"
                     >
-                      Acessar Ficha do Paciente
+                      <X className="w-3.5 h-3.5 text-forest/40" />
                     </button>
-                  </div>
-                ))
-              )}
+                  )}
+                </div>
+              </div>
+
+              {/* Spreadsheet Body */}
+              <div className="overflow-x-auto">
+                {(() => {
+                  const filteredMsgList = profNotifications.filter((notif) => {
+                    if (msgFilterTab !== "all" && notif.type !== msgFilterTab) return false;
+                    if (msgSearchQuery.trim()) {
+                      const q = msgSearchQuery.toLowerCase();
+                      return (
+                        notif.patientName.toLowerCase().includes(q) ||
+                        notif.title.toLowerCase().includes(q) ||
+                        notif.desc.toLowerCase().includes(q) ||
+                        notif.date.toLowerCase().includes(q)
+                      );
+                    }
+                    return true;
+                  });
+
+                  if (filteredMsgList.length === 0) {
+                    return (
+                      <div className="text-center py-20 px-4 bg-white text-forest/60">
+                        <span className="block text-3xl mb-3">📂</span>
+                        <p className="text-sm font-semibold">Nenhum registro encontrado na planilha</p>
+                        <p className="text-xs text-forest/40 mt-1">Tente ajustar a busca ou os filtros de categoria.</p>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <table className="w-full text-left border-collapse min-w-[800px]">
+                      <thead>
+                        <tr className="bg-warm/10 border-b border-soft text-[10px] md:text-xs uppercase tracking-wider text-forest/50 font-semibold select-none">
+                          <th className="py-4 px-6 font-medium">Data / Registro</th>
+                          <th className="py-4 px-6 font-medium">Paciente Relacionado</th>
+                          <th className="py-4 px-6 font-medium">Categoria</th>
+                          <th className="py-4 px-6 font-medium">Histórico / Movimentação</th>
+                          <th className="py-4 px-6 font-medium text-right">Ações</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-soft text-xs">
+                        {filteredMsgList.map((notif) => {
+                          const isPendingAssignment = 
+                            notif.type === "assignment" && 
+                            (!notif.patientObj.atribuicaoStatus || notif.patientObj.atribuicaoStatus === "Pendente");
+
+                          return (
+                            <tr 
+                              key={notif.id} 
+                              className={`hover:bg-[#FDFBF7] transition-colors ${
+                                isPendingAssignment ? "bg-amber-50/20" : ""
+                              }`}
+                            >
+                              {/* Date column */}
+                              <td className="py-4 px-6 whitespace-nowrap text-[11px] text-forest/65 font-mono">
+                                {notif.date}
+                              </td>
+
+                              {/* Patient column with avatar badge */}
+                              <td className="py-4 px-6 whitespace-nowrap">
+                                <div className="flex items-center gap-2.5">
+                                  {notif.isProfileAlert ? (
+                                    <div className="w-7 h-7 rounded-full bg-forest text-white flex items-center justify-center font-bold text-[10px] uppercase shrink-0 shadow-xs">
+                                      <User className="w-3.5 h-3.5" />
+                                    </div>
+                                  ) : (
+                                    <div className="w-7 h-7 rounded-full bg-forest/5 border border-forest/10 flex items-center justify-center text-forest font-bold text-[10px] uppercase shrink-0">
+                                      {notif.patientName.slice(0, 2)}
+                                    </div>
+                                  )}
+                                  <button
+                                    onClick={() => {
+                                      if (notif.isProfileAlert) {
+                                        setActiveTab("perfil");
+                                      } else {
+                                        setSelectedCard(notif.patientObj);
+                                        setActiveTab("pacientes");
+                                      }
+                                    }}
+                                    className="font-semibold text-forest hover:underline text-left truncate max-w-[180px]"
+                                    title={notif.isProfileAlert ? "Completar no meu perfil" : "Ver ficha clínica completa"}
+                                  >
+                                    {notif.patientName}
+                                  </button>
+                                </div>
+                              </td>
+
+                              {/* Category column */}
+                              <td className="py-4 px-6 whitespace-nowrap">
+                                <span
+                                  className={`text-[9px] uppercase font-bold px-2.5 py-1 rounded-full ${
+                                    notif.isProfileAlert
+                                      ? "bg-red-50 text-red-700 border border-red-200 animate-pulse"
+                                      : notif.type === "assignment"
+                                        ? "bg-amber-50 text-amber-700 border border-amber-200"
+                                        : notif.type === "alert"
+                                          ? "bg-red-50 text-red-700 border border-red-200"
+                                          : notif.type === "contract"
+                                            ? "bg-blue-50 text-blue-700 border border-blue-200"
+                                            : "bg-slate-50 text-slate-700 border border-slate-200"
+                                  }`}
+                                >
+                                  {notif.isProfileAlert
+                                    ? "Ficha Cadastral"
+                                    : notif.type === "assignment"
+                                      ? "Novo Paciente"
+                                      : notif.type === "alert"
+                                        ? "Alerta da Coordenação"
+                                        : notif.type === "contract"
+                                          ? "Pendência de Contrato"
+                                          : "Movimentação"}
+                                </span>
+                              </td>
+
+                              {/* Description movement text */}
+                              <td className="py-4 px-6 max-w-sm">
+                                <p className="text-forest/80 line-clamp-2 hover:line-clamp-none transition-all duration-300 select-all font-sans leading-relaxed text-xs">
+                                  {notif.desc}
+                                </p>
+                              </td>
+
+                              {/* Spreadsheet actions */}
+                              <td className="py-4 px-6 whitespace-nowrap text-right">
+                                {notif.isProfileAlert ? (
+                                  <button
+                                    onClick={() => {
+                                      setActiveTab("perfil");
+                                    }}
+                                    className="px-3 py-1 bg-sun-dark hover:bg-sun-dark/85 text-forest text-[11px] font-bold rounded-lg border border-soft transition-colors inline-flex items-center gap-1 shadow-xs"
+                                  >
+                                    <User className="w-3.5 h-3.5 text-forest/70" /> Completar Cadastro
+                                  </button>
+                                ) : isPendingAssignment ? (
+                                  <div className="flex items-center justify-end gap-1.5">
+                                    <button
+                                      onClick={async () => {
+                                        const notifAnterior = notif.patientObj.notificacao ? notif.patientObj.notificacao + '\n\n' : '';
+                                        const nowStr = new Date().toLocaleString("pt-BR");
+                                        const authName = profile?.name || "Parceiro";
+                                        const updates = {
+                                          atribuicaoStatus: "Aceito",
+                                          notificacao: `${notifAnterior}[${nowStr}] Encaminhamento ACEITO pelo profissional ${authName} via planilha de tarefas.`,
+                                        };
+                                        await updateDoc(doc(db, "acolhimentos", notif.patientObj.id), updates);
+                                      }}
+                                      className="px-2.5 py-1 bg-[#34A853] hover:bg-[#2e9449] text-white rounded-lg text-[10px] font-bold uppercase transition-colors flex items-center gap-1 shadow-xs"
+                                      title="Aceitar paciente imediatamente"
+                                    >
+                                      <CheckCircle2 className="w-3.5 h-3.5" /> Aceitar
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        setDevolverModalConfig({
+                                          isOpen: true,
+                                          pacienteId: notif.patientObj.id,
+                                          pacienteName: notif.patientName,
+                                        });
+                                      }}
+                                      className="px-2.5 py-1 bg-white hover:bg-red-50 text-red-600 border border-red-200 rounded-lg text-[10px] font-bold uppercase transition-colors"
+                                      title="Devolver atendimento para triagem"
+                                    >
+                                      Devolver
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <button
+                                    onClick={() => {
+                                      setSelectedCard(notif.patientObj);
+                                      setActiveTab("pacientes");
+                                    }}
+                                    className="px-3 py-1 bg-warm hover:bg-soft text-forest text-[11px] font-bold rounded-lg border border-soft transition-colors inline-flex items-center gap-1"
+                                  >
+                                    <FileText className="w-3.5 h-3.5 text-forest/70" /> Ver Paciente
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  );
+                })()}
+              </div>
             </div>
 
             {/* Suporte Técnico CTA */}
-            <div className="mt-8 bg-forest text-white rounded-[2rem] p-8 flex flex-col md:flex-row items-center gap-6 justify-between shadow-md">
+            <div className="bg-forest text-white rounded-[2rem] p-8 flex flex-col md:flex-row items-center gap-6 justify-between shadow-md">
               <div className="flex items-center gap-4">
                 <div className="w-16 h-16 rounded-full bg-white/10 flex items-center justify-center shrink-0">
                   <HelpCircle className="w-8 h-8 text-white" />
@@ -2486,8 +2976,7 @@ export function DashboardView({
                     Central de Suporte
                   </h3>
                   <p className="text-sm text-white/80 max-w-sm">
-                    Precisa de ajuda com a plataforma, dúvidas contratuais ou
-                    suporte clínico? Estamos aqui para apoiar você.
+                    Precisa de ajuda com a plataforma, dúvidas contratuais ou suporte clínico? Estamos aqui para apoiar você.
                   </p>
                 </div>
               </div>
@@ -2519,7 +3008,7 @@ export function DashboardView({
                 {globalConfigs?.emailSuporte && (
                   <a
                     href={`mailto:${globalConfigs.emailSuporte}`}
-                    className="w-full md:w-auto px-4 md:px-6 py-2.5 md:py-3 bg-white/10 hover:bg-white/20 text-white rounded-full text-[10px] md:text-xs font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-2 text-center"
+                    className="w-full md:w-auto px-3 py-2.5 bg-white/10 hover:bg-white/20 text-white rounded-full text-[10px] md:text-xs font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-2 text-center"
                   >
                     <Mail className="w-4 h-4 shrink-0" />{" "}
                     {globalConfigs.emailSuporte}
@@ -2529,15 +3018,16 @@ export function DashboardView({
             </div>
           </div>
         </div>
-      ) : profile.role === "profissional" && activeTab === "perfil" ? (
-        <div className="flex-1 overflow-auto p-6 md:p-8 flex flex-col gap-8 slide-up">
+      ) : currentRole === "profissional" && activeTab === "perfil" ? (
+        <div className="flex-1 overflow-auto p-6 md:p-8 flex flex-col gap-8 slide-up font-sans">
           <div className="max-w-4xl w-full mx-auto">
             <h2 className="font-serif text-3xl text-forest bg-white px-8 py-6 rounded-[2rem] shadow-sm border border-soft flex items-center gap-4 mb-8">
               <User className="w-8 h-8 text-forest/70" />
-              Meu Perfil de Apresentação
+              Ficha Cadastral de Profissional & Perfil de Apresentação
             </h2>
-            <div className="bg-white p-8 sm:p-10 rounded-[2rem] shadow-sm border border-soft flex flex-col gap-8">
-              {/* Profile Photo base64 component */}
+
+            <div className="bg-white p-8 sm:p-10 rounded-[2rem] shadow-sm border border-soft flex flex-col gap-10">
+              {/* Profile Photo upload component */}
               <div className="flex flex-col sm:flex-row items-center gap-6 pb-6 border-b border-soft">
                 <div className="w-28 h-28 rounded-full overflow-hidden bg-forest/10 border-4 border-sun flex-shrink-0 flex items-center justify-center relative">
                   {profile.photoUrl ? (
@@ -2552,11 +3042,11 @@ export function DashboardView({
                 </div>
                 <div className="flex flex-col gap-2 items-center sm:items-start">
                   <h4 className="font-serif text-xl font-medium text-forest">
-                    Foto de Apresentação
+                    Foto de Perfil & Divulgação
                   </h4>
                   <p className="text-xs text-forest/60 max-w-sm text-center sm:text-left">
                     Escolha uma foto quadrada, profissional e bem iluminada para
-                    os pacientes o identificarem.
+                    que os pacientes o visualizem.
                   </p>
 
                   <label className="mt-1 px-4 py-2 bg-warm hover:bg-soft text-forest text-xs font-bold uppercase tracking-wider rounded-xl cursor-pointer transition-colors border border-soft">
@@ -2589,182 +3079,327 @@ export function DashboardView({
                 </div>
               </div>
 
-              {/* Editing Form Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                <div>
-                  <label className="text-xs uppercase font-bold tracking-wider text-forest/50">
-                    Nome Completo
-                  </label>
-                  <input
-                    type="text"
-                    value={profile.name || ""}
-                    onChange={(e) =>
-                      setProfile({ ...profile, name: e.target.value })
-                    }
-                    className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs uppercase font-bold tracking-wider text-forest/50">
-                    Email
-                  </label>
-                  <input
-                    type="email"
-                    value={profile.email || ""}
-                    disabled
-                    className="w-full mt-2 px-4 py-3 bg-warm border border-soft rounded-xl text-forest/50 cursor-not-allowed"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs uppercase font-bold tracking-wider text-forest/50">
-                    Telefone / WhatsApp Comercial
-                  </label>
-                  <input
-                    type="tel"
-                    value={profile.telefone || ""}
-                    placeholder="Ex: 11999999999"
-                    onChange={(e) =>
-                      setProfile({ ...profile, telefone: e.target.value })
-                    }
-                    className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs uppercase font-bold tracking-wider text-forest/50">
-                    CRP (Registro Profissional)
-                  </label>
-                  <input
-                    type="text"
-                    value={profile.crp || ""}
-                    placeholder="Ex: 06/123456"
-                    onChange={(e) =>
-                      setProfile({ ...profile, crp: e.target.value })
-                    }
-                    className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs uppercase font-bold tracking-wider text-forest/50">
-                    CPF
-                  </label>
-                  <input
-                    type="text"
-                    value={profile.cpf || ""}
-                    placeholder="Ex: 000.000.000-00"
-                    onChange={(e) =>
-                      setProfile({ ...profile, cpf: e.target.value })
-                    }
-                    className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs uppercase font-bold tracking-wider text-forest/50">
-                    Abordagem / Especialidades
-                  </label>
-                  <input
-                    type="text"
-                    value={profile.especialidade || ""}
-                    placeholder="Ex: TCC / Inteligência Emocional"
-                    onChange={(e) =>
-                      setProfile({ ...profile, especialidade: e.target.value })
-                    }
-                    className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs uppercase font-bold tracking-wider text-forest/50">
-                    Disponibilidade de Horários
-                  </label>
-                  <input
-                    type="text"
-                    value={profile.horasDisponiveis || ""}
-                    placeholder="Ex: Segundas e Terças das 14h às 20h"
-                    onChange={(e) =>
-                      setProfile({
-                        ...profile,
-                        horasDisponiveis: e.target.value,
-                      })
-                    }
-                    className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs uppercase font-bold tracking-wider text-forest/50">
-                    Cidade
-                  </label>
-                  <input
-                    type="text"
-                    value={profile.cidade || ""}
-                    placeholder="Ex: São Paulo"
-                    onChange={(e) =>
-                      setProfile({ ...profile, cidade: e.target.value })
-                    }
-                    className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs uppercase font-bold tracking-wider text-forest/50">
-                    Estado (UF)
-                  </label>
-                  <input
-                    type="text"
-                    value={profile.uf || ""}
-                    placeholder="Ex: SP"
-                    maxLength={2}
-                    onChange={(e) =>
-                      setProfile({ ...profile, uf: e.target.value })
-                    }
-                    className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs uppercase font-bold tracking-wider text-forest/50">
-                    Chave PIX
-                  </label>
-                  <input
-                    type="text"
-                    value={profile.pixKey || ""}
-                    placeholder="Ex: CPF, Email ou Celular (Para pagamentos de Serviços)"
-                    onChange={(e) =>
-                      setProfile({ ...profile, pixKey: e.target.value })
-                    }
-                    className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
-                  />
+              {/* SECTION 1: Dados Pessoais e de Contato */}
+              <div className="space-y-6">
+                <h3 className="font-serif text-xl text-forest pb-2 border-b border-soft flex items-center gap-2">
+                  <span className="w-6 h-6 rounded-full bg-forest/10 text-forest text-xs flex items-center justify-center font-bold">1</span>
+                  Dados Básicos e Contatos Comerciais
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <div>
+                    <label className="text-xs uppercase font-bold tracking-wider text-forest/60">
+                      Nome Completo
+                    </label>
+                    <input
+                      type="text"
+                      value={profile.name || ""}
+                      onChange={(e) =>
+                        setProfile({ ...profile, name: e.target.value })
+                      }
+                      className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors text-sm text-forest"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs uppercase font-bold tracking-wider text-forest/60">
+                      E-mail (Login)
+                    </label>
+                    <input
+                      type="email"
+                      value={profile.email || ""}
+                      disabled
+                      className="w-full mt-2 px-4 py-3 bg-warm/80 border border-soft rounded-xl text-forest/40 cursor-not-allowed text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs uppercase font-bold tracking-wider text-forest/60">
+                      Telefone / WhatsApp Comercial
+                    </label>
+                    <input
+                      type="tel"
+                      value={profile.telefone || ""}
+                      placeholder="Ex: 11999999999"
+                      onChange={(e) =>
+                        setProfile({ ...profile, telefone: e.target.value })
+                      }
+                      className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors text-sm text-forest"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs uppercase font-bold tracking-wider text-forest/60">
+                      CPF
+                    </label>
+                    <input
+                      type="text"
+                      value={profile.cpf || ""}
+                      placeholder="Ex: 000.000.000-00"
+                      onChange={(e) =>
+                        setProfile({ ...profile, cpf: e.target.value })
+                      }
+                      className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors text-sm text-forest"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs uppercase font-bold tracking-wider text-forest/60">
+                      Chave PIX (Para Recebimento de Serviços)
+                    </label>
+                    <input
+                      type="text"
+                      value={profile.pixKey || ""}
+                      placeholder="Ex: CPF, Email, Celular ou Aleatória"
+                      onChange={(e) =>
+                        setProfile({ ...profile, pixKey: e.target.value })
+                      }
+                      className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors text-sm text-forest"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs uppercase font-bold tracking-wider text-forest/60">
+                      CRP (Registro Profissional)
+                    </label>
+                    <input
+                      type="text"
+                      value={profile.crp || ""}
+                      placeholder="Ex: 06/123456"
+                      onChange={(e) =>
+                        setProfile({ ...profile, crp: e.target.value })
+                      }
+                      className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors text-sm text-forest"
+                    />
+                  </div>
                 </div>
               </div>
 
-              {/* Biography Section */}
-              <div className="flex flex-col gap-2">
-                <label className="text-xs uppercase font-bold tracking-wider text-forest/50">
-                  Mini-currículo & Biografia clínica
-                </label>
-                <textarea
-                  value={profile.biografia || ""}
-                  onChange={(e) =>
-                    setProfile({ ...profile, biografia: e.target.value })
-                  }
-                  placeholder="Escreva um breve texto sobre sua formação técnica, experiências profissionais e o estilo de sua conduta terapêutica..."
-                  className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark resize-none h-40 text-sm leading-relaxed"
-                />
+              {/* SECTION 2: Formação e Especialidades */}
+              <div className="space-y-6 pt-4">
+                <h3 className="font-serif text-xl text-forest pb-2 border-b border-soft flex items-center gap-2">
+                  <span className="w-6 h-6 rounded-full bg-forest/10 text-forest text-xs flex items-center justify-center font-bold">2</span>
+                  Formação Acadêmica & Prática Clínica
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <div>
+                    <label className="text-xs uppercase font-bold tracking-wider text-forest/60">
+                      Ano de Formação / Graduação
+                    </label>
+                    <input
+                      type="number"
+                      value={profile.anoFormacao || ""}
+                      placeholder="Ex: 2018"
+                      onChange={(e) =>
+                        setProfile({ ...profile, anoFormacao: e.target.value })
+                      }
+                      className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors text-sm text-forest"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs uppercase font-bold tracking-wider text-forest/60">
+                      Abordagens Psicológicas principais
+                    </label>
+                    <input
+                      type="text"
+                      value={profile.abordagem || ""}
+                      placeholder="Ex: TCC, Psicanálise, Gestalt-terapia, Humanista..."
+                      onChange={(e) =>
+                        setProfile({ ...profile, abordagem: e.target.value })
+                      }
+                      className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors text-sm text-forest"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs uppercase font-bold tracking-wider text-forest/60">
+                      Especialidades / Pós-graduações
+                    </label>
+                    <input
+                      type="text"
+                      value={profile.especialidade || ""}
+                      placeholder="Ex: Terapia de Casal, Neuropsicologia, etc"
+                      onChange={(e) =>
+                        setProfile({ ...profile, especialidade: e.target.value })
+                      }
+                      className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors text-sm text-forest"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs uppercase font-bold tracking-wider text-forest/60">
+                      Horas Mensais Disponíveis para o Projeto
+                    </label>
+                    <select
+                      value={profile.horasDisponiveis || "1 a 3 horas/mês"}
+                      onChange={(e) =>
+                        setProfile({ ...profile, horasDisponiveis: e.target.value })
+                      }
+                      className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark cursor-pointer text-sm text-forest"
+                    >
+                      <option value="1 a 3 horas/mês">1 a 3 horas/mês</option>
+                      <option value="4 a 8 horas/mês">4 a 8 horas/mês</option>
+                      <option value="9 a 15 horas/mês">9 a 15 horas/mês</option>
+                      <option value="16 a 20 horas/mês">16 a 20 horas/mês</option>
+                      <option value="Mais de 20 horas/mês">Mais de 20 horas/mês</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs uppercase font-bold tracking-wider text-forest/60">
+                      Cidade de Atendimento
+                    </label>
+                    <input
+                      type="text"
+                      value={profile.cidade || ""}
+                      placeholder="Ex: São Paulo"
+                      onChange={(e) =>
+                        setProfile({ ...profile, cidade: e.target.value })
+                      }
+                      className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors text-sm text-forest"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs uppercase font-bold tracking-wider text-forest/60">
+                      Estado (UF)
+                    </label>
+                    <input
+                      type="text"
+                      value={profile.uf || ""}
+                      placeholder="Ex: SP"
+                      maxLength={2}
+                      onChange={(e) =>
+                        setProfile({ ...profile, uf: e.target.value.toUpperCase() })
+                      }
+                      className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors text-sm text-forest"
+                    />
+                  </div>
+                </div>
               </div>
 
-              {/* Motivacao Projeto Section */}
-              <div className="flex flex-col gap-2 pt-6 border-t border-soft">
-                <label className="text-xs uppercase font-bold tracking-wider text-forest/50">
-                  Porque faço parte desse projeto?
-                </label>
-                <textarea
-                  value={profile.motivacaoProjeto || ""}
-                  onChange={(e) =>
-                    setProfile({ ...profile, motivacaoProjeto: e.target.value })
-                  }
-                  placeholder="Conte um pouco sobre suas motivações para participar desta rede de psicólogos e o que esse projeto significa para você..."
-                  className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark resize-none h-32 text-sm leading-relaxed"
-                />
+              {/* SECTION 3: Público-Alvo e Preferências (Múltipla escolha) */}
+              <div className="space-y-6 pt-4">
+                <h3 className="font-serif text-xl text-forest pb-2 border-b border-soft flex items-center gap-2">
+                  <span className="w-6 h-6 rounded-full bg-forest/10 text-forest text-xs flex items-center justify-center font-bold">3</span>
+                  Público-Alvo & Especialidade em Idades/Dinâmicas
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  {/* Experiência com público */}
+                  <div className="flex flex-col gap-3 bg-warm/30 p-5 rounded-2xl border border-soft/60">
+                    <label className="text-xs font-bold uppercase tracking-wider text-forest/80 leading-relaxed">
+                      Experiência de no mínimo um ano com atendimento clínico de:
+                    </label>
+                    <div className="grid grid-cols-2 gap-2 mt-1">
+                      {['Adulto', 'Idoso', 'Criança', 'Adolescente', 'Casal', 'Família', 'Outros'].map(op => {
+                        const current = Array.isArray(profile.publicosExperiencia) ? profile.publicosExperiencia : [];
+                        const isChecked = current.includes(op);
+                        return (
+                          <label key={`chk-exp-${op}`} className="flex items-center gap-2 text-sm text-forest cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => {
+                                let next: string[];
+                                if (isChecked) {
+                                  next = current.filter((v: string) => v !== op);
+                                } else {
+                                  next = [...current, op];
+                                }
+                                setProfile({ ...profile, publicosExperiencia: next });
+                              }}
+                              className="accent-forest rounded border-soft w-4 h-4 cursor-pointer"
+                            />
+                            {op}
+                          </label>
+                        );
+                      })}
+                    </div>
+                    {Array.isArray(profile.publicosExperiencia) && profile.publicosExperiencia.includes('Outros') && (
+                      <input
+                        type="text"
+                        placeholder="Especifique outros públicos de experiência"
+                        value={profile.outrosPublicosExperiencia || ""}
+                        onChange={(e) => setProfile({ ...profile, outrosPublicosExperiencia: e.target.value })}
+                        className="w-full mt-2 px-3 py-2 bg-white border border-soft rounded-lg text-xs focus:outline-none focus:border-sun-dark"
+                      />
+                    )}
+                  </div>
+
+                  {/* Preferência de atendimento */}
+                  <div className="flex flex-col gap-3 bg-warm/30 p-5 rounded-2xl border border-soft/60">
+                    <label className="text-xs font-bold uppercase tracking-wider text-forest/80 leading-relaxed">
+                      Tem maior afinidade / gosto em atender:
+                    </label>
+                    <div className="grid grid-cols-2 gap-2 mt-1">
+                      {['Adulto', 'Idoso', 'Criança', 'Adolescente', 'Casal', 'Família', 'Outros'].map(op => {
+                        const current = Array.isArray(profile.publicosGosto) ? profile.publicosGosto : [];
+                        const isChecked = current.includes(op);
+                        return (
+                          <label key={`chk-gosto-${op}`} className="flex items-center gap-2 text-sm text-forest cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => {
+                                let next: string[];
+                                if (isChecked) {
+                                  next = current.filter((v: string) => v !== op);
+                                } else {
+                                  next = [...current, op];
+                                }
+                                setProfile({ ...profile, publicosGosto: next });
+                              }}
+                              className="accent-forest rounded border-soft w-4 h-4 cursor-pointer"
+                            />
+                            {op}
+                          </label>
+                        );
+                      })}
+                    </div>
+                    {Array.isArray(profile.publicosGosto) && profile.publicosGosto.includes('Outros') && (
+                      <input
+                        type="text"
+                        placeholder="Especifique outros públicos de afinidade"
+                        value={profile.outrosPublicosGosto || ""}
+                        onChange={(e) => setProfile({ ...profile, outrosPublicosGosto: e.target.value })}
+                        className="w-full mt-2 px-3 py-2 bg-white border border-soft rounded-lg text-xs focus:outline-none focus:border-sun-dark"
+                      />
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION 4: Biografia e Motivação */}
+              <div className="space-y-6 pt-4 border-t border-soft">
+                <h3 className="font-serif text-xl text-forest pb-2 border-b border-soft flex items-center gap-2">
+                  <span className="w-6 h-6 rounded-full bg-forest/10 text-forest text-xs flex items-center justify-center font-bold">4</span>
+                  Apresentação, Biografia & Propósito do Voluntariado
+                </h3>
+                
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs uppercase font-bold tracking-wider text-forest/60">
+                    Mini-currículo & Biografia clínica pública
+                  </label>
+                  <p className="text-[11px] text-forest/50 -mt-1 leading-relaxed">
+                    Este texto será visível em sua página de apresentação externa para pacientes interessados na rede.
+                  </p>
+                  <textarea
+                    value={profile.biografia || ""}
+                    onChange={(e) =>
+                      setProfile({ ...profile, biografia: e.target.value })
+                    }
+                    placeholder="Escreva um breve resumo da sua jornada, abordagem técnica, nichos principais de estudo e como é o estilo da sua conduta psicoterapêutica..."
+                    className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark resize-none h-44 text-sm leading-relaxed text-forest"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-2 pt-2">
+                  <label className="text-xs uppercase font-bold tracking-wider text-forest/60">
+                    Porque faço parte desse projeto? (Minhas motivações associadas)
+                  </label>
+                  <textarea
+                    value={profile.motivacaoProjeto || ""}
+                    onChange={(e) =>
+                      setProfile({ ...profile, motivacaoProjeto: e.target.value })
+                    }
+                    placeholder="Conte o que impulsiona o seu voluntariado ou parceria com o AcolheMente..."
+                    className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark resize-none h-32 text-sm leading-relaxed text-forest"
+                  />
+                </div>
               </div>
 
               {/* Action Buttons */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-6 border-t border-soft">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-6 mt-4 border-t border-soft">
                 <button
                   onClick={() =>
                     handleUpdateSelfProfile({
@@ -2780,11 +3415,18 @@ export function DashboardView({
                       motivacaoProjeto: profile.motivacaoProjeto,
                       photoUrl: profile.photoUrl || "",
                       pixKey: profile.pixKey,
+                      // Novos campos persistidos
+                      anoFormacao: profile.anoFormacao || "",
+                      abordagem: profile.abordagem || "",
+                      publicosExperiencia: profile.publicosExperiencia || [],
+                      publicosGosto: profile.publicosGosto || [],
+                      outrosPublicosExperiencia: profile.outrosPublicosExperiencia || "",
+                      outrosPublicosGosto: profile.outrosPublicosGosto || "",
                     })
                   }
-                  className="px-4 sm:px-6 py-2.5 sm:py-3.5 bg-forest text-white rounded-xl font-bold uppercase tracking-wider text-[10px] sm:text-xs hover:bg-forest/90 transition-colors self-start w-full sm:w-auto text-center"
+                  className="px-6 py-4 bg-forest text-white rounded-2xl font-bold uppercase tracking-wider text-xs hover:bg-forest/90 transition-all shadow-sm shrink-0 hover:shadow"
                 >
-                  Salvar Perfil Profissional
+                  Salvar Minha Ficha Cadastral e Perfil
                 </button>
 
                 {/* Share Landingpage Preview Box */}
@@ -2792,8 +3434,8 @@ export function DashboardView({
                   (() => {
                     const shareLink = `${window.location.origin}?prof=${profile.uid}`;
                     return (
-                      <div className="bg-warm/60 border border-soft rounded-xl p-3 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs w-full sm:max-w-md">
-                        <div className="truncate text-forest/70 max-w-[200px] font-mono select-all shrink">
+                      <div className="bg-warm/60 border border-soft rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs w-full sm:max-w-md">
+                        <div className="truncate text-forest/70 max-w-[200px] font-mono select-all shrink leading-tight">
                           {shareLink}
                         </div>
                         <button
@@ -2801,7 +3443,7 @@ export function DashboardView({
                             navigator.clipboard.writeText(shareLink);
                             alert("Link de Apresentação copiado!");
                           }}
-                          className="px-3 py-1.5 bg-sun-dark text-forest font-bold text-[10px] uppercase rounded-lg hover:bg-sun-dark-dark transition-colors shrink-0"
+                          className="px-3 py-2 bg-sun-dark text-forest font-bold text-[10px] uppercase rounded-xl hover:bg-sun-dark/85 transition-colors shrink-0 shadow-xs"
                         >
                           Copiar Link de Apresentação
                         </button>
@@ -3175,54 +3817,91 @@ export function DashboardView({
             </h2>
             <div className="flex flex-col gap-3">
               {filteredLeads.length === 0 ? (
-                <div className="text-center p-8 bg-white/50 border border-dashed border-soft rounded-2xl text-forest/70/70 text-sm">
+                <div className="text-center p-8 bg-white/50 border border-dashed border-soft rounded-[2rem] text-forest/70/70 text-sm">
                   Nenhum cadastro pendente.
                 </div>
               ) : (
                 filteredLeads.map((lead) => (
                   <div
                     key={lead.id}
-                    className="bg-white p-6 rounded-2xl shadow-sm border border-soft flex flex-col gap-4 group hover:shadow-md transition-shadow"
+                    className="bg-white p-6 rounded-[2rem] shadow-md border border-soft flex flex-col gap-5 group hover:shadow-lg transition-all duration-300 relative"
                   >
-                    <div className="flex flex-col md:flex-row justify-between items-start gap-4">
-                      <div className="flex items-start gap-4">
-                        <div className="w-12 h-12 shrink-0 bg-sun-dark/10 text-forest/70 rounded-full flex items-center justify-center mt-1">
-                          <User className="w-6 h-6" />
+                    {/* Header Row */}
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 shrink-0 bg-forest/5 text-forest/70 rounded-full flex items-center justify-center border border-soft">
+                          <User className="w-5 h-5 text-forest/60" />
                         </div>
                         <div>
-                          <h4 className="font-semibold text-base text-forest">
-                            {lead.nome}{" "}
-                            <span className="text-xs font-normal text-forest/70/70 ml-2">
-                              {lead.especialidade}{" "}
-                              {lead.crp ? ` • Reg: ${lead.crp}` : ""}
-                            </span>
+                          <h4 className="font-serif text-lg font-bold text-forest leading-tight">
+                            {lead.nome}
                           </h4>
-                          <div className="text-xs text-forest/70/70 flex flex-wrap gap-2 items-center mt-1">
-                            <span>{lead.email}</span> •{" "}
-                            <span>{lead.telefone}</span>{" "}
-                            {lead.cidade && (
-                              <span>
-                                • {lead.cidade}/{lead.uf}
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-xs mt-3 bg-warm p-3 rounded-xl border border-soft font-medium text-forest/80 whitespace-pre-wrap max-h-32 overflow-y-auto custom-scrollbar">
-                            <span className="font-bold opacity-70">
-                              Motivação:
-                            </span>{" "}
-                            "{lead.motivo || lead.motivacao}"
-                          </div>
+                          <span className="text-xs text-forest/50 font-medium">Cadastro de Profissional</span>
                         </div>
                       </div>
-
-                      <div className="flex flex-col items-end gap-2 shrink-0 mt-2 md:mt-0">
-                        <span className="text-[10px] uppercase font-bold bg-forest/5 text-forest px-2 py-1 rounded-md inline-block">
+                      
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-[9px] uppercase font-bold bg-purple-50 text-purple-700 border border-purple-200 px-3 py-1 rounded-full">
                           Disponível: {lead.horasDisponiveis}
                         </span>
-                        <span className="text-[10px] font-bold text-forest/70 uppercase tracking-wider bg-warm px-2 py-1 rounded-md border border-soft/50">
-                          Status: {lead.status || "Aguardando Entrevista"}
+                        <span className="text-[9px] font-bold text-forest/70 uppercase tracking-wider bg-warm px-3 py-1 rounded-full border border-soft/50">
+                          {lead.status || "Aguardando Entrevista"}
                         </span>
                       </div>
+                    </div>
+
+                    {/* Information organized in lines (Rows) */}
+                    <div className="bg-warm/25 rounded-2xl border border-soft/50 p-4 flex flex-col gap-2.5 text-xs text-forest/85">
+                      <div className="flex items-center justify-between py-1 border-b border-soft/30">
+                        <span className="text-forest/50 font-medium flex items-center gap-1.5">
+                          <Briefcase className="w-3.5 h-3.5 text-forest/40" /> Especialidade:
+                        </span>
+                        <span className="font-semibold text-forest/90">{lead.especialidade || "Não informada"}</span>
+                      </div>
+
+                      {lead.crp && (
+                        <div className="flex items-center justify-between py-1 border-b border-soft/30">
+                          <span className="text-forest/50 font-medium flex items-center gap-1.5">
+                            <CheckSquare className="w-3.5 h-3.5 text-forest/40" /> Registro Profissional (CRP/CRM):
+                          </span>
+                          <span className="font-semibold text-forest/90 font-mono">{lead.crp}</span>
+                        </div>
+                      )}
+
+                      <div className="flex items-center justify-between py-1 border-b border-soft/30">
+                        <span className="text-forest/50 font-medium flex items-center gap-1.5">
+                          <Mail className="w-3.5 h-3.5 text-forest/40" /> E-mail:
+                        </span>
+                        <span className="font-semibold text-forest/90">{lead.email}</span>
+                      </div>
+
+                      <div className="flex items-center justify-between py-1 border-b border-soft/30">
+                        <span className="text-forest/50 font-medium flex items-center gap-1.5">
+                          <Phone className="w-3.5 h-3.5 text-forest/40" /> Telefone:
+                        </span>
+                        <span className="font-semibold text-forest/90">{lead.telefone}</span>
+                      </div>
+
+                      {(lead.cidade || lead.uf) && (
+                        <div className="flex items-center justify-between py-1">
+                          <span className="text-forest/50 font-medium flex items-center gap-1.5">
+                            <Map className="w-3.5 h-3.5 text-forest/40" /> Cidade/Estado:
+                          </span>
+                          <span className="font-semibold text-forest/90">
+                            {lead.cidade ? `${lead.cidade}/${lead.uf || ""}` : lead.uf}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Motivation Block */}
+                    <div className="text-xs flex flex-col gap-1.5 text-forest/80">
+                      <span className="font-semibold text-forest/60 uppercase tracking-wider text-[10px]">
+                        Motivação para entrar na plataforma
+                      </span>
+                      <p className="whitespace-pre-wrap max-h-32 overflow-y-auto bg-warm/15 p-3.5 rounded-2xl border border-soft/30 custom-scrollbar leading-relaxed">
+                        "{lead.motivo || lead.motivacao || "Nenhuma motivação descrita"}"
+                      </p>
                     </div>
 
                     {/* Progress Bar */}
@@ -3412,9 +4091,9 @@ export function DashboardView({
                 <Plus className="w-4 h-4" /> Nova Conta de Profissional
               </button>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {filteredAtivos.length === 0 ? (
-                <div className="col-span-full text-center p-8 bg-white/50 border border-dashed border-soft rounded-2xl text-forest/70/70 text-sm">
+                <div className="col-span-full text-center p-8 bg-white/50 border border-dashed border-soft rounded-[2rem] text-forest/70/70 text-sm">
                   Nenhum profissional com conta criada no Firebase Auth. Crie a
                   conta deles pelo botão acima.
                 </div>
@@ -3424,55 +4103,65 @@ export function DashboardView({
                   return (
                     <div
                       key={p.uid}
-                      className="bg-white p-4 rounded-2xl shadow-sm border border-soft flex w-full flex-col md:flex-row gap-4 items-start md:items-center justify-between transition-colors hover:border-forest/20"
+                      className="bg-white p-6 rounded-[2rem] shadow-md border border-soft hover:shadow-lg transition-all duration-300 flex flex-col gap-5 relative justify-between"
                     >
-                      <div className="flex flex-col gap-3">
-                        <div className="flex gap-4 items-center">
-                          <div className="w-10 h-10 bg-warm text-forest/70 font-bold flex items-center justify-center rounded-full uppercase shrink-0">
-                            {p.name.charAt(0)}
-                          </div>
-                          <div>
-                            <div className="text-sm font-semibold text-forest flex items-center gap-2">
-                              {p.name || p.email}
-                              <span
-                                className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${p.ativo === false ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"}`}
-                              >
-                                {p.ativo === false ? "Inativo" : "Ativo"}
-                              </span>
-                            </div>
-                            <div className="text-xs uppercase font-bold text-forest/70">
-                              {p.role}
-                            </div>
-                          </div>
+                      {/* Header Row */}
+                      <div>
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <span className="text-[10px] font-bold text-forest/70 bg-warm px-2.5 py-1 rounded-full uppercase tracking-wider">
+                            Membro da Rede
+                          </span>
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
+                              p.ativo === false ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"
+                            }`}
+                          >
+                            {p.ativo === false ? "Inativo" : "Ativo"}
+                          </span>
                         </div>
+                        <h4 className="font-serif text-lg font-bold text-forest leading-tight break-words">
+                          {p.name || p.email}
+                        </h4>
+                        <span className="text-xs text-forest/50 font-medium font-mono">{p.email}</span>
+                      </div>
+
+                      {/* Information organized in lines (Rows) */}
+                      <div className="bg-warm/25 rounded-2xl border border-soft/50 p-4 flex flex-col gap-2.5 text-xs text-forest/85">
+                        <div className="flex items-center justify-between py-1 border-b border-soft/30">
+                          <span className="text-forest/50 font-medium flex items-center gap-1.5">
+                            <User className="w-3.5 h-3.5 text-forest/40" /> Papel:
+                          </span>
+                          <span className="font-semibold text-forest/90 capitalize">{p.role}</span>
+                        </div>
+
                         {p.role === "profissional" && (
-                          <div className="flex gap-6 items-center pl-14 opacity-80 border-t border-soft/50 pt-2 md:border-t-0 md:pt-0">
-                            <div className="flex flex-col">
-                              <span className="text-[10px] uppercase font-bold text-forest/50 tracking-wider">
-                                Ativos
+                          <>
+                            <div className="flex items-center justify-between py-1 border-b border-soft/30">
+                              <span className="text-forest/50 font-medium flex items-center gap-1.5">
+                                <Users className="w-3.5 h-3.5 text-forest/40" /> Pacientes Ativos:
                               </span>
-                              <span className="text-sm font-bold text-forest">
-                                {stats.ativosCount}
+                              <span className="font-bold text-forest/90">{stats.ativosCount}</span>
+                            </div>
+
+                            <div className="flex items-center justify-between py-1">
+                              <span className="text-forest/50 font-medium flex items-center gap-1.5">
+                                <DollarSign className="w-3.5 h-3.5 text-forest/40" /> Total Sessões:
+                              </span>
+                              <span className="font-bold text-emerald-700 font-mono">
+                                R$ {stats.valorTotal.toFixed(2).replace(".", ",")}
                               </span>
                             </div>
-                            <div className="flex flex-col">
-                              <span className="text-[10px] uppercase font-bold text-forest/50 tracking-wider">
-                                Sessões
-                              </span>
-                              <span className="text-sm font-bold text-emerald-700">
-                                R${" "}
-                                {stats.valorTotal.toFixed(2).replace(".", ",")}
-                              </span>
-                            </div>
-                          </div>
+                          </>
                         )}
                       </div>
-                      <div className="flex flex-wrap items-center gap-2 self-end shrink-0">
+
+                      {/* Action buttons */}
+                      <div className="flex items-center gap-2 pt-2 border-t border-soft/60">
                         <button
                           onClick={() => setSelectedProfissional(p)}
-                          className="text-xs font-semibold px-3 py-1.5 bg-sun text-forest rounded-lg hover:bg-sun-dark transition-colors flex items-center justify-center gap-1 shrink-0"
+                          className="flex-1 py-2 bg-sun hover:bg-sun-dark text-forest font-semibold rounded-xl text-xs transition-colors flex items-center justify-center gap-1.5 shadow-xs"
                         >
-                          <FileText className="w-3 h-3" /> Ficha de Bordo
+                          <FileText className="w-4 h-4" /> Ficha de Bordo
                         </button>
                         {profile?.role === "master" && (
                           <button
@@ -3480,10 +4169,10 @@ export function DashboardView({
                               e.stopPropagation();
                               handleDeleteProfissional(p.uid!, "ativos");
                             }}
-                            className="text-xs font-semibold px-3 py-1.5 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors flex items-center justify-center gap-1 shrink-0"
+                            className="p-2 bg-red-50 text-red-600 rounded-xl hover:bg-red-100 border border-red-200/40 transition-colors flex items-center justify-center"
                             title="Excluir Permanentemente"
                           >
-                            <Trash2 className="w-3 h-3" />
+                            <Trash2 className="w-4 h-4" />
                           </button>
                         )}
                       </div>
@@ -3594,13 +4283,16 @@ export function DashboardView({
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 w-full">
             {allUsers
-              .filter(
-                (u) =>
+              .filter((u) => {
+                const uRoles = u.roles || [u.role].filter(Boolean);
+                return (
                   !searchQuery ||
                   u.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
                   u.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                  u.role?.toLowerCase().includes(searchQuery.toLowerCase()),
-              )
+                  u.role?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                  uRoles.some((r: string) => r.toLowerCase().includes(searchQuery.toLowerCase()))
+                );
+              })
               .map((u) => (
                 <div
                   key={u.uid}
@@ -3618,23 +4310,43 @@ export function DashboardView({
                     </div>
                   )}
 
-                  <div className="mt-auto pt-4 border-t border-soft flex flex-col gap-1">
+                  <div className="mt-auto pt-4 border-t border-soft flex flex-col gap-2">
                     <label className="text-[10px] uppercase font-bold tracking-wider text-forest/50">
-                      Papel / Nível de Acesso
+                      Papeis / Níveis de Acesso
                     </label>
-                    <select
-                      value={u.role}
-                      onChange={(e) =>
-                        handleRoleChange(u.uid!, e.target.value as Role)
-                      }
-                      className="w-full bg-warm border border-soft rounded-xl px-4 py-2 mt-1 text-sm text-forest font-semibold focus:outline-none focus:border-sun-dark focus:bg-white transition-colors cursor-pointer"
-                    >
-                      <option value="master">Administrador (Master)</option>
-                      <option value="triagem">Gestão de Triagem</option>
-                      <option value="profissional">
-                        Profissional / Psicólogo
-                      </option>
-                    </select>
+                    <div className="flex flex-col gap-2 bg-warm/50 p-3 rounded-2xl border border-soft/55">
+                      {[
+                        { key: "master", label: "Administrador (Master)" },
+                        { key: "triagem", label: "Gestão de Triagem" },
+                        { key: "profissional", label: "Profissional / Psicólogo" },
+                      ].map((item) => {
+                        const uRoles: Role[] = u.roles || [u.role].filter(Boolean) as Role[];
+                        const isChecked = uRoles.includes(item.key as Role);
+                        return (
+                          <label key={item.key} className="flex items-center gap-2 px-1.5 py-0.5 cursor-pointer text-xs font-semibold text-forest hover:text-sun-dark transition-colors">
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => {
+                                let nextRoles = [...uRoles];
+                                if (isChecked) {
+                                  if (nextRoles.length <= 1) {
+                                    alert("Cada usuário precisa ter pelo menos um nível de acesso.");
+                                    return;
+                                  }
+                                  nextRoles = nextRoles.filter((r) => r !== item.key);
+                                } else {
+                                  nextRoles.push(item.key as Role);
+                                }
+                                handleRolesChange(u.uid!, nextRoles);
+                              }}
+                              className="accent-forest rounded border-soft shrink-0 w-4 h-4 cursor-pointer"
+                            />
+                            <span className="select-none">{item.label}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
               ))}
@@ -4065,7 +4777,7 @@ export function DashboardView({
                     </div>
                   </section>
 
-                  {profile.role !== "profissional" ? (
+                  {currentRole !== "profissional" ? (
                     <section className="mt-8">
                       <div className="flex flex-col gap-2 p-4 bg-warm rounded-2xl border border-soft mt-2 max-h-[22rem] flex flex-col">
                         <label className="text-xs font-bold uppercase tracking-wider text-forest/70 shrink-0 mb-1">
