@@ -99,5 +99,9 @@ service cloud.firestore {
     match /servicos/{servicoId} {
       allow read, write: if true;
     }
+    match /compliance/{complianceId} {
+      allow create: if true;
+      allow read, update, delete: if true;
+    }
   }
 }

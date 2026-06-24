@@ -28,7 +28,6 @@ import {
   Calendar,
   Edit3,
   Trash2,
-  History,
   CheckSquare,
   Plus,
   BarChart2,
@@ -386,7 +385,6 @@ export function DashboardView({
 
   // Acolhimento Modal Actions
   const [showNotificarModal, setShowNotificarModal] = useState(false);
-  const [showFinanceiroModal, setShowFinanceiroModal] = useState(false);
   const [showContratoModal, setShowContratoModal] = useState(false);
   const [showNewProfissionalModal, setShowNewProfissionalModal] =
     useState(false);
@@ -418,6 +416,11 @@ export function DashboardView({
       id: "contrato",
       name: "Contrato de Serviços",
       msg: "Olá! Segue o link com o nosso contrato de serviços para a sua leitura e assinatura: https://app.elo.com/contrato",
+    },
+    {
+      id: "boas-vindas-atribuicao",
+      name: "Boas Vindas (Após Atribuição)",
+      msg: "Olá [NOME]! Seja muito bem-vindo(a) à Elo Soluções Humanas.\n\nEstamos felizes em informar que o seu atendimento foi atribuído ao profissional [PROFISSIONAL_NOME] (CRP: [PROFISSIONAL_CRP]).\n\nO valor enquadrado para as suas sessões será de [VALOR_SESSAO].\n\nLembramos as regras básicas do nosso acompanhamento:\n- As sessões ocorrerão de forma regular.\n- Cancelamentos ou reagendamentos devem ser informados com no mínimo 24h de antecedência para evitar cobranças.\n\nNo próximo passo, enviaremos o link do seu contrato, onde essas regras estarão detalhadas e deverão ser lidas e assinadas digitalmente.\n\nQualquer dúvida, estamos à disposição para te ajudar em sua jornada de autoconhecimento!"
     },
   ]);
   const [notificacaoType, setNotificacaoType] = useState("pagamento");
@@ -714,22 +717,23 @@ export function DashboardView({
             },
           );
           
-          if (hasMaster || hasTriagem) {
-            unsubComplianceMsg = onSnapshot(
-              query(collection(db, "compliance")),
-              (snapshot) => {
-                const list: any[] = [];
-                snapshot.forEach((d) =>
-                  list.push({ id: d.id, ...d.data() })
-                );
-                list.sort(
-                  (a, b) =>
-                    b.createdAt?.toMillis?.() - a.createdAt?.toMillis?.() || 0,
-                );
-                setComplianceMessages(list);
-              }
-            );
-          }
+        }
+
+        if (hasMaster || hasTriagem) {
+          unsubComplianceMsg = onSnapshot(
+            query(collection(db, "compliance")),
+            (snapshot) => {
+              const list: any[] = [];
+              snapshot.forEach((d) =>
+                list.push({ id: d.id, ...d.data() })
+              );
+              list.sort(
+                (a, b) =>
+                  b.createdAt?.toMillis?.() - a.createdAt?.toMillis?.() || 0,
+              );
+              setComplianceMessages(list);
+            }
+          );
         }
 
         setLoadingObj(false);
@@ -4825,39 +4829,31 @@ export function DashboardView({
               <div className="flex items-center gap-2 ml-4">
                 <button
                   onClick={() => {
-                    setContratoText(
-                      `CONTRATO DE PRESTAÇÃO DE SERVIÇOS PSICOLÓGICOS\n\nCONTRATANTE: ${selectedCard.nome}, portador(a) do email ${selectedCard.email}.\n\nCONTRATADO: Elo Soluções Humanas...\n\nCLÁUSULA 1 - O presente contrato tem por objeto a prestação de serviços psicológicos na modalidade de Terapia Individual...\n\n(Edite as cláusulas abaixo)`,
-                    );
+                    const link = `${window.location.origin}/?contrato=${selectedCard.id}`;
+                    navigator.clipboard.writeText(link);
+                    alert("Link do contrato copiado para a área de transferência!");
+                  }}
+                  className="text-xs font-semibold text-sun-dark underline hover:text-forest transition-colors"
+                >
+                  Copiar Link do Contrato
+                </button>
+                <button
+                  onClick={() => {
+                    const defaultText = `CONTRATO DE PRESTAÇÃO DE SERVIÇOS PSICOLÓGICOS\n\nCONTRATANTE: ${selectedCard.nome || "[NOME]"}, portador(a) do e-mail ${selectedCard.email || "[EMAIL]"} e CPF ${selectedCard.cpf || "[CPF_AQUI]"}.\n\nCONTRATADO: Elo Soluções Humanas...\n\nCLÁUSULA 1 - O presente contrato tem por objeto a prestação de serviços psicológicos na modalidade de Terapia Individual...\n\n(Edite as cláusulas abaixo)`;
+                    setContratoText(selectedCard.contratoText || defaultText);
                     setShowContratoModal(true);
                   }}
-                  className="text-xs text-forest underline hover:text-sun-dark transition-colors"
+                  className="text-xs font-semibold text-sun-dark underline hover:text-forest transition-colors ml-4"
                 >
-                  Editar Contrato
+                  Modelo de Contrato
                 </button>
-                <label className="flex items-center gap-1 text-xs text-forest/80 cursor-pointer ml-2">
-                  <input
-                    type="checkbox"
-                    checked={selectedCard.contratoAssinado || false}
-                    onChange={(e) =>
-                      handleUpdateAcolhimentoProperty(
-                        selectedCard.id,
-                        "contratoAssinado",
-                        e.target.checked,
-                      )
-                    }
-                    className="accent-sun-dark h-3 w-3"
-                  />
-                  Contrato Assinado
-                </label>
+                <div className="flex items-center gap-1.5 ml-3">
+                  <div className={`w-2 h-2 rounded-full ${selectedCard.contratoAssinado ? "bg-green-500" : "bg-red-500"}`}></div>
+                  <span className={`text-xs font-bold uppercase tracking-wider ${selectedCard.contratoAssinado ? "text-green-600" : "text-red-500"}`}>
+                    {selectedCard.contratoAssinado ? "Contrato Assinado" : "Pendente"}
+                  </span>
+                </div>
               </div>
-
-              <div className="flex-1"></div>
-              <button
-                onClick={() => setShowFinanceiroModal(true)}
-                className="flex items-center gap-2 text-slate-500 hover:text-forest transition-colors font-semibold text-sm underline decoration-slate-300 underline-offset-4"
-              >
-                <History className="w-4 h-4" /> Histórico Financeiro
-              </button>
             </div>
 
             <div className="flex-1 overflow-y-auto p-6 lg:p-8">
@@ -4897,6 +4893,28 @@ export function DashboardView({
                         isEditing={isEditingCard}
                       />
                       <EditableField
+                        label="Estado Civil"
+                        value={selectedCard.estadoCivil}
+                        field="estadoCivil"
+                        onChange={(f, v) =>
+                          handleUpdateAcolhimentoProperty(selectedCard.id, f, v)
+                        }
+                        isEditing={isEditingCard}
+                      />
+                      {selectedCard.dadosContrato && (
+                        <div className="mt-4 p-4 bg-green-50/50 border border-green-100 rounded-xl">
+                          <span className="block text-[10px] font-bold uppercase tracking-wider text-green-700 mb-2">Dados do Contrato Assinado</span>
+                          <div className="text-sm text-forest space-y-1">
+                            <p><span className="font-semibold">Signatário:</span> {selectedCard.dadosContrato.nome}</p>
+                            <p><span className="font-semibold">E-mail:</span> {selectedCard.dadosContrato.email}</p>
+                            <p><span className="font-semibold">CPF:</span> {selectedCard.dadosContrato.cpf}</p>
+                            {selectedCard.dadosContrato.menorIdade && (
+                              <p className="text-sun-dark-dark font-medium"><span className="font-semibold text-forest">Paciente (Menor):</span> {selectedCard.dadosContrato.nomeMenor}</p>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                      <EditableField
                         label="E-mail"
                         value={selectedCard.email}
                         field="email"
@@ -4923,31 +4941,6 @@ export function DashboardView({
                         }
                         isEditing={isEditingCard}
                       />
-                      <div>
-                        <span className="block text-[10px] font-semibold uppercase text-forest/70/60">
-                          Valor da Sessão (Faixas R$)
-                        </span>
-                        {isEditingCard ? (
-                          <select
-                            className="bg-white border text-sm px-2 py-1.5 rounded-lg border-sun-dark focus:outline-none w-full focus:ring-1 focus:ring-sun font-medium text-forest appearance-none"
-                            value={selectedCard.valorSessao || ""}
-                            onChange={(e) =>
-                              handleUpdateAcolhimentoProperty(selectedCard.id, "valorSessao", e.target.value)
-                            }
-                          >
-                            <option value="">(Selecione)</option>
-                            {globalConfigs?.faixasValores?.map((faixa, i) => (
-                              faixa ? <option key={i} value={faixa}>{faixa}</option> : null
-                            ))}
-                          </select>
-                        ) : (
-                          <span className="font-medium text-forest text-sm">
-                            {selectedCard.valorSessao
-                              ? selectedCard.valorSessao
-                              : "(Vazio)"}
-                          </span>
-                        )}
-                      </div>
                       <EditableField
                         label="De onde nos conheceu"
                         value={selectedCard.comoConheceu}
@@ -5175,8 +5168,38 @@ export function DashboardView({
                   </section>
 
                   {currentRole !== "profissional" ? (
-                    <section className="mt-8">
-                      <div className="flex flex-col gap-2 p-4 bg-warm rounded-2xl border border-soft mt-2 max-h-[22rem] flex flex-col">
+                    <section className="mt-8 space-y-6">
+                      <div className="flex flex-col gap-1 p-5 bg-sun/10 rounded-2xl border border-sun/30">
+                        <label className="text-xs font-bold uppercase tracking-wider text-forest/70 shrink-0 mb-1">
+                          Valor da Sessão (Faixas R$)
+                        </label>
+                        {isEditingCard ? (
+                          <select
+                            value={selectedCard.valorSessao || ""}
+                            onChange={(e) =>
+                              handleUpdateAcolhimentoProperty(
+                                selectedCard.id,
+                                "valorSessao",
+                                e.target.value,
+                              )
+                            }
+                            className="w-full bg-white text-base font-semibold text-forest border border-soft rounded-xl p-3 focus:outline-none focus:ring-2 focus:ring-sun-dark shadow-sm appearance-none"
+                          >
+                            <option value="">Selecione um valor...</option>
+                            {globalConfigs.faixasValores?.map((faixa: string, idx: number) => (
+                              faixa ? <option key={idx} value={faixa}>{faixa}</option> : null
+                            ))}
+                            <option value="Gratuito">Gratuito</option>
+                            <option value="Outro">Outro (A combinar)</option>
+                          </select>
+                        ) : (
+                          <div className="text-2xl font-semibold text-forest">
+                            {selectedCard.valorSessao || "Não definido"}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex flex-col gap-2 p-4 bg-warm rounded-2xl border border-soft max-h-[22rem] flex flex-col">
                         <label className="text-xs font-bold uppercase tracking-wider text-forest/70 shrink-0 mb-1">
                           Atribuir a Profissional Parceiro
                         </label>
@@ -5475,7 +5498,17 @@ export function DashboardView({
                     if (selected) {
                       setNotificacaoType(selected.id);
                       setNotificacaoName(selected.name);
-                      setNotificacaoMsg(selected.msg);
+
+                      let newMsg = selected.msg;
+                      if (selected.id === "boas-vindas-atribuicao" && activeTab === "kanban" && selectedCard) {
+                         const prof = profissionaisAtivos.find(p => p.uid === selectedCard.profissionalId);
+                         newMsg = newMsg.replace("[NOME]", selectedCard.nome || "");
+                         newMsg = newMsg.replace("[VALOR_SESSAO]", selectedCard.valorSessao || "a combinar");
+                         newMsg = newMsg.replace("[PROFISSIONAL_NOME]", prof ? (prof.name || "") : "N/A");
+                         newMsg = newMsg.replace("[PROFISSIONAL_CRP]", prof ? (prof.crp || "N/A") : "N/A");
+                      }
+
+                      setNotificacaoMsg(newMsg);
                     }
                   }}
                 >
@@ -5616,6 +5649,7 @@ export function DashboardView({
               </button>
               <button
                 onClick={() => {
+                  handleUpdateAcolhimentoProperty(notificarTarget.id, "contratoText", contratoText);
                   alert("Contrato atualizado para o paciente!");
                   setShowContratoModal(false);
                 }}
@@ -5623,133 +5657,6 @@ export function DashboardView({
               >
                 <CheckCircle2 className="w-4 h-4" /> Salvar Contrato
               </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Histórico Financeiro Modal */}
-      {showFinanceiroModal && selectedCard && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center px-4 bg-forest/20 backdrop-blur-sm animate-in fade-in py-4">
-          <div className="bg-white rounded-3xl w-full max-w-5xl max-h-[95vh] flex flex-col shadow-2xl border border-soft overflow-hidden animate-in zoom-in-95">
-            <div className="px-6 py-4 flex justify-between items-center border-b border-soft">
-              <h3 className="font-serif text-2xl text-forest">
-                Histórico: {selectedCard.nome}
-              </h3>
-              <button
-                onClick={() => setShowFinanceiroModal(false)}
-                className="p-2 text-forest/70 hover:text-red-500 rounded-full hover:bg-warm transition-colors"
-              >
-                <XCircle className="w-6 h-6" />
-              </button>
-            </div>
-            <div className="p-6 border-b border-soft flex flex-wrap items-center gap-4 bg-warm/30">
-              <div>
-                <h4 className="font-semibold text-forest mb-2">
-                  Histórico de Serviços e Financeiro
-                </h4>
-                <div className="flex flex-wrap items-center gap-2">
-                  <button className="px-4 py-1.5 bg-forest text-white text-sm rounded-lg font-semibold">
-                    Todas
-                  </button>
-                  <button className="px-4 py-1.5 bg-white border border-emerald-400 text-emerald-600 text-sm rounded-lg font-semibold">
-                    Pagas
-                  </button>
-                  <button className="px-4 py-1.5 bg-white border border-amber-400 text-amber-500 text-sm rounded-lg font-semibold">
-                    Pendentes
-                  </button>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 ml-4 self-end">
-                <select className="px-3 py-1.5 bg-white border border-soft text-forest text-sm rounded-lg focus:outline-none">
-                  <option>Mês: Todos</option>
-                </select>
-                <select className="px-3 py-1.5 bg-white border border-soft text-forest text-sm rounded-lg focus:outline-none">
-                  <option>Ano: Todos</option>
-                </select>
-              </div>
-
-              <div className="flex-1"></div>
-              <div className="flex flex-wrap gap-2 self-end">
-                <button className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg font-semibold text-sm transition-colors">
-                  <CheckCircle2 className="w-4 h-4" /> Duplicar Anterior
-                </button>
-                <button className="flex items-center gap-2 bg-sun-dark hover:bg-sun-dark-dark text-forest px-4 py-2 rounded-lg font-semibold text-sm transition-colors">
-                  <History className="w-4 h-4" /> Novo Serviço
-                </button>
-              </div>
-            </div>
-            <div className="flex-1 overflow-y-auto bg-white p-6">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="border-b border-soft bg-warm/20">
-                      <th className="py-3 px-4 font-bold text-forest/80 text-sm">
-                        Detalhes do Serviço
-                      </th>
-                      <th className="py-3 px-4 font-bold text-forest/80 text-sm">
-                        Data
-                      </th>
-                      <th className="py-3 px-4 font-bold text-forest/80 text-sm">
-                        Valores / Status
-                      </th>
-                      <th className="py-3 px-4 font-bold text-forest/80 text-sm">
-                        Anotações
-                      </th>
-                      <th className="py-3 px-4 font-bold text-forest/80 text-sm">
-                        Ação
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr className="border-b border-soft/50 hover:bg-warm/10 transition-colors">
-                      <td className="py-4 px-4 align-top">
-                        <div className="font-semibold text-forest text-sm">
-                          Terapia Individual
-                        </div>
-                        <div className="flex gap-2 mt-2">
-                          <span className="text-[10px] font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded uppercase">
-                            ON LINE
-                          </span>
-                          <span className="text-[10px] font-bold border border-sun-dark text-sun-dark-dark px-2 py-0.5 rounded uppercase bg-sun/10">
-                            ELO
-                          </span>
-                        </div>
-                      </td>
-                      <td className="py-4 px-4 align-top">
-                        <div className="text-sm font-medium text-forest">
-                          14/05/2026
-                        </div>
-                        <div className="text-xs text-forest/60 mt-1">
-                          1 Hora
-                        </div>
-                      </td>
-                      <td className="py-4 px-4 align-top space-y-2">
-                        <div className="text-sm font-semibold text-forest">
-                          R$ 165,00
-                        </div>
-                        <div className="flex gap-2">
-                          <span className="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded uppercase">
-                            PAGO
-                          </span>
-                          <span className="text-[10px] font-bold bg-slate-100 text-slate-500 px-2 py-0.5 rounded uppercase">
-                            NF Pend.
-                          </span>
-                        </div>
-                      </td>
-                      <td className="py-4 px-4 align-top">
-                        <div className="text-sm text-forest/70">-</div>
-                      </td>
-                      <td className="py-4 px-4 align-top">
-                        <button className="text-forest/50 hover:text-forest transition-colors p-1">
-                          <Edit3 className="w-4 h-4" />
-                        </button>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
             </div>
           </div>
         </div>

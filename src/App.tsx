@@ -33,6 +33,8 @@ import { EmpresaView } from "./views/EmpresaView";
 import { DoacaoView } from "./views/DoacaoView";
 import { ProfissionalLandingView } from "./views/ProfissionalLandingView";
 
+import { ContratoLandingView } from "./views/ContratoLandingView";
+
 import { Footer } from "./components/Footer";
 
 import homeHero from "./assets/images/home_hero_photo_parda_1781024318036.png";
@@ -53,6 +55,7 @@ export default function App() {
   const publicProfUid = params.get("prof");
   const publicServiceId = params.get("servico");
   const publicEventoId = params.get("evento");
+  const publicContratoId = params.get("contrato");
   const viewParam = params.get("view") as any;
 
   const [currentView, setCurrentView] = useState<
@@ -129,6 +132,15 @@ export default function App() {
       <PublicServiceView
         serviceId={publicServiceId}
         eventId={publicEventoId}
+        onBack={handleBackFromPublicProfile}
+      />
+    );
+  }
+
+  if (publicContratoId) {
+    return (
+      <ContratoLandingView
+        contratoId={publicContratoId}
         onBack={handleBackFromPublicProfile}
       />
     );
