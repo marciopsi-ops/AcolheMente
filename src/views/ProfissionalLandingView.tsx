@@ -68,7 +68,8 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
       });
       setIsSuccess(true);
     } catch (error) {
-      setErrorMsg(handleFirestoreError(error, OperationType.WRITE, "profissionais_leads"));
+      handleFirestoreError(error, OperationType.WRITE, "profissionais_leads");
+      setErrorMsg("Ocorreu um erro ao processar o cadastro.");
     } finally {
       setIsSubmitting(false);
     }

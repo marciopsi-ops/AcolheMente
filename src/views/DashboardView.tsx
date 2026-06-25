@@ -126,6 +126,8 @@ interface Doacao {
   valor: number;
   status: string;
   createdAt?: any;
+  email?: string;
+  [key: string]: any;
 }
 
 interface SolicitacaoDoacao {
@@ -135,6 +137,8 @@ interface SolicitacaoDoacao {
   motivo: string;
   status: string;
   createdAt?: any;
+  notificacao?: string;
+  [key: string]: any;
 }
 
 interface ProfissionalLead {
@@ -381,6 +385,7 @@ export function DashboardView({
     | "perfil"
     | "eventos"
     | "servicos"
+    | "compliance"
   >("kanban");
 
   // Search
@@ -2386,7 +2391,9 @@ export function DashboardView({
                     </span>
                   )}
                   {profissionaisAtCapacity.length > 0 && (
-                    <ShieldAlert className="w-4 h-4 text-red-500" title={`${profissionaisAtCapacity.length} profissional(is) no limite de horas`} />
+                    <span title={`${profissionaisAtCapacity.length} profissional(is) no limite de horas`}>
+                      <ShieldAlert className="w-4 h-4 text-red-500" />
+                    </span>
                   )}
                 </div>
               )}

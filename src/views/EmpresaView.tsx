@@ -49,7 +49,8 @@ export function EmpresaView({ onNavigate }: { onNavigate: (view: 'landing' | 'ac
       });
       setIsSuccess(true);
     } catch (error) {
-      setErrorMsg(handleFirestoreError(error, OperationType.WRITE, "empresa_leads"));
+      handleFirestoreError(error, OperationType.WRITE, "empresa_leads");
+      setErrorMsg("Ocorreu um erro ao processar o cadastro.");
     } finally {
       setIsSubmitting(false);
     }

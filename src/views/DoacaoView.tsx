@@ -38,7 +38,8 @@ export function DoacaoView({ onNavigate }: { onNavigate: (view: 'landing' | 'aco
       });
       setDoacaoStep('success');
     } catch (error) {
-      setDoacaoError(handleFirestoreError(error, OperationType.WRITE, "doacoes"));
+      handleFirestoreError(error, OperationType.WRITE, "doacoes");
+      setDoacaoError("Ocorreu um erro ao processar a doação.");
     } finally {
       setIsDoacaoSubmitting(false);
     }
@@ -64,7 +65,8 @@ export function DoacaoView({ onNavigate }: { onNavigate: (view: 'landing' | 'aco
       });
       setSolStep('success');
     } catch (error) {
-      setSolError(handleFirestoreError(error, OperationType.WRITE, "solicitacoes_doacao"));
+      handleFirestoreError(error, OperationType.WRITE, "solicitacoes_doacao");
+      setSolError("Ocorreu um erro ao processar a solicitação.");
     } finally {
       setIsSolSubmitting(false);
     }
