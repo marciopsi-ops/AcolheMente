@@ -45,6 +45,7 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
   const [terapiaAnterior, setTerapiaAnterior] = useState("");
   const [motivo, setMotivo] = useState("");
   const [complaint, setComplaint] = useState("");
+  const [melhoresPeriodos, setMelhoresPeriodos] = useState<string[]>([]);
 
   const totalSteps = accessType === "Particular" ? 4 : 2; // Corporativo goes 1 -> 4 basically (mapped as 2)
   const currentVisualStep = accessType === "Particular" ? step : (step === 4 ? 2 : step);
@@ -65,7 +66,10 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
       if (!escolaridade || !moradia || !comodos || !internet || !dispositivo) return;
       setStep(4);
     } else if (step === 4) {
-      if (!motivo || !complaint || !terapiaAnterior) return;
+      if (!motivo || !complaint || !terapiaAnterior || melhoresPeriodos.length === 0) {
+        alert("Por favor, preencha todos os campos e selecione pelo menos um período de disponibilidade.");
+        return;
+      }
       setIsSubmitting(true);
       
       try {
@@ -100,6 +104,7 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
           internet,
           dispositivo,
           terapiaAnterior,
+          melhoresPeriodos,
           motivo: `${motivo} - Detalhes: ${complaint}`,
           status: "Aguardando Avaliação",
           notificacao: "Novo cadastro de paciente recebido no sistema. Por favor, analise a ficha.",
@@ -536,7 +541,46 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
                         className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark focus:ring-1 focus:ring-sun-dark transition-all text-forest resize-none"
                       />
                     </div>
+                    <div>
+                      <label className="block text-sm font-semibold uppercase tracking-wider text-forest/70 mb-2">Melhores períodos para sessões online</label>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {["Manhã", "Tarde", "Noite", "Aos sábados", "Total disponibilidade"].map(period => (
+                          <label key={period} className="flex items-center gap-3 cursor-pointer p-3 bg-warm border border-soft rounded-xl hover:bg-warm/80 transition-colors">
+                            <input
+                              type="checkbox"
+                              checked={melhoresPeriodos.includes(period)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  if (period === "Total disponibilidade") {
+                                    setMelhoresPeriodos(["Total disponibilidade"]);
+                                  } else {
+                                    setMelhoresPeriodos(prev => prev.filter(p => p !== "Total disponibilidade").concat(period));
+                                  }
+                                } else {
+                                  setMelhoresPeriodos(prev => prev.filter(p => p !== period));
+                                }
+                              }}
+                              className="w-5 h-5 text-sun-dark rounded border-soft focus:ring-sun-dark accent-sun-dark cursor-pointer"
+                            />
+                            <span className="text-sm font-medium text-forest">{period}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
                   </div>
+                )}
+
+                {step === 4 && (
+                  <label className="flex items-start gap-3 mt-4 cursor-pointer group">
+                    <input 
+                      type="checkbox" 
+                      required 
+                      className="mt-1 w-5 h-5 rounded border-soft text-sun-dark focus:ring-sun-dark/20 accent-sun-dark cursor-pointer"
+                    />
+                    <span className="text-xs text-forest/70 leading-relaxed">
+                      <strong>Privacidade e LGPD:</strong> Estou ciente e concordo que os dados pessoais e dados de saúde fornecidos serão tratados de forma sigilosa e segura para fins terapêuticos e de triagem, conforme a Lei Geral de Proteção de Dados (LGPD).
+                    </span>
+                  </label>
                 )}
 
                 <div className="mt-4 flex gap-4">

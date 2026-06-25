@@ -40,6 +40,7 @@ import {
   UserPlus,
   Heart,
   ShieldAlert,
+  Star,
 } from "lucide-react";
 import { auth, db } from "../lib/firebase";
 import {
@@ -69,6 +70,28 @@ import { initializeApp } from "firebase/app";
 import firebaseConfig from "../../firebase-applet-config.json";
 import logoImage from "../assets/images/logo_acolhe.jpeg";
 
+const safeLocalStorage = {
+  getItem: (key: string): string | null => {
+    try {
+      return localStorage.getItem(key);
+    } catch (e) {
+      console.warn("localStorage is not accessible, using fallback in-memory store:", e);
+      return (window as any).__safe_storage_fallback?.[key] || null;
+    }
+  },
+  setItem: (key: string, value: string): void => {
+    try {
+      localStorage.setItem(key, value);
+    } catch (e) {
+      console.warn("localStorage is not accessible, using fallback in-memory store:", e);
+      if (!(window as any).__safe_storage_fallback) {
+        (window as any).__safe_storage_fallback = {};
+      }
+      (window as any).__safe_storage_fallback[key] = value;
+    }
+  }
+};
+
 type Role = "master" | "triagem" | "profissional";
 
 interface UserProfile {
@@ -86,6 +109,8 @@ interface Acolhimento {
   email: string;
   telefone?: string;
   valorSessao?: string;
+  frequenciaSessoes?: string;
+  motivoFrequencia?: string;
   viaAcesso: string;
   motivo: string;
   status: string;
@@ -383,6 +408,9 @@ export function DashboardView({
   const [acolhimentos, setAcolhimentos] = useState<Acolhimento[]>([]);
   const [selectedCard, setSelectedCard] = useState<Acolhimento | null>(null);
 
+  // Tour Modal
+  const [showTourModal, setShowTourModal] = useState(false);
+
   // Acolhimento Modal Actions
   const [showNotificarModal, setShowNotificarModal] = useState(false);
   const [showContratoModal, setShowContratoModal] = useState(false);
@@ -415,12 +443,12 @@ export function DashboardView({
     {
       id: "contrato",
       name: "Contrato de Serviços",
-      msg: "Olá! Segue o link com o nosso contrato de serviços para a sua leitura e assinatura: https://app.elo.com/contrato",
+      msg: "Olá! Segue o link com o nosso contrato de serviços para a sua leitura e assinatura: [LINK_CONTRATO]",
     },
     {
       id: "boas-vindas-atribuicao",
       name: "Boas Vindas (Após Atribuição)",
-      msg: "Olá [NOME]! Seja muito bem-vindo(a) à Elo Soluções Humanas.\n\nEstamos felizes em informar que o seu atendimento foi atribuído ao profissional [PROFISSIONAL_NOME] (CRP: [PROFISSIONAL_CRP]).\n\nO valor enquadrado para as suas sessões será de [VALOR_SESSAO].\n\nLembramos as regras básicas do nosso acompanhamento:\n- As sessões ocorrerão de forma regular.\n- Cancelamentos ou reagendamentos devem ser informados com no mínimo 24h de antecedência para evitar cobranças.\n\nNo próximo passo, enviaremos o link do seu contrato, onde essas regras estarão detalhadas e deverão ser lidas e assinadas digitalmente.\n\nQualquer dúvida, estamos à disposição para te ajudar em sua jornada de autoconhecimento!"
+      msg: "Olá [NOME]! Seja muito bem-vindo(a) ao Projeto AcolheMente Saúde.\n\nEstamos felizes em informar que o seu atendimento foi atribuído ao profissional [PROFISSIONAL_NOME] (CRP: [PROFISSIONAL_CRP]).\n\nO valor enquadrado para as suas sessões será de [VALOR_SESSAO].\n\nLembramos as regras básicas do nosso acompanhamento:\n- As sessões ocorrerão de forma regular.\n- Cancelamentos ou reagendamentos devem ser informados com no mínimo 24h de antecedência para evitar cobranças.\n\nNo próximo passo, enviaremos o link do seu contrato, onde essas regras estarão detalhadas e deverão ser lidas e assinadas digitalmente.\n\nQualquer dúvida, estamos à disposição para te ajudar em sua jornada de autoconhecimento!"
     },
   ]);
   const [notificacaoType, setNotificacaoType] = useState("pagamento");
@@ -537,14 +565,14 @@ export function DashboardView({
 
   useEffect(() => {
     if (user && profile) {
-      const hasSeen = localStorage.getItem(`onboarding_seen_${user.uid}`);
+      const hasSeen = safeLocalStorage.getItem(`onboarding_seen_${user.uid}`);
       if (!hasSeen) setShowOnboarding(true);
     }
   }, [user, profile]);
 
   const closeOnboarding = () => {
     if (user) {
-      localStorage.setItem(`onboarding_seen_${user.uid}`, "true");
+      safeLocalStorage.setItem(`onboarding_seen_${user.uid}`, "true");
     }
     setShowOnboarding(false);
     setOnboardingStep(0);
@@ -590,6 +618,10 @@ export function DashboardView({
 
           if (currentUserProfile?.role === "profissional") {
             setActiveTab("pacientes");
+            const hasSeenTour = safeLocalStorage.getItem("elo_tour_seen");
+            if (!hasSeenTour) {
+              setShowTourModal(true);
+            }
           }
           setProfile(currentUserProfile);
           setActiveRoleView(currentUserProfile.role);
@@ -1175,7 +1207,7 @@ export function DashboardView({
         ? `Sua conta foi criada no sistema. Como você utiliza um e-mail do Google (Gmail), você pode acessar a plataforma clicando diretamente no botão "Entrar com Conta Google".`
         : `Sua conta foi criada no sistema.\n\nLink de Acesso: ${window.location.origin}\nEmail: ${newProfEmail}\nSenha Provisória: ${newProfPassword}\n\nPor favor, acesse o sistema e redefina sua senha no primeiro acesso.`;
 
-      const emailParams = `subject=Bem-vindo(a) à Plataforma Elo&body=Olá ${newProfName},%0A%0A${encodeURIComponent(emailBodyProvider)}`;
+      const emailParams = `subject=Bem-vindo(a) ao Projeto AcolheMente Saúde&body=Olá ${newProfName},%0A%0A${encodeURIComponent(emailBodyProvider)}`;
 
       setConfirmConfig({
         isOpen: true,
@@ -2139,6 +2171,38 @@ export function DashboardView({
     (e) => !e.status || e.status === "Aguardando" || e.notificacao,
   ).length;
 
+  const calculateHorasMensais = (acols: Acolhimento[]) => {
+    return acols.reduce((sum, a) => {
+      if (a.frequenciaSessoes === "Semanal") return sum + 4;
+      if (a.frequenciaSessoes === "Quinzenal") return sum + 2;
+      if (a.frequenciaSessoes === "Mensal") return sum + 1;
+      if (a.frequenciaSessoes === "Sob Demanda") return sum + 1;
+      return sum + 4; // Default to 4 if not set yet, considering weekly as standard
+    }, 0);
+  };
+
+  const parseMaxHorasDisponiveis = (horasDisp?: string) => {
+    if (!horasDisp) return 0;
+    if (horasDisp.includes("1 a 3")) return 3;
+    if (horasDisp.includes("4 a 8")) return 8;
+    if (horasDisp.includes("9 a 15")) return 15;
+    if (horasDisp.includes("16 a 20")) return 20;
+    if (horasDisp.includes("Mais de 20")) return 24;
+    return 0;
+  };
+
+  const profissionaisAtCapacity = profissionaisAtivos.filter(p => {
+    const profAcolhimentos = acolhimentos.filter(
+      (a) =>
+        a.profissionalId === p.uid &&
+        a.status === "Em Atendimento" &&
+        a.atribuicaoStatus === "Aceito",
+    );
+    const max = parseMaxHorasDisponiveis(p.horasDisponiveis);
+    const used = calculateHorasMensais(profAcolhimentos);
+    return max > 0 && used >= max;
+  });
+
   const getProfStats = (uid: string) => {
     const profAcolhimentos = acolhimentos.filter(
       (a) =>
@@ -2155,7 +2219,12 @@ export function DashboardView({
         ) || 0),
       0,
     );
-    return { ativosCount, valorTotal };
+    const horasMensais = calculateHorasMensais(profAcolhimentos);
+    
+    const prof = profissionaisAtivos.find(p => p.uid === uid) || profissionaisLeads.find(p => p.id === uid);
+    const maxHoras = parseMaxHorasDisponiveis(prof?.horasDisponiveis);
+    
+    return { ativosCount, valorTotal, horasMensais, maxHoras };
   };
 
   const notificarTarget =
@@ -2250,10 +2319,17 @@ export function DashboardView({
               className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "profissionais" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
             >
               Profissionais
-              {pendingProfissionaisCount > 0 && (
-                <span className="bg-red-500 text-white text-[10px] w-4 h-4 flex items-center justify-center rounded-full font-bold ml-1">
-                  {pendingProfissionaisCount}
-                </span>
+              {(pendingProfissionaisCount > 0 || profissionaisAtCapacity.length > 0) && (
+                <div className="flex items-center gap-1 ml-1">
+                  {pendingProfissionaisCount > 0 && (
+                    <span className="bg-red-500 text-white text-[10px] w-4 h-4 flex items-center justify-center rounded-full font-bold">
+                      {pendingProfissionaisCount}
+                    </span>
+                  )}
+                  {profissionaisAtCapacity.length > 0 && (
+                    <ShieldAlert className="w-4 h-4 text-red-500" title={`${profissionaisAtCapacity.length} profissional(is) no limite de horas`} />
+                  )}
+                </div>
               )}
             </button>
             {currentRole === "master" && (
@@ -2408,7 +2484,7 @@ export function DashboardView({
               Estatísticas da Plataforma
             </h2>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               {/* Pacientes Stats */}
               <div className="bg-white p-6 rounded-3xl border border-soft shadow-sm flex flex-col gap-4">
                 <div className="flex justify-between items-center">
@@ -2523,6 +2599,31 @@ export function DashboardView({
                     </span>
                     <span className="text-lg font-semibold text-forest">
                       {empresasLeads.filter((e) => e.ativo === false).length}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Impacto / Horas Stats */}
+              <div className="bg-white p-6 rounded-3xl border border-soft shadow-sm flex flex-col gap-4">
+                <div className="flex justify-between items-center">
+                  <h3 className="font-serif text-xl font-semibold text-forest">
+                    Impacto (Horas/Mês)
+                  </h3>
+                  <div className="w-10 h-10 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                    <Clock className="w-5 h-5" />
+                  </div>
+                </div>
+                <div className="text-4xl font-bold text-emerald-700">
+                  {calculateHorasMensais(acolhimentos.filter(a => a.status === "Em Atendimento" && a.atribuicaoStatus === "Aceito"))}h
+                </div>
+                <div className="flex gap-4 border-t border-soft pt-4 mt-2">
+                  <div className="flex flex-col">
+                    <span className="text-[10px] uppercase font-bold text-forest/50 tracking-wider">
+                      Em Atendimento Regular
+                    </span>
+                    <span className="text-lg font-semibold text-forest">
+                      {acolhimentos.filter((a) => a.status === "Em Atendimento" && a.atribuicaoStatus === "Aceito").length}
                     </span>
                   </div>
                 </div>
@@ -2839,6 +2940,28 @@ export function DashboardView({
                   </div>
                 </div>
               </div>
+
+              {/* Impacto / Horas Stats (Profissional) */}
+              <div className="bg-white p-6 rounded-3xl border border-soft shadow-sm flex flex-col gap-4">
+                <div className="flex justify-between items-center">
+                  <h3 className="font-serif text-xl font-semibold text-forest">
+                    Horas Mensais
+                  </h3>
+                  <div className="w-10 h-10 rounded-full bg-sun/50 text-forest flex items-center justify-center">
+                    <Clock className="w-5 h-5" />
+                  </div>
+                </div>
+                <div className="text-4xl font-bold text-forest">
+                  {calculateHorasMensais(meusPacientes.filter(p => p.status === "Em Atendimento" && p.atribuicaoStatus === "Aceito"))}h
+                </div>
+                <div className="flex gap-4 border-t border-soft pt-4 mt-2">
+                  <div className="flex flex-col">
+                    <span className="text-[10px] uppercase font-bold text-forest/50 tracking-wider">
+                      Estimativa Mês (Média)
+                    </span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -2949,12 +3072,24 @@ export function DashboardView({
                         </div>
                       )}
 
-                      {p.valorSessao && (
-                        <div className="flex items-center justify-between bg-emerald-50 text-emerald-700 px-4 py-3 rounded-2xl text-xs font-bold border border-emerald-100 shadow-sm">
-                          <span className="flex items-center gap-1.5">
-                            <DollarSign className="w-4 h-4 text-emerald-600" /> Valor Acertado:
-                          </span>
-                          <span className="text-sm">R$ {p.valorSessao}</span>
+                      {(p.valorSessao || p.frequenciaSessoes) && (
+                        <div className="flex flex-col gap-2 bg-emerald-50 text-emerald-700 px-4 py-3 rounded-2xl text-xs border border-emerald-100 shadow-sm">
+                          {p.valorSessao && (
+                            <div className="flex items-center justify-between font-bold">
+                              <span className="flex items-center gap-1.5">
+                                <DollarSign className="w-4 h-4 text-emerald-600" /> Valor Acertado:
+                              </span>
+                              <span className="text-sm">R$ {p.valorSessao}</span>
+                            </div>
+                          )}
+                          {p.frequenciaSessoes && (
+                            <div className="flex items-center justify-between">
+                              <span className="flex items-center gap-1.5 font-semibold text-emerald-600/80">
+                                <Calendar className="w-4 h-4 text-emerald-600/70" /> Frequência:
+                              </span>
+                              <span className="font-semibold text-emerald-800">{p.frequenciaSessoes}</span>
+                            </div>
+                          )}
                         </div>
                       )}
 
@@ -3947,10 +4082,20 @@ export function DashboardView({
                               : "Não informado"}
                           </div>
 
-                          {card.valorSessao && (
-                            <div className="mt-2 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-1.5 rounded border border-emerald-100/50 flex justify-between items-center w-full">
-                              <span>Valor Acertado:</span>{" "}
-                              <span>R$ {card.valorSessao}</span>
+                          {(card.valorSessao || card.frequenciaSessoes) && (
+                            <div className="mt-2 text-[10px] text-emerald-700 bg-emerald-50 px-2 py-1.5 rounded border border-emerald-100/50 flex flex-col gap-1 w-full">
+                              {card.valorSessao && (
+                                <div className="flex justify-between items-center font-bold">
+                                  <span>Valor Acertado:</span>{" "}
+                                  <span>R$ {card.valorSessao}</span>
+                                </div>
+                              )}
+                              {card.frequenciaSessoes && (
+                                <div className="flex justify-between items-center">
+                                  <span className="font-medium opacity-80">Frequência:</span>{" "}
+                                  <span className="font-semibold">{card.frequenciaSessoes}</span>
+                                </div>
+                              )}
                             </div>
                           )}
 
@@ -4457,7 +4602,7 @@ export function DashboardView({
                               <span className="font-bold text-forest/90">{stats.ativosCount}</span>
                             </div>
 
-                            <div className="flex items-center justify-between py-1">
+                            <div className="flex items-center justify-between py-1 border-b border-soft/30">
                               <span className="text-forest/50 font-medium flex items-center gap-1.5">
                                 <DollarSign className="w-3.5 h-3.5 text-forest/40" /> Total Sessões:
                               </span>
@@ -4465,6 +4610,22 @@ export function DashboardView({
                                 R$ {stats.valorTotal.toFixed(2).replace(".", ",")}
                               </span>
                             </div>
+
+                            <div className="flex items-center justify-between py-1 border-b border-soft/30">
+                              <span className="text-forest/50 font-medium flex items-center gap-1.5">
+                                <Clock className="w-3.5 h-3.5 text-forest/40" /> Horas Mensais (Est.):
+                              </span>
+                              <span className={`font-bold font-mono ${stats.maxHoras > 0 && stats.horasMensais >= stats.maxHoras ? 'text-red-600' : 'text-forest/90'}`}>
+                                {stats.horasMensais}h {stats.maxHoras > 0 && `/ ${stats.maxHoras}h`}
+                              </span>
+                            </div>
+                            
+                            {stats.maxHoras > 0 && stats.horasMensais >= stats.maxHoras && (
+                              <div className="mt-1 flex items-start gap-1.5 bg-red-50 text-red-700 p-2 rounded-lg border border-red-100">
+                                <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />
+                                <span className="text-[10px] leading-tight font-medium">Limite de horas atingido ou excedido.</span>
+                              </div>
+                            )}
                           </>
                         )}
                       </div>
@@ -4839,7 +5000,7 @@ export function DashboardView({
                 </button>
                 <button
                   onClick={() => {
-                    const defaultText = `CONTRATO DE PRESTAÇÃO DE SERVIÇOS PSICOLÓGICOS\n\nCONTRATANTE: ${selectedCard.nome || "[NOME]"}, portador(a) do e-mail ${selectedCard.email || "[EMAIL]"} e CPF ${selectedCard.cpf || "[CPF_AQUI]"}.\n\nCONTRATADO: Elo Soluções Humanas...\n\nCLÁUSULA 1 - O presente contrato tem por objeto a prestação de serviços psicológicos na modalidade de Terapia Individual...\n\n(Edite as cláusulas abaixo)`;
+                    const defaultText = `CONTRATO DE PRESTAÇÃO DE SERVIÇOS PSICOLÓGICOS\n\nCONTRATANTE: ${selectedCard.nome || "[NOME]"}, portador(a) do e-mail ${selectedCard.email || "[EMAIL]"} e CPF ${selectedCard.cpf || "[CPF_AQUI]"}.\n\nCONTRATADO: Projeto AcolheMente Saúde...\n\nCLÁUSULA 1 - O presente contrato tem por objeto a prestação de serviços psicológicos na modalidade de Terapia Individual...\n\n(Edite as cláusulas abaixo)`;
                     setContratoText(selectedCard.contratoText || defaultText);
                     setShowContratoModal(true);
                   }}
@@ -5142,6 +5303,15 @@ export function DashboardView({
                         }
                         isEditing={isEditingCard}
                       />
+                      <EditableField
+                        label="Melhores Períodos (Online)"
+                        value={Array.isArray(selectedCard.melhoresPeriodos) ? selectedCard.melhoresPeriodos.join(", ") : selectedCard.melhoresPeriodos}
+                        field="melhoresPeriodos"
+                        onChange={(f, v) =>
+                          handleUpdateAcolhimentoProperty(selectedCard.id, f, v)
+                        }
+                        isEditing={isEditingCard}
+                      />
                       <div className="bg-sun-dark-light/30 border border-sun-dark/10 p-4 rounded-xl mt-2">
                         <span className="block text-xs font-semibold uppercase text-forest/70/60 mb-2">
                           Motivo Declarado
@@ -5167,38 +5337,96 @@ export function DashboardView({
                     </div>
                   </section>
 
-                  {currentRole !== "profissional" ? (
-                    <section className="mt-8 space-y-6">
-                      <div className="flex flex-col gap-1 p-5 bg-sun/10 rounded-2xl border border-sun/30">
-                        <label className="text-xs font-bold uppercase tracking-wider text-forest/70 shrink-0 mb-1">
-                          Valor da Sessão (Faixas R$)
-                        </label>
-                        {isEditingCard ? (
+                  <section className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="flex flex-col gap-1 p-5 bg-sun/10 rounded-2xl border border-sun/30">
+                      <label className="text-xs font-bold uppercase tracking-wider text-forest/70 shrink-0 mb-1">
+                        Valor da Sessão (Faixas R$)
+                      </label>
+                      {currentRole !== "profissional" && isEditingCard ? (
+                        <select
+                          value={selectedCard.valorSessao || ""}
+                          onChange={(e) =>
+                            handleUpdateAcolhimentoProperty(
+                              selectedCard.id,
+                              "valorSessao",
+                              e.target.value,
+                            )
+                          }
+                          className="w-full bg-white text-base font-semibold text-forest border border-soft rounded-xl p-3 focus:outline-none focus:ring-2 focus:ring-sun-dark shadow-sm appearance-none"
+                        >
+                          <option value="">Selecione um valor...</option>
+                          {globalConfigs.faixasValores?.map((faixa: string, idx: number) => (
+                            faixa ? <option key={idx} value={faixa}>{faixa}</option> : null
+                          ))}
+                          <option value="Gratuito">Gratuito</option>
+                          <option value="Outro">Outro (A combinar)</option>
+                        </select>
+                      ) : (
+                        <div className="text-2xl font-semibold text-forest">
+                          {selectedCard.valorSessao || "Não definido"}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex flex-col gap-1 p-5 bg-emerald-50 rounded-2xl border border-emerald-100">
+                      <div className="flex justify-between items-center mb-1">
+                         <label className="text-xs font-bold uppercase tracking-wider text-emerald-800 shrink-0">
+                           Frequência de Sessões
+                         </label>
+                         {(!isEditingCard && currentRole === "profissional") && (
+                           <button onClick={() => setIsEditingCard(true)} className="text-[10px] uppercase font-bold text-emerald-600 hover:underline">Alterar Frequência</button>
+                         )}
+                      </div>
+                      {isEditingCard ? (
+                        <div className="flex flex-col gap-2">
                           <select
-                            value={selectedCard.valorSessao || ""}
+                            value={selectedCard.frequenciaSessoes || ""}
                             onChange={(e) =>
                               handleUpdateAcolhimentoProperty(
                                 selectedCard.id,
-                                "valorSessao",
+                                "frequenciaSessoes",
                                 e.target.value,
                               )
                             }
-                            className="w-full bg-white text-base font-semibold text-forest border border-soft rounded-xl p-3 focus:outline-none focus:ring-2 focus:ring-sun-dark shadow-sm appearance-none"
+                            className="w-full bg-white text-base font-semibold text-forest border border-soft rounded-xl p-2 focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-sm appearance-none"
                           >
-                            <option value="">Selecione um valor...</option>
-                            {globalConfigs.faixasValores?.map((faixa: string, idx: number) => (
-                              faixa ? <option key={idx} value={faixa}>{faixa}</option> : null
-                            ))}
-                            <option value="Gratuito">Gratuito</option>
-                            <option value="Outro">Outro (A combinar)</option>
+                            <option value="">Selecione...</option>
+                            <option value="Semanal">Semanal</option>
+                            <option value="Quinzenal">Quinzenal</option>
+                            <option value="Mensal">Mensal</option>
+                            <option value="Sob Demanda">Sob Demanda</option>
                           </select>
-                        ) : (
-                          <div className="text-2xl font-semibold text-forest">
-                            {selectedCard.valorSessao || "Não definido"}
+                          <input 
+                            type="text"
+                            placeholder="Motivo da alteração"
+                            value={selectedCard.motivoFrequencia || ""}
+                            onChange={(e) =>
+                              handleUpdateAcolhimentoProperty(
+                                selectedCard.id,
+                                "motivoFrequencia",
+                                e.target.value,
+                              )
+                            }
+                            className="w-full bg-white text-xs text-forest border border-soft rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                          />
+                        </div>
+                      ) : (
+                        <div>
+                          <div className="text-2xl font-semibold text-forest mb-1">
+                            {selectedCard.frequenciaSessoes || "Não definida"}
                           </div>
-                        )}
-                      </div>
+                          {selectedCard.motivoFrequencia && (
+                            <p className="text-xs text-emerald-700 italic">
+                              Motivo: {selectedCard.motivoFrequencia}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </section>
 
+                  {currentRole !== "profissional" ? (
+                    <section className="mt-8 space-y-6">
                       <div className="flex flex-col gap-2 p-4 bg-warm rounded-2xl border border-soft max-h-[22rem] flex flex-col">
                         <label className="text-xs font-bold uppercase tracking-wider text-forest/70 shrink-0 mb-1">
                           Atribuir a Profissional Parceiro
@@ -5464,6 +5692,30 @@ export function DashboardView({
           </div>
         </div>
       )}
+      {/* Tour Modal / Primeiros Passos */}
+      {showTourModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center px-4 bg-forest/20 backdrop-blur-sm animate-in fade-in py-4">
+          <div className="bg-white rounded-[2rem] w-full max-w-lg shadow-2xl border border-soft overflow-hidden animate-in zoom-in-95 p-8 text-center flex flex-col items-center">
+            <div className="w-16 h-16 bg-sun-dark/20 rounded-full flex items-center justify-center mb-6 text-sun-dark-dark">
+              <Star className="w-8 h-8" />
+            </div>
+            <h2 className="font-serif text-2xl text-forest mb-4">Bem-vindo(a) ao Projeto AcolheMente Saúde!</h2>
+            <p className="text-forest/70 mb-8 leading-relaxed">
+              Estamos muito felizes em ter você aqui. Na sua ficha de bordo ("Meus Pacientes"), você poderá acompanhar as suas sessões, enviar o link do contrato e notificar seus pacientes facilmente.
+            </p>
+            <button
+              onClick={() => {
+                safeLocalStorage.setItem("elo_tour_seen", "true");
+                setShowTourModal(false);
+              }}
+              className="bg-forest text-white px-8 py-3 rounded-full font-semibold hover:bg-forest/90 transition-colors w-full"
+            >
+              Começar agora
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Notificar Modal */}
       {showNotificarModal && notificarTarget && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center px-4 bg-forest/20 backdrop-blur-sm animate-in fade-in">
@@ -5506,6 +5758,10 @@ export function DashboardView({
                          newMsg = newMsg.replace("[VALOR_SESSAO]", selectedCard.valorSessao || "a combinar");
                          newMsg = newMsg.replace("[PROFISSIONAL_NOME]", prof ? (prof.name || "") : "N/A");
                          newMsg = newMsg.replace("[PROFISSIONAL_CRP]", prof ? (prof.crp || "N/A") : "N/A");
+                      }
+                      if (selected.id === "contrato" && activeTab === "kanban" && selectedCard) {
+                         const contractLink = `${window.location.origin}/?contrato=${selectedCard.id}`;
+                         newMsg = newMsg.replace("[LINK_CONTRATO]", contractLink);
                       }
 
                       setNotificacaoMsg(newMsg);
@@ -5735,7 +5991,7 @@ export function DashboardView({
                 <button
                   onClick={() => {
                     setContratoText(
-                      `CONTRATO DE PRESTAÇÃO DE SERVIÇOS TIPO CORPORATIVO\n\nCONTRATANTE: ${selectedEmpresa.nomeEmpresa}, sob o CNPJ [INSERIR CNPJ], através de seu responsável ${selectedEmpresa.nomeContato}.\n\nCONTRATADA: Elo Soluções Humanas...\n\n(Edite as cláusulas abaixo)`,
+                      `CONTRATO DE PRESTAÇÃO DE SERVIÇOS TIPO CORPORATIVO\n\nCONTRATANTE: ${selectedEmpresa.nomeEmpresa}, sob o CNPJ [INSERIR CNPJ], através de seu responsável ${selectedEmpresa.nomeContato}.\n\nCONTRATADA: Projeto AcolheMente Saúde...\n\n(Edite as cláusulas abaixo)`,
                     );
                     setShowContratoModal(true);
                   }}
@@ -6078,7 +6334,7 @@ export function DashboardView({
                         ? selectedProfissional.nome
                         : selectedProfissional.name;
                     setContratoText(
-                      `CONTRATO DE PARCERIA E PRESTAÇÃO DE SERVIÇOS PSICOLÓGICOS\n\nCONTRATANTE: Elo Soluções Humanas...\n\nCONTRATADO(A): ${profName}, portador(a) do CRP/Conselho e email ${selectedProfissional.email}.\n\n(Edite as cláusulas abaixo)`,
+                      `CONTRATO DE PARCERIA E PRESTAÇÃO DE SERVIÇOS PSICOLÓGICOS\n\nCONTRATANTE: Projeto AcolheMente Saúde...\n\nCONTRATADO(A): ${profName}, portador(a) do CRP/Conselho e email ${selectedProfissional.email}.\n\n(Edite as cláusulas abaixo)`,
                     );
                     setShowContratoModal(true);
                   }}

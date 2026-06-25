@@ -421,6 +421,17 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
                     />
                   </div>
 
+                  <label className="flex items-start gap-3 mt-2 cursor-pointer group">
+                    <input 
+                      type="checkbox" 
+                      required 
+                      className="mt-1 w-5 h-5 rounded border-soft text-sun-dark focus:ring-sun-dark/20 accent-sun-dark cursor-pointer"
+                    />
+                    <span className="text-xs text-forest/70 leading-relaxed">
+                      <strong>Privacidade e LGPD:</strong> Estou ciente e concordo que meus dados profissionais e de contato serão tratados de forma sigilosa para fins de validação e cadastro na plataforma, conforme a Lei Geral de Proteção de Dados (LGPD).
+                    </span>
+                  </label>
+
                   <button 
                     disabled={isSubmitting}
                     type="submit" 

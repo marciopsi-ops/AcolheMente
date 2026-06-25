@@ -102,10 +102,15 @@ export function Footer({ onNavigate }: { onNavigate?: (view: any) => void }) {
         </div>
       </div>
 
-      {/* Informações Éticas */}
+      {/* Informações Éticas e LGPD */}
       <div className="w-full max-w-[1440px] border-t border-soft pt-8 mb-8 flex flex-col md:flex-row justify-between gap-6 text-xs text-forest/60">
-        <div className="max-w-3xl leading-relaxed">
-          <strong>Nota Ética:</strong> Os profissionais cadastrados atuam em conformidade com o Código de Ética Profissional do Psicólogo (Resolução CFP nº 010/2005) e demais resoluções do Conselho Federal de Psicologia (CFP). Todos os psicólogos e terapeutas possuem registro ativo em seus respectivos Conselhos Regionais de Psicologia (CRP) ou associação de classe.
+        <div className="max-w-3xl leading-relaxed flex flex-col gap-3">
+          <p>
+            <strong>Nota Ética:</strong> Os profissionais cadastrados atuam em conformidade com o Código de Ética Profissional do Psicólogo (Resolução CFP nº 010/2005) e demais resoluções do Conselho Federal de Psicologia (CFP). Todos os psicólogos e terapeutas possuem registro ativo em seus respectivos Conselhos Regionais de Psicologia (CRP) ou associação de classe.
+          </p>
+          <p>
+            <strong>Privacidade e LGPD:</strong> Em conformidade com a Lei Geral de Proteção de Dados (Lei nº 13.709/2018), garantimos o sigilo absoluto, a segurança e a transparência no tratamento de dados sensíveis de pacientes e profissionais. O compartilhamento das informações ocorre estritamente para os fins terapêuticos e administrativos informados.
+          </p>
         </div>
         <div className="flex md:flex-col items-center md:items-end justify-center gap-1.5 md:gap-1">
           <span className="font-semibold text-forest/80 uppercase tracking-[0.25em] text-[10px]">Uma iniciativa de</span>

@@ -192,6 +192,17 @@ export function ContratoLandingView({
               </div>
             )}
 
+            <label className="flex items-start gap-3 mt-2 cursor-pointer group">
+              <input 
+                type="checkbox" 
+                required 
+                className="mt-1 w-5 h-5 rounded border-soft text-sun-dark focus:ring-sun-dark/20 accent-sun-dark cursor-pointer"
+              />
+              <span className="text-xs text-forest/70 leading-relaxed">
+                <strong>Privacidade e LGPD:</strong> Estou ciente e concordo que os dados pessoais fornecidos serão tratados de forma sigilosa e segura para fins terapêuticos e administrativos, conforme a Lei Geral de Proteção de Dados (LGPD).
+              </span>
+            </label>
+
             <button
               type="submit"
               className="mt-4 w-full bg-forest text-white hover:bg-forest/90 py-4 rounded-full font-semibold text-lg transition-all active:scale-[0.98] flex items-center justify-center gap-2"
@@ -208,6 +219,10 @@ export function ContratoLandingView({
           </div>
         </div>
       </main>
+
+      <footer className="w-full max-w-7xl mx-auto p-6 md:p-12 text-center text-xs text-forest/50 mt-auto">
+        <p>Em conformidade com a Lei Geral de Proteção de Dados (Lei nº 13.709/2018), garantimos o sigilo absoluto, a segurança e a transparência no tratamento de dados sensíveis.</p>
+      </footer>
     </div>
   );
 }

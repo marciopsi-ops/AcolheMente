@@ -242,7 +242,7 @@ export function PublicProfProfileView({ profUid, onBack }: { profUid: string; on
               onClick={onBack}
               className="py-3 px-6 bg-white text-forest font-bold uppercase tracking-wider text-xs rounded-xl hover:bg-white/95 hover:scale-[1.02] transition-all whitespace-nowrap"
             >
-              Conhecer a Elo
+              Conhecer a AcolheMente
             </button>
           </div>
           
@@ -252,7 +252,7 @@ export function PublicProfProfileView({ profUid, onBack }: { profUid: string; on
       
       {/* Mini Branding Footer */}
       <footer className="w-full max-w-4xl text-center py-12 text-forest/40 text-xs">
-        <p>© {new Date().getFullYear()} AcolheMente - Parceria Elo Soluções Humanas. Todos os direitos reservados.</p>
+        <p>© {new Date().getFullYear()} Projeto AcolheMente Saúde - Uma iniciativa de Elo Soluções Humanas. Todos os direitos reservados.</p>
       </footer>
     </div>
   );
