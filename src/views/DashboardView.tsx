@@ -42,7 +42,7 @@ import {
   ShieldAlert,
   Star,
 } from "lucide-react";
-import { auth, db } from "../lib/firebase";
+import { auth, db, handleFirestoreError, OperationType } from "../lib/firebase";
 import {
   GoogleAuthProvider,
   signInWithPopup,
@@ -65,6 +65,7 @@ import {
   orderBy,
   serverTimestamp,
   deleteDoc,
+  where,
 } from "firebase/firestore";
 import { initializeApp } from "firebase/app";
 import firebaseConfig from "../../firebase-applet-config.json";
@@ -634,6 +635,12 @@ export function DashboardView({
               setGlobalConfigs(docSnap.data() as any);
             }
           },
+          (error) => {
+            console.error("Error loading configurations:", error);
+            try {
+              handleFirestoreError(error, OperationType.GET, "configuracoes/master");
+            } catch (e) {}
+          }
         );
 
         const uRoles = currentUserProfile?.roles || [];
@@ -644,36 +651,52 @@ export function DashboardView({
         if (hasMaster || hasTriagem) {
           // Listen to acolhimentos
           const q = query(collection(db, "acolhimentos"));
-          unsubCards = onSnapshot(q, (snapshot) => {
-            const cards: Acolhimento[] = [];
-            snapshot.forEach((d) =>
-              cards.push({ id: d.id, ...d.data() } as Acolhimento),
-            );
-            cards.sort(
-              (a, b) =>
-                b.createdAt?.toMillis?.() - a.createdAt?.toMillis?.() || 0,
-            );
-            setAcolhimentos(cards);
-          });
+          unsubCards = onSnapshot(
+            q,
+            (snapshot) => {
+              const cards: Acolhimento[] = [];
+              snapshot.forEach((d) =>
+                cards.push({ id: d.id, ...d.data() } as Acolhimento),
+              );
+              cards.sort(
+                (a, b) =>
+                  b.createdAt?.toMillis?.() - a.createdAt?.toMillis?.() || 0,
+              );
+              setAcolhimentos(cards);
+            },
+            (error) => {
+              console.error("Error loading acolhimentos (master/triagem):", error);
+              try {
+                handleFirestoreError(error, OperationType.GET, "acolhimentos");
+              } catch (e) {}
+            }
+          );
         }
 
         if (hasProfissional) {
-          // Listen to assigned acolhimentos
-          const qq = query(collection(db, "acolhimentos"));
-          unsubMeusPacientes = onSnapshot(qq, (snapshot) => {
-            const list: Acolhimento[] = [];
-            snapshot.forEach((d) => {
-              const data = d.data() as Acolhimento;
-              if (data.profissionalId === u.uid) {
+          // Listen to assigned acolhimentos - filtered by professionalId for privacy, LGPD & permission rules
+          const qq = query(collection(db, "acolhimentos"), where("profissionalId", "==", u.uid));
+          unsubMeusPacientes = onSnapshot(
+            qq,
+            (snapshot) => {
+              const list: Acolhimento[] = [];
+              snapshot.forEach((d) => {
+                const data = d.data() as Acolhimento;
                 list.push({ id: d.id, ...data });
-              }
-            });
-            list.sort(
-              (a, b) =>
-                b.createdAt?.toMillis?.() - a.createdAt?.toMillis?.() || 0,
-            );
-            setMeusPacientes(list);
-          });
+              });
+              list.sort(
+                (a, b) =>
+                  b.createdAt?.toMillis?.() - a.createdAt?.toMillis?.() || 0,
+              );
+              setMeusPacientes(list);
+            },
+            (error) => {
+              console.error("Error loading meus pacientes:", error);
+              try {
+                handleFirestoreError(error, OperationType.GET, "acolhimentos");
+              } catch (e) {}
+            }
+          );
         }
 
         if (hasMaster) {
@@ -690,6 +713,12 @@ export function DashboardView({
               );
               setDoacoes(list);
             },
+            (error) => {
+              console.error("Error loading doacoes:", error);
+              try {
+                handleFirestoreError(error, OperationType.GET, "doacoes");
+              } catch (e) {}
+            }
           );
           unsubSol = onSnapshot(
             query(collection(db, "solicitacoes_doacao")),
@@ -704,6 +733,12 @@ export function DashboardView({
               );
               setSolicitacoes(list);
             },
+            (error) => {
+              console.error("Error loading solicitacoes_doacao:", error);
+              try {
+                handleFirestoreError(error, OperationType.GET, "solicitacoes_doacao");
+              } catch (e) {}
+            }
           );
           unsubProLeads = onSnapshot(
             query(collection(db, "profissionais_leads")),
@@ -718,6 +753,12 @@ export function DashboardView({
               );
               setProfissionaisLeads(list);
             },
+            (error) => {
+              console.error("Error loading profissionais_leads:", error);
+              try {
+                handleFirestoreError(error, OperationType.GET, "profissionais_leads");
+              } catch (e) {}
+            }
           );
           unsubProAtivos = onSnapshot(
             query(collection(db, "users")),
@@ -733,6 +774,12 @@ export function DashboardView({
               setProfissionaisAtivos(listProfs);
               setAllUsers(listAll);
             },
+            (error) => {
+              console.error("Error loading users:", error);
+              try {
+                handleFirestoreError(error, OperationType.GET, "users");
+              } catch (e) {}
+            }
           );
           unsubEmpresas = onSnapshot(
             query(collection(db, "empresa_leads")),
@@ -747,6 +794,12 @@ export function DashboardView({
               );
               setEmpresasLeads(list);
             },
+            (error) => {
+              console.error("Error loading empresa_leads:", error);
+              try {
+                handleFirestoreError(error, OperationType.GET, "empresa_leads");
+              } catch (e) {}
+            }
           );
           
         }
@@ -764,6 +817,12 @@ export function DashboardView({
                   b.createdAt?.toMillis?.() - a.createdAt?.toMillis?.() || 0,
               );
               setComplianceMessages(list);
+            },
+            (error) => {
+              console.error("Error loading compliance:", error);
+              try {
+                handleFirestoreError(error, OperationType.GET, "compliance");
+              } catch (e) {}
             }
           );
         }
