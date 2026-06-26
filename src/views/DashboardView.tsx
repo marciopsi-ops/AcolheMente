@@ -76,7 +76,10 @@ const safeLocalStorage = {
     try {
       return localStorage.getItem(key);
     } catch (e) {
-      console.warn("localStorage is not accessible, using fallback in-memory store:", e);
+      console.warn(
+        "localStorage is not accessible, using fallback in-memory store:",
+        e,
+      );
       return (window as any).__safe_storage_fallback?.[key] || null;
     }
   },
@@ -84,13 +87,16 @@ const safeLocalStorage = {
     try {
       localStorage.setItem(key, value);
     } catch (e) {
-      console.warn("localStorage is not accessible, using fallback in-memory store:", e);
+      console.warn(
+        "localStorage is not accessible, using fallback in-memory store:",
+        e,
+      );
       if (!(window as any).__safe_storage_fallback) {
         (window as any).__safe_storage_fallback = {};
       }
       (window as any).__safe_storage_fallback[key] = value;
     }
-  }
+  },
 };
 
 type Role = "master" | "triagem" | "profissional";
@@ -359,7 +365,14 @@ export function DashboardView({
   onNavigate,
 }: {
   onNavigate: (
-    view: "landing" | "acolhimento" | "dashboard" | "profile" | "empresa" | "doacao" | "profissional",
+    view:
+      | "landing"
+      | "acolhimento"
+      | "dashboard"
+      | "profile"
+      | "empresa"
+      | "doacao"
+      | "profissional",
   ) => void;
 }) {
   const [user, setUser] = useState<FirebaseUser | null>(null);
@@ -390,8 +403,12 @@ export function DashboardView({
 
   // Search
   const [searchQuery, setSearchQuery] = useState("");
-  const [triagemViewMode, setTriagemViewMode] = useState<"kanban" | "table">("table");
-  const [msgFilterTab, setMsgFilterTab] = useState<"all" | "assignment" | "alert" | "system" | "contract">("all");
+  const [triagemViewMode, setTriagemViewMode] = useState<"kanban" | "table">(
+    "table",
+  );
+  const [msgFilterTab, setMsgFilterTab] = useState<
+    "all" | "assignment" | "alert" | "system" | "contract"
+  >("all");
   const [msgSearchQuery, setMsgSearchQuery] = useState("");
 
   // Auth form
@@ -454,7 +471,12 @@ export function DashboardView({
     {
       id: "boas-vindas-atribuicao",
       name: "Boas Vindas (Após Atribuição)",
-      msg: "Olá [NOME]! Seja muito bem-vindo(a) ao Projeto AcolheMente Saúde.\n\nEstamos felizes em informar que o seu atendimento foi atribuído ao profissional [PROFISSIONAL_NOME] (CRP: [PROFISSIONAL_CRP]).\n\nO valor enquadrado para as suas sessões será de [VALOR_SESSAO].\n\nLembramos as regras básicas do nosso acompanhamento:\n- As sessões ocorrerão de forma regular.\n- Cancelamentos ou reagendamentos devem ser informados com no mínimo 24h de antecedência para evitar cobranças.\n\nNo próximo passo, enviaremos o link do seu contrato, onde essas regras estarão detalhadas e deverão ser lidas e assinadas digitalmente.\n\nQualquer dúvida, estamos à disposição para te ajudar em sua jornada de autoconhecimento!"
+      msg: "Olá [NOME]! Seja muito bem-vindo(a) ao Projeto AcolheMente Saúde.\n\nEstamos felizes em informar que o seu atendimento foi atribuído ao profissional [PROFISSIONAL_NOME] (CRP: [PROFISSIONAL_CRP]). Conheça mais sobre o perfil em: [LINK_PERFIL_PROFISSIONAL]\n\nO valor enquadrado para as suas sessões será de [VALOR_SESSAO] com frequência [FREQUENCIA].\n\nObservação: O valor é referente a uma sessão de aproximadamente 45 minutos e que por mês, o valor médio será de [VALOR_MENSAL].\n\nLembramos as regras básicas do nosso acompanhamento:\n- As sessões ocorrerão de forma regular.\n- Cancelamentos ou reagendamentos devem ser informados com no mínimo 24h de antecedência para evitar cobranças.\n\nNo próximo passo, enviaremos o link do seu contrato, onde essas regras estarão detalhadas e deverão ser lidas e assinadas digitalmente.\n\nQualquer dúvida, estamos à disposição para te ajudar em sua jornada de autoconhecimento!",
+    },
+    {
+      id: "proposta",
+      name: "Proposta de Atendimento",
+      msg: "Olá [NOME]! Segue a proposta de valor e frequência para o seu atendimento no Projeto AcolheMente.\n\nPor favor, acesse o link abaixo para revisar e dar o seu aceite:\n[LINK_PROPOSTA]",
     },
   ]);
   const [notificacaoType, setNotificacaoType] = useState("pagamento");
@@ -616,10 +638,15 @@ export function DashboardView({
             setLoadingObj(false);
             return;
           }
-          
+
           // Normalize roles array for legacy compatibility
-          if (!currentUserProfile.roles || !Array.isArray(currentUserProfile.roles)) {
-            currentUserProfile.roles = [currentUserProfile.role || "profissional"];
+          if (
+            !currentUserProfile.roles ||
+            !Array.isArray(currentUserProfile.roles)
+          ) {
+            currentUserProfile.roles = [
+              currentUserProfile.role || "profissional",
+            ];
           }
 
           if (currentUserProfile?.role === "profissional") {
@@ -643,15 +670,23 @@ export function DashboardView({
           (error) => {
             console.error("Error loading configurations:", error);
             try {
-              handleFirestoreError(error, OperationType.GET, "configuracoes/master");
+              handleFirestoreError(
+                error,
+                OperationType.GET,
+                "configuracoes/master",
+              );
             } catch (e) {}
-          }
+          },
         );
 
         const uRoles = currentUserProfile?.roles || [];
-        const hasMaster = uRoles.includes("master") || currentUserProfile?.role === "master";
-        const hasTriagem = uRoles.includes("triagem") || currentUserProfile?.role === "triagem";
-        const hasProfissional = uRoles.includes("profissional") || currentUserProfile?.role === "profissional";
+        const hasMaster =
+          uRoles.includes("master") || currentUserProfile?.role === "master";
+        const hasTriagem =
+          uRoles.includes("triagem") || currentUserProfile?.role === "triagem";
+        const hasProfissional =
+          uRoles.includes("profissional") ||
+          currentUserProfile?.role === "profissional";
 
         if (hasMaster || hasTriagem) {
           // Listen to acolhimentos
@@ -670,17 +705,23 @@ export function DashboardView({
               setAcolhimentos(cards);
             },
             (error) => {
-              console.error("Error loading acolhimentos (master/triagem):", error);
+              console.error(
+                "Error loading acolhimentos (master/triagem):",
+                error,
+              );
               try {
                 handleFirestoreError(error, OperationType.GET, "acolhimentos");
               } catch (e) {}
-            }
+            },
           );
         }
 
         if (hasProfissional) {
           // Listen to assigned acolhimentos - filtered by professionalId for privacy, LGPD & permission rules
-          const qq = query(collection(db, "acolhimentos"), where("profissionalId", "==", u.uid));
+          const qq = query(
+            collection(db, "acolhimentos"),
+            where("profissionalId", "==", u.uid),
+          );
           unsubMeusPacientes = onSnapshot(
             qq,
             (snapshot) => {
@@ -700,7 +741,7 @@ export function DashboardView({
               try {
                 handleFirestoreError(error, OperationType.GET, "acolhimentos");
               } catch (e) {}
-            }
+            },
           );
         }
 
@@ -723,7 +764,7 @@ export function DashboardView({
               try {
                 handleFirestoreError(error, OperationType.GET, "doacoes");
               } catch (e) {}
-            }
+            },
           );
           unsubSol = onSnapshot(
             query(collection(db, "solicitacoes_doacao")),
@@ -741,9 +782,13 @@ export function DashboardView({
             (error) => {
               console.error("Error loading solicitacoes_doacao:", error);
               try {
-                handleFirestoreError(error, OperationType.GET, "solicitacoes_doacao");
+                handleFirestoreError(
+                  error,
+                  OperationType.GET,
+                  "solicitacoes_doacao",
+                );
               } catch (e) {}
-            }
+            },
           );
           unsubProLeads = onSnapshot(
             query(collection(db, "profissionais_leads")),
@@ -761,9 +806,13 @@ export function DashboardView({
             (error) => {
               console.error("Error loading profissionais_leads:", error);
               try {
-                handleFirestoreError(error, OperationType.GET, "profissionais_leads");
+                handleFirestoreError(
+                  error,
+                  OperationType.GET,
+                  "profissionais_leads",
+                );
               } catch (e) {}
-            }
+            },
           );
           unsubProAtivos = onSnapshot(
             query(collection(db, "users")),
@@ -784,7 +833,7 @@ export function DashboardView({
               try {
                 handleFirestoreError(error, OperationType.GET, "users");
               } catch (e) {}
-            }
+            },
           );
           unsubEmpresas = onSnapshot(
             query(collection(db, "empresa_leads")),
@@ -804,9 +853,8 @@ export function DashboardView({
               try {
                 handleFirestoreError(error, OperationType.GET, "empresa_leads");
               } catch (e) {}
-            }
+            },
           );
-          
         }
 
         if (hasMaster || hasTriagem) {
@@ -814,9 +862,7 @@ export function DashboardView({
             query(collection(db, "compliance")),
             (snapshot) => {
               const list: any[] = [];
-              snapshot.forEach((d) =>
-                list.push({ id: d.id, ...d.data() })
-              );
+              snapshot.forEach((d) => list.push({ id: d.id, ...d.data() }));
               list.sort(
                 (a, b) =>
                   b.createdAt?.toMillis?.() - a.createdAt?.toMillis?.() || 0,
@@ -828,7 +874,7 @@ export function DashboardView({
               try {
                 handleFirestoreError(error, OperationType.GET, "compliance");
               } catch (e) {}
-            }
+            },
           );
         }
 
@@ -1024,7 +1070,9 @@ export function DashboardView({
     // Update status
     try {
       const currentPaciente = acolhimentos.find((a) => a.id === id);
-      const notifAnterior = currentPaciente?.notificacao ? currentPaciente.notificacao + '\n\n' : '';
+      const notifAnterior = currentPaciente?.notificacao
+        ? currentPaciente.notificacao + "\n\n"
+        : "";
       const nowStr = new Date().toLocaleString("pt-BR");
       const authName = profile?.name || "Parceiro";
 
@@ -1032,7 +1080,7 @@ export function DashboardView({
       if (newStatus === "Em Atendimento" && currentRole === "profissional") {
         updates.profissionalId = user.uid;
       }
-      
+
       updates.notificacao = `${notifAnterior}[${nowStr}] Movido para "${newStatus}" por ${authName}.`;
 
       await updateDoc(doc(db, "acolhimentos", id), updates);
@@ -1057,7 +1105,9 @@ export function DashboardView({
   const [motivoDevolucaoOutro, setMotivoDevolucaoOutro] = useState("");
 
   const handleRolesChange = async (userId: string, newRoles: Role[]) => {
-    const isUserMaster = profile?.roles ? profile.roles.includes("master") : profile?.role === "master";
+    const isUserMaster = profile?.roles
+      ? profile.roles.includes("master")
+      : profile?.role === "master";
     if (!profile || !isUserMaster) return;
 
     if (newRoles.length === 0) {
@@ -1133,12 +1183,15 @@ export function DashboardView({
 
       // Auto-assign status when changing profissional
       if (property === "profissionalId") {
-        const notifAnterior = currentPaciente?.notificacao ? currentPaciente.notificacao + '\n\n' : '';
+        const notifAnterior = currentPaciente?.notificacao
+          ? currentPaciente.notificacao + "\n\n"
+          : "";
         if (value) {
           // Atribuído a alguém
           updates.status = "Em Atendimento";
           updates.atribuicaoStatus = "Pendente";
-          const profName = profissionaisAtivos.find(p => p.id === value)?.name || 'Parceiro';
+          const profName =
+            profissionaisAtivos.find((p) => p.id === value)?.name || "Parceiro";
           updates.notificacao = `${notifAnterior}[${nowStr}] Atribuído ao profissional ${profName}. Aguardando aceite.`;
         } else {
           // Desatribuído
@@ -1192,7 +1245,8 @@ export function DashboardView({
       let actualLeadId = leadIdToConvert;
       if (!actualLeadId && newProfEmail) {
         const matched = profissionaisLeads.find(
-          (l) => l.email?.toLowerCase().trim() === newProfEmail.toLowerCase().trim()
+          (l) =>
+            l.email?.toLowerCase().trim() === newProfEmail.toLowerCase().trim(),
         );
         if (matched) {
           actualLeadId = matched.id;
@@ -1202,7 +1256,9 @@ export function DashboardView({
       let leadData: any = {};
       if (actualLeadId) {
         try {
-          const leadDoc = await getDoc(doc(db, "profissionais_leads", actualLeadId));
+          const leadDoc = await getDoc(
+            doc(db, "profissionais_leads", actualLeadId),
+          );
           if (leadDoc.exists()) {
             const data = leadDoc.data();
             leadData = {
@@ -1229,7 +1285,10 @@ export function DashboardView({
             };
           }
         } catch (leadFetchErr) {
-          console.error("Erro ao obter dados do lead para migrar:", leadFetchErr);
+          console.error(
+            "Erro ao obter dados do lead para migrar:",
+            leadFetchErr,
+          );
         }
       }
 
@@ -1300,12 +1359,14 @@ export function DashboardView({
               role: newProfRole,
               statusUpdatedAt: serverTimestamp(),
             };
-            
+
             // Check lookup again in exception handler in case lead data wasn't matched earlier
             let actualLeadIdExc = leadIdToConvert;
             if (!actualLeadIdExc && newProfEmail) {
               const matched = profissionaisLeads.find(
-                (l) => l.email?.toLowerCase().trim() === newProfEmail.toLowerCase().trim()
+                (l) =>
+                  l.email?.toLowerCase().trim() ===
+                  newProfEmail.toLowerCase().trim(),
               );
               if (matched) {
                 actualLeadIdExc = matched.id;
@@ -1314,7 +1375,9 @@ export function DashboardView({
 
             if (actualLeadIdExc) {
               try {
-                const leadDoc = await getDoc(doc(db, "profissionais_leads", actualLeadIdExc));
+                const leadDoc = await getDoc(
+                  doc(db, "profissionais_leads", actualLeadIdExc),
+                );
                 if (leadDoc.exists()) {
                   const data = leadDoc.data();
                   Object.assign(existingUpdates, {
@@ -1334,18 +1397,25 @@ export function DashboardView({
                     horasDisponiveis: data.horasDisponiveis || "",
                     publicosExperiencia: data.publicosExperiencia || [],
                     publicosGosto: data.publicosGosto || [],
-                    outrosPublicosExperiencia: data.outrosPublicosExperiencia || "",
+                    outrosPublicosExperiencia:
+                      data.outrosPublicosExperiencia || "",
                     outrosPublicosGosto: data.outrosPublicosGosto || "",
                     registrosDeReunioes: data.registrosDeReunioes || "",
                     notificacao: data.notificacao || "",
                   });
                 }
               } catch (exLeadErr) {
-                console.error("Erro ao obter dados do lead para promover:", exLeadErr);
+                console.error(
+                  "Erro ao obter dados do lead para promover:",
+                  exLeadErr,
+                );
               }
             }
 
-            await updateDoc(doc(db, "users", existingUser.uid!), existingUpdates);
+            await updateDoc(
+              doc(db, "users", existingUser.uid!),
+              existingUpdates,
+            );
             if (actualLeadIdExc) {
               await deleteDoc(doc(db, "profissionais_leads", actualLeadIdExc));
               setLeadIdToConvert(null);
@@ -1376,60 +1446,89 @@ export function DashboardView({
 
   const handleReconcileExistingProfs = async () => {
     if (profissionaisAtivos.length === 0) {
-      alert("Nenhum profissional ativo cadastrado na plataforma para sincronizar.");
+      alert(
+        "Nenhum profissional ativo cadastrado na plataforma para sincronizar.",
+      );
       return;
     }
-    
+
     const confirm = window.confirm(
-      "Esta ação irá procurar por formulários de inscrição pendentes (Leads) que possuam o mesmo e-mail de profissionais ativos e preencher as informações que ainda estiverem vazias no perfil deles (como CRP, CPF, telefone, especialidade, abordagem, cidade, estado, biografia, etc.). Deseja continuar?"
+      "Esta ação irá procurar por formulários de inscrição pendentes (Leads) que possuam o mesmo e-mail de profissionais ativos e preencher as informações que ainda estiverem vazias no perfil deles (como CRP, CPF, telefone, especialidade, abordagem, cidade, estado, biografia, etc.). Deseja continuar?",
     );
     if (!confirm) return;
 
     setIsReconciling(true);
     let updatedCount = 0;
-    
+
     try {
       for (const prof of profissionaisAtivos) {
         if (!prof.email) continue;
-        
+
         // Find matching lead by email
         const matchingLead = profissionaisLeads.find(
-          (lead) => lead.email?.toLowerCase().trim() === prof.email?.toLowerCase().trim()
+          (lead) =>
+            lead.email?.toLowerCase().trim() ===
+            prof.email?.toLowerCase().trim(),
         );
-        
+
         if (matchingLead) {
           const fieldsToMerge = [
-            "telefone", "crp", "cpf", "cidade", "uf", "motivacao", "bioCurta", 
-            "instagramUrl", "linkedinUrl", "siteUrl", "abordagem", "especialidade", 
-            "anoFormacao", "horasDisponiveis", "publicosExperiencia", "publicosGosto", 
-            "outrosPublicosExperiencia", "outrosPublicosGosto", "registrosDeReunioes", 
-            "notificacao"
+            "telefone",
+            "crp",
+            "cpf",
+            "cidade",
+            "uf",
+            "motivacao",
+            "bioCurta",
+            "instagramUrl",
+            "linkedinUrl",
+            "siteUrl",
+            "abordagem",
+            "especialidade",
+            "anoFormacao",
+            "horasDisponiveis",
+            "publicosExperiencia",
+            "publicosGosto",
+            "outrosPublicosExperiencia",
+            "outrosPublicosGosto",
+            "registrosDeReunioes",
+            "notificacao",
           ];
-          
+
           const updates: any = {};
           let hasNewData = false;
-          
+
           for (const field of fieldsToMerge) {
             const leadVal = matchingLead[field];
             const profVal = prof[field];
-            
-            const isProfEmpty = profVal === undefined || profVal === null || profVal === "" || (Array.isArray(profVal) && profVal.length === 0);
-            const isLeadNotEmpty = leadVal !== undefined && leadVal !== null && leadVal !== "" && (!Array.isArray(leadVal) || leadVal.length > 0);
-            
+
+            const isProfEmpty =
+              profVal === undefined ||
+              profVal === null ||
+              profVal === "" ||
+              (Array.isArray(profVal) && profVal.length === 0);
+            const isLeadNotEmpty =
+              leadVal !== undefined &&
+              leadVal !== null &&
+              leadVal !== "" &&
+              (!Array.isArray(leadVal) || leadVal.length > 0);
+
             if (isProfEmpty && isLeadNotEmpty) {
               updates[field] = leadVal;
               hasNewData = true;
             }
           }
-          
+
           if (hasNewData) {
             await updateDoc(doc(db, "users", prof.uid!), updates);
             updatedCount++;
           }
         }
       }
-      
-      alert(`Sincronização concluída! ${updatedCount} profissional(is) atualizado(s) com dados do formulário de inscrição.`);
+
+      alert(
+        `Sincronização concluída! ${updatedCount} profissional(is) atualizado(s) com dados do formulário de inscrição.`,
+      );
     } catch (error) {
       console.error("Erro na reconciliação de dados dos profissionais:", error);
       alert("Houve um erro ao sincronizar os dados dos profissionais.");
@@ -1574,7 +1673,10 @@ export function DashboardView({
 
       // 4. Clinical/Admin Notification Log (split into individual chronolog entries)
       if (p.notificacao && p.notificacao.trim()) {
-        const blocks = p.notificacao.split(/\n+/).map((b) => b.trim()).filter(Boolean);
+        const blocks = p.notificacao
+          .split(/\n+/)
+          .map((b) => b.trim())
+          .filter(Boolean);
         blocks.forEach((block, idx) => {
           const dateMatch = block.match(/^\[(.*?)\]/);
           let dateStr = "";
@@ -1584,7 +1686,10 @@ export function DashboardView({
           if (dateMatch) {
             dateStr = dateMatch[1];
             text = block.replace(/^\[.*?\]/, "").trim();
-            calculatedTimestamp = parseLogDateToMillis(dateStr, p.updatedAt || p.createdAt);
+            calculatedTimestamp = parseLogDateToMillis(
+              dateStr,
+              p.updatedAt || p.createdAt,
+            );
           } else {
             dateStr = formatDateVal(p.updatedAt || p.createdAt);
           }
@@ -1600,7 +1705,9 @@ export function DashboardView({
           list.push({
             id: `${p.id}-notif-log-${idx}`,
             type: isSystemLog ? "system" : "alert",
-            title: isSystemLog ? "Movimentação de Sistema" : "Mensagem da Gestão",
+            title: isSystemLog
+              ? "Movimentação de Sistema"
+              : "Mensagem da Gestão",
             desc: text,
             patientName: pName,
             patientObj: p,
@@ -1613,24 +1720,63 @@ export function DashboardView({
 
     // Validate professional profile registration fields
     const missingFields: { name: string; label: string }[] = [];
-    if (!profile.photoUrl) missingFields.push({ name: "photoUrl", label: "Foto de Perfil & Divulgação" });
-    if (!profile.telefone || !profile.telefone.trim()) missingFields.push({ name: "telefone", label: "Telefone / WhatsApp Comercial" });
-    if (!profile.cpf || !profile.cpf.trim()) missingFields.push({ name: "cpf", label: "CPF" });
-    if (!profile.pixKey || !profile.pixKey.trim()) missingFields.push({ name: "pixKey", label: "Chave PIX" });
-    if (!profile.crp || !profile.crp.trim()) missingFields.push({ name: "crp", label: "CRP (Registro Profissional)" });
-    if (!profile.anoFormacao) missingFields.push({ name: "anoFormacao", label: "Ano de Formação / Graduação" });
-    if (!profile.abordagem || !profile.abordagem.trim()) missingFields.push({ name: "abordagem", label: "Abordagem Principal" });
-    if (!profile.especialidade || !profile.especialidade.trim()) missingFields.push({ name: "especialidade", label: "Especialidades" });
-    if (!profile.cidade || !profile.cidade.trim()) missingFields.push({ name: "cidade", label: "Cidade de Atendimento" });
-    if (!profile.uf || !profile.uf.trim()) missingFields.push({ name: "uf", label: "Estado (UF)" });
-    if (!profile.biografia || !profile.biografia.trim()) missingFields.push({ name: "biografia", label: "Mini-currículo & Biografia clínica" });
-    if (!profile.motivacaoProjeto || !profile.motivacaoProjeto.trim()) missingFields.push({ name: "motivacaoProjeto", label: "Motivações para o projeto" });
-    
-    const xp = Array.isArray(profile.publicosExperiencia) ? profile.publicosExperiencia : [];
-    if (xp.length === 0) missingFields.push({ name: "publicosExperiencia", label: "Experiência com Públicos" });
+    if (!profile.photoUrl)
+      missingFields.push({
+        name: "photoUrl",
+        label: "Foto de Perfil & Divulgação",
+      });
+    if (!profile.telefone || !profile.telefone.trim())
+      missingFields.push({
+        name: "telefone",
+        label: "Telefone / WhatsApp Comercial",
+      });
+    if (!profile.cpf || !profile.cpf.trim())
+      missingFields.push({ name: "cpf", label: "CPF" });
+    if (!profile.pixKey || !profile.pixKey.trim())
+      missingFields.push({ name: "pixKey", label: "Chave PIX" });
+    if (!profile.crp || !profile.crp.trim())
+      missingFields.push({ name: "crp", label: "CRP (Registro Profissional)" });
+    if (!profile.anoFormacao)
+      missingFields.push({
+        name: "anoFormacao",
+        label: "Ano de Formação / Graduação",
+      });
+    if (!profile.abordagem || !profile.abordagem.trim())
+      missingFields.push({ name: "abordagem", label: "Abordagem Principal" });
+    if (!profile.especialidade || !profile.especialidade.trim())
+      missingFields.push({ name: "especialidade", label: "Especialidades" });
+    if (!profile.cidade || !profile.cidade.trim())
+      missingFields.push({ name: "cidade", label: "Cidade de Atendimento" });
+    if (!profile.uf || !profile.uf.trim())
+      missingFields.push({ name: "uf", label: "Estado (UF)" });
+    if (!profile.biografia || !profile.biografia.trim())
+      missingFields.push({
+        name: "biografia",
+        label: "Mini-currículo & Biografia clínica",
+      });
+    if (!profile.motivacaoProjeto || !profile.motivacaoProjeto.trim())
+      missingFields.push({
+        name: "motivacaoProjeto",
+        label: "Motivações para o projeto",
+      });
 
-    const gosto = Array.isArray(profile.publicosGosto) ? profile.publicosGosto : [];
-    if (gosto.length === 0) missingFields.push({ name: "publicosGosto", label: "Afinidade de atendimento clínico" });
+    const xp = Array.isArray(profile.publicosExperiencia)
+      ? profile.publicosExperiencia
+      : [];
+    if (xp.length === 0)
+      missingFields.push({
+        name: "publicosExperiencia",
+        label: "Experiência com Públicos",
+      });
+
+    const gosto = Array.isArray(profile.publicosGosto)
+      ? profile.publicosGosto
+      : [];
+    if (gosto.length === 0)
+      missingFields.push({
+        name: "publicosGosto",
+        label: "Afinidade de atendimento clínico",
+      });
 
     if (missingFields.length > 0) {
       // 1. General alert summarizing all missing fields
@@ -1638,7 +1784,7 @@ export function DashboardView({
         id: "profile-missing-summary",
         type: "alert",
         title: "Ficha Cadastral Incompleta",
-        desc: `Sua Ficha Cadastral possui ${missingFields.length} campos pendentes de preenchimento (${missingFields.map(f => f.label).join(", ")}). Clique para regularizar no seu painel.`,
+        desc: `Sua Ficha Cadastral possui ${missingFields.length} campos pendentes de preenchimento (${missingFields.map((f) => f.label).join(", ")}). Clique para regularizar no seu painel.`,
         patientName: "Seu Cadastro",
         patientObj: { id: "profile" } as any,
         date: "Pendente",
@@ -1720,7 +1866,7 @@ export function DashboardView({
 
   const profNotifications = getProfissionalNotifications();
   const pendingProfNotificationsCount = profNotifications.filter(
-    (n) => n.type === "assignment" || n.type === "contract" || n.isProfileAlert
+    (n) => n.type === "assignment" || n.type === "contract" || n.isProfileAlert,
   ).length;
 
   const filteredDoacoes = doacoes.filter(
@@ -1766,8 +1912,14 @@ export function DashboardView({
   });
 
   useEffect(() => {
-    if ("Notification" in window && Notification.permission === "default") {
-      Notification.requestPermission();
+    try {
+      if ("Notification" in window && Notification.permission === "default") {
+        Notification.requestPermission().catch((e) => {
+          console.warn("Notification permission error:", e);
+        });
+      }
+    } catch (e) {
+      console.warn("Could not request notification permission:", e);
     }
   }, []);
 
@@ -1782,53 +1934,66 @@ export function DashboardView({
     const canNotify =
       "Notification" in window && Notification.permission === "granted";
 
+    const safeNotify = (title: string, options: NotificationOptions) => {
+      if (!canNotify) return;
+      try {
+        new window.Notification(title, options);
+      } catch (e) {
+        console.warn("Native Notification error:", e);
+        try {
+          if ("serviceWorker" in navigator) {
+            navigator.serviceWorker.getRegistration().then((reg) => {
+              if (reg) reg.showNotification(title, options);
+            });
+          }
+        } catch (swError) {
+          console.warn("ServiceWorker Notification error:", swError);
+        }
+      }
+    };
+
     if (
       prev.acolhimentos !== -1 &&
       acolhimentos.length > prev.acolhimentos &&
-      isMasterOrTriagem &&
-      canNotify
+      isMasterOrTriagem
     ) {
-      new window.Notification("Novo Acolhimento", {
+      safeNotify("Novo Acolhimento", {
         body: "Um novo paciente solicitou acolhimento na plataforma.",
       });
     }
     if (
       prev.solicitacoes !== -1 &&
       solicitacoes.length > prev.solicitacoes &&
-      isMasterOrTriagem &&
-      canNotify
+      isMasterOrTriagem
     ) {
-      new window.Notification("Apoio Solidário", {
+      safeNotify("Apoio Solidário", {
         body: "Uma nova pessoa solicitou apoio solidário.",
       });
     }
     if (
       prev.profissionaisLeads !== -1 &&
       profissionaisLeads.length > prev.profissionaisLeads &&
-      isMaster &&
-      canNotify
+      isMaster
     ) {
-      new window.Notification("Novo Profissional Parceiro", {
+      safeNotify("Novo Profissional Parceiro", {
         body: "Um profissional se cadastrou na plataforma.",
       });
     }
     if (
       prev.empresasLeads !== -1 &&
       empresasLeads.length > prev.empresasLeads &&
-      isMaster &&
-      canNotify
+      isMaster
     ) {
-      new window.Notification("Nova Empresa Parceira", {
+      safeNotify("Nova Empresa Parceira", {
         body: "Uma nova empresa se cadastrou na plataforma.",
       });
     }
     if (
       prev.meusPacientes !== -1 &&
       meusPacientes.length > prev.meusPacientes &&
-      isProf &&
-      canNotify
+      isProf
     ) {
-      new window.Notification("Novo Paciente Atribuído", {
+      safeNotify("Novo Paciente Atribuído", {
         body: "Você recebeu um novo encaminhamento de paciente para atendimento.",
       });
     }
@@ -1966,8 +2131,10 @@ export function DashboardView({
               >
                 <X className="w-5 h-5" />
               </button>
-              <h3 className="font-serif text-2xl text-forest mb-2">Quem é você?</h3>
-              
+              <h3 className="font-serif text-2xl text-forest mb-2">
+                Quem é você?
+              </h3>
+
               <button
                 onClick={() => onNavigate("profissional")}
                 className="w-full p-4 border border-soft rounded-xl text-left hover:bg-warm hover:border-sun transition-colors flex items-center gap-3"
@@ -1976,8 +2143,12 @@ export function DashboardView({
                   <UserPlus className="w-5 h-5" />
                 </div>
                 <div>
-                  <div className="font-semibold text-forest">Sou psicólogo/ Terapeuta</div>
-                  <div className="text-xs text-forest/70">Quero atender na plataforma</div>
+                  <div className="font-semibold text-forest">
+                    Sou psicólogo/ Terapeuta
+                  </div>
+                  <div className="text-xs text-forest/70">
+                    Quero atender na plataforma
+                  </div>
                 </div>
               </button>
 
@@ -1989,8 +2160,12 @@ export function DashboardView({
                   <Heart className="w-5 h-5" />
                 </div>
                 <div>
-                  <div className="font-semibold text-forest">Sou paciente e quero iniciar meu acolhimento</div>
-                  <div className="text-xs text-forest/70">Buscar um profissional</div>
+                  <div className="font-semibold text-forest">
+                    Sou paciente e quero iniciar meu acolhimento
+                  </div>
+                  <div className="text-xs text-forest/70">
+                    Buscar um profissional
+                  </div>
                 </div>
               </button>
             </div>
@@ -2255,7 +2430,7 @@ export function DashboardView({
     return 0;
   };
 
-  const profissionaisAtCapacity = profissionaisAtivos.filter(p => {
+  const profissionaisAtCapacity = profissionaisAtivos.filter((p) => {
     const profAcolhimentos = acolhimentos.filter(
       (a) =>
         a.profissionalId === p.uid &&
@@ -2284,10 +2459,12 @@ export function DashboardView({
       0,
     );
     const horasMensais = calculateHorasMensais(profAcolhimentos);
-    
-    const prof = profissionaisAtivos.find(p => p.uid === uid) || profissionaisLeads.find(p => p.id === uid);
+
+    const prof =
+      profissionaisAtivos.find((p) => p.uid === uid) ||
+      profissionaisLeads.find((p) => p.id === uid);
     const maxHoras = parseMaxHorasDisponiveis(prof?.horasDisponiveis);
-    
+
     return { ativosCount, valorTotal, horasMensais, maxHoras };
   };
 
@@ -2299,6 +2476,76 @@ export function DashboardView({
         : activeTab === "empresas" && selectedEmpresa
           ? selectedEmpresa
           : selectedCard || selectedEmpresa || selectedProfissional;
+
+  const processNotificationTemplate = (msg: string, target: any) => {
+    let processedMsg = msg;
+    if (target && (activeTab === "kanban" || target.viaAcesso)) {
+      // If target is a patient
+      const prof = profissionaisAtivos.find(
+        (p) => p.uid === target.profissionalId,
+      );
+
+      let valorMensal = "a combinar";
+      if (target.valorSessao) {
+        let cleanValor = target.valorSessao.replace("R$", "").trim();
+        const valorNum = parseFloat(
+          cleanValor.replace(/\./g, "").replace(",", "."),
+        );
+        if (!isNaN(valorNum)) {
+          let multiplicador = 4;
+          if (target.frequenciaSessoes === "Quinzenal") multiplicador = 2;
+          if (target.frequenciaSessoes === "Mensal") multiplicador = 1;
+          if (target.frequenciaSessoes === "Sob Demanda") multiplicador = 1;
+
+          valorMensal = `R$ ${(valorNum * multiplicador).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${target.valorSessao} x ${multiplicador})`;
+        }
+      }
+
+      processedMsg = processedMsg.replace(/\[NOME\]/g, target.nome || "");
+      processedMsg = processedMsg.replace(
+        /\[VALOR_SESSAO\]/g,
+        target.valorSessao || "a combinar",
+      );
+      processedMsg = processedMsg.replace(
+        /\[FREQUENCIA\]/g,
+        target.frequenciaSessoes || "Semanal",
+      );
+      processedMsg = processedMsg.replace(/\[VALOR_MENSAL\]/g, valorMensal);
+      processedMsg = processedMsg.replace(
+        /\[PROFISSIONAL_NOME\]/g,
+        prof ? prof.name || "" : "N/A",
+      );
+      processedMsg = processedMsg.replace(
+        /\[PROFISSIONAL_CRP\]/g,
+        prof ? prof.crp || "N/A" : "N/A",
+      );
+      processedMsg = processedMsg.replace(
+        /\[LINK_PERFIL_PROFISSIONAL\]/g,
+        prof ? `${window.location.origin}/?prof=${prof.uid}` : "N/A",
+      );
+      processedMsg = processedMsg.replace(
+        /\[LINK_CONTRATO\]/g,
+        `${window.location.origin}/?contrato=${target.id}`,
+      );
+      processedMsg = processedMsg.replace(
+        /\[LINK_PROPOSTA\]/g,
+        `${window.location.origin}/?proposta=${target.id}`,
+      );
+    } else if (target && target.crp) {
+      // If target is professional
+      processedMsg = processedMsg.replace(/\[NOME\]/g, target.name || "");
+    } else if (target && target.nomeEmpresa) {
+      // If target is company
+      processedMsg = processedMsg.replace(
+        /\[NOME\]/g,
+        target.nomeEmpresa || "",
+      );
+    } else if (target && target.nome) {
+      // Fallback
+      processedMsg = processedMsg.replace(/\[NOME\]/g, target.nome || "");
+    }
+    return processedMsg;
+  };
 
   return (
     <div className="h-screen flex flex-col bg-warm overflow-hidden">
@@ -2383,7 +2630,8 @@ export function DashboardView({
               className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "profissionais" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
             >
               Profissionais
-              {(pendingProfissionaisCount > 0 || profissionaisAtCapacity.length > 0) && (
+              {(pendingProfissionaisCount > 0 ||
+                profissionaisAtCapacity.length > 0) && (
                 <div className="flex items-center gap-1 ml-1">
                   {pendingProfissionaisCount > 0 && (
                     <span className="bg-red-500 text-white text-[10px] w-4 h-4 flex items-center justify-center rounded-full font-bold">
@@ -2391,7 +2639,9 @@ export function DashboardView({
                     </span>
                   )}
                   {profissionaisAtCapacity.length > 0 && (
-                    <span title={`${profissionaisAtCapacity.length} profissional(is) no limite de horas`}>
+                    <span
+                      title={`${profissionaisAtCapacity.length} profissional(is) no limite de horas`}
+                    >
                       <ShieldAlert className="w-4 h-4 text-red-500" />
                     </span>
                   )}
@@ -2416,9 +2666,14 @@ export function DashboardView({
                   className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "compliance" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
                 >
                   Compliance
-                  {complianceMessages.filter((m) => m.status === "Pendente").length > 0 && (
+                  {complianceMessages.filter((m) => m.status === "Pendente")
+                    .length > 0 && (
                     <span className="bg-red-500 text-white text-[10px] w-4 h-4 flex items-center justify-center rounded-full font-bold ml-1">
-                      {complianceMessages.filter((m) => m.status === "Pendente").length}
+                      {
+                        complianceMessages.filter(
+                          (m) => m.status === "Pendente",
+                        ).length
+                      }
                     </span>
                   )}
                 </button>
@@ -2522,7 +2777,11 @@ export function DashboardView({
                       : "text-forest/60 hover:text-forest"
                   }`}
                 >
-                  {r === "master" ? "Master" : r === "triagem" ? "Triagem" : "Psicólogo"}
+                  {r === "master"
+                    ? "Master"
+                    : r === "triagem"
+                      ? "Triagem"
+                      : "Psicólogo"}
                 </button>
               ))}
             </div>
@@ -2681,7 +2940,14 @@ export function DashboardView({
                   </div>
                 </div>
                 <div className="text-4xl font-bold text-emerald-700">
-                  {calculateHorasMensais(acolhimentos.filter(a => a.status === "Em Atendimento" && a.atribuicaoStatus === "Aceito"))}h
+                  {calculateHorasMensais(
+                    acolhimentos.filter(
+                      (a) =>
+                        a.status === "Em Atendimento" &&
+                        a.atribuicaoStatus === "Aceito",
+                    ),
+                  )}
+                  h
                 </div>
                 <div className="flex gap-4 border-t border-soft pt-4 mt-2">
                   <div className="flex flex-col">
@@ -2689,7 +2955,13 @@ export function DashboardView({
                       Em Atendimento Regular
                     </span>
                     <span className="text-lg font-semibold text-forest">
-                      {acolhimentos.filter((a) => a.status === "Em Atendimento" && a.atribuicaoStatus === "Aceito").length}
+                      {
+                        acolhimentos.filter(
+                          (a) =>
+                            a.status === "Em Atendimento" &&
+                            a.atribuicaoStatus === "Aceito",
+                        ).length
+                      }
                     </span>
                   </div>
                 </div>
@@ -2769,7 +3041,9 @@ export function DashboardView({
                       Faixas de Valor de Sessão
                     </h4>
                     <p className="text-xs text-forest/70 mb-4">
-                      Defina até 5 opções de valores de sessão que a triagem poderá selecionar ao apresentar uma proposta para o paciente.
+                      Defina até 5 opções de valores de sessão que a triagem
+                      poderá selecionar ao apresentar uma proposta para o
+                      paciente.
                     </p>
                     <div className="flex flex-col gap-3">
                       {[0, 1, 2, 3, 4].map((index) => (
@@ -2782,9 +3056,20 @@ export function DashboardView({
                             placeholder={`Ex: R$ ${(index + 1) * 30},00`}
                             value={globalConfigs.faixasValores?.[index] || ""}
                             onChange={(e) => {
-                              const newFaixas = [...(globalConfigs.faixasValores || ["", "", "", "", ""])];
+                              const newFaixas = [
+                                ...(globalConfigs.faixasValores || [
+                                  "",
+                                  "",
+                                  "",
+                                  "",
+                                  "",
+                                ]),
+                              ];
                               newFaixas[index] = e.target.value;
-                              handleUpdateConfiguracoesProperty("faixasValores", newFaixas);
+                              handleUpdateConfiguracoesProperty(
+                                "faixasValores",
+                                newFaixas,
+                              );
                             }}
                           />
                         </div>
@@ -3018,7 +3303,14 @@ export function DashboardView({
                   </div>
                 </div>
                 <div className="text-4xl font-bold text-forest">
-                  {calculateHorasMensais(meusPacientes.filter(p => p.status === "Em Atendimento" && p.atribuicaoStatus === "Aceito"))}h
+                  {calculateHorasMensais(
+                    meusPacientes.filter(
+                      (p) =>
+                        p.status === "Em Atendimento" &&
+                        p.atribuicaoStatus === "Aceito",
+                    ),
+                  )}
+                  h
                 </div>
                 <div className="flex gap-4 border-t border-soft pt-4 mt-2">
                   <div className="flex flex-col">
@@ -3089,37 +3381,50 @@ export function DashboardView({
                       <div className="bg-warm/25 rounded-2xl border border-soft/50 p-4 flex flex-col gap-2.5 text-xs text-forest/85">
                         <div className="flex items-center justify-between py-1 border-b border-soft/30">
                           <span className="text-forest/50 font-medium flex items-center gap-1.5">
-                            <Calendar className="w-3.5 h-3.5 text-forest/40" /> Entrada:
+                            <Calendar className="w-3.5 h-3.5 text-forest/40" />{" "}
+                            Entrada:
                           </span>
-                          <span className="font-semibold text-forest/90">{entryDate}</span>
+                          <span className="font-semibold text-forest/90">
+                            {entryDate}
+                          </span>
                         </div>
 
                         <div className="flex items-center justify-between py-1 border-b border-soft/30">
                           <span className="text-forest/50 font-medium flex items-center gap-1.5">
-                            <User className="w-3.5 h-3.5 text-forest/40" /> Idade:
+                            <User className="w-3.5 h-3.5 text-forest/40" />{" "}
+                            Idade:
                           </span>
-                          <span className="font-semibold text-forest/90">{p.idade || "Não informada"}</span>
+                          <span className="font-semibold text-forest/90">
+                            {p.idade || "Não informada"}
+                          </span>
                         </div>
 
                         <div className="flex items-center justify-between py-1 border-b border-soft/30">
                           <span className="text-forest/50 font-medium flex items-center gap-1.5">
-                            <Circle className="w-3.5 h-3.5 text-forest/40" /> Gênero:
+                            <Circle className="w-3.5 h-3.5 text-forest/40" />{" "}
+                            Gênero:
                           </span>
-                          <span className="font-semibold text-forest/90">{p.identidadeGenero || "Não informado"}</span>
+                          <span className="font-semibold text-forest/90">
+                            {p.identidadeGenero || "Não informado"}
+                          </span>
                         </div>
 
                         {p.telefone && (
                           <div className="flex items-center justify-between py-1 border-b border-soft/30">
                             <span className="text-forest/50 font-medium flex items-center gap-1.5">
-                              <Phone className="w-3.5 h-3.5 text-forest/40" /> Telefone:
+                              <Phone className="w-3.5 h-3.5 text-forest/40" />{" "}
+                              Telefone:
                             </span>
-                            <span className="font-semibold text-forest/90">{p.telefone}</span>
+                            <span className="font-semibold text-forest/90">
+                              {p.telefone}
+                            </span>
                           </div>
                         )}
 
                         <div className="flex items-center justify-between py-1">
                           <span className="text-forest/50 font-medium flex items-center gap-1.5">
-                            <CheckCircle2 className="w-3.5 h-3.5 text-forest/40" /> Progresso:
+                            <CheckCircle2 className="w-3.5 h-3.5 text-forest/40" />{" "}
+                            Progresso:
                           </span>
                           <span className="font-semibold text-forest/70 bg-white/60 px-2 py-0.5 rounded border border-soft/40 text-[10px]">
                             {p.status}
@@ -3143,17 +3448,23 @@ export function DashboardView({
                           {p.valorSessao && (
                             <div className="flex items-center justify-between font-bold">
                               <span className="flex items-center gap-1.5">
-                                <DollarSign className="w-4 h-4 text-emerald-600" /> Valor Acertado:
+                                <DollarSign className="w-4 h-4 text-emerald-600" />{" "}
+                                Valor Acertado:
                               </span>
-                              <span className="text-sm">R$ {p.valorSessao}</span>
+                              <span className="text-sm">
+                                R$ {p.valorSessao}
+                              </span>
                             </div>
                           )}
                           {p.frequenciaSessoes && (
                             <div className="flex items-center justify-between">
                               <span className="flex items-center gap-1.5 font-semibold text-emerald-600/80">
-                                <Calendar className="w-4 h-4 text-emerald-600/70" /> Frequência:
+                                <Calendar className="w-4 h-4 text-emerald-600/70" />{" "}
+                                Frequência:
                               </span>
-                              <span className="font-semibold text-emerald-800">{p.frequenciaSessoes}</span>
+                              <span className="font-semibold text-emerald-800">
+                                {p.frequenciaSessoes}
+                              </span>
                             </div>
                           )}
                         </div>
@@ -3177,7 +3488,6 @@ export function DashboardView({
         activeTab === "tarefasProfissional" ? (
         <div className="flex-1 overflow-auto p-6 md:p-8 flex flex-col gap-8 slide-up">
           <div className="max-w-7xl w-full mx-auto flex flex-col gap-8">
-            
             {/* Header section with totalizers */}
             <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
               <div>
@@ -3185,7 +3495,8 @@ export function DashboardView({
                   Alertas e Pendências
                 </h2>
                 <p className="text-xs text-forest/70 mt-1">
-                  Planilha de monitoramento de vínculos, pendências de contratos, pareceres de triagem e comunicações da coordenação.
+                  Planilha de monitoramento de vínculos, pendências de
+                  contratos, pareceres de triagem e comunicações da coordenação.
                 </p>
               </div>
 
@@ -3193,7 +3504,10 @@ export function DashboardView({
               <div className="flex items-center gap-3 bg-white p-3 rounded-2xl border border-soft shadow-xs shrink-0 text-xs">
                 <div className="px-3 py-1 bg-amber-50 text-amber-700 border border-amber-100 rounded-lg text-center">
                   <span className="block font-bold text-sm">
-                    {profNotifications.filter((n) => n.type === "assignment").length}
+                    {
+                      profNotifications.filter((n) => n.type === "assignment")
+                        .length
+                    }
                   </span>
                   <span>Novos Recebidos</span>
                 </div>
@@ -3207,7 +3521,10 @@ export function DashboardView({
                 <div className="h-8 w-px bg-soft"></div>
                 <div className="px-3 py-1 bg-blue-50 text-blue-700 border border-blue-100 rounded-lg text-center">
                   <span className="block font-bold text-sm">
-                    {profNotifications.filter((n) => n.type === "contract").length}
+                    {
+                      profNotifications.filter((n) => n.type === "contract")
+                        .length
+                    }
                   </span>
                   <span>Faltam Contratos</span>
                 </div>
@@ -3216,10 +3533,8 @@ export function DashboardView({
 
             {/* Main Spreadsheet Control Engine */}
             <div className="bg-white border border-soft rounded-[2rem] shadow-sm overflow-hidden flex flex-col">
-              
               {/* Filter controls table bar */}
               <div className="p-5 border-b border-soft bg-warm/30 flex flex-col lg:flex-row items-center justify-between gap-4">
-                
                 {/* Spreadsheet category pills */}
                 <div className="flex flex-wrap items-center gap-1.5 self-start lg:self-center">
                   {[
@@ -3227,29 +3542,33 @@ export function DashboardView({
                     { id: "assignment", name: "Novos Pacientes" },
                     { id: "alert", name: "Alertas da Gestão" },
                     { id: "system", name: "Movimentações" },
-                    { id: "contract", name: "Contratos" }
+                    { id: "contract", name: "Contratos" },
                   ].map((tab) => {
-                    const count = tab.id === "all" 
-                      ? profNotifications.length 
-                      : profNotifications.filter(n => n.type === tab.id).length;
+                    const count =
+                      tab.id === "all"
+                        ? profNotifications.length
+                        : profNotifications.filter((n) => n.type === tab.id)
+                            .length;
                     const isActive = msgFilterTab === tab.id;
                     return (
                       <button
                         key={tab.id}
                         onClick={() => setMsgFilterTab(tab.id as any)}
                         className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all flex items-center gap-1.5 ${
-                          isActive 
-                            ? "bg-forest text-white shadow-xs" 
+                          isActive
+                            ? "bg-forest text-white shadow-xs"
                             : "bg-white text-forest/70 hover:text-forest hover:bg-white/80 border border-soft"
                         }`}
                       >
                         {tab.name}
                         {count > 0 && (
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
-                            isActive 
-                              ? "bg-red-500 text-white shadow-xs" 
-                              : "bg-red-100 text-red-700 border border-red-200"
-                          }`}>
+                          <span
+                            className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
+                              isActive
+                                ? "bg-red-500 text-white shadow-xs"
+                                : "bg-red-100 text-red-700 border border-red-200"
+                            }`}
+                          >
                             {count}
                           </span>
                         )}
@@ -3283,7 +3602,8 @@ export function DashboardView({
               <div className="overflow-x-auto">
                 {(() => {
                   const filteredMsgList = profNotifications.filter((notif) => {
-                    if (msgFilterTab !== "all" && notif.type !== msgFilterTab) return false;
+                    if (msgFilterTab !== "all" && notif.type !== msgFilterTab)
+                      return false;
                     if (msgSearchQuery.trim()) {
                       const q = msgSearchQuery.toLowerCase();
                       return (
@@ -3300,8 +3620,12 @@ export function DashboardView({
                     return (
                       <div className="text-center py-20 px-4 bg-white text-forest/60">
                         <span className="block text-3xl mb-3">📂</span>
-                        <p className="text-sm font-semibold">Nenhum registro encontrado na planilha</p>
-                        <p className="text-xs text-forest/40 mt-1">Tente ajustar a busca ou os filtros de categoria.</p>
+                        <p className="text-sm font-semibold">
+                          Nenhum registro encontrado na planilha
+                        </p>
+                        <p className="text-xs text-forest/40 mt-1">
+                          Tente ajustar a busca ou os filtros de categoria.
+                        </p>
                       </div>
                     );
                   }
@@ -3310,22 +3634,31 @@ export function DashboardView({
                     <table className="w-full text-left border-collapse min-w-[800px]">
                       <thead>
                         <tr className="bg-warm/10 border-b border-soft text-[10px] md:text-xs uppercase tracking-wider text-forest/50 font-semibold select-none">
-                          <th className="py-4 px-6 font-medium">Data / Registro</th>
-                          <th className="py-4 px-6 font-medium">Paciente Relacionado</th>
+                          <th className="py-4 px-6 font-medium">
+                            Data / Registro
+                          </th>
+                          <th className="py-4 px-6 font-medium">
+                            Paciente Relacionado
+                          </th>
                           <th className="py-4 px-6 font-medium">Categoria</th>
-                          <th className="py-4 px-6 font-medium">Histórico / Movimentação</th>
-                          <th className="py-4 px-6 font-medium text-right">Ações</th>
+                          <th className="py-4 px-6 font-medium">
+                            Histórico / Movimentação
+                          </th>
+                          <th className="py-4 px-6 font-medium text-right">
+                            Ações
+                          </th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-soft text-xs">
                         {filteredMsgList.map((notif) => {
-                          const isPendingAssignment = 
-                            notif.type === "assignment" && 
-                            (!notif.patientObj.atribuicaoStatus || notif.patientObj.atribuicaoStatus === "Pendente");
+                          const isPendingAssignment =
+                            notif.type === "assignment" &&
+                            (!notif.patientObj.atribuicaoStatus ||
+                              notif.patientObj.atribuicaoStatus === "Pendente");
 
                           return (
-                            <tr 
-                              key={notif.id} 
+                            <tr
+                              key={notif.id}
                               className={`hover:bg-[#FDFBF7] transition-colors ${
                                 isPendingAssignment ? "bg-amber-50/20" : ""
                               }`}
@@ -3357,7 +3690,11 @@ export function DashboardView({
                                       }
                                     }}
                                     className="font-semibold text-forest hover:underline text-left truncate max-w-[180px]"
-                                    title={notif.isProfileAlert ? "Completar no meu perfil" : "Ver ficha clínica completa"}
+                                    title={
+                                      notif.isProfileAlert
+                                        ? "Completar no meu perfil"
+                                        : "Ver ficha clínica completa"
+                                    }
                                   >
                                     {notif.patientName}
                                   </button>
@@ -3407,25 +3744,40 @@ export function DashboardView({
                                     }}
                                     className="px-3 py-1 bg-sun-dark hover:bg-sun-dark/85 text-forest text-[11px] font-bold rounded-lg border border-soft transition-colors inline-flex items-center gap-1 shadow-xs"
                                   >
-                                    <User className="w-3.5 h-3.5 text-forest/70" /> Completar Cadastro
+                                    <User className="w-3.5 h-3.5 text-forest/70" />{" "}
+                                    Completar Cadastro
                                   </button>
                                 ) : isPendingAssignment ? (
                                   <div className="flex items-center justify-end gap-1.5">
                                     <button
                                       onClick={async () => {
-                                        const notifAnterior = notif.patientObj.notificacao ? notif.patientObj.notificacao + '\n\n' : '';
-                                        const nowStr = new Date().toLocaleString("pt-BR");
-                                        const authName = profile?.name || "Parceiro";
+                                        const notifAnterior = notif.patientObj
+                                          .notificacao
+                                          ? notif.patientObj.notificacao +
+                                            "\n\n"
+                                          : "";
+                                        const nowStr =
+                                          new Date().toLocaleString("pt-BR");
+                                        const authName =
+                                          profile?.name || "Parceiro";
                                         const updates = {
                                           atribuicaoStatus: "Aceito",
                                           notificacao: `${notifAnterior}[${nowStr}] Encaminhamento ACEITO pelo profissional ${authName} via planilha de tarefas.`,
                                         };
-                                        await updateDoc(doc(db, "acolhimentos", notif.patientObj.id), updates);
+                                        await updateDoc(
+                                          doc(
+                                            db,
+                                            "acolhimentos",
+                                            notif.patientObj.id,
+                                          ),
+                                          updates,
+                                        );
                                       }}
                                       className="px-2.5 py-1 bg-[#34A853] hover:bg-[#2e9449] text-white rounded-lg text-[10px] font-bold uppercase transition-colors flex items-center gap-1 shadow-xs"
                                       title="Aceitar paciente imediatamente"
                                     >
-                                      <CheckCircle2 className="w-3.5 h-3.5" /> Aceitar
+                                      <CheckCircle2 className="w-3.5 h-3.5" />{" "}
+                                      Aceitar
                                     </button>
                                     <button
                                       onClick={() => {
@@ -3449,7 +3801,8 @@ export function DashboardView({
                                     }}
                                     className="px-3 py-1 bg-warm hover:bg-soft text-forest text-[11px] font-bold rounded-lg border border-soft transition-colors inline-flex items-center gap-1"
                                   >
-                                    <FileText className="w-3.5 h-3.5 text-forest/70" /> Ver Paciente
+                                    <FileText className="w-3.5 h-3.5 text-forest/70" />{" "}
+                                    Ver Paciente
                                   </button>
                                 )}
                               </td>
@@ -3474,7 +3827,8 @@ export function DashboardView({
                     Central de Suporte
                   </h3>
                   <p className="text-sm text-white/80 max-w-sm">
-                    Precisa de ajuda com a plataforma, dúvidas contratuais ou suporte clínico? Estamos aqui para apoiar você.
+                    Precisa de ajuda com a plataforma, dúvidas contratuais ou
+                    suporte clínico? Estamos aqui para apoiar você.
                   </p>
                 </div>
               </div>
@@ -3586,7 +3940,9 @@ export function DashboardView({
               {/* SECTION 1: Dados Pessoais e de Contato */}
               <div className="space-y-6">
                 <h3 className="font-serif text-xl text-forest pb-2 border-b border-soft flex items-center gap-2">
-                  <span className="w-6 h-6 rounded-full bg-forest/10 text-forest text-xs flex items-center justify-center font-bold">1</span>
+                  <span className="w-6 h-6 rounded-full bg-forest/10 text-forest text-xs flex items-center justify-center font-bold">
+                    1
+                  </span>
                   Dados Básicos e Contatos Comerciais
                 </h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
@@ -3597,9 +3953,7 @@ export function DashboardView({
                     <DebouncedInput
                       type="text"
                       value={profile.name || ""}
-                      onChange={(val) =>
-                        setProfile({ ...profile, name: val })
-                      }
+                      onChange={(val) => setProfile({ ...profile, name: val })}
                       className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors text-sm text-forest"
                     />
                   </div>
@@ -3636,9 +3990,7 @@ export function DashboardView({
                       type="text"
                       value={profile.cpf || ""}
                       placeholder="Ex: 000.000.000-00"
-                      onChange={(val) =>
-                        setProfile({ ...profile, cpf: val })
-                      }
+                      onChange={(val) => setProfile({ ...profile, cpf: val })}
                       className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors text-sm text-forest"
                     />
                   </div>
@@ -3664,9 +4016,7 @@ export function DashboardView({
                       type="text"
                       value={profile.crp || ""}
                       placeholder="Ex: 06/123456"
-                      onChange={(val) =>
-                        setProfile({ ...profile, crp: val })
-                      }
+                      onChange={(val) => setProfile({ ...profile, crp: val })}
                       className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors text-sm text-forest"
                     />
                   </div>
@@ -3676,7 +4026,9 @@ export function DashboardView({
               {/* SECTION 2: Formação e Especialidades */}
               <div className="space-y-6 pt-4">
                 <h3 className="font-serif text-xl text-forest pb-2 border-b border-soft flex items-center gap-2">
-                  <span className="w-6 h-6 rounded-full bg-forest/10 text-forest text-xs flex items-center justify-center font-bold">2</span>
+                  <span className="w-6 h-6 rounded-full bg-forest/10 text-forest text-xs flex items-center justify-center font-bold">
+                    2
+                  </span>
                   Formação Acadêmica & Prática Clínica
                 </h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
@@ -3729,15 +4081,22 @@ export function DashboardView({
                     <select
                       value={profile.horasDisponiveis || "1 a 3 horas/mês"}
                       onChange={(e) =>
-                        setProfile({ ...profile, horasDisponiveis: e.target.value })
+                        setProfile({
+                          ...profile,
+                          horasDisponiveis: e.target.value,
+                        })
                       }
                       className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark cursor-pointer text-sm text-forest"
                     >
                       <option value="1 a 3 horas/mês">1 a 3 horas/mês</option>
                       <option value="4 a 8 horas/mês">4 a 8 horas/mês</option>
                       <option value="9 a 15 horas/mês">9 a 15 horas/mês</option>
-                      <option value="16 a 20 horas/mês">16 a 20 horas/mês</option>
-                      <option value="Mais de 20 horas/mês">Mais de 20 horas/mês</option>
+                      <option value="16 a 20 horas/mês">
+                        16 a 20 horas/mês
+                      </option>
+                      <option value="Mais de 20 horas/mês">
+                        Mais de 20 horas/mês
+                      </option>
                     </select>
                   </div>
                   <div>
@@ -3775,32 +4134,55 @@ export function DashboardView({
               {/* SECTION 3: Público-Alvo e Preferências (Múltipla escolha) */}
               <div className="space-y-6 pt-4">
                 <h3 className="font-serif text-xl text-forest pb-2 border-b border-soft flex items-center gap-2">
-                  <span className="w-6 h-6 rounded-full bg-forest/10 text-forest text-xs flex items-center justify-center font-bold">3</span>
+                  <span className="w-6 h-6 rounded-full bg-forest/10 text-forest text-xs flex items-center justify-center font-bold">
+                    3
+                  </span>
                   Público-Alvo & Especialidade em Idades/Dinâmicas
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                   {/* Experiência com público */}
                   <div className="flex flex-col gap-3 bg-warm/30 p-5 rounded-2xl border border-soft/60">
                     <label className="text-xs font-bold uppercase tracking-wider text-forest/80 leading-relaxed">
-                      Experiência de no mínimo um ano com atendimento clínico de:
+                      Experiência de no mínimo um ano com atendimento clínico
+                      de:
                     </label>
                     <div className="grid grid-cols-2 gap-2 mt-1">
-                      {['Adulto', 'Idoso', 'Criança', 'Adolescente', 'Casal', 'Família', 'Outros'].map(op => {
-                        const current = Array.isArray(profile.publicosExperiencia) ? profile.publicosExperiencia : [];
+                      {[
+                        "Adulto",
+                        "Idoso",
+                        "Criança",
+                        "Adolescente",
+                        "Casal",
+                        "Família",
+                        "Outros",
+                      ].map((op) => {
+                        const current = Array.isArray(
+                          profile.publicosExperiencia,
+                        )
+                          ? profile.publicosExperiencia
+                          : [];
                         const isChecked = current.includes(op);
                         return (
-                          <label key={`chk-exp-${op}`} className="flex items-center gap-2 text-sm text-forest cursor-pointer select-none">
+                          <label
+                            key={`chk-exp-${op}`}
+                            className="flex items-center gap-2 text-sm text-forest cursor-pointer select-none"
+                          >
                             <input
                               type="checkbox"
                               checked={isChecked}
                               onChange={() => {
                                 let next: string[];
                                 if (isChecked) {
-                                  next = current.filter((v: string) => v !== op);
+                                  next = current.filter(
+                                    (v: string) => v !== op,
+                                  );
                                 } else {
                                   next = [...current, op];
                                 }
-                                setProfile({ ...profile, publicosExperiencia: next });
+                                setProfile({
+                                  ...profile,
+                                  publicosExperiencia: next,
+                                });
                               }}
                               className="accent-forest rounded border-soft w-4 h-4 cursor-pointer"
                             />
@@ -3809,15 +4191,21 @@ export function DashboardView({
                         );
                       })}
                     </div>
-                    {Array.isArray(profile.publicosExperiencia) && profile.publicosExperiencia.includes('Outros') && (
-                      <DebouncedInput
-                        type="text"
-                        placeholder="Especifique outros públicos de experiência"
-                        value={profile.outrosPublicosExperiencia || ""}
-                        onChange={(val) => setProfile({ ...profile, outrosPublicosExperiencia: val })}
-                        className="w-full mt-2 px-3 py-2 bg-white border border-soft rounded-lg text-xs focus:outline-none focus:border-sun-dark"
-                      />
-                    )}
+                    {Array.isArray(profile.publicosExperiencia) &&
+                      profile.publicosExperiencia.includes("Outros") && (
+                        <DebouncedInput
+                          type="text"
+                          placeholder="Especifique outros públicos de experiência"
+                          value={profile.outrosPublicosExperiencia || ""}
+                          onChange={(val) =>
+                            setProfile({
+                              ...profile,
+                              outrosPublicosExperiencia: val,
+                            })
+                          }
+                          className="w-full mt-2 px-3 py-2 bg-white border border-soft rounded-lg text-xs focus:outline-none focus:border-sun-dark"
+                        />
+                      )}
                   </div>
 
                   {/* Preferência de atendimento */}
@@ -3826,18 +4214,33 @@ export function DashboardView({
                       Tem maior afinidade / gosto em atender:
                     </label>
                     <div className="grid grid-cols-2 gap-2 mt-1">
-                      {['Adulto', 'Idoso', 'Criança', 'Adolescente', 'Casal', 'Família', 'Outros'].map(op => {
-                        const current = Array.isArray(profile.publicosGosto) ? profile.publicosGosto : [];
+                      {[
+                        "Adulto",
+                        "Idoso",
+                        "Criança",
+                        "Adolescente",
+                        "Casal",
+                        "Família",
+                        "Outros",
+                      ].map((op) => {
+                        const current = Array.isArray(profile.publicosGosto)
+                          ? profile.publicosGosto
+                          : [];
                         const isChecked = current.includes(op);
                         return (
-                          <label key={`chk-gosto-${op}`} className="flex items-center gap-2 text-sm text-forest cursor-pointer select-none">
+                          <label
+                            key={`chk-gosto-${op}`}
+                            className="flex items-center gap-2 text-sm text-forest cursor-pointer select-none"
+                          >
                             <input
                               type="checkbox"
                               checked={isChecked}
                               onChange={() => {
                                 let next: string[];
                                 if (isChecked) {
-                                  next = current.filter((v: string) => v !== op);
+                                  next = current.filter(
+                                    (v: string) => v !== op,
+                                  );
                                 } else {
                                   next = [...current, op];
                                 }
@@ -3850,15 +4253,18 @@ export function DashboardView({
                         );
                       })}
                     </div>
-                    {Array.isArray(profile.publicosGosto) && profile.publicosGosto.includes('Outros') && (
-                      <DebouncedInput
-                        type="text"
-                        placeholder="Especifique outros públicos de afinidade"
-                        value={profile.outrosPublicosGosto || ""}
-                        onChange={(val) => setProfile({ ...profile, outrosPublicosGosto: val })}
-                        className="w-full mt-2 px-3 py-2 bg-white border border-soft rounded-lg text-xs focus:outline-none focus:border-sun-dark"
-                      />
-                    )}
+                    {Array.isArray(profile.publicosGosto) &&
+                      profile.publicosGosto.includes("Outros") && (
+                        <DebouncedInput
+                          type="text"
+                          placeholder="Especifique outros públicos de afinidade"
+                          value={profile.outrosPublicosGosto || ""}
+                          onChange={(val) =>
+                            setProfile({ ...profile, outrosPublicosGosto: val })
+                          }
+                          className="w-full mt-2 px-3 py-2 bg-white border border-soft rounded-lg text-xs focus:outline-none focus:border-sun-dark"
+                        />
+                      )}
                   </div>
                 </div>
               </div>
@@ -3866,16 +4272,19 @@ export function DashboardView({
               {/* SECTION 4: Biografia e Motivação */}
               <div className="space-y-6 pt-4 border-t border-soft">
                 <h3 className="font-serif text-xl text-forest pb-2 border-b border-soft flex items-center gap-2">
-                  <span className="w-6 h-6 rounded-full bg-forest/10 text-forest text-xs flex items-center justify-center font-bold">4</span>
+                  <span className="w-6 h-6 rounded-full bg-forest/10 text-forest text-xs flex items-center justify-center font-bold">
+                    4
+                  </span>
                   Apresentação, Biografia & Propósito do Voluntariado
                 </h3>
-                
+
                 <div className="flex flex-col gap-2">
                   <label className="text-xs uppercase font-bold tracking-wider text-forest/60">
                     Mini-currículo & Biografia clínica pública
                   </label>
                   <p className="text-[11px] text-forest/50 -mt-1 leading-relaxed">
-                    Este texto será visível em sua página de apresentação externa para pacientes interessados na rede.
+                    Este texto será visível em sua página de apresentação
+                    externa para pacientes interessados na rede.
                   </p>
                   <DebouncedTextArea
                     value={profile.biografia || ""}
@@ -3889,7 +4298,8 @@ export function DashboardView({
 
                 <div className="flex flex-col gap-2 pt-2">
                   <label className="text-xs uppercase font-bold tracking-wider text-forest/60">
-                    Porque faço parte desse projeto? (Minhas motivações associadas)
+                    Porque faço parte desse projeto? (Minhas motivações
+                    associadas)
                   </label>
                   <DebouncedTextArea
                     value={profile.motivacaoProjeto || ""}
@@ -3924,7 +4334,8 @@ export function DashboardView({
                       abordagem: profile.abordagem || "",
                       publicosExperiencia: profile.publicosExperiencia || [],
                       publicosGosto: profile.publicosGosto || [],
-                      outrosPublicosExperiencia: profile.outrosPublicosExperiencia || "",
+                      outrosPublicosExperiencia:
+                        profile.outrosPublicosExperiencia || "",
                       outrosPublicosGosto: profile.outrosPublicosGosto || "",
                     })
                   }
@@ -3987,36 +4398,53 @@ export function DashboardView({
               </button>
             </div>
           </div>
-          
+
           {triagemViewMode === "table" ? (
             <div className="flex-1 overflow-auto p-6">
               <div className="bg-white border border-soft rounded-2xl shadow-sm overflow-hidden">
                 <table className="w-full text-left text-sm">
                   <thead className="bg-warm/50 border-b border-soft">
                     <tr>
-                      <th className="px-4 py-3 font-semibold text-forest/70">Nome</th>
-                      <th className="px-4 py-3 font-semibold text-forest/70">Contato</th>
-                      <th className="px-4 py-3 font-semibold text-forest/70">Idade</th>
-                      <th className="px-4 py-3 font-semibold text-forest/70">Status</th>
-                      <th className="px-4 py-3 font-semibold text-forest/70">Data de Cadastro</th>
+                      <th className="px-4 py-3 font-semibold text-forest/70">
+                        Nome
+                      </th>
+                      <th className="px-4 py-3 font-semibold text-forest/70">
+                        Contato
+                      </th>
+                      <th className="px-4 py-3 font-semibold text-forest/70">
+                        Idade
+                      </th>
+                      <th className="px-4 py-3 font-semibold text-forest/70">
+                        Status
+                      </th>
+                      <th className="px-4 py-3 font-semibold text-forest/70">
+                        Data de Cadastro
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
                     {[...filteredAcolhimentos]
                       .filter((a) =>
                         activeTab === "kanban"
-                          ? visibleColumns.some((c) => c.id === (a.status || "Aguardando Avaliação"))
-                          : (!a.status || a.status !== "Aguardando Avaliação")
+                          ? visibleColumns.some(
+                              (c) =>
+                                c.id === (a.status || "Aguardando Avaliação"),
+                            )
+                          : !a.status || a.status !== "Aguardando Avaliação",
                       )
                       .sort((a, b) => {
-                         const nomeA = a.nomeDesejado || a.nomeCivil || a.nome || "";
-                         const nomeB = b.nomeDesejado || b.nomeCivil || b.nome || "";
-                         return nomeA.localeCompare(nomeB);
+                        const nomeA =
+                          a.nomeDesejado || a.nomeCivil || a.nome || "";
+                        const nomeB =
+                          b.nomeDesejado || b.nomeCivil || b.nome || "";
+                        return nomeA.localeCompare(nomeB);
                       })
                       .map((p) => {
-                         const rawStatus = p.status || "Aguardando Avaliação";
-                         const displayStatus = p.atribuicaoStatus ? `${rawStatus} (${p.atribuicaoStatus})` : rawStatus;
-                         return (
+                        const rawStatus = p.status || "Aguardando Avaliação";
+                        const displayStatus = p.atribuicaoStatus
+                          ? `${rawStatus} (${p.atribuicaoStatus})`
+                          : rawStatus;
+                        return (
                           <tr
                             key={p.id}
                             onClick={() => setSelectedCard(p)}
@@ -4024,11 +4452,16 @@ export function DashboardView({
                           >
                             <td className="px-4 py-3">
                               <div className="font-semibold text-forest capitalize">
-                                {(p.nomeDesejado || p.nomeCivil || p.nome)?.toLowerCase()}
+                                {(
+                                  p.nomeDesejado ||
+                                  p.nomeCivil ||
+                                  p.nome
+                                )?.toLowerCase()}
                               </div>
-                              {(p.nomeDesejado) && (
+                              {p.nomeDesejado && (
                                 <div className="text-[10px] text-forest/60 truncate max-w-[150px] capitalize">
-                                  Nome Civil: {(p.nomeCivil || p.nome)?.toLowerCase()}
+                                  Nome Civil:{" "}
+                                  {(p.nomeCivil || p.nome)?.toLowerCase()}
                                 </div>
                               )}
                             </td>
@@ -4050,14 +4483,21 @@ export function DashboardView({
                               {p.idadeTratamento || "-"}
                             </td>
                             <td className="px-4 py-3">
-                              <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                                rawStatus === "Aguardando Avaliação" ? "bg-sun/30 text-sun-dark-dark" :
-                                rawStatus === "Em Triagem" ? "bg-blue-100 text-blue-800" :
-                                rawStatus === "Em Atendimento" ? "bg-green-100 text-green-800" :
-                                rawStatus === "Alta" ? "bg-forest/10 text-forest" :
-                                rawStatus === "Aprovado" ? "bg-purple-100 text-purple-800" :
-                                "bg-gray-100 text-gray-800"
-                              }`}>
+                              <span
+                                className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                                  rawStatus === "Aguardando Avaliação"
+                                    ? "bg-sun/30 text-sun-dark-dark"
+                                    : rawStatus === "Em Triagem"
+                                      ? "bg-blue-100 text-blue-800"
+                                      : rawStatus === "Em Atendimento"
+                                        ? "bg-green-100 text-green-800"
+                                        : rawStatus === "Alta"
+                                          ? "bg-forest/10 text-forest"
+                                          : rawStatus === "Aprovado"
+                                            ? "bg-purple-100 text-purple-800"
+                                            : "bg-gray-100 text-gray-800"
+                                }`}
+                              >
                                 {displayStatus}
                               </span>
                             </td>
@@ -4074,156 +4514,219 @@ export function DashboardView({
           ) : (
             <div className="flex-1 overflow-x-auto overflow-y-hidden p-6">
               <div className="flex h-full gap-6 shrink-0 w-max items-start">
-              {visibleColumns.map((col) => {
-                const colCards = filteredAcolhimentos.filter(
-                  (a) => (a.status || "Aguardando Avaliação") === col.id,
-                );
-                return (
-                  <div
-                    key={col.id}
-                    className="w-[320px] shrink-0 h-full flex flex-col bg-white/50 border border-soft rounded-2xl overflow-hidden"
-                    onDrop={(e) => handleDrop(e, col.id)}
-                    onDragOver={handleDragOver}
-                  >
-                    {/* Column Header */}
-                    <div className="p-4 bg-white border-b border-soft flex justify-between items-center shadow-sm z-10">
-                      <h3 className="font-semibold text-forest text-sm">
-                        {col.label}
-                      </h3>
-                      <span className="bg-warm text-forest/70 px-2 py-0.5 rounded-full text-xs font-bold border border-soft">
-                        {colCards.length}
-                      </span>
-                    </div>
+                {visibleColumns.map((col) => {
+                  const colCards = filteredAcolhimentos.filter(
+                    (a) => (a.status || "Aguardando Avaliação") === col.id,
+                  );
+                  return (
+                    <div
+                      key={col.id}
+                      className="w-[320px] shrink-0 h-full flex flex-col bg-white/50 border border-soft rounded-2xl overflow-hidden"
+                      onDrop={(e) => handleDrop(e, col.id)}
+                      onDragOver={handleDragOver}
+                    >
+                      {/* Column Header */}
+                      <div className="p-4 bg-white border-b border-soft flex justify-between items-center shadow-sm z-10">
+                        <h3 className="font-semibold text-forest text-sm">
+                          {col.label}
+                        </h3>
+                        <span className="bg-warm text-forest/70 px-2 py-0.5 rounded-full text-xs font-bold border border-soft">
+                          {colCards.length}
+                        </span>
+                      </div>
 
-                    {/* Cards List */}
-                    <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
-                      {colCards.map((card) => (
-                        <div
-                          key={card.id}
-                          draggable
-                          onDragStart={(e) => handleDragStart(e, card.id)}
-                          onClick={() => setSelectedCard(card)}
-                          className="bg-white p-4 rounded-xl shadow-sm border border-soft shadow-sun-dark/5 hover:shadow-md cursor-grab active:cursor-grabbing hover:border-sun-dark/30 transition-all group"
-                        >
-                          <div className="flex justify-between items-start mb-2">
-                            <span
-                              className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${
-                                card.viaAcesso === "Particular"
-                                  ? "bg-sun-dark-light text-forest/70-dark"
-                                  : "bg-[#E5EDF4] text-[#3B668D]"
-                              }`}
-                            >
-                              {card.viaAcesso}
-                            </span>
-                            <Grip className="w-4 h-4 text-forest/70/30 opacity-0 group-hover:opacity-100 transition-opacity" />
-                          </div>
-                          <h4 className="font-semibold text-forest text-sm line-clamp-1 break-words pb-1">
-                            {card.nomeDesejado ||
-                              card.nomeCivil ||
-                              card.nome ||
-                              "Paciente sem nome"}
-                          </h4>
-
-                          <div className="flex flex-wrap gap-1.5 text-[9px] text-forest/70 font-semibold uppercase tracking-wider mb-2">
-                            {card.idade && (
-                              <span className="bg-warm px-1.5 py-0.5 rounded border border-soft flex items-center gap-1">
-                                <User className="w-3 h-3" />
-                                {card.idade}
+                      {/* Cards List */}
+                      <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
+                        {colCards.map((card) => (
+                          <div
+                            key={card.id}
+                            draggable
+                            onDragStart={(e) => handleDragStart(e, card.id)}
+                            onClick={() => setSelectedCard(card)}
+                            className="bg-white p-4 rounded-xl shadow-sm border border-soft shadow-sun-dark/5 hover:shadow-md cursor-grab active:cursor-grabbing hover:border-sun-dark/30 transition-all group"
+                          >
+                            <div className="flex justify-between items-start mb-2">
+                              <span
+                                className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${
+                                  card.viaAcesso === "Particular"
+                                    ? "bg-sun-dark-light text-forest/70-dark"
+                                    : "bg-[#E5EDF4] text-[#3B668D]"
+                                }`}
+                              >
+                                {card.viaAcesso}
                               </span>
-                            )}
-                            {card.identidadeGenero && (
-                              <span className="bg-warm px-1.5 py-0.5 rounded border border-soft flex items-center gap-1">
-                                <Circle className="w-3 h-3" />
-                                {card.identidadeGenero}
-                              </span>
-                            )}
-                          </div>
+                              <Grip className="w-4 h-4 text-forest/70/30 opacity-0 group-hover:opacity-100 transition-opacity" />
+                            </div>
+                            <h4 className="font-semibold text-forest text-sm line-clamp-1 break-words pb-1">
+                              {card.nomeDesejado ||
+                                card.nomeCivil ||
+                                card.nome ||
+                                "Paciente sem nome"}
+                            </h4>
 
-                          <div className="text-[10px] text-forest/80 max-h-24 overflow-y-auto mt-2 bg-warm/30 p-2 rounded-lg border border-soft leading-tight custom-scrollbar">
-                            <span className="font-bold block mb-[2px] text-forest/60">
-                              Motivo/Queixa:
-                            </span>
-                            {card.motivo
-                              ? card.motivo.split(" - ")[0]
-                              : "Não informado"}
-                          </div>
-
-                          {(card.valorSessao || card.frequenciaSessoes) && (
-                            <div className="mt-2 text-[10px] text-emerald-700 bg-emerald-50 px-2 py-1.5 rounded border border-emerald-100/50 flex flex-col gap-1 w-full">
-                              {card.valorSessao && (
-                                <div className="flex justify-between items-center font-bold">
-                                  <span>Valor Acertado:</span>{" "}
-                                  <span>R$ {card.valorSessao}</span>
-                                </div>
+                            <div className="flex flex-wrap gap-1.5 text-[9px] text-forest/70 font-semibold uppercase tracking-wider mb-2">
+                              {card.idade && (
+                                <span className="bg-warm px-1.5 py-0.5 rounded border border-soft flex items-center gap-1">
+                                  <User className="w-3 h-3" />
+                                  {card.idade}
+                                </span>
                               )}
-                              {card.frequenciaSessoes && (
-                                <div className="flex justify-between items-center">
-                                  <span className="font-medium opacity-80">Frequência:</span>{" "}
-                                  <span className="font-semibold">{card.frequenciaSessoes}</span>
-                                </div>
+                              {card.identidadeGenero && (
+                                <span className="bg-warm px-1.5 py-0.5 rounded border border-soft flex items-center gap-1">
+                                  <Circle className="w-3 h-3" />
+                                  {card.identidadeGenero}
+                                </span>
                               )}
                             </div>
-                          )}
 
-                          <div className="flex items-center gap-1.5 mt-3 pt-2 text-[9px] uppercase tracking-wider text-forest/70 font-bold border-t border-soft/50">
-                            <Clock className="w-3 h-3" />
-                            <span>
-                              Acolhido em:{" "}
-                              {card.createdAt
-                                ? new Date(
-                                    card.createdAt.toMillis
-                                      ? card.createdAt.toMillis()
-                                      : card.createdAt.seconds * 1000,
-                                  ).toLocaleDateString("pt-BR")
-                                : "Desconhecida"}
-                            </span>
-                          </div>
+                            <div className="text-[10px] text-forest/80 max-h-24 overflow-y-auto mt-2 bg-warm/30 p-2 rounded-lg border border-soft leading-tight custom-scrollbar">
+                              <span className="font-bold block mb-[2px] text-forest/60">
+                                Motivo/Queixa:
+                              </span>
+                              {card.motivo
+                                ? card.motivo.split(" - ")[0]
+                                : "Não informado"}
+                            </div>
 
-                          {card.profissionalId &&
-                            (() => {
-                              const assignedProf = allUsers.find(
-                                (u) =>
-                                  u.uid === card.profissionalId ||
-                                  u.id === card.profissionalId,
-                              );
-                              const displayStatus =
-                                card.atribuicaoStatus || "Pendente";
+                            {(card.valorSessao || card.frequenciaSessoes) && (
+                              <div className="mt-2 text-[10px] text-emerald-700 bg-emerald-50 px-2 py-1.5 rounded border border-emerald-100/50 flex flex-col gap-1 w-full">
+                                {card.valorSessao && (
+                                  <div className="flex justify-between items-center font-bold">
+                                    <span>Valor Acertado:</span>{" "}
+                                    <span>R$ {card.valorSessao}</span>
+                                  </div>
+                                )}
+                                {card.frequenciaSessoes && (
+                                  <div className="flex justify-between items-center">
+                                    <span className="font-medium opacity-80">
+                                      Frequência:
+                                    </span>{" "}
+                                    <span className="font-semibold">
+                                      {card.frequenciaSessoes}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            <div className="flex items-center gap-1.5 mt-3 pt-2 text-[9px] uppercase tracking-wider text-forest/70 font-bold border-t border-soft/50">
+                              <Clock className="w-3 h-3" />
+                              <span>
+                                Acolhido em:{" "}
+                                {card.createdAt
+                                  ? new Date(
+                                      card.createdAt.toMillis
+                                        ? card.createdAt.toMillis()
+                                        : card.createdAt.seconds * 1000,
+                                    ).toLocaleDateString("pt-BR")
+                                  : "Desconhecida"}
+                              </span>
+                            </div>
+
+                            {(() => {
+                              const status =
+                                card.status || "Aguardando Avaliação";
+                              if (
+                                status === "Alta" ||
+                                status === "Inativo" ||
+                                status === "Encaminhamento Externo" ||
+                                status === "Desistência"
+                              )
+                                return null;
+
+                              let step = 1;
+                              if (status === "Em Atendimento") step = 3;
+                              else if (
+                                status === "Aprovado" ||
+                                card.propostaStatus
+                              )
+                                step = 2;
+
                               return (
-                                <div className="mt-2.5 pt-2 border-t border-soft/50 flex flex-wrap justify-between items-center text-[10px] gap-1 shrink-0">
-                                  <span className="text-forest/70 font-medium truncate max-w-[130px] flex items-center gap-1">
-                                    👤{" "}
-                                    {assignedProf
-                                      ? assignedProf.name
-                                      : "Indefinido"}
-                                  </span>
-                                  <span
-                                    className={`px-1.5 py-0.5 rounded font-bold text-[9px] uppercase ${
-                                      displayStatus === "Aceito"
-                                        ? "bg-[#34A853]/10 text-[#34A853]"
-                                        : displayStatus === "Rejeitado"
-                                          ? "bg-red-500/10 text-red-500"
-                                          : "bg-amber-500/10 text-amber-500"
-                                    }`}
-                                  >
-                                    {displayStatus}
-                                  </span>
+                                <div className="mt-3 pt-3 border-t border-soft/50 flex flex-col gap-1.5 w-full">
+                                  <div className="flex justify-between items-center text-[8px] font-bold uppercase tracking-wider text-forest/50">
+                                    <span
+                                      className={
+                                        step >= 1 ? "text-emerald-600" : ""
+                                      }
+                                    >
+                                      Triagem
+                                    </span>
+                                    <span
+                                      className={
+                                        step >= 2 ? "text-emerald-600" : ""
+                                      }
+                                    >
+                                      Proposta
+                                    </span>
+                                    <span
+                                      className={
+                                        step >= 3 ? "text-emerald-600" : ""
+                                      }
+                                    >
+                                      Atendimento
+                                    </span>
+                                  </div>
+                                  <div className="flex gap-1 h-1.5 w-full">
+                                    <div
+                                      className={`flex-1 rounded-full transition-colors ${step >= 1 ? "bg-emerald-400" : "bg-warm-dark/50"}`}
+                                    ></div>
+                                    <div
+                                      className={`flex-1 rounded-full transition-colors ${step >= 2 ? "bg-emerald-400" : "bg-warm-dark/50"}`}
+                                    ></div>
+                                    <div
+                                      className={`flex-1 rounded-full transition-colors ${step >= 3 ? "bg-emerald-400" : "bg-warm-dark/50"}`}
+                                    ></div>
+                                  </div>
                                 </div>
                               );
                             })()}
-                        </div>
-                      ))}
 
-                      {colCards.length === 0 && (
-                        <div className="h-24 border-2 border-dashed border-soft rounded-xl flex items-center justify-center text-forest/70/40 text-sm font-medium">
-                          Solte cards aqui
-                        </div>
-                      )}
+                            {card.profissionalId &&
+                              (() => {
+                                const assignedProf = allUsers.find(
+                                  (u) =>
+                                    u.uid === card.profissionalId ||
+                                    u.id === card.profissionalId,
+                                );
+                                const displayStatus =
+                                  card.atribuicaoStatus || "Pendente";
+                                return (
+                                  <div className="mt-2.5 pt-2 border-t border-soft/50 flex flex-wrap justify-between items-center text-[10px] gap-1 shrink-0">
+                                    <span className="text-forest/70 font-medium truncate max-w-[130px] flex items-center gap-1">
+                                      👤{" "}
+                                      {assignedProf
+                                        ? assignedProf.name
+                                        : "Indefinido"}
+                                    </span>
+                                    <span
+                                      className={`px-1.5 py-0.5 rounded font-bold text-[9px] uppercase ${
+                                        displayStatus === "Aceito"
+                                          ? "bg-[#34A853]/10 text-[#34A853]"
+                                          : displayStatus === "Rejeitado"
+                                            ? "bg-red-500/10 text-red-500"
+                                            : "bg-amber-500/10 text-amber-500"
+                                      }`}
+                                    >
+                                      {displayStatus}
+                                    </span>
+                                  </div>
+                                );
+                              })()}
+                          </div>
+                        ))}
+
+                        {colCards.length === 0 && (
+                          <div className="h-24 border-2 border-dashed border-soft rounded-xl flex items-center justify-center text-forest/70/40 text-sm font-medium">
+                            Solte cards aqui
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
-          </div>
           )}
         </div>
       ) : activeTab === "doacoes" ? (
@@ -4350,10 +4853,12 @@ export function DashboardView({
                           <h4 className="font-serif text-lg font-bold text-forest leading-tight">
                             {lead.nome}
                           </h4>
-                          <span className="text-xs text-forest/50 font-medium">Cadastro de Profissional</span>
+                          <span className="text-xs text-forest/50 font-medium">
+                            Cadastro de Profissional
+                          </span>
                         </div>
                       </div>
-                      
+
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="text-[9px] uppercase font-bold bg-purple-50 text-purple-700 border border-purple-200 px-3 py-1 rounded-full">
                           Disponível: {lead.horasDisponiveis}
@@ -4368,41 +4873,56 @@ export function DashboardView({
                     <div className="bg-warm/25 rounded-2xl border border-soft/50 p-4 flex flex-col gap-2.5 text-xs text-forest/85">
                       <div className="flex items-center justify-between py-1 border-b border-soft/30">
                         <span className="text-forest/50 font-medium flex items-center gap-1.5">
-                          <Briefcase className="w-3.5 h-3.5 text-forest/40" /> Especialidade:
+                          <Briefcase className="w-3.5 h-3.5 text-forest/40" />{" "}
+                          Especialidade:
                         </span>
-                        <span className="font-semibold text-forest/90">{lead.especialidade || "Não informada"}</span>
+                        <span className="font-semibold text-forest/90">
+                          {lead.especialidade || "Não informada"}
+                        </span>
                       </div>
 
                       {lead.crp && (
                         <div className="flex items-center justify-between py-1 border-b border-soft/30">
                           <span className="text-forest/50 font-medium flex items-center gap-1.5">
-                            <CheckSquare className="w-3.5 h-3.5 text-forest/40" /> Registro Profissional (CRP/CRM):
+                            <CheckSquare className="w-3.5 h-3.5 text-forest/40" />{" "}
+                            Registro Profissional (CRP/CRM):
                           </span>
-                          <span className="font-semibold text-forest/90 font-mono">{lead.crp}</span>
+                          <span className="font-semibold text-forest/90 font-mono">
+                            {lead.crp}
+                          </span>
                         </div>
                       )}
 
                       <div className="flex items-center justify-between py-1 border-b border-soft/30">
                         <span className="text-forest/50 font-medium flex items-center gap-1.5">
-                          <Mail className="w-3.5 h-3.5 text-forest/40" /> E-mail:
+                          <Mail className="w-3.5 h-3.5 text-forest/40" />{" "}
+                          E-mail:
                         </span>
-                        <span className="font-semibold text-forest/90">{lead.email}</span>
+                        <span className="font-semibold text-forest/90">
+                          {lead.email}
+                        </span>
                       </div>
 
                       <div className="flex items-center justify-between py-1 border-b border-soft/30">
                         <span className="text-forest/50 font-medium flex items-center gap-1.5">
-                          <Phone className="w-3.5 h-3.5 text-forest/40" /> Telefone:
+                          <Phone className="w-3.5 h-3.5 text-forest/40" />{" "}
+                          Telefone:
                         </span>
-                        <span className="font-semibold text-forest/90">{lead.telefone}</span>
+                        <span className="font-semibold text-forest/90">
+                          {lead.telefone}
+                        </span>
                       </div>
 
                       {(lead.cidade || lead.uf) && (
                         <div className="flex items-center justify-between py-1">
                           <span className="text-forest/50 font-medium flex items-center gap-1.5">
-                            <Map className="w-3.5 h-3.5 text-forest/40" /> Cidade/Estado:
+                            <Map className="w-3.5 h-3.5 text-forest/40" />{" "}
+                            Cidade/Estado:
                           </span>
                           <span className="font-semibold text-forest/90">
-                            {lead.cidade ? `${lead.cidade}/${lead.uf || ""}` : lead.uf}
+                            {lead.cidade
+                              ? `${lead.cidade}/${lead.uf || ""}`
+                              : lead.uf}
                           </span>
                         </div>
                       )}
@@ -4414,7 +4934,11 @@ export function DashboardView({
                         Motivação para entrar na plataforma
                       </span>
                       <p className="whitespace-pre-wrap max-h-32 overflow-y-auto bg-warm/15 p-3.5 rounded-2xl border border-soft/30 custom-scrollbar leading-relaxed">
-                        "{lead.motivo || lead.motivacao || "Nenhuma motivação descrita"}"
+                        "
+                        {lead.motivo ||
+                          lead.motivacao ||
+                          "Nenhuma motivação descrita"}
+                        "
                       </p>
                     </div>
 
@@ -4605,7 +5129,9 @@ export function DashboardView({
                   className="px-4 py-2 bg-purple-50 text-purple-700 hover:bg-purple-100 disabled:opacity-50 text-sm font-semibold rounded-full transition-colors flex items-center gap-2 border border-purple-200/50"
                   title="Sincronizar dados preenchidos no formulário de inscrição para o perfil ativo dos profissionais"
                 >
-                  <RefreshCw className={`w-4 h-4 ${isReconciling ? "animate-spin" : ""}`} />
+                  <RefreshCw
+                    className={`w-4 h-4 ${isReconciling ? "animate-spin" : ""}`}
+                  />
                   {isReconciling ? "Sincronizando..." : "Sincronizar Leads"}
                 </button>
                 <button
@@ -4638,7 +5164,9 @@ export function DashboardView({
                           </span>
                           <span
                             className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
-                              p.ativo === false ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"
+                              p.ativo === false
+                                ? "bg-red-100 text-red-700"
+                                : "bg-emerald-100 text-emerald-700"
                             }`}
                           >
                             {p.ativo === false ? "Inativo" : "Ativo"}
@@ -4647,51 +5175,68 @@ export function DashboardView({
                         <h4 className="font-serif text-lg font-bold text-forest leading-tight break-words">
                           {p.name || p.email}
                         </h4>
-                        <span className="text-xs text-forest/50 font-medium font-mono">{p.email}</span>
+                        <span className="text-xs text-forest/50 font-medium font-mono">
+                          {p.email}
+                        </span>
                       </div>
 
                       {/* Information organized in lines (Rows) */}
                       <div className="bg-warm/25 rounded-2xl border border-soft/50 p-4 flex flex-col gap-2.5 text-xs text-forest/85">
                         <div className="flex items-center justify-between py-1 border-b border-soft/30">
                           <span className="text-forest/50 font-medium flex items-center gap-1.5">
-                            <User className="w-3.5 h-3.5 text-forest/40" /> Papel:
+                            <User className="w-3.5 h-3.5 text-forest/40" />{" "}
+                            Papel:
                           </span>
-                          <span className="font-semibold text-forest/90 capitalize">{p.role}</span>
+                          <span className="font-semibold text-forest/90 capitalize">
+                            {p.role}
+                          </span>
                         </div>
 
                         {p.role === "profissional" && (
                           <>
                             <div className="flex items-center justify-between py-1 border-b border-soft/30">
                               <span className="text-forest/50 font-medium flex items-center gap-1.5">
-                                <Users className="w-3.5 h-3.5 text-forest/40" /> Pacientes Ativos:
+                                <Users className="w-3.5 h-3.5 text-forest/40" />{" "}
+                                Pacientes Ativos:
                               </span>
-                              <span className="font-bold text-forest/90">{stats.ativosCount}</span>
+                              <span className="font-bold text-forest/90">
+                                {stats.ativosCount}
+                              </span>
                             </div>
 
                             <div className="flex items-center justify-between py-1 border-b border-soft/30">
                               <span className="text-forest/50 font-medium flex items-center gap-1.5">
-                                <DollarSign className="w-3.5 h-3.5 text-forest/40" /> Total Sessões:
+                                <DollarSign className="w-3.5 h-3.5 text-forest/40" />{" "}
+                                Total Sessões:
                               </span>
                               <span className="font-bold text-emerald-700 font-mono">
-                                R$ {stats.valorTotal.toFixed(2).replace(".", ",")}
+                                R${" "}
+                                {stats.valorTotal.toFixed(2).replace(".", ",")}
                               </span>
                             </div>
 
                             <div className="flex items-center justify-between py-1 border-b border-soft/30">
                               <span className="text-forest/50 font-medium flex items-center gap-1.5">
-                                <Clock className="w-3.5 h-3.5 text-forest/40" /> Horas Mensais (Est.):
+                                <Clock className="w-3.5 h-3.5 text-forest/40" />{" "}
+                                Horas Mensais (Est.):
                               </span>
-                              <span className={`font-bold font-mono ${stats.maxHoras > 0 && stats.horasMensais >= stats.maxHoras ? 'text-red-600' : 'text-forest/90'}`}>
-                                {stats.horasMensais}h {stats.maxHoras > 0 && `/ ${stats.maxHoras}h`}
+                              <span
+                                className={`font-bold font-mono ${stats.maxHoras > 0 && stats.horasMensais >= stats.maxHoras ? "text-red-600" : "text-forest/90"}`}
+                              >
+                                {stats.horasMensais}h{" "}
+                                {stats.maxHoras > 0 && `/ ${stats.maxHoras}h`}
                               </span>
                             </div>
-                            
-                            {stats.maxHoras > 0 && stats.horasMensais >= stats.maxHoras && (
-                              <div className="mt-1 flex items-start gap-1.5 bg-red-50 text-red-700 p-2 rounded-lg border border-red-100">
-                                <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />
-                                <span className="text-[10px] leading-tight font-medium">Limite de horas atingido ou excedido.</span>
-                              </div>
-                            )}
+
+                            {stats.maxHoras > 0 &&
+                              stats.horasMensais >= stats.maxHoras && (
+                                <div className="mt-1 flex items-start gap-1.5 bg-red-50 text-red-700 p-2 rounded-lg border border-red-100">
+                                  <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />
+                                  <span className="text-[10px] leading-tight font-medium">
+                                    Limite de horas atingido ou excedido.
+                                  </span>
+                                </div>
+                              )}
                           </>
                         )}
                       </div>
@@ -4822,15 +5367,23 @@ export function DashboardView({
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 w-full">
             {complianceMessages.length === 0 ? (
               <div className="col-span-full p-12 text-center text-forest/70 bg-white/50 border border-dashed border-soft rounded-[2xl]">
-                Nenhuma mensagem de compliance/ouvidoria submetida até o momento.
+                Nenhuma mensagem de compliance/ouvidoria submetida até o
+                momento.
               </div>
             ) : (
               complianceMessages.map((msg) => (
-                <div key={msg.id} className="bg-white p-6 rounded-[2rem] shadow-sm border border-soft flex flex-col gap-4 relative">
+                <div
+                  key={msg.id}
+                  className="bg-white p-6 rounded-[2rem] shadow-sm border border-soft flex flex-col gap-4 relative"
+                >
                   <div className="flex items-start justify-between">
                     <div>
-                      <span className="text-xs font-bold uppercase tracking-wider text-forest/50">Tipo</span>
-                      <h3 className={`font-semibold text-lg leading-tight mt-1 ${msg.tipo === "Denúncia" ? "text-red-600" : msg.tipo === "Reclamação" ? "text-orange-600" : "text-forest"}`}>
+                      <span className="text-xs font-bold uppercase tracking-wider text-forest/50">
+                        Tipo
+                      </span>
+                      <h3
+                        className={`font-semibold text-lg leading-tight mt-1 ${msg.tipo === "Denúncia" ? "text-red-600" : msg.tipo === "Reclamação" ? "text-orange-600" : "text-forest"}`}
+                      >
                         {msg.tipo}
                       </h3>
                     </div>
@@ -4839,7 +5392,9 @@ export function DashboardView({
                       onChange={async (e) => {
                         const val = e.target.value;
                         try {
-                          await updateDoc(doc(db, "compliance", msg.id), { status: val });
+                          await updateDoc(doc(db, "compliance", msg.id), {
+                            status: val,
+                          });
                         } catch (err) {
                           console.error(err);
                           alert("Erro ao atualizar status.");
@@ -4864,12 +5419,17 @@ export function DashboardView({
                   </div>
 
                   <div className="flex flex-col gap-1 mt-auto pt-4 border-t border-soft">
-                    <span className="text-xs font-bold text-forest/50 uppercase tracking-widest">Remetente</span>
+                    <span className="text-xs font-bold text-forest/50 uppercase tracking-widest">
+                      Remetente
+                    </span>
                     <span className="font-medium text-forest text-sm">
                       {msg.userName} ({msg.userRole})
                     </span>
                     {msg.userEmail && (
-                      <a href={`mailto:${msg.userEmail}`} className="text-sm font-semibold text-sun-dark hover:underline">
+                      <a
+                        href={`mailto:${msg.userEmail}`}
+                        className="text-sm font-semibold text-sun-dark hover:underline"
+                      >
                         {msg.userEmail}
                       </a>
                     )}
@@ -4877,10 +5437,14 @@ export function DashboardView({
                       Data: {msg.createdAt ? formatDate(msg.createdAt) : "N/I"}
                     </span>
                   </div>
-                  
+
                   <button
                     onClick={async () => {
-                      if (window.confirm("Deseja mesmo excluir esta denúncia permanentemente?")) {
+                      if (
+                        window.confirm(
+                          "Deseja mesmo excluir esta denúncia permanentemente?",
+                        )
+                      ) {
                         try {
                           await deleteDoc(doc(db, "compliance", msg.id));
                         } catch (err) {
@@ -4918,7 +5482,9 @@ export function DashboardView({
                   u.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
                   u.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
                   u.role?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                  uRoles.some((r: string) => r.toLowerCase().includes(searchQuery.toLowerCase()))
+                  uRoles.some((r: string) =>
+                    r.toLowerCase().includes(searchQuery.toLowerCase()),
+                  )
                 );
               })
               .map((u) => (
@@ -4946,12 +5512,19 @@ export function DashboardView({
                       {[
                         { key: "master", label: "Administrador (Master)" },
                         { key: "triagem", label: "Gestão de Triagem" },
-                        { key: "profissional", label: "Profissional / Psicólogo" },
+                        {
+                          key: "profissional",
+                          label: "Profissional / Psicólogo",
+                        },
                       ].map((item) => {
-                        const uRoles: Role[] = u.roles || [u.role].filter(Boolean) as Role[];
+                        const uRoles: Role[] =
+                          u.roles || ([u.role].filter(Boolean) as Role[]);
                         const isChecked = uRoles.includes(item.key as Role);
                         return (
-                          <label key={item.key} className="flex items-center gap-2 px-1.5 py-0.5 cursor-pointer text-xs font-semibold text-forest hover:text-sun-dark transition-colors">
+                          <label
+                            key={item.key}
+                            className="flex items-center gap-2 px-1.5 py-0.5 cursor-pointer text-xs font-semibold text-forest hover:text-sun-dark transition-colors"
+                          >
                             <input
                               type="checkbox"
                               checked={isChecked}
@@ -4959,10 +5532,14 @@ export function DashboardView({
                                 let nextRoles = [...uRoles];
                                 if (isChecked) {
                                   if (nextRoles.length <= 1) {
-                                    alert("Cada usuário precisa ter pelo menos um nível de acesso.");
+                                    alert(
+                                      "Cada usuário precisa ter pelo menos um nível de acesso.",
+                                    );
                                     return;
                                   }
-                                  nextRoles = nextRoles.filter((r) => r !== item.key);
+                                  nextRoles = nextRoles.filter(
+                                    (r) => r !== item.key,
+                                  );
                                 } else {
                                   nextRoles.push(item.key as Role);
                                 }
@@ -4994,7 +5571,7 @@ export function DashboardView({
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-forest/20 backdrop-blur-sm animate-in fade-in py-4">
           <div className="bg-white rounded-3xl w-full max-w-5xl max-h-[95vh] flex flex-col shadow-2xl border border-soft overflow-hidden animate-in zoom-in-95">
             <div className="px-6 py-4 flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-soft bg-warm/50 gap-2">
-              <div className="flex flex-col">
+              <div className="flex flex-col w-full max-w-lg">
                 <h3 className="font-serif text-2xl text-forest">
                   Ficha de Acolhimento
                 </h3>
@@ -5008,6 +5585,49 @@ export function DashboardView({
                     </span>
                   )}
                 </div>
+
+                {(() => {
+                  const status = selectedCard.status || "Aguardando Avaliação";
+                  if (
+                    status === "Alta" ||
+                    status === "Inativo" ||
+                    status === "Encaminhamento Externo" ||
+                    status === "Desistência"
+                  )
+                    return null;
+
+                  let step = 1;
+                  if (status === "Em Atendimento") step = 3;
+                  else if (status === "Aprovado" || selectedCard.propostaStatus)
+                    step = 2;
+
+                  return (
+                    <div className="w-full mt-4">
+                      <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-wider text-forest/50 mb-1.5">
+                        <span className={step >= 1 ? "text-emerald-600" : ""}>
+                          Triagem
+                        </span>
+                        <span className={step >= 2 ? "text-emerald-600" : ""}>
+                          Proposta / Atribuição
+                        </span>
+                        <span className={step >= 3 ? "text-emerald-600" : ""}>
+                          Atendimento Iniciado
+                        </span>
+                      </div>
+                      <div className="flex gap-1.5 h-2 w-full">
+                        <div
+                          className={`flex-1 rounded-full transition-colors ${step >= 1 ? "bg-emerald-400" : "bg-warm-dark/50"}`}
+                        ></div>
+                        <div
+                          className={`flex-1 rounded-full transition-colors ${step >= 2 ? "bg-emerald-400" : "bg-warm-dark/50"}`}
+                        ></div>
+                        <div
+                          className={`flex-1 rounded-full transition-colors ${step >= 3 ? "bg-emerald-400" : "bg-warm-dark/50"}`}
+                        ></div>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
               <button
                 onClick={() => setSelectedCard(null)}
@@ -5021,9 +5641,12 @@ export function DashboardView({
             <div className="flex flex-wrap items-center gap-4 py-3 px-6 bg-white border-b border-soft">
               <button
                 onClick={() => {
-                  setNotificacaoType("pagamento");
+                  const tpl =
+                    templates.find((t) => t.id === "pagamento") || templates[0];
+                  setNotificacaoType(tpl.id);
+                  setNotificacaoName(tpl.name);
                   setNotificacaoMsg(
-                    "Olá! Identificamos uma pendência de pagamento referente à sua última sessão. Por favor, regularize assim que possível.",
+                    processNotificationTemplate(tpl.msg, selectedCard),
                   );
                   setShowNotificarModal(true);
                 }}
@@ -5058,7 +5681,9 @@ export function DashboardView({
                   onClick={() => {
                     const link = `${window.location.origin}/?contrato=${selectedCard.id}`;
                     navigator.clipboard.writeText(link);
-                    alert("Link do contrato copiado para a área de transferência!");
+                    alert(
+                      "Link do contrato copiado para a área de transferência!",
+                    );
                   }}
                   className="text-xs font-semibold text-sun-dark underline hover:text-forest transition-colors"
                 >
@@ -5075,9 +5700,15 @@ export function DashboardView({
                   Modelo de Contrato
                 </button>
                 <div className="flex items-center gap-1.5 ml-3">
-                  <div className={`w-2 h-2 rounded-full ${selectedCard.contratoAssinado ? "bg-green-500" : "bg-red-500"}`}></div>
-                  <span className={`text-xs font-bold uppercase tracking-wider ${selectedCard.contratoAssinado ? "text-green-600" : "text-red-500"}`}>
-                    {selectedCard.contratoAssinado ? "Contrato Assinado" : "Pendente"}
+                  <div
+                    className={`w-2 h-2 rounded-full ${selectedCard.contratoAssinado ? "bg-green-500" : "bg-red-500"}`}
+                  ></div>
+                  <span
+                    className={`text-xs font-bold uppercase tracking-wider ${selectedCard.contratoAssinado ? "text-green-600" : "text-red-500"}`}
+                  >
+                    {selectedCard.contratoAssinado
+                      ? "Contrato Assinado"
+                      : "Pendente"}
                   </span>
                 </div>
               </div>
@@ -5128,15 +5759,43 @@ export function DashboardView({
                         }
                         isEditing={isEditingCard}
                       />
+                      {selectedCard.propostaStatus && (
+                        <div
+                          className={`mt-4 p-4 border rounded-xl ${selectedCard.propostaStatus === "Proposta aceita pelo paciente" ? "bg-green-50/50 border-green-100 text-green-800" : selectedCard.propostaStatus === "Paciente solicita revisão da proposta" ? "bg-orange-50/50 border-orange-100 text-orange-800" : "bg-blue-50/50 border-blue-100 text-blue-800"}`}
+                        >
+                          <span className="block text-[10px] font-bold uppercase tracking-wider opacity-70 mb-1">
+                            Status da Proposta
+                          </span>
+                          <span className="font-semibold text-sm">
+                            {selectedCard.propostaStatus}
+                          </span>
+                        </div>
+                      )}
                       {selectedCard.dadosContrato && (
                         <div className="mt-4 p-4 bg-green-50/50 border border-green-100 rounded-xl">
-                          <span className="block text-[10px] font-bold uppercase tracking-wider text-green-700 mb-2">Dados do Contrato Assinado</span>
+                          <span className="block text-[10px] font-bold uppercase tracking-wider text-green-700 mb-2">
+                            Dados do Contrato Assinado
+                          </span>
                           <div className="text-sm text-forest space-y-1">
-                            <p><span className="font-semibold">Signatário:</span> {selectedCard.dadosContrato.nome}</p>
-                            <p><span className="font-semibold">E-mail:</span> {selectedCard.dadosContrato.email}</p>
-                            <p><span className="font-semibold">CPF:</span> {selectedCard.dadosContrato.cpf}</p>
+                            <p>
+                              <span className="font-semibold">Signatário:</span>{" "}
+                              {selectedCard.dadosContrato.nome}
+                            </p>
+                            <p>
+                              <span className="font-semibold">E-mail:</span>{" "}
+                              {selectedCard.dadosContrato.email}
+                            </p>
+                            <p>
+                              <span className="font-semibold">CPF:</span>{" "}
+                              {selectedCard.dadosContrato.cpf}
+                            </p>
                             {selectedCard.dadosContrato.menorIdade && (
-                              <p className="text-sun-dark-dark font-medium"><span className="font-semibold text-forest">Paciente (Menor):</span> {selectedCard.dadosContrato.nomeMenor}</p>
+                              <p className="text-sun-dark-dark font-medium">
+                                <span className="font-semibold text-forest">
+                                  Paciente (Menor):
+                                </span>{" "}
+                                {selectedCard.dadosContrato.nomeMenor}
+                              </p>
                             )}
                           </div>
                         </div>
@@ -5371,7 +6030,11 @@ export function DashboardView({
                       />
                       <EditableField
                         label="Melhores Períodos (Online)"
-                        value={Array.isArray(selectedCard.melhoresPeriodos) ? selectedCard.melhoresPeriodos.join(", ") : selectedCard.melhoresPeriodos}
+                        value={
+                          Array.isArray(selectedCard.melhoresPeriodos)
+                            ? selectedCard.melhoresPeriodos.join(", ")
+                            : selectedCard.melhoresPeriodos
+                        }
                         field="melhoresPeriodos"
                         onChange={(f, v) =>
                           handleUpdateAcolhimentoProperty(selectedCard.id, f, v)
@@ -5421,9 +6084,14 @@ export function DashboardView({
                           className="w-full bg-white text-base font-semibold text-forest border border-soft rounded-xl p-3 focus:outline-none focus:ring-2 focus:ring-sun-dark shadow-sm appearance-none"
                         >
                           <option value="">Selecione um valor...</option>
-                          {globalConfigs.faixasValores?.map((faixa: string, idx: number) => (
-                            faixa ? <option key={idx} value={faixa}>{faixa}</option> : null
-                          ))}
+                          {globalConfigs.faixasValores?.map(
+                            (faixa: string, idx: number) =>
+                              faixa ? (
+                                <option key={idx} value={faixa}>
+                                  {faixa}
+                                </option>
+                              ) : null,
+                          )}
                           <option value="Gratuito">Gratuito</option>
                           <option value="Outro">Outro (A combinar)</option>
                         </select>
@@ -5436,12 +6104,17 @@ export function DashboardView({
 
                     <div className="flex flex-col gap-1 p-5 bg-emerald-50 rounded-2xl border border-emerald-100">
                       <div className="flex justify-between items-center mb-1">
-                         <label className="text-xs font-bold uppercase tracking-wider text-emerald-800 shrink-0">
-                           Frequência de Sessões
-                         </label>
-                         {(!isEditingCard && currentRole === "profissional") && (
-                           <button onClick={() => setIsEditingCard(true)} className="text-[10px] uppercase font-bold text-emerald-600 hover:underline">Alterar Frequência</button>
-                         )}
+                        <label className="text-xs font-bold uppercase tracking-wider text-emerald-800 shrink-0">
+                          Frequência de Sessões
+                        </label>
+                        {!isEditingCard && currentRole === "profissional" && (
+                          <button
+                            onClick={() => setIsEditingCard(true)}
+                            className="text-[10px] uppercase font-bold text-emerald-600 hover:underline"
+                          >
+                            Alterar Frequência
+                          </button>
+                        )}
                       </div>
                       {isEditingCard ? (
                         <div className="flex flex-col gap-2">
@@ -5462,7 +6135,7 @@ export function DashboardView({
                             <option value="Mensal">Mensal</option>
                             <option value="Sob Demanda">Sob Demanda</option>
                           </select>
-                          <input 
+                          <input
                             type="text"
                             placeholder="Motivo da alteração"
                             value={selectedCard.motivoFrequencia || ""}
@@ -5580,21 +6253,35 @@ export function DashboardView({
                         </label>
                         <div className="flex flex-col gap-3 p-5 bg-warm rounded-2xl border border-soft mt-2">
                           <p className="text-xs text-forest/60 mb-2">
-                            Confirme o vínculo clínico abaixo. Caso necessite devolver este paciente para a Triagem, utilize o botão secundário e deixe uma observação (opcional).
+                            Confirme o vínculo clínico abaixo. Caso necessite
+                            devolver este paciente para a Triagem, utilize o
+                            botão secundário e deixe uma observação (opcional).
                           </p>
                           <div className="grid grid-cols-2 gap-3">
                             <button
-                              disabled={selectedCard.atribuicaoStatus === "Aceito"}
+                              disabled={
+                                selectedCard.atribuicaoStatus === "Aceito"
+                              }
                               onClick={async () => {
-                                const notifAnterior = selectedCard.notificacao ? selectedCard.notificacao + '\n\n' : '';
-                                const nowStr = new Date().toLocaleString("pt-BR");
+                                const notifAnterior = selectedCard.notificacao
+                                  ? selectedCard.notificacao + "\n\n"
+                                  : "";
+                                const nowStr = new Date().toLocaleString(
+                                  "pt-BR",
+                                );
                                 const authName = profile?.name || "Parceiro";
                                 const updates = {
                                   atribuicaoStatus: "Aceito",
                                   notificacao: `${notifAnterior}[${nowStr}] Encaminhamento ACEITO pelo profissional ${authName}.`,
                                 };
-                                await updateDoc(doc(db, "acolhimentos", selectedCard.id), updates);
-                                setSelectedCard({ ...selectedCard, ...updates });
+                                await updateDoc(
+                                  doc(db, "acolhimentos", selectedCard.id),
+                                  updates,
+                                );
+                                setSelectedCard({
+                                  ...selectedCard,
+                                  ...updates,
+                                });
                               }}
                               className={`px-4 py-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
                                 selectedCard.atribuicaoStatus === "Aceito"
@@ -5602,8 +6289,10 @@ export function DashboardView({
                                   : "bg-white text-forest border border-soft hover:bg-[#34A853]/10 hover:text-[#34A853] hover:border-[#34A853]/30"
                               }`}
                             >
-                              <CheckCircle2 className="w-4 h-4" /> 
-                              {selectedCard.atribuicaoStatus === "Aceito" ? "Paciente Aceito" : "Aceitar Paciente"}
+                              <CheckCircle2 className="w-4 h-4" />
+                              {selectedCard.atribuicaoStatus === "Aceito"
+                                ? "Paciente Aceito"
+                                : "Aceitar Paciente"}
                             </button>
 
                             <button
@@ -5611,13 +6300,15 @@ export function DashboardView({
                                 setDevolverModalConfig({
                                   isOpen: true,
                                   pacienteId: selectedCard.id,
-                                  pacienteName: (selectedCard as any).nomeCompleto || "Paciente",
+                                  pacienteName:
+                                    (selectedCard as any).nomeCompleto ||
+                                    "Paciente",
                                 });
                               }}
                               className="px-4 py-3 bg-white text-red-600 border border-red-200 rounded-xl text-xs sm:text-sm font-semibold hover:bg-red-50 transition-colors"
                             >
-                              {selectedCard.atribuicaoStatus === "Aceito" 
-                                ? "Devolver/Desatribuir" 
+                              {selectedCard.atribuicaoStatus === "Aceito"
+                                ? "Devolver/Desatribuir"
                                 : "Devolver Paciente"}
                             </button>
                           </div>
@@ -5675,7 +6366,9 @@ export function DashboardView({
 
                           {matchedProf.motivacaoProjeto && (
                             <div className="bg-warm/50 p-3 rounded-xl text-xs text-forest/70/80 leading-relaxed italic mb-4 whitespace-pre-wrap max-h-32 overflow-y-auto custom-scrollbar">
-                              <span className="font-semibold block mb-1">Por que faço parte deste projeto?</span>
+                              <span className="font-semibold block mb-1">
+                                Por que faço parte deste projeto?
+                              </span>
                               "{matchedProf.motivacaoProjeto}"
                             </div>
                           )}
@@ -5765,9 +6458,13 @@ export function DashboardView({
             <div className="w-16 h-16 bg-sun-dark/20 rounded-full flex items-center justify-center mb-6 text-sun-dark-dark">
               <Star className="w-8 h-8" />
             </div>
-            <h2 className="font-serif text-2xl text-forest mb-4">Bem-vindo(a) ao Projeto AcolheMente Saúde!</h2>
+            <h2 className="font-serif text-2xl text-forest mb-4">
+              Bem-vindo(a) ao Projeto AcolheMente Saúde!
+            </h2>
             <p className="text-forest/70 mb-8 leading-relaxed">
-              Estamos muito felizes em ter você aqui. Na sua ficha de bordo ("Meus Pacientes"), você poderá acompanhar as suas sessões, enviar o link do contrato e notificar seus pacientes facilmente.
+              Estamos muito felizes em ter você aqui. Na sua ficha de bordo
+              ("Meus Pacientes"), você poderá acompanhar as suas sessões, enviar
+              o link do contrato e notificar seus pacientes facilmente.
             </p>
             <button
               onClick={() => {
@@ -5816,21 +6513,12 @@ export function DashboardView({
                     if (selected) {
                       setNotificacaoType(selected.id);
                       setNotificacaoName(selected.name);
-
-                      let newMsg = selected.msg;
-                      if (selected.id === "boas-vindas-atribuicao" && activeTab === "kanban" && selectedCard) {
-                         const prof = profissionaisAtivos.find(p => p.uid === selectedCard.profissionalId);
-                         newMsg = newMsg.replace("[NOME]", selectedCard.nome || "");
-                         newMsg = newMsg.replace("[VALOR_SESSAO]", selectedCard.valorSessao || "a combinar");
-                         newMsg = newMsg.replace("[PROFISSIONAL_NOME]", prof ? (prof.name || "") : "N/A");
-                         newMsg = newMsg.replace("[PROFISSIONAL_CRP]", prof ? (prof.crp || "N/A") : "N/A");
-                      }
-                      if (selected.id === "contrato" && activeTab === "kanban" && selectedCard) {
-                         const contractLink = `${window.location.origin}/?contrato=${selectedCard.id}`;
-                         newMsg = newMsg.replace("[LINK_CONTRATO]", contractLink);
-                      }
-
-                      setNotificacaoMsg(newMsg);
+                      setNotificacaoMsg(
+                        processNotificationTemplate(
+                          selected.msg,
+                          notificarTarget,
+                        ),
+                      );
                     }
                   }}
                 >
@@ -5971,7 +6659,11 @@ export function DashboardView({
               </button>
               <button
                 onClick={() => {
-                  handleUpdateAcolhimentoProperty(notificarTarget.id, "contratoText", contratoText);
+                  handleUpdateAcolhimentoProperty(
+                    notificarTarget.id,
+                    "contratoText",
+                    contratoText,
+                  );
                   alert("Contrato atualizado para o paciente!");
                   setShowContratoModal(false);
                 }}
@@ -6016,9 +6708,12 @@ export function DashboardView({
             <div className="flex flex-wrap items-center gap-4 py-3 px-6 bg-white border-b border-soft">
               <button
                 onClick={() => {
-                  setNotificacaoType("pagamento");
+                  const tpl =
+                    templates.find((t) => t.id === "pagamento") || templates[0];
+                  setNotificacaoType(tpl.id);
+                  setNotificacaoName(tpl.name);
                   setNotificacaoMsg(
-                    `Olá ${selectedEmpresa.nomeContato}! Gostaríamos de conversar sobre o escopo de atuação...`,
+                    processNotificationTemplate(tpl.msg, selectedEmpresa),
                   );
                   setShowNotificarModal(true);
                 }}
@@ -6307,9 +7002,12 @@ export function DashboardView({
             <div className="flex flex-wrap items-center gap-4 py-3 px-6 bg-white border-b border-soft">
               <button
                 onClick={() => {
-                  setNotificacaoType("lembrete");
+                  const tpl =
+                    templates.find((t) => t.id === "lembrete") || templates[0];
+                  setNotificacaoType(tpl.id);
+                  setNotificacaoName(tpl.name);
                   setNotificacaoMsg(
-                    `Olá ${"nome" in selectedProfissional ? selectedProfissional.nome : selectedProfissional.name}! Estamos entrando em contato para...`,
+                    processNotificationTemplate(tpl.msg, selectedProfissional),
                   );
                   setShowNotificarModal(true);
                 }}
@@ -6337,44 +7035,80 @@ export function DashboardView({
                 <button
                   onClick={async () => {
                     const lead = profissionaisLeads.find(
-                      (l) => l.email?.toLowerCase().trim() === selectedProfissional.email?.toLowerCase().trim()
+                      (l) =>
+                        l.email?.toLowerCase().trim() ===
+                        selectedProfissional.email?.toLowerCase().trim(),
                     );
                     if (!lead) {
-                      alert("Nenhum formulário de cadastro correspondente encontrado para este e-mail.");
+                      alert(
+                        "Nenhum formulário de cadastro correspondente encontrado para este e-mail.",
+                      );
                       return;
                     }
-                    if (window.confirm("Deseja importar informações preenchidas no formulário de inscrição por este profissional? Campos que já possuírem informação não serão sobrescritos.")) {
+                    if (
+                      window.confirm(
+                        "Deseja importar informações preenchidas no formulário de inscrição por este profissional? Campos que já possuírem informação não serão sobrescritos.",
+                      )
+                    ) {
                       const fieldsToMerge = [
-                        "telefone", "crp", "cpf", "cidade", "uf", "motivacao", "bioCurta", 
-                        "instagramUrl", "linkedinUrl", "siteUrl", "abordagem", "especialidade", 
-                        "anoFormacao", "horasDisponiveis", "publicosExperiencia", "publicosGosto", 
-                        "outrosPublicosExperiencia", "outrosPublicosGosto", "registrosDeReunioes", 
-                        "notificacao"
+                        "telefone",
+                        "crp",
+                        "cpf",
+                        "cidade",
+                        "uf",
+                        "motivacao",
+                        "bioCurta",
+                        "instagramUrl",
+                        "linkedinUrl",
+                        "siteUrl",
+                        "abordagem",
+                        "especialidade",
+                        "anoFormacao",
+                        "horasDisponiveis",
+                        "publicosExperiencia",
+                        "publicosGosto",
+                        "outrosPublicosExperiencia",
+                        "outrosPublicosGosto",
+                        "registrosDeReunioes",
+                        "notificacao",
                       ];
-                      
+
                       const updates: any = {};
                       let hasNewData = false;
-                      
+
                       for (const field of fieldsToMerge) {
                         const leadVal = lead[field];
                         const profVal = selectedProfissional[field];
-                        
-                        const isProfEmpty = profVal === undefined || profVal === null || profVal === "" || (Array.isArray(profVal) && profVal.length === 0);
-                        const isLeadNotEmpty = leadVal !== undefined && leadVal !== null && leadVal !== "" && (!Array.isArray(leadVal) || leadVal.length > 0);
-                        
+
+                        const isProfEmpty =
+                          profVal === undefined ||
+                          profVal === null ||
+                          profVal === "" ||
+                          (Array.isArray(profVal) && profVal.length === 0);
+                        const isLeadNotEmpty =
+                          leadVal !== undefined &&
+                          leadVal !== null &&
+                          leadVal !== "" &&
+                          (!Array.isArray(leadVal) || leadVal.length > 0);
+
                         if (isProfEmpty && isLeadNotEmpty) {
                           updates[field] = leadVal;
                           hasNewData = true;
                         }
                       }
-                      
+
                       if (hasNewData) {
                         const profId = selectedProfissional.uid!;
                         await updateDoc(doc(db, "users", profId), updates);
-                        setSelectedProfissional({ ...selectedProfissional, ...updates });
+                        setSelectedProfissional({
+                          ...selectedProfissional,
+                          ...updates,
+                        });
                         alert("Dados do formulário importados com sucesso!");
                       } else {
-                        alert("Todas as informações do formulário já constam nesta Ficha de Bordo.");
+                        alert(
+                          "Todas as informações do formulário já constam nesta Ficha de Bordo.",
+                        );
                       }
                     }
                   }}
@@ -6999,9 +7733,15 @@ export function DashboardView({
       {devolverModalConfig && (
         <div className="fixed inset-0 bg-forest/20 backdrop-blur-sm z-[90] flex items-center justify-center p-4">
           <div className="bg-white max-w-md w-full rounded-[2rem] p-8 shadow-xl border border-soft flex flex-col">
-            <h3 className="text-xl font-serif text-forest mb-2">Devolver Paciente</h3>
+            <h3 className="text-xl font-serif text-forest mb-2">
+              Devolver Paciente
+            </h3>
             <p className="text-forest/70 text-sm mb-6">
-              Você está devolvendo o(a) paciente <span className="font-semibold">{devolverModalConfig.pacienteName}</span> para a triagem. Esta ação o recolocará na Fila de Espera.
+              Você está devolvendo o(a) paciente{" "}
+              <span className="font-semibold">
+                {devolverModalConfig.pacienteName}
+              </span>{" "}
+              para a triagem. Esta ação o recolocará na Fila de Espera.
             </p>
 
             <div className="flex flex-col gap-4 mb-8">
@@ -7034,11 +7774,17 @@ export function DashboardView({
                   const observacaoFinal = motivoDevolucaoOutro.trim();
 
                   try {
-                    const currentPaciente = acolhimentos.find(a => a.id === devolverModalConfig.pacienteId);
-                    const notificacaoAnterior = currentPaciente?.notificacao ? currentPaciente.notificacao + '\n\n' : '';
+                    const currentPaciente = acolhimentos.find(
+                      (a) => a.id === devolverModalConfig.pacienteId,
+                    );
+                    const notificacaoAnterior = currentPaciente?.notificacao
+                      ? currentPaciente.notificacao + "\n\n"
+                      : "";
                     const nowStr = new Date().toLocaleString("pt-BR");
 
-                    const textoMotivo = observacaoFinal ? ` Observação: ${observacaoFinal}` : '';
+                    const textoMotivo = observacaoFinal
+                      ? ` Observação: ${observacaoFinal}`
+                      : "";
 
                     const updates = {
                       profissionalId: "",

@@ -32,8 +32,8 @@ import { DashboardView } from "./views/DashboardView";
 import { EmpresaView } from "./views/EmpresaView";
 import { DoacaoView } from "./views/DoacaoView";
 import { ProfissionalLandingView } from "./views/ProfissionalLandingView";
-
 import { ContratoLandingView } from "./views/ContratoLandingView";
+import { PropostaLandingView } from "./views/PropostaLandingView";
 
 import { Footer } from "./components/Footer";
 
@@ -56,6 +56,7 @@ export default function App() {
   const publicServiceId = params.get("servico");
   const publicEventoId = params.get("evento");
   const publicContratoId = params.get("contrato");
+  const publicPropostaId = params.get("proposta");
   const viewParam = params.get("view") as any;
 
   const [currentView, setCurrentView] = useState<
@@ -141,6 +142,15 @@ export default function App() {
     return (
       <ContratoLandingView
         contratoId={publicContratoId}
+        onBack={handleBackFromPublicProfile}
+      />
+    );
+  }
+
+  if (publicPropostaId) {
+    return (
+      <PropostaLandingView
+        propostaId={publicPropostaId}
         onBack={handleBackFromPublicProfile}
       />
     );

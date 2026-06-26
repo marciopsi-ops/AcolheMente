@@ -1,5 +1,5 @@
 import { Footer } from '../components/Footer';
-import { ArrowLeft, Briefcase, Building2, CheckCircle2, HeartHandshake, TrendingUp, Sparkles, UserCheck, Coins, ArrowRight } from "lucide-react";
+import { ArrowLeft, Briefcase, Building2, CheckCircle2, HeartHandshake, TrendingUp, Sparkles, UserCheck, Coins, ArrowRight, MessageCircle } from "lucide-react";
 import React, { FormEvent, useState } from "react";
 import { collection, addDoc, serverTimestamp, getDocs, query, where } from "firebase/firestore";
 import { db, handleFirestoreError, OperationType } from "../lib/firebase";
@@ -405,6 +405,20 @@ export function EmpresaView({ onNavigate }: { onNavigate: (view: 'landing' | 'ac
         </section>
       </main>
       <Footer onNavigate={onNavigate} />
+      
+      {/* Floating WhatsApp Button */}
+      <a 
+        href="https://wa.me/5511999999999?text=Olá, quero falar com um consultor sobre o AcolheMente para empresas." 
+        target="_blank" 
+        rel="noopener noreferrer"
+        className="fixed bottom-6 right-6 bg-[#25D366] hover:bg-[#1ebd5b] text-white p-4 rounded-full shadow-lg shadow-[#25D366]/20 transition-all flex items-center justify-center group z-50 animate-in slide-in-from-bottom-5 duration-500 hover:scale-110"
+        title="Falar com um consultor"
+      >
+        <MessageCircle className="w-6 h-6 mr-0 group-hover:mr-3 transition-all" />
+        <span className="max-w-0 overflow-hidden whitespace-nowrap group-hover:max-w-xs transition-all duration-300 font-medium text-sm">
+          Quero falar com um consultor
+        </span>
+      </a>
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { Footer } from '../components/Footer';
-import { ArrowLeft, CheckCircle2, HeartHandshake, UserPlus, Clock, PiggyBank } from "lucide-react";
+import { ArrowLeft, CheckCircle2, HeartHandshake, UserPlus, Clock, PiggyBank, Network, Wallet } from "lucide-react";
 import React, { FormEvent, useState } from "react";
 import { collection, addDoc, serverTimestamp, getDocs, query, where } from "firebase/firestore";
 import { db, handleFirestoreError, OperationType } from "../lib/firebase";
@@ -116,7 +116,7 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
               </div>
             </div>
             
-            <div className="w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-8">
+            <div className="w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-8">
               <div className="bg-warm/50 p-6 rounded-3xl border border-soft flex flex-col gap-3">
                 <HeartHandshake className="w-8 h-8 text-sun-dark" />
                 <h3 className="font-semibold text-lg text-forest">Apoio Real</h3>
@@ -136,6 +136,16 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
                 <UserPlus className="w-8 h-8 text-sun-dark" />
                 <h3 className="font-semibold text-lg text-forest">Ecossistema</h3>
                 <p className="text-sm text-forest/80">Os pacientes chegam através de empresas parceiras ou do nosso fundo solidário, já engajados para tratamento.</p>
+              </div>
+              <div className="bg-warm/50 p-6 rounded-3xl border border-soft flex flex-col gap-3">
+                <Network className="w-8 h-8 text-sun-dark" />
+                <h3 className="font-semibold text-lg text-forest">Conexão entre Profissionais</h3>
+                <p className="text-sm text-forest/80">Ofereça e usufrua de serviços exclusivos na plataforma: supervisão, cursos, workshops e consultorias.</p>
+              </div>
+              <div className="bg-warm/50 p-6 rounded-3xl border border-soft flex flex-col gap-3">
+                <Wallet className="w-8 h-8 text-sun-dark" />
+                <h3 className="font-semibold text-lg text-forest">Taxa Associativa Acessível</h3>
+                <p className="text-sm text-forest/80">Acesse tudo isso com uma única taxa mensal, muito abaixo de outras plataformas, essencial para a sustentabilidade do projeto.</p>
               </div>
             </div>
           </div>

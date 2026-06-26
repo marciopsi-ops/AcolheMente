@@ -4,7 +4,7 @@ import { FormEvent, useState } from "react";
 import { collection, addDoc, serverTimestamp, getDocs, query, where } from "firebase/firestore";
 import { db, handleFirestoreError, OperationType } from "../lib/firebase";
 
-import pacienteHero from '../assets/images/paciente_hero_laptop_1781044669495.png';
+import pacienteHero from '../assets/images/paciente_hero_laptop_therapist_1782433549769.jpg';
 import logoImage from '../assets/images/logo_acolhe.jpeg';
 
 type AccessType = "Particular" | "Corporativo" | "";
@@ -151,7 +151,7 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
 
       <main className="flex-1 flex flex-col md:flex-row items-center justify-center p-6 md:p-8 gap-8 relative max-w-[1200px] w-full mx-auto">
         <div className="w-full md:w-1/2 flex justify-center order-first md:order-last">
-           <img src={pacienteHero} alt="Ilustração de acolhimento" className="w-full max-w-md object-contain mix-blend-multiply" referrerPolicy="no-referrer" />
+           <img src={pacienteHero} alt="Ilustração de acolhimento" className="w-full max-w-md object-cover rounded-[40px] shadow-xl shadow-forest/10" referrerPolicy="no-referrer" />
         </div>
         <div className="w-full md:w-1/2 bg-white rounded-[40px] p-6 md:p-10 shadow-xl shadow-forest/5 border border-soft relative z-10 my-auto">
           
