@@ -3,6 +3,7 @@ import { ArrowLeft, Briefcase, Building2, CheckCircle2, HeartHandshake, Trending
 import React, { FormEvent, useState } from "react";
 import { collection, addDoc, serverTimestamp, getDocs, query, where } from "firebase/firestore";
 import { db, handleFirestoreError, OperationType } from "../lib/firebase";
+import { sendCompanyLeadEmail } from "../lib/emailService";
 
 import empresaHero from '../assets/images/empresa_hero_photo_1781024092529.png';
 import logoImage from '../assets/images/logo_acolhe.jpeg';
@@ -47,6 +48,13 @@ export function EmpresaView({ onNavigate }: { onNavigate: (view: 'landing' | 'ac
         notificacao: 'Nova empresa interessada.',
         createdAt: serverTimestamp()
       });
+
+      try {
+        await sendCompanyLeadEmail(formData.contatoNome, formData.nomeEmpresa, formData.email);
+      } catch (emailErr) {
+        console.error("Failed to send company confirmation email:", emailErr);
+      }
+
       setIsSuccess(true);
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, "empresa_leads");

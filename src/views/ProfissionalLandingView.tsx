@@ -3,6 +3,7 @@ import { ArrowLeft, CheckCircle2, HeartHandshake, UserPlus, Clock, PiggyBank, Ne
 import React, { FormEvent, useState } from "react";
 import { collection, addDoc, serverTimestamp, getDocs, query, where } from "firebase/firestore";
 import { db, handleFirestoreError, OperationType } from "../lib/firebase";
+import { sendProfessionalLeadEmail } from "../lib/emailService";
 
 import psicologoHero from '../assets/images/psicologo_hero_photo_1781024080247.png';
 import logoImage from '../assets/images/logo_acolhe.jpeg';
@@ -66,6 +67,13 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
         notificacao: 'Novo cadastro de psicólogo voluntário/candidato.',
         createdAt: serverTimestamp()
       });
+
+      try {
+        await sendProfessionalLeadEmail(formData.nome, formData.email);
+      } catch (emailErr) {
+        console.error("Failed to send professional confirmation email:", emailErr);
+      }
+
       setIsSuccess(true);
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, "profissionais_leads");

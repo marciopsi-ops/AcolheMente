@@ -3,6 +3,7 @@ import { Footer } from "../components/Footer";
 import { FormEvent, useState } from "react";
 import { collection, addDoc, serverTimestamp, getDocs, query, where } from "firebase/firestore";
 import { db, handleFirestoreError, OperationType } from "../lib/firebase";
+import { sendPatientRegistrationEmail } from "../lib/emailService";
 
 import pacienteHero from '../assets/images/paciente_hero_laptop_therapist_1782433549769.jpg';
 import logoImage from '../assets/images/logo_acolhe.jpeg';
@@ -110,6 +111,12 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
           notificacao: "Novo cadastro de paciente recebido no sistema. Por favor, analise a ficha.",
           createdAt: serverTimestamp()
         });
+
+        try {
+          await sendPatientRegistrationEmail(name, email);
+        } catch (emailErr) {
+          console.error("Failed to send automatic welcome email:", emailErr);
+        }
         
         setIsSubmitting(false);
         setStep(5); // Success step

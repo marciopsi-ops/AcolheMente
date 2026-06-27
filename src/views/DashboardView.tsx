@@ -41,8 +41,12 @@ import {
   Heart,
   ShieldAlert,
   Star,
+  Upload,
+  Table,
+  Download,
 } from "lucide-react";
 import { auth, db, handleFirestoreError, OperationType } from "../lib/firebase";
+import { triggerEmail } from "../lib/emailService";
 import {
   GoogleAuthProvider,
   signInWithPopup,
@@ -60,16 +64,19 @@ import {
   setDoc,
   updateDoc,
   collection,
+  addDoc,
   onSnapshot,
   query,
   orderBy,
   serverTimestamp,
   deleteDoc,
   where,
+  getDocs,
 } from "firebase/firestore";
 import { initializeApp } from "firebase/app";
 import firebaseConfig from "../../firebase-applet-config.json";
 import logoImage from "../assets/images/logo_acolhe.jpeg";
+import { parseCSV, parseAndValidateData, ParseResult, ImportedProfissional } from "../lib/importParser";
 
 const safeLocalStorage = {
   getItem: (key: string): string | null => {
@@ -446,6 +453,25 @@ export function DashboardView({
   const [useGoogleLogin, setUseGoogleLogin] = useState(false);
   const [leadIdToConvert, setLeadIdToConvert] = useState<string | null>(null);
   const [isEditingCard, setIsEditingCard] = useState(false);
+
+  // Manual Lead Linkage / Recovery
+  const [showVincularLeadModal, setShowVincularLeadModal] = useState(false);
+  const [vincularProfTarget, setVincularProfTarget] = useState<UserProfile | null>(null);
+  const [vincularSearchQuery, setVincularSearchQuery] = useState("");
+
+  // File Import for Professionals
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState(0);
+  const [importResults, setImportResults] = useState<ParseResult | null>(null);
+  const [importFeedback, setImportFeedback] = useState<{ success: boolean; message: string } | null>(null);
+  const [dragActive, setDragActive] = useState(false);
+
+  // Spreadsheet Listing of Professionals
+  const [showSpreadsheet, setShowSpreadsheet] = useState(true);
+  const [spreadsheetSortAsc, setSpreadsheetSortAsc] = useState(true);
+  const [spreadsheetStatusFilter, setSpreadsheetStatusFilter] = useState("all");
 
   const [templates, setTemplates] = useState([
     {
@@ -1246,7 +1272,7 @@ export function DashboardView({
       if (!actualLeadId && newProfEmail) {
         const matched = profissionaisLeads.find(
           (l) =>
-            l.email?.toLowerCase().trim() === newProfEmail.toLowerCase().trim(),
+            (l.email || "").toLowerCase().trim() === (newProfEmail || "").toLowerCase().trim(),
         );
         if (matched) {
           actualLeadId = matched.id;
@@ -1336,8 +1362,19 @@ export function DashboardView({
         isOpen: true,
         message:
           "Conta de profissional criada com sucesso! Deseja enviar os dados de acesso por e-mail agora?",
-        onConfirm: () => {
-          window.open(`mailto:${newProfEmail}?${emailParams}`, "_blank");
+        onConfirm: async () => {
+          try {
+            await triggerEmail(
+              newProfEmail,
+              "Bem-vindo(a) ao Projeto AcolheMente Saúde",
+              `<h3>Olá ${newProfName},</h3><p>${emailBodyProvider.replace(/\n/g, "<br>")}</p>`
+            );
+            alert("Dados de acesso enviados com sucesso por e-mail via plataforma!");
+          } catch (err) {
+            console.error("Erro ao enviar e-mail de acesso:", err);
+            alert("Erro ao enviar e-mail de acesso via plataforma. Tentando abrir seu cliente de e-mail local...");
+            window.open(`mailto:${newProfEmail}?${emailParams}`, "_blank");
+          }
         },
       });
 
@@ -1365,8 +1402,8 @@ export function DashboardView({
             if (!actualLeadIdExc && newProfEmail) {
               const matched = profissionaisLeads.find(
                 (l) =>
-                  l.email?.toLowerCase().trim() ===
-                  newProfEmail.toLowerCase().trim(),
+                  (l.email || "").toLowerCase().trim() ===
+                  (newProfEmail || "").toLowerCase().trim(),
               );
               if (matched) {
                 actualLeadIdExc = matched.id;
@@ -1444,6 +1481,276 @@ export function DashboardView({
     }
   };
 
+  const handleProcessImportFile = async (file: File) => {
+    setImportFile(file);
+    setImportFeedback(null);
+    setImportProgress(0);
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const text = event.target?.result as string;
+        let parsedRaw: any[] = [];
+
+        if (file.name.endsWith(".json")) {
+          const jsonVal = JSON.parse(text);
+          parsedRaw = Array.isArray(jsonVal) ? jsonVal : [jsonVal];
+        } else if (file.name.endsWith(".csv")) {
+          parsedRaw = parseCSV(text);
+        } else {
+          setImportFeedback({
+            success: false,
+            message: "Formato de arquivo não suportado. Por favor, envie um arquivo .csv ou .json.",
+          });
+          return;
+        }
+
+        const validation = parseAndValidateData(parsedRaw);
+        setImportResults(validation);
+      } catch (err: any) {
+        console.error("Erro ao processar arquivo:", err);
+        setImportFeedback({
+          success: false,
+          message: `Erro ao analisar o arquivo: ${err.message || err}`,
+        });
+      }
+    };
+
+    reader.onerror = () => {
+      setImportFeedback({
+        success: false,
+        message: "Erro ao ler o arquivo.",
+      });
+    };
+
+    reader.readAsText(file);
+  };
+
+  const handleExecuteImport = async () => {
+    if (!importResults || importResults.data.length === 0) return;
+
+    setIsImporting(true);
+    setImportProgress(0);
+    setImportFeedback(null);
+
+    let savedCount = 0;
+    const total = importResults.data.length;
+
+    try {
+      for (const prof of importResults.data) {
+        const leadData = {
+          nome: prof.nome,
+          email: prof.email,
+          telefone: prof.telefone || "",
+          crp: prof.crp || "",
+          cpf: prof.cpf || "",
+          cidade: prof.cidade || "",
+          uf: prof.uf || "",
+          especialidade: prof.especialidade || "",
+          abordagem: prof.abordagem || "",
+          anoFormacao: prof.anoFormacao || "",
+          horasDisponiveis: prof.horasDisponiveis || "1 a 3 horas/mês",
+          publicosExperiencia: prof.publicosExperiencia || [],
+          publicosGosto: prof.publicosGosto || [],
+          outrosPublicosExperiencia: prof.outrosPublicosExperiencia || "",
+          outrosPublicosGosto: prof.outrosPublicosGosto || "",
+          motivacao: prof.motivacao || "Importado via importação de arquivo.",
+          status: "Aguardando Entrevista",
+          notificacao: `Importado via arquivo de cadastro em ${new Date().toLocaleDateString("pt-BR")}.`,
+          createdAt: new Date(),
+        };
+
+        await addDoc(collection(db, "profissionais_leads"), leadData);
+        savedCount++;
+        setImportProgress(savedCount);
+      }
+
+      setImportFeedback({
+        success: true,
+        message: `${savedCount} profissionais foram importados com sucesso para a fila de Novos Cadastros!`,
+      });
+      setImportResults(null);
+      setImportFile(null);
+    } catch (err: any) {
+      console.error("Erro durante a importação:", err);
+      setImportFeedback({
+        success: false,
+        message: `Ocorreu um erro durante a importação. ${savedCount} registros de ${total} foram salvos. Erro: ${err.message || err}`,
+      });
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  const handleImportDrag = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === "dragenter" || e.type === "dragover") {
+      setDragActive(true);
+    } else if (e.type === "dragleave") {
+      setDragActive(false);
+    }
+  };
+
+  const handleImportDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      handleProcessImportFile(e.dataTransfer.files[0]);
+    }
+  };
+
+  const recoverSpecificEmails = async () => {
+    const emailsToFind = [
+      "b.julianapassospsi21@gmail.com",
+      "monique_carilli@hotmail.com",
+      "thaliamartins.psi@gmail.com"
+    ];
+    
+    alert("Iniciando busca profunda no banco de dados...");
+    try {
+      const collectionsToCheck = ["users", "acolhimentos", "profissionais_leads", "solicitacoes_doacao", "doacoes", "empresa_leads"];
+      let found = 0;
+      let alreadyInLeads = 0;
+      
+      for (const email of emailsToFind) {
+        let foundForEmail = false;
+        
+        // First check if already in leads
+        const qLeads = query(collection(db, "profissionais_leads"), where("email", "==", email));
+        const snapLeads = await getDocs(qLeads);
+        if (!snapLeads.empty) {
+          alreadyInLeads++;
+          foundForEmail = true;
+        } else {
+          // Check other collections
+          for (const colName of ["users", "acolhimentos"]) {
+            const q = query(collection(db, colName), where("email", "==", email));
+            const snap = await getDocs(q);
+            if (!snap.empty) {
+              const promises = snap.docs.map(async (docSnap) => {
+                const data = docSnap.data();
+                await addDoc(collection(db, "profissionais_leads"), {
+                  ...data,
+                  status: 'Aguardando Entrevista',
+                  migratedFrom: colName,
+                  createdAt: data.createdAt || serverTimestamp(),
+                  nome: data.nome || data.name || data.displayName || "Recuperado pelo Sistema",
+                  telefone: data.telefone || data.phone || "(00) 00000-0000",
+                  crp: data.crp || "00/00000",
+                  horasDisponiveis: data.horasDisponiveis || "0",
+                  motivacao: data.motivacao || "Recuperado pelo sistema",
+                });
+                found++;
+              });
+              await Promise.all(promises);
+              foundForEmail = true;
+              break;
+            }
+          }
+        }
+        
+        if (!foundForEmail) {
+          // If totally missing, just create empty shells for them so they show up
+          await addDoc(collection(db, "profissionais_leads"), {
+            email: email,
+            nome: "Recuperado pelo Sistema",
+            telefone: "(00) 00000-0000",
+            crp: "00/00000",
+            horasDisponiveis: "0",
+            motivacao: "Recuperado pelo sistema",
+            status: 'Aguardando Entrevista',
+            migratedFrom: 'manual_recovery',
+            createdAt: serverTimestamp(),
+          });
+          found++;
+        }
+      }
+      alert(`Busca concluída.\nRecuperados/Criados: ${found}\nJá existiam em Cadastros: ${alreadyInLeads}`);
+    } catch (e) {
+      console.error(e);
+      alert("Erro na busca: " + String(e));
+    }
+  };
+
+  const exportSpreadsheetToCSV = () => {
+    const headers = [
+      "Ordem",
+      "Data de Envio",
+      "Status",
+      "Nome",
+      "E-mail",
+      "Telefone",
+      "CPF",
+      "CRP",
+      "Cidade",
+      "UF",
+      "Especialidade",
+      "Abordagem",
+      "Ano de Formação",
+      "Horas Disponíveis",
+      "Motivação",
+    ];
+
+    // Sort chronologically ascending to list in order of completion
+    const sortedLeadsForExport = [...profissionaisLeads].sort((a, b) => {
+      const timeA = a.createdAt?.seconds || (a.createdAt?.toMillis ? a.createdAt.toMillis() / 1000 : 0) || (typeof a.createdAt === "string" ? new Date(a.createdAt).getTime() / 1000 : 0) || 0;
+      const timeB = b.createdAt?.seconds || (b.createdAt?.toMillis ? b.createdAt.toMillis() / 1000 : 0) || (typeof b.createdAt === "string" ? new Date(b.createdAt).getTime() / 1000 : 0) || 0;
+      return timeA - timeB;
+    });
+
+    const rows = sortedLeadsForExport.map((lead, idx) => {
+      let dateStr = "";
+      if (lead.createdAt) {
+        try {
+          const dateObj = typeof lead.createdAt.toDate === "function"
+            ? lead.createdAt.toDate()
+            : (lead.createdAt.seconds ? new Date(lead.createdAt.seconds * 1000) : new Date(lead.createdAt));
+          dateStr = dateObj.toLocaleDateString("pt-BR");
+        } catch (e) {
+          dateStr = "";
+        }
+      }
+      return [
+        idx + 1,
+        dateStr,
+        lead.status || "Aguardando Entrevista",
+        lead.nome || "",
+        lead.email || "",
+        lead.telefone || "",
+        lead.cpf || "",
+        lead.crp || "",
+        lead.cidade || "",
+        lead.uf || "",
+        lead.especialidade || "",
+        lead.abordagem || "",
+        lead.anoFormacao || "",
+        lead.horasDisponiveis || "",
+        (lead.motivacao || "").replace(/\r?\n|\r/g, " "),
+      ];
+    });
+
+    const csvContent =
+      "data:text/csv;charset=utf-8,\uFEFF" +
+      [
+        headers.join(";"),
+        ...rows.map((row) =>
+          row
+            .map((val) => `"${String(val).replace(/"/g, '""')}"`)
+            .join(";")
+        ),
+      ].join("\n");
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `planilha_cadastros_${new Date().toLocaleDateString("pt-BR").replace(/\//g, "-")}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const handleReconcileExistingProfs = async () => {
     if (profissionaisAtivos.length === 0) {
       alert(
@@ -1467,8 +1774,8 @@ export function DashboardView({
         // Find matching lead by email
         const matchingLead = profissionaisLeads.find(
           (lead) =>
-            lead.email?.toLowerCase().trim() ===
-            prof.email?.toLowerCase().trim(),
+            (lead.email || "").toLowerCase().trim() ===
+            (prof.email || "").toLowerCase().trim(),
         );
 
         if (matchingLead) {
@@ -1872,35 +2179,35 @@ export function DashboardView({
   const filteredDoacoes = doacoes.filter(
     (d) =>
       !searchQuery ||
-      d.nome?.toLowerCase().includes(lowerQuery) ||
-      d.status?.toLowerCase().includes(lowerQuery) ||
-      d.email?.toLowerCase().includes(lowerQuery),
+      (d.nome || "").toLowerCase().includes(lowerQuery) ||
+      (d.status || "").toLowerCase().includes(lowerQuery) ||
+      (d.email || "").toLowerCase().includes(lowerQuery),
   );
 
   const filteredSolicitacoes = solicitacoes.filter(
     (s) =>
       !searchQuery ||
-      s.nome?.toLowerCase().includes(lowerQuery) ||
-      s.motivo?.toLowerCase().includes(lowerQuery) ||
-      s.telefone?.toLowerCase().includes(lowerQuery),
+      (s.nome || "").toLowerCase().includes(lowerQuery) ||
+      (s.motivo || "").toLowerCase().includes(lowerQuery) ||
+      (s.telefone || "").toLowerCase().includes(lowerQuery),
   );
 
   const filteredLeads = profissionaisLeads.filter(
     (l) =>
       !searchQuery ||
-      l.nome?.toLowerCase().includes(lowerQuery) ||
-      l.crp?.toLowerCase().includes(lowerQuery) ||
-      l.email?.toLowerCase().includes(lowerQuery) ||
-      l.telefone?.toLowerCase().includes(lowerQuery) ||
-      l.motivacao?.toLowerCase().includes(lowerQuery),
+      (l.nome || "").toLowerCase().includes(lowerQuery) ||
+      (l.crp || "").toLowerCase().includes(lowerQuery) ||
+      (l.email || "").toLowerCase().includes(lowerQuery) ||
+      (l.telefone || "").toLowerCase().includes(lowerQuery) ||
+      (l.motivacao || "").toLowerCase().includes(lowerQuery),
   );
 
   const filteredAtivos = profissionaisAtivos.filter(
     (p) =>
       !searchQuery ||
-      p.name?.toLowerCase().includes(lowerQuery) ||
-      p.email?.toLowerCase().includes(lowerQuery) ||
-      p.role?.toLowerCase().includes(lowerQuery),
+      (p.name || "").toLowerCase().includes(lowerQuery) ||
+      (p.email || "").toLowerCase().includes(lowerQuery) ||
+      (p.role || "").toLowerCase().includes(lowerQuery),
   );
 
   const prevDataLengths = React.useRef({
@@ -4828,10 +5135,271 @@ export function DashboardView({
       ) : activeTab === "profissionais" ? (
         <div className="flex-1 overflow-auto p-6 md:p-8 flex items-start flex-col gap-8 slide-up">
           <div className="w-full flex flex-col gap-4">
-            <h2 className="font-serif text-2xl text-forest bg-white px-6 py-4 rounded-2xl shadow-sm border border-soft flex items-center gap-3">
-              <User className="w-6 h-6 text-forest/70" />
-              Novos Cadastros (Leads)
-            </h2>
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white px-6 py-4 rounded-2xl shadow-sm border border-soft">
+              <h2 className="font-serif text-2xl text-forest flex items-center gap-3">
+                <User className="w-6 h-6 text-forest/70" />
+                Novos Cadastros (Leads)
+              </h2>
+              <button
+                onClick={() => {
+                  setShowImportModal(true);
+                  setImportFile(null);
+                  setImportResults(null);
+                  setImportFeedback(null);
+                  setImportProgress(0);
+                }}
+                className="w-full sm:w-auto px-5 py-2.5 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200/60 text-sm font-semibold rounded-full transition-all flex items-center justify-center gap-2 shadow-xs cursor-pointer"
+              >
+                <Upload className="w-4 h-4" /> Importar de Arquivo (CSV/JSON)
+              </button>
+            </div>
+
+            {/* Listagem de Cadastros (Planilha de Inscrições) */}
+            <div className="bg-white p-6 rounded-3xl shadow-sm border border-soft flex flex-col gap-4">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div className="flex flex-col gap-1">
+                  <h3 className="font-serif text-xl text-forest flex items-center gap-2">
+                    <Table className="w-5 h-5 text-forest/70" />
+                    Listagem de Cadastros (Planilha de Inscrições)
+                  </h3>
+                  <p className="text-xs text-forest/50">
+                    Reúne todos os formulários preenchidos em ordem cronológica de envio. Use para consultas e correções rápidas.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                  <button
+                    onClick={() => setShowSpreadsheet(!showSpreadsheet)}
+                    className="flex-1 sm:flex-none px-4 py-2 bg-warm text-forest hover:bg-soft/55 border border-soft text-xs font-bold rounded-full transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    {showSpreadsheet ? "Ocultar Planilha" : "Mostrar Planilha"}
+                  </button>
+                  <button
+                    onClick={recoverSpecificEmails}
+                    className="flex-1 sm:flex-none px-4 py-2 bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200/60 text-xs font-bold rounded-full transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" /> Recuperar E-mails Solicitados
+                  </button>
+                  <button
+                    onClick={exportSpreadsheetToCSV}
+                    className="flex-1 sm:flex-none px-4 py-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200/60 text-xs font-bold rounded-full transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5" /> Exportar Planilha (.CSV)
+                  </button>
+                </div>
+              </div>
+
+              {showSpreadsheet && (
+                <div className="space-y-4 pt-2">
+                  {/* Filtros e Controles */}
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-warm/30 p-3 rounded-2xl border border-soft/50 text-xs">
+                    <div className="flex flex-wrap items-center gap-4 w-full sm:w-auto">
+                      <div className="flex items-center gap-2">
+                        <span className="text-forest/60 font-semibold">Status:</span>
+                        <select
+                          value={spreadsheetStatusFilter}
+                          onChange={(e) => setSpreadsheetStatusFilter(e.target.value)}
+                          className="bg-white border border-soft rounded-lg px-2.5 py-1 text-forest focus:outline-none focus:border-forest/40 text-xs font-medium cursor-pointer"
+                        >
+                          <option value="all">Todos os Status</option>
+                          <option value="Aguardando Entrevista">Aguardando Entrevista</option>
+                          <option value="Aguardando Avaliação">Aguardando Avaliação</option>
+                          <option value="Aprovado">Aprovado</option>
+                          <option value="Stand-by">Stand-by</option>
+                          <option value="Aguardando Contrato">Aguardando Contrato</option>
+                          <option value="Aguardando Acesso">Aguardando Acesso</option>
+                          <option value="Rejeitado">Rejeitado</option>
+                        </select>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-forest/60 font-semibold">Ordem:</span>
+                        <button
+                          onClick={() => setSpreadsheetSortAsc(!spreadsheetSortAsc)}
+                          className="px-3 py-1 bg-white hover:bg-warm border border-soft rounded-lg text-forest font-medium transition-colors text-xs cursor-pointer"
+                        >
+                          {spreadsheetSortAsc ? "Antigos primeiro (Cronológica)" : "Novos primeiro (Recente)"}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="text-forest/50 font-medium text-[11px] shrink-0">
+                      Mostrando {
+                        profissionaisLeads
+                          .filter((l) => spreadsheetStatusFilter === "all" || l.status === spreadsheetStatusFilter)
+                          .filter((l) => !searchQuery || (l.nome || "").toLowerCase().includes(searchQuery.toLowerCase()) || (l.email || "").toLowerCase().includes(searchQuery.toLowerCase()) || (l.telefone || "").toLowerCase().includes(searchQuery.toLowerCase()) || (l.especialidade || "").toLowerCase().includes(searchQuery.toLowerCase()))
+                          .length
+                      } cadastros
+                    </div>
+                  </div>
+
+                  {/* Tabela Planilha */}
+                  <div className="border border-soft rounded-2xl overflow-hidden bg-white shadow-xs max-h-[480px] overflow-y-auto custom-scrollbar overflow-x-auto">
+                    <table className="w-full text-left text-xs border-collapse min-w-[2000px]">
+                      <thead className="bg-warm/60 border-b border-soft/80 text-forest font-semibold sticky top-0 z-10">
+                        <tr>
+                          <th className="px-4 py-3 border-r border-soft/30 w-16 text-center bg-warm/80"># Ordem</th>
+                          <th className="px-4 py-3 border-r border-soft/30 w-36">Data de Envio</th>
+                          <th className="px-4 py-3 border-r border-soft/30 w-36">Status</th>
+                          <th className="px-4 py-3 border-r border-soft/30 w-52">Nome Completo</th>
+                          <th className="px-4 py-3 border-r border-soft/30 w-52">E-mail</th>
+                          <th className="px-4 py-3 border-r border-soft/30 w-36">Telefone</th>
+                          <th className="px-4 py-3 border-r border-soft/30 w-36">CPF</th>
+                          <th className="px-4 py-3 border-r border-soft/30 w-28 font-mono">CRP</th>
+                          <th className="px-4 py-3 border-r border-soft/30 w-36">Cidade/UF</th>
+                          <th className="px-4 py-3 border-r border-soft/30 w-52">Especialidade</th>
+                          <th className="px-4 py-3 border-r border-soft/30 w-52">Abordagem</th>
+                          <th className="px-4 py-3 border-r border-soft/30 w-28 text-center">Formação</th>
+                          <th className="px-4 py-3 border-r border-soft/30 w-36">Horas Disponíveis</th>
+                          <th className="px-4 py-3 border-r border-soft/30 w-64">Públicos Experiência</th>
+                          <th className="px-4 py-3 border-r border-soft/30 w-64">Públicos Gosto</th>
+                          <th className="px-4 py-3 border-r border-soft/30 w-80">Motivação</th>
+                          <th className="px-4 py-3 w-32 text-center sticky right-0 bg-warm/90 backdrop-blur-xs shadow-[-4px_0_10px_-4px_rgba(0,0,0,0.1)]">Ações</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-soft/40 text-forest/90">
+                        {(() => {
+                          // Filter the leads list
+                          let list = profissionaisLeads
+                            .filter((l) => spreadsheetStatusFilter === "all" || l.status === spreadsheetStatusFilter)
+                            .filter((l) => !searchQuery || (l.nome || "").toLowerCase().includes(searchQuery.toLowerCase()) || (l.email || "").toLowerCase().includes(searchQuery.toLowerCase()) || (l.telefone || "").toLowerCase().includes(searchQuery.toLowerCase()) || (l.especialidade || "").toLowerCase().includes(searchQuery.toLowerCase()));
+
+                          // Index numbers are assigned based on chronological ascending order of the entire list
+                          const indexedLeads = [...profissionaisLeads]
+                            .sort((a, b) => {
+                              const timeA = a.createdAt?.seconds || (a.createdAt?.toMillis ? a.createdAt.toMillis() / 1000 : 0) || (typeof a.createdAt === "string" ? new Date(a.createdAt).getTime() / 1000 : 0) || 0;
+                              const timeB = b.createdAt?.seconds || (b.createdAt?.toMillis ? b.createdAt.toMillis() / 1000 : 0) || (typeof b.createdAt === "string" ? new Date(b.createdAt).getTime() / 1000 : 0) || 0;
+                              return timeA - timeB;
+                            });
+
+                          const listWithOriginalOrder = list.map((lead) => {
+                            const foundIndex = indexedLeads.findIndex((il) => il.id === lead.id);
+                            const orderIndex = foundIndex !== -1 ? foundIndex + 1 : 1;
+                            return { lead, orderIndex };
+                          });
+
+                          // Sort based on sort preference
+                          listWithOriginalOrder.sort((a, b) => {
+                            const timeA = a.lead.createdAt?.seconds || (a.lead.createdAt?.toMillis ? a.lead.createdAt.toMillis() / 1000 : 0) || 0;
+                            const timeB = b.lead.createdAt?.seconds || (b.lead.createdAt?.toMillis ? b.lead.createdAt.toMillis() / 1000 : 0) || 0;
+                            return spreadsheetSortAsc ? timeA - timeB : timeB - timeA;
+                          });
+
+                          if (listWithOriginalOrder.length === 0) {
+                            return (
+                              <tr>
+                                <td colSpan={17} className="text-center p-8 text-forest/50 font-medium">
+                                  Nenhum registro encontrado com os filtros aplicados.
+                                </td>
+                              </tr>
+                            );
+                          }
+
+                          return listWithOriginalOrder.map(({ lead, orderIndex }) => {
+                            let dateStr = "";
+                            if (lead.createdAt) {
+                              try {
+                                const dateObj = typeof lead.createdAt.toDate === "function"
+                                  ? lead.createdAt.toDate()
+                                  : (lead.createdAt.seconds ? new Date(lead.createdAt.seconds * 1000) : new Date(lead.createdAt));
+                                dateStr = dateObj.toLocaleDateString("pt-BR") + " " + dateObj.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+                              } catch (e) {
+                                dateStr = "";
+                              }
+                            }
+
+                            return (
+                              <tr key={lead.id} className="hover:bg-warm/15 transition-colors">
+                                <td className="px-4 py-2 border-r border-soft/30 text-center font-bold text-forest/70 bg-warm/5">
+                                  #{orderIndex}
+                                </td>
+                                <td className="px-4 py-2 border-r border-soft/30 text-xs font-medium text-forest/60 whitespace-nowrap">
+                                  {dateStr}
+                                </td>
+                                <td className="px-4 py-2 border-r border-soft/30">
+                                  <span className={`inline-block px-2.5 py-1 text-[10px] font-bold rounded-full ${
+                                    lead.status === "Aprovado"
+                                      ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                      : lead.status === "Rejeitado"
+                                        ? "bg-red-50 text-red-600 border border-red-200"
+                                        : lead.status === "Stand-by"
+                                          ? "bg-amber-50 text-amber-700 border border-amber-200"
+                                          : "bg-purple-50 text-purple-700 border border-purple-200"
+                                  }`}>
+                                    {lead.status || "Aguardando Entrevista"}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-2 border-r border-soft/30 font-bold text-forest truncate max-w-[150px]" title={lead.nome}>
+                                  {lead.nome}
+                                </td>
+                                <td className="px-4 py-2 border-r border-soft/30 font-mono text-xs text-forest/80 truncate max-w-[150px]" title={lead.email}>
+                                  {lead.email}
+                                </td>
+                                <td className="px-4 py-2 border-r border-soft/30 font-semibold whitespace-nowrap text-forest/80">
+                                  {lead.telefone || "-"}
+                                </td>
+                                <td className="px-4 py-2 border-r border-soft/30 font-mono text-xs text-forest/60 whitespace-nowrap">
+                                  {lead.cpf || "-"}
+                                </td>
+                                <td className="px-4 py-2 border-r border-soft/30 font-mono text-xs font-semibold text-forest/80 whitespace-nowrap">
+                                  {lead.crp || "-"}
+                                </td>
+                                <td className="px-4 py-2 border-r border-soft/30 text-forest/80 truncate max-w-[120px]" title={lead.cidade}>
+                                  {lead.cidade ? `${lead.cidade}/${lead.uf || ""}` : "-"}
+                                </td>
+                                <td className="px-4 py-2 border-r border-soft/30 text-xs truncate max-w-[140px]" title={lead.especialidade}>
+                                  {lead.especialidade || "-"}
+                                </td>
+                                <td className="px-4 py-2 border-r border-soft/30 text-xs truncate max-w-[140px]" title={lead.abordagem}>
+                                  {lead.abordagem || "-"}
+                                </td>
+                                <td className="px-4 py-2 border-r border-soft/30 text-center font-mono text-xs text-forest/60">
+                                  {lead.anoFormacao || "-"}
+                                </td>
+                                <td className="px-4 py-2 border-r border-soft/30 text-xs text-forest/80 truncate max-w-[120px]" title={lead.horasDisponiveis}>
+                                  {lead.horasDisponiveis || "-"}
+                                </td>
+                                <td className="px-4 py-2 border-r border-soft/30 text-xs truncate max-w-[180px]" title={Array.isArray(lead.publicosExperiencia) ? lead.publicosExperiencia.join(", ") : lead.publicosExperiencia}>
+                                  {Array.isArray(lead.publicosExperiencia) ? lead.publicosExperiencia.join(", ") : lead.publicosExperiencia || "-"}
+                                </td>
+                                <td className="px-4 py-2 border-r border-soft/30 text-xs truncate max-w-[180px]" title={Array.isArray(lead.publicosGosto) ? lead.publicosGosto.join(", ") : lead.publicosGosto}>
+                                  {Array.isArray(lead.publicosGosto) ? lead.publicosGosto.join(", ") : lead.publicosGosto || "-"}
+                                </td>
+                                <td className="px-4 py-2 border-r border-soft/30 text-xs italic text-forest/70 max-w-[200px] truncate" title={lead.motivacao}>
+                                  {lead.motivacao ? `"${lead.motivacao}"` : "-"}
+                                </td>
+                                <td className="px-4 py-2 text-center sticky right-0 bg-white hover:bg-warm/15 shadow-[-4px_0_10px_-4px_rgba(0,0,0,0.1)]">
+                                  <div className="flex items-center justify-center gap-1.5">
+                                    <button
+                                      onClick={() => {
+                                        setSelectedProfissional(lead);
+                                        setIsEditingCard(false);
+                                      }}
+                                      className="p-1.5 text-forest/70 hover:text-forest hover:bg-warm rounded-lg transition-colors cursor-pointer"
+                                      title="Ver Ficha de Bordo"
+                                    >
+                                      <FileText className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        setSelectedProfissional(lead);
+                                        setIsEditingCard(true);
+                                      }}
+                                      className="p-1.5 text-amber-600 hover:text-amber-700 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer"
+                                      title="Editar Informações"
+                                    >
+                                      <Edit3 className="w-4 h-4" />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          });
+                        })()}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div className="flex flex-col gap-3">
               {filteredLeads.length === 0 ? (
                 <div className="text-center p-8 bg-white/50 border border-dashed border-soft rounded-[2rem] text-forest/70/70 text-sm">
@@ -5479,11 +6047,11 @@ export function DashboardView({
                 const uRoles = u.roles || [u.role].filter(Boolean);
                 return (
                   !searchQuery ||
-                  u.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                  u.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                  u.role?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                  (u.name || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+                  (u.email || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+                  (u.role || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
                   uRoles.some((r: string) =>
-                    r.toLowerCase().includes(searchQuery.toLowerCase()),
+                    (r || "").toLowerCase().includes(searchQuery.toLowerCase()),
                   )
                 );
               })
@@ -6586,7 +7154,7 @@ export function DashboardView({
                 )}
               </div>
             </div>
-            <div className="p-6 border-t border-soft bg-warm flex justify-end gap-3">
+            <div className="p-6 border-t border-soft bg-warm flex flex-wrap justify-end gap-3">
               <button
                 onClick={() => setShowNotificarModal(false)}
                 className="px-5 py-2 text-forest font-semibold text-sm hover:underline"
@@ -6602,7 +7170,30 @@ export function DashboardView({
                 }}
                 className="px-5 py-2 bg-white border border-soft text-forest rounded-full text-sm font-semibold hover:bg-slate-50 transition-colors flex items-center gap-2"
               >
-                <Mail className="w-4 h-4" /> Enviar por E-mail
+                <Mail className="w-4 h-4" /> Enviar p/ E-mail Local
+              </button>
+              <button
+                onClick={async () => {
+                  if (notificarTarget && notificarTarget.email) {
+                    try {
+                      await triggerEmail(
+                        notificarTarget.email,
+                        notificacaoName || "Notificação Projeto AcolheMente",
+                        `<h3>Olá!</h3><p>${notificacaoMsg.replace(/\n/g, "<br>")}</p>`
+                      );
+                      alert("E-mail enfileirado para envio automático via plataforma!");
+                    } catch (err) {
+                      console.error("Erro ao enviar e-mail pela plataforma:", err);
+                      alert("Ocorreu um erro ao enviar via plataforma.");
+                    }
+                  } else {
+                    alert("Este destinatário não possui e-mail cadastrado.");
+                  }
+                  setShowNotificarModal(false);
+                }}
+                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-full text-sm font-semibold transition-colors flex items-center gap-2 shadow-sm"
+              >
+                <Send className="w-4 h-4" /> Enviar pela Plataforma
               </button>
               <button
                 onClick={() => {
@@ -7031,85 +7622,117 @@ export function DashboardView({
                 {selectedProfissional.ativo === false ? "Ativar" : "Inativar"}
               </button>
 
-              {"uid" in selectedProfissional && (
+              {selectedProfissional && "uid" in selectedProfissional && (
                 <button
                   onClick={async () => {
-                    const lead = profissionaisLeads.find(
-                      (l) =>
-                        l.email?.toLowerCase().trim() ===
-                        selectedProfissional.email?.toLowerCase().trim(),
-                    );
-                    if (!lead) {
-                      alert(
-                        "Nenhum formulário de cadastro correspondente encontrado para este e-mail.",
+                    try {
+                      const lead = profissionaisLeads.find(
+                        (l) =>
+                          (l.email || "").toLowerCase().trim() ===
+                          (selectedProfissional.email || "").toLowerCase().trim(),
                       );
-                      return;
-                    }
-                    if (
-                      window.confirm(
-                        "Deseja importar informações preenchidas no formulário de inscrição por este profissional? Campos que já possuírem informação não serão sobrescritos.",
-                      )
-                    ) {
-                      const fieldsToMerge = [
-                        "telefone",
-                        "crp",
-                        "cpf",
-                        "cidade",
-                        "uf",
-                        "motivacao",
-                        "bioCurta",
-                        "instagramUrl",
-                        "linkedinUrl",
-                        "siteUrl",
-                        "abordagem",
-                        "especialidade",
-                        "anoFormacao",
-                        "horasDisponiveis",
-                        "publicosExperiencia",
-                        "publicosGosto",
-                        "outrosPublicosExperiencia",
-                        "outrosPublicosGosto",
-                        "registrosDeReunioes",
-                        "notificacao",
-                      ];
+                      if (!lead) {
+                        const choice = window.confirm(
+                          "Não encontramos nenhuma ficha de inscrição com o mesmo e-mail deste profissional. Deseja abrir a ferramenta de vinculação manual para buscar por Nome ou outro e-mail e realizar o resgate das informações?"
+                        );
+                        if (choice) {
+                          setVincularProfTarget(selectedProfissional as UserProfile);
+                          setVincularSearchQuery((selectedProfissional as UserProfile).name || "");
+                          setShowVincularLeadModal(true);
+                        }
+                        return;
+                      }
+                      if (
+                        window.confirm(
+                          "Deseja importar informações preenchidas no formulário de inscrição por este profissional? Campos que já possuírem informação não serão sobrescritos.",
+                        )
+                      ) {
+                        const fieldsToMerge = [
+                          "telefone",
+                          "crp",
+                          "cpf",
+                          "cidade",
+                          "uf",
+                          "motivacao",
+                          "bioCurta",
+                          "instagramUrl",
+                          "linkedinUrl",
+                          "siteUrl",
+                          "abordagem",
+                          "especialidade",
+                          "anoFormacao",
+                          "horasDisponiveis",
+                          "publicosExperiencia",
+                          "publicosGosto",
+                          "outrosPublicosExperiencia",
+                          "outrosPublicosGosto",
+                          "registrosDeReunioes",
+                          "notificacao",
+                        ];
 
-                      const updates: any = {};
-                      let hasNewData = false;
+                        const updates: any = {};
+                        let hasNewData = false;
 
-                      for (const field of fieldsToMerge) {
-                        const leadVal = lead[field];
-                        const profVal = selectedProfissional[field];
+                        for (const field of fieldsToMerge) {
+                          const leadVal = lead[field];
+                          const profVal = selectedProfissional[field];
 
-                        const isProfEmpty =
-                          profVal === undefined ||
-                          profVal === null ||
-                          profVal === "" ||
-                          (Array.isArray(profVal) && profVal.length === 0);
-                        const isLeadNotEmpty =
-                          leadVal !== undefined &&
-                          leadVal !== null &&
-                          leadVal !== "" &&
-                          (!Array.isArray(leadVal) || leadVal.length > 0);
+                          const isProfEmpty =
+                            profVal === undefined ||
+                            profVal === null ||
+                            profVal === "" ||
+                            (Array.isArray(profVal) && profVal.length === 0);
+                          const isLeadNotEmpty =
+                            leadVal !== undefined &&
+                            leadVal !== null &&
+                            leadVal !== "" &&
+                            (!Array.isArray(leadVal) || leadVal.length > 0);
 
-                        if (isProfEmpty && isLeadNotEmpty) {
-                          updates[field] = leadVal;
-                          hasNewData = true;
+                          if (isProfEmpty && isLeadNotEmpty) {
+                            updates[field] = leadVal;
+                            hasNewData = true;
+                          }
+                        }
+
+                        if (hasNewData) {
+                          const profId = selectedProfissional.uid!;
+                          await updateDoc(doc(db, "users", profId), updates);
+                          setSelectedProfissional({
+                            ...selectedProfissional,
+                            ...updates,
+                          });
+                          alert("Dados do formulário importados com sucesso!");
+                        } else {
+                          const forceChoice = window.confirm(
+                            "Todas as novas informações não vazias do formulário já constam nesta Ficha de Bordo. Deseja realizar a importação forçada sobrescrevendo todos os campos atuais com os valores do formulário de inscrição?"
+                          );
+                          if (forceChoice) {
+                            const overwriteUpdates: any = {};
+                            let count = 0;
+                            for (const field of fieldsToMerge) {
+                              const leadVal = lead[field];
+                              if (leadVal !== undefined && leadVal !== null && leadVal !== "") {
+                                overwriteUpdates[field] = leadVal;
+                                count++;
+                              }
+                            }
+                            if (count > 0) {
+                              const profId = selectedProfissional.uid!;
+                              await updateDoc(doc(db, "users", profId), overwriteUpdates);
+                              setSelectedProfissional({
+                                ...selectedProfissional,
+                                ...overwriteUpdates,
+                              });
+                              alert("Dados do formulário re-importados (sobrescrevendo) com sucesso!");
+                            } else {
+                              alert("O formulário de inscrição do profissional não possui dados preenchidos para importar.");
+                            }
+                          }
                         }
                       }
-
-                      if (hasNewData) {
-                        const profId = selectedProfissional.uid!;
-                        await updateDoc(doc(db, "users", profId), updates);
-                        setSelectedProfissional({
-                          ...selectedProfissional,
-                          ...updates,
-                        });
-                        alert("Dados do formulário importados com sucesso!");
-                      } else {
-                        alert(
-                          "Todas as informações do formulário já constam nesta Ficha de Bordo.",
-                        );
-                      }
+                    } catch (error: any) {
+                      console.error("Erro na importação:", error);
+                      alert("Ocorreu um erro ao importar dados: " + (error?.message || error));
                     }
                   }}
                   className="flex items-center gap-1.5 text-purple-600 font-semibold text-sm hover:bg-purple-50 px-3 py-1.5 rounded-lg transition-colors border border-purple-200"
@@ -7547,6 +8170,280 @@ export function DashboardView({
         </div>
       )}
 
+      {/* Modal de Importação de Profissionais */}
+      {showImportModal && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center px-4 bg-forest/20 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white rounded-3xl w-full max-w-2xl shadow-2xl border border-soft overflow-hidden animate-in zoom-in-95 max-h-[90vh] flex flex-col">
+            
+            {/* Header */}
+            <div className="px-6 py-4 flex justify-between items-center border-b border-soft bg-warm/50">
+              <h3 className="font-serif text-xl text-forest flex items-center gap-2">
+                <Upload className="w-5 h-5 text-forest/70" />
+                Importar Profissionais (CSV / JSON)
+              </h3>
+              <button
+                onClick={() => {
+                  setShowImportModal(false);
+                  setImportFile(null);
+                  setImportResults(null);
+                  setImportFeedback(null);
+                  setImportProgress(0);
+                }}
+                className="p-2 text-forest/70 hover:text-red-500 rounded-full hover:bg-white transition-colors"
+                type="button"
+                disabled={isImporting}
+              >
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-6 space-y-6 overflow-y-auto flex-1 custom-scrollbar">
+              
+              {/* Instructions and Header format guide */}
+              <div className="bg-warm/40 p-4 rounded-2xl border border-soft text-xs text-forest/80 space-y-2">
+                <p className="font-bold flex items-center gap-1">
+                  <Info className="w-4 h-4 text-forest/60" /> Guia de Formatação de Arquivos
+                </p>
+                <p>O arquivo enviado pode ser no formato <strong>.CSV</strong> (delimitador vírgula ou ponto-e-vírgula) ou <strong>.JSON</strong> (um array de objetos).</p>
+                <div>
+                  <span className="font-semibold text-forest/90">Colunas suportadas (e variações de nome):</span>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 mt-1 font-mono text-[10px] text-forest/70">
+                    <div>• nome / name</div>
+                    <div>• email / e-mail</div>
+                    <div>• telefone / phone</div>
+                    <div>• crp / crm</div>
+                    <div>• cpf</div>
+                    <div>• cidade / city</div>
+                    <div>• uf / estado</div>
+                    <div>• especialidade</div>
+                    <div>• abordagem</div>
+                    <div>• horasDisponiveis</div>
+                  </div>
+                </div>
+              </div>
+
+               {/* Drag and Drop Zone */}
+              {!importFile && !importFeedback && (
+                <div
+                  onDragEnter={handleImportDrag}
+                  onDragOver={handleImportDrag}
+                  onDragLeave={handleImportDrag}
+                  onDrop={handleImportDrop}
+                  className={`border-2 border-dashed rounded-3xl p-8 text-center flex flex-col items-center justify-center gap-3 transition-all ${
+                    dragActive
+                      ? "border-purple-500 bg-purple-50/50 scale-[0.99]"
+                      : "border-soft hover:border-purple-400 bg-warm/10"
+                  }`}
+                >
+                  <Upload className={`w-12 h-12 transition-transform duration-300 ${dragActive ? "scale-110 text-purple-600 animate-bounce" : "text-forest/30"}`} />
+                  <div>
+                    <p className="text-sm font-semibold text-forest">
+                      Arraste seu arquivo .csv ou .json aqui
+                    </p>
+                    <p className="text-xs text-forest/50 mt-1">
+                      ou clique para selecionar do seu dispositivo
+                    </p>
+                  </div>
+                  <input
+                    type="file"
+                    accept=".csv,.json"
+                    onChange={(e) => {
+                      if (e.target.files && e.target.files[0]) {
+                        handleProcessImportFile(e.target.files[0]);
+                      }
+                    }}
+                    className="hidden"
+                    id="fileImportInput"
+                  />
+                  <label
+                    htmlFor="fileImportInput"
+                    className="px-4 py-2 bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200 text-xs font-semibold rounded-full cursor-pointer transition-colors mt-2"
+                  >
+                    Selecionar Arquivo
+                  </label>
+                </div>
+              )}
+
+              {/* Show importing state / loading */}
+              {isImporting && (
+                <div className="bg-purple-50/50 border border-purple-100 rounded-2xl p-6 text-center space-y-4">
+                  <div className="flex items-center justify-center gap-3">
+                    <RefreshCw className="w-6 h-6 text-purple-600 animate-spin" />
+                    <span className="text-sm font-bold text-purple-800">
+                      Importando Dados...
+                    </span>
+                  </div>
+                  <div className="text-xs text-purple-700">
+                    Salvando {importProgress} de {importResults?.data.length || 0} profissionais no banco de dados.
+                  </div>
+                  {/* Progress bar */}
+                  <div className="w-full bg-purple-100 rounded-full h-2.5 overflow-hidden">
+                    <div
+                      className="bg-purple-600 h-2.5 rounded-full transition-all duration-300"
+                      style={{
+                        width: `${
+                          importResults?.data.length
+                            ? (importProgress / importResults.data.length) * 100
+                            : 0
+                        }%`,
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Show feedback */}
+              {importFeedback && (
+                <div className={`p-6 rounded-2xl border flex flex-col gap-3 ${
+                  importFeedback.success
+                    ? "bg-emerald-50 border-emerald-100 text-emerald-800"
+                    : "bg-red-50 border-red-100 text-red-800"
+                }`}>
+                  <div className="flex items-center gap-2">
+                    {importFeedback.success ? (
+                      <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                    ) : (
+                      <ShieldAlert className="w-5 h-5 text-red-600" />
+                    )}
+                    <span className="font-bold text-sm">
+                      {importFeedback.success ? "Importação Concluída" : "Falha na Importação"}
+                    </span>
+                  </div>
+                  <p className="text-xs leading-relaxed">
+                    {importFeedback.message}
+                  </p>
+                  {!isImporting && (
+                    <button
+                      onClick={() => {
+                        setImportFile(null);
+                        setImportResults(null);
+                        setImportFeedback(null);
+                        setImportProgress(0);
+                      }}
+                      className="mt-2 self-start px-4 py-1.5 bg-white border border-soft text-xs font-semibold rounded-full text-forest hover:bg-warm transition-colors"
+                    >
+                      Tentar Outro Arquivo
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Selected File & Preview of Results */}
+              {importFile && importResults && !isImporting && !importFeedback && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between bg-warm/30 px-4 py-3 rounded-xl border border-soft">
+                    <div className="flex items-center gap-2">
+                      <FileText className="w-5 h-5 text-purple-600" />
+                      <div>
+                        <p className="text-xs font-bold text-forest truncate max-w-[250px]">{importFile.name}</p>
+                        <p className="text-[10px] text-forest/50">{(importFile.size / 1024).toFixed(1)} KB</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setImportFile(null);
+                        setImportResults(null);
+                        setImportFeedback(null);
+                      }}
+                      className="text-xs text-red-500 hover:text-red-700 font-semibold"
+                    >
+                      Remover
+                    </button>
+                  </div>
+
+                  {/* Errors / Warnings */}
+                  {importResults.errorCount > 0 && (
+                    <div className="bg-red-50 border border-red-100 text-red-800 p-4 rounded-xl space-y-2">
+                      <div className="flex items-center gap-2">
+                        <ShieldAlert className="w-5 h-5 text-red-600" />
+                        <span className="font-bold text-xs">
+                          {importResults.errorCount} erro(s) de validação encontrado(s):
+                        </span>
+                      </div>
+                      <ul className="text-[10px] list-disc list-inside space-y-1 bg-white/40 p-2.5 rounded-lg max-h-24 overflow-y-auto custom-scrollbar">
+                        {importResults.errors.map((err, idx) => (
+                          <li key={idx} className="break-words">{err}</li>
+                        ))}
+                      </ul>
+                      <p className="text-[10px] text-red-700 font-medium">
+                        * Registros com erro serão ignorados. Apenas os registros válidos serão importados.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Success preview */}
+                  {importResults.successCount > 0 ? (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-forest/70 uppercase tracking-wider flex items-center gap-1">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                          Visualização ({importResults.successCount} profissionais válidos)
+                        </span>
+                      </div>
+                      <div className="border border-soft rounded-2xl overflow-hidden max-h-48 overflow-y-auto custom-scrollbar bg-warm/5">
+                        <table className="w-full text-[11px] text-left border-collapse">
+                          <thead className="bg-warm border-b border-soft text-forest/70 font-semibold sticky top-0">
+                            <tr>
+                              <th className="px-4 py-2">Nome</th>
+                              <th className="px-4 py-2">E-mail</th>
+                              <th className="px-4 py-2">CRP</th>
+                              <th className="px-4 py-2">Especialidade</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-soft/50 text-forest/95">
+                            {importResults.data.map((p, idx) => (
+                              <tr key={idx} className="hover:bg-warm/20">
+                                <td className="px-4 py-2 font-medium">{p.nome}</td>
+                                <td className="px-4 py-2 font-mono">{p.email}</td>
+                                <td className="px-4 py-2 font-mono">{p.crp || "-"}</td>
+                                <td className="px-4 py-2 truncate max-w-[120px]">{p.especialidade || "-"}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center p-6 bg-red-50/50 border border-dashed border-red-200 rounded-2xl text-red-700 text-xs font-medium">
+                      Nenhum profissional válido encontrado no arquivo para importar. Corrija os erros listados acima.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-soft bg-warm/30 flex justify-end gap-3 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowImportModal(false);
+                  setImportFile(null);
+                  setImportResults(null);
+                  setImportFeedback(null);
+                  setImportProgress(0);
+                }}
+                className="px-5 py-2 bg-white text-forest border border-soft rounded-full text-xs font-bold hover:bg-warm transition-colors"
+                disabled={isImporting}
+              >
+                Fechar
+              </button>
+              {importResults && importResults.successCount > 0 && !isImporting && !importFeedback && (
+                <button
+                  type="button"
+                  onClick={handleExecuteImport}
+                  className="px-5 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-full text-xs font-bold transition-colors shadow-sm flex items-center gap-1.5"
+                >
+                  Confirmar Importação ({importResults.successCount})
+                </button>
+              )}
+            </div>
+
+          </div>
+        </div>
+      )}
+
       {/* Novo Profissional Modal */}
       {showNewProfissionalModal && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center px-4 bg-forest/20 backdrop-blur-sm animate-in fade-in">
@@ -7674,6 +8571,175 @@ export function DashboardView({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Vincular Lead Modal */}
+      {showVincularLeadModal && vincularProfTarget && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center px-4 bg-forest/20 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white rounded-[2rem] w-full max-w-lg shadow-2xl border border-soft overflow-hidden animate-in zoom-in-95 flex flex-col max-h-[90vh]">
+            <div className="px-6 py-5 flex justify-between items-center border-b border-soft bg-warm/50 shrink-0">
+              <div>
+                <h3 className="font-serif text-xl font-bold text-forest">
+                  Vincular Inscrição Manualmente
+                </h3>
+                <p className="text-xs text-forest/60">
+                  Associar ficha para: {vincularProfTarget.name}
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowVincularLeadModal(false);
+                  setVincularProfTarget(null);
+                  setVincularSearchQuery("");
+                }}
+                className="p-2 text-forest/70 hover:text-red-500 rounded-full hover:bg-white transition-colors"
+                type="button"
+              >
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 shrink-0 border-b border-soft bg-warm/20">
+              <div className="relative">
+                <Search className="absolute left-3.5 top-3 w-4 h-4 text-forest/40" />
+                <input
+                  type="text"
+                  value={vincularSearchQuery}
+                  onChange={(e) => setVincularSearchQuery(e.target.value)}
+                  placeholder="Pesquisar por nome ou e-mail da inscrição..."
+                  className="w-full pl-10 pr-4 py-2.5 text-sm bg-white border border-soft rounded-xl focus:outline-none focus:border-sun-dark text-forest"
+                />
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 space-y-3 no-scrollbar">
+              {(() => {
+                const searchLower = vincularSearchQuery.toLowerCase().trim();
+                const filteredList = profissionaisLeads.filter(
+                  (lead) =>
+                    !searchLower ||
+                    (lead.nome || "").toLowerCase().includes(searchLower) ||
+                    (lead.email || "").toLowerCase().includes(searchLower) ||
+                    (lead.crp || "").toLowerCase().includes(searchLower)
+                );
+
+                if (filteredList.length === 0) {
+                  return (
+                    <div className="text-center py-12 text-forest/50 text-sm">
+                      Nenhuma inscrição (lead) correspondente encontrada no banco de dados.
+                    </div>
+                  );
+                }
+
+                return filteredList.map((lead) => (
+                  <div
+                    key={lead.id}
+                    className="p-4 bg-warm/30 hover:bg-warm/60 border border-soft/50 rounded-2xl flex justify-between items-center gap-4 transition-all"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <h4 className="font-serif font-bold text-forest truncate">
+                        {lead.nome}
+                      </h4>
+                      <p className="text-xs text-forest/60 truncate">
+                        {lead.email}
+                      </p>
+                      <div className="flex flex-wrap gap-2 mt-1.5">
+                        {lead.crp && (
+                          <span className="text-[10px] bg-white border border-soft text-forest/70 px-2 py-0.5 rounded-full font-medium">
+                            CRP: {lead.crp}
+                          </span>
+                        )}
+                        {lead.especialidade && (
+                          <span className="text-[10px] bg-white border border-soft text-forest/70 px-2 py-0.5 rounded-full font-medium">
+                            {lead.especialidade}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        if (
+                          window.confirm(
+                            `Deseja migrar todos os dados da inscrição de "${lead.nome}" para o perfil ativo de "${vincularProfTarget.name}"?`
+                          )
+                        ) {
+                          try {
+                            const fieldsToMerge = [
+                              "telefone",
+                              "crp",
+                              "cpf",
+                              "cidade",
+                              "uf",
+                              "motivacao",
+                              "bioCurta",
+                              "instagramUrl",
+                              "linkedinUrl",
+                              "siteUrl",
+                              "abordagem",
+                              "especialidade",
+                              "anoFormacao",
+                              "horasDisponiveis",
+                              "publicosExperiencia",
+                              "publicosGosto",
+                              "outrosPublicosExperiencia",
+                              "outrosPublicosGosto",
+                              "registrosDeReunioes",
+                              "notificacao",
+                            ];
+
+                            const updates: any = {};
+                            for (const field of fieldsToMerge) {
+                              const val = lead[field];
+                              if (val !== undefined && val !== null && val !== "") {
+                                updates[field] = val;
+                              }
+                            }
+
+                            // Update user doc
+                            await updateDoc(
+                              doc(db, "users", vincularProfTarget.uid!),
+                              updates
+                            );
+
+                            // Optional: Delete or update status of lead
+                            const deleteChoice = window.confirm(
+                              "Os dados foram copiados com sucesso! Deseja remover esta inscrição pendente do banco de dados para evitar duplicidade?"
+                            );
+                            if (deleteChoice) {
+                              await deleteDoc(doc(db, "profissionais_leads", lead.id));
+                            } else {
+                              // Just mark as approved or set status
+                              await updateDoc(doc(db, "profissionais_leads", lead.id), {
+                                status: "Aprovado / Acesso Gerado",
+                              });
+                            }
+
+                            // Update local states
+                            setSelectedProfissional({
+                              ...vincularProfTarget,
+                              ...updates,
+                            });
+
+                            alert("Processo de migração manual realizado com sucesso!");
+                            setShowVincularLeadModal(false);
+                            setVincularProfTarget(null);
+                            setVincularSearchQuery("");
+                          } catch (err: any) {
+                            console.error("Erro ao vincular e migrar dados:", err);
+                            alert("Ocorreu um erro ao migrar os dados do profissional: " + err.message);
+                          }
+                        }
+                      }}
+                      className="px-3 py-1.5 bg-forest text-white hover:bg-forest/95 rounded-lg text-xs font-bold transition-all whitespace-nowrap"
+                    >
+                      Vincular & Migrar
+                    </button>
+                  </div>
+                ));
+              })()}
+            </div>
           </div>
         </div>
       )}

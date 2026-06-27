@@ -2,6 +2,11 @@ import React, { useState, useEffect } from "react";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { Leaf, Heart, CheckCircle2, Clock, AlertCircle } from "lucide-react";
+import { 
+  sendProposalAcceptedToPatientEmail, 
+  sendProposalAcceptedToProfessionalEmail, 
+  sendProposalRevisionRequestEmail 
+} from "../lib/emailService";
 
 export function PropostaLandingView({
   propostaId,
@@ -42,6 +47,56 @@ export function PropostaLandingView({
       await updateDoc(doc(db, "acolhimentos", propostaId), {
         propostaStatus: newStatus,
       });
+
+      // Retrieve professional info if assigned
+      let profData: any = null;
+      if (data && data.profissionalId) {
+        try {
+          const profSnap = await getDoc(doc(db, "users", data.profissionalId));
+          if (profSnap.exists()) {
+            profData = profSnap.data();
+          }
+        } catch (err) {
+          console.error("Error retrieving professional info for email dispatch:", err);
+        }
+      }
+
+      // Dispatch automatic notification emails
+      if (action === 'aceitar') {
+        const profName = profData ? (profData.name || "Profissional Atribuído") : "Profissional Atribuído";
+        
+        // 1. Email to Patient
+        try {
+          await sendProposalAcceptedToPatientEmail(data.nome, data.email, profName);
+        } catch (emailErr) {
+          console.error("Error sending proposal acceptance email to patient:", emailErr);
+        }
+
+        // 2. Email to Professional
+        if (profData && profData.email) {
+          try {
+            await sendProposalAcceptedToProfessionalEmail(
+              profData.email,
+              profData.name || "Profissional",
+              data.nome,
+              data.email,
+              data.telefone || "Não informado",
+              data.valorSessao || "A combinar",
+              data.frequenciaSessoes || "Semanal"
+            );
+          } catch (emailErr) {
+            console.error("Error sending proposal acceptance email to professional:", emailErr);
+          }
+        }
+      } else if (action === 'revisar') {
+        // Email to Patient
+        try {
+          await sendProposalRevisionRequestEmail(data.nome, data.email);
+        } catch (emailErr) {
+          console.error("Error sending proposal revision confirmation email:", emailErr);
+        }
+      }
+
       setStatus(newStatus);
     } catch (err) {
       console.error(err);

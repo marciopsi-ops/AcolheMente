@@ -60,9 +60,14 @@ service cloud.firestore {
              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'master';
     }
 
+    function isTriagem() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'triagem';
+    }
+
     match /users/{userId} {
       allow read: if request.auth != null;
-      allow write: if request.auth != null && (request.auth.uid == userId || isMaster());
+      allow write: if request.auth != null && (request.auth.uid == userId || isMaster() || isTriagem());
     }
 
     match /acolhimentos/{acolhimentoId} {
@@ -102,6 +107,12 @@ service cloud.firestore {
     match /compliance/{complianceId} {
       allow create: if true;
       allow read, update, delete: if true;
+    }
+    match /mail/{mailId} {
+      allow create: if request.resource.data.keys().hasAll(['to', 'message', 'createdAt'])
+                    && request.resource.data.to is string
+                    && request.resource.data.message is map;
+      allow read, update, delete: if false;
     }
   }
 }
