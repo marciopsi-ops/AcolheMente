@@ -1,4 +1,4 @@
-import { ArrowLeft, CheckCircle2, Leaf } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Leaf, Laptop, ShieldCheck, DollarSign } from "lucide-react";
 import { Footer } from "../components/Footer";
 import { FormEvent, useState } from "react";
 import { collection, addDoc, serverTimestamp, getDocs, query, where } from "firebase/firestore";
@@ -156,55 +156,122 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
         </div>
       </nav>
 
-      <main className="flex-1 flex flex-col md:flex-row items-center justify-center p-6 md:p-8 gap-8 relative max-w-[1200px] w-full mx-auto">
-        <div className="w-full md:w-1/2 flex justify-center order-first md:order-last">
-           <img src={pacienteHero} alt="Ilustração de acolhimento" className="w-full max-w-md object-cover rounded-[40px] shadow-xl shadow-forest/10" referrerPolicy="no-referrer" />
-        </div>
-        <div className="w-full md:w-1/2 bg-white rounded-[40px] p-6 md:p-10 shadow-xl shadow-forest/5 border border-soft relative z-10 my-auto">
-          
-          {step === 5 ? (
-            <div className="flex flex-col items-center text-center animate-in fade-in slide-in-from-bottom-4 duration-700">
-              <div className="w-20 h-20 bg-sun-light rounded-full flex items-center justify-center text-forest mb-6">
-                <CheckCircle2 className="w-10 h-10" />
-              </div>
-              <h2 className="font-serif text-3xl md:text-4xl font-medium text-forest mb-4">Acolhimento Recebido!</h2>
-              <p className="text-forest/70 max-w-md mb-8 leading-relaxed">
-                Agradecemos a confiança, {name.split(' ')[0]}. Nossa equipe de triagem já recebeu suas informações e está preparando o encaminhamento ideal em até 24h.
-              </p>
-              <div className="p-6 bg-warm rounded-2xl border border-soft text-sm text-forest/80 mb-8 max-w-sm">
-                Acompanhe o e-mail <strong>{email}</strong> para conferir os próximos passos. Verifique também a sua caixa de spam.
-              </div>
-              <button 
-                onClick={() => onNavigate('landing')}
-                className="px-8 py-3 bg-sun text-forest rounded-full font-semibold shadow-lg shadow-sun/20 transition-all hover:bg-sun-dark"
-              >
-                Retornar
-              </button>
-            </div>
-          ) : (
-            <>
-              <div className="mb-8">
-                <h2 className="font-serif text-3xl font-medium text-forest mb-2">
-                  {step === 1 && "Inicie seu Acolhimento"}
-                  {step === 2 && "Situação Financeira"}
-                  {step === 3 && "Habitação e Tecnologia"}
-                  {step === 4 && "Motivação Clínica"}
-                </h2>
-                <p className="text-forest/80 text-sm md:text-base">
-                  {step === 1 && "Preencha seus dados iniciais para que possamos te direcionar ao fluxo correto."}
-                  {step === 2 && "Os dados nos ajudam a enquadrar o atendimento na faixa mais justa possível."}
-                  {step === 3 && "Conhecer sua realidade nos apoia no formato das sessões (online ou não)."}
-                  {step === 4 && "Essas informações nos ajudam a preparar o melhor encaminhamento."}
+      <main className="flex-1 flex flex-col items-center pb-16 w-full">
+        {/* Presentation Section */}
+        <section className="w-full px-6 md:px-12 py-12 md:py-16 flex justify-center bg-white border-b border-soft">
+          <div className="max-w-[1440px] w-full flex flex-col items-center justify-between gap-8">
+            <div className="w-full flex flex-col lg:flex-row gap-8 items-center justify-between">
+              <div className="w-full lg:w-1/2 flex flex-col gap-6 animate-in fade-in slide-in-from-left-4 duration-500">
+                <div className="mb-2 px-3 py-1 bg-sun-light text-forest text-[10px] font-bold uppercase tracking-[0.2em] w-fit rounded">
+                  Acolhimento Acessível
+                </div>
+                <h1 className="font-serif text-5xl md:text-6xl leading-[1.1] font-medium text-forest">
+                  Profissionais experientes, vagas que acolhem!
+                </h1>
+                <p className="text-lg text-forest/80 leading-relaxed max-w-lg mt-4">
+                  Nossa rede é composta por psicólogos e terapeutas com carreiras consolidadas e consultórios ativos. Em um gesto de compromisso social, esses profissionais dedicam parte de suas agendas para disponibilizar horários com valores acessíveis para quem não consegue arcar com o custo médio de uma consulta particular tradicional (geralmente acima de R$ 150).
                 </p>
+                <p className="text-lg text-forest/80 leading-relaxed max-w-lg">
+                  Essas horas reservadas transformam-se em verdadeiras vagas de acolhimento, garantindo que você receba um atendimento ético, experiente e de altíssima qualidade, mas com um investimento coerente com sua realidade.
+                </p>
+              </div>
+              <div className="w-full lg:w-1/2 flex flex-col gap-6 items-center lg:items-end animate-in fade-in slide-in-from-right-4 duration-500">
+                <img src={pacienteHero} alt="Ilustração de acolhimento" className="w-full max-w-lg object-contain rounded-3xl mix-blend-multiply" referrerPolicy="no-referrer" />
                 
-                <div className="flex gap-2 mt-6">
-                  {Array.from({ length: totalSteps }).map((_, idx) => (
-                    <div key={idx} className={`h-1.5 flex-1 rounded-full transition-colors duration-500 ${idx < currentVisualStep ? 'bg-sun-dark' : 'bg-soft'}`} />
-                  ))}
+                {/* Benefit Cards summarizing benefits and stating that they are online */}
+                <div className="w-full max-w-lg grid grid-cols-1 sm:grid-cols-2 gap-4 mt-2">
+                  <div className="p-4 bg-warm border border-soft rounded-2xl flex items-start gap-3">
+                    <Laptop className="w-5 h-5 text-forest shrink-0 mt-0.5" />
+                    <div>
+                      <h4 className="font-serif font-bold text-sm text-forest">Atendimento 100% Online</h4>
+                      <p className="text-[11px] text-forest/70 mt-1 leading-relaxed">
+                        Sessões por videochamada no conforto e privacidade do seu lar, sem deslocamentos.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="p-4 bg-warm border border-soft rounded-2xl flex items-start gap-3">
+                    <ShieldCheck className="w-5 h-5 text-forest shrink-0 mt-0.5" />
+                    <div>
+                      <h4 className="font-serif font-bold text-sm text-forest">Profissionais Experientes</h4>
+                      <p className="text-[11px] text-forest/70 mt-1 leading-relaxed">
+                        Rede qualificada de psicólogos e terapeutas com carreiras consolidadas e registro ativo.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="p-4 bg-warm border border-soft rounded-2xl flex items-start gap-3">
+                    <DollarSign className="w-5 h-5 text-forest shrink-0 mt-0.5" />
+                    <div>
+                      <h4 className="font-serif font-bold text-sm text-forest">Investimento Coerente</h4>
+                      <p className="text-[11px] text-forest/70 mt-1 leading-relaxed">
+                        Valores de atendimento acessíveis e solidários que respeitam a sua realidade financeira.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="p-4 bg-warm border border-soft rounded-2xl flex items-start gap-3">
+                    <CheckCircle2 className="w-5 h-5 text-forest shrink-0 mt-0.5" />
+                    <div>
+                      <h4 className="font-serif font-bold text-sm text-forest">Acolhimento de Qualidade</h4>
+                      <p className="text-[11px] text-forest/70 mt-1 leading-relaxed">
+                        Suas respostas nos ajudam a preparar e encaminhar o melhor direcionamento clínico.
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </div>
+            </div>
+          </div>
+        </section>
 
-              <form onSubmit={handleSubmit} className="flex flex-col gap-6">
+        {/* Form Section */}
+        <section className="w-full px-6 md:px-12 py-16 flex justify-center relative -mt-10">
+          <div className="max-w-2xl w-full bg-white rounded-3xl shadow-xl shadow-forest/5 p-8 md:p-12 border border-soft relative z-10">
+            
+            {step === 5 ? (
+              <div className="flex flex-col items-center text-center animate-in fade-in slide-in-from-bottom-4 duration-700">
+                <div className="w-20 h-20 bg-sun-light rounded-full flex items-center justify-center text-forest mb-6">
+                  <CheckCircle2 className="w-10 h-10" />
+                </div>
+                <h2 className="font-serif text-3xl md:text-4xl font-medium text-forest mb-4">Acolhimento Recebido!</h2>
+                <p className="text-forest/70 max-w-md mb-8 leading-relaxed">
+                  Agradecemos a confiança, {name.split(' ')[0]}. Nossa equipe de triagem já recebeu suas informações e está preparando o encaminhamento ideal em até 24h.
+                </p>
+                <div className="p-6 bg-warm rounded-2xl border border-soft text-sm text-forest/80 mb-8 max-w-sm">
+                  Acompanhe o e-mail <strong>{email}</strong> para conferir os próximos passos. Verifique também a sua caixa de spam.
+                </div>
+                <button 
+                  onClick={() => onNavigate('landing')}
+                  className="px-8 py-3 bg-sun text-forest rounded-full font-semibold shadow-lg shadow-sun/20 transition-all hover:bg-sun-dark"
+                >
+                  Retornar
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="mb-8">
+                  <h2 className="font-serif text-3xl font-medium text-forest mb-2">
+                    {step === 1 && "Inicie seu Acolhimento"}
+                    {step === 2 && "Situação Financeira"}
+                    {step === 3 && "Habitação e Tecnologia"}
+                    {step === 4 && "Motivação Clínica"}
+                  </h2>
+                  <p className="text-forest/80 text-sm md:text-base">
+                    {step === 1 && "Preencha seus dados iniciais para que possamos te direcionar ao fluxo correto."}
+                    {step === 2 && "Os dados nos ajudam a enquadrar o atendimento na faixa mais justa possível."}
+                    {step === 3 && "Conhecer sua realidade nos apoia no formato das sessões (online ou não)."}
+                    {step === 4 && "Essas informações nos ajudam a preparar o melhor encaminhamento."}
+                  </p>
+                  
+                  <div className="flex gap-2 mt-6">
+                    {Array.from({ length: totalSteps }).map((_, idx) => (
+                      <div key={idx} className={`h-1.5 flex-1 rounded-full transition-colors duration-500 ${idx < currentVisualStep ? 'bg-sun-dark' : 'bg-soft'}`} />
+                    ))}
+                  </div>
+                </div>
+
+                <form onSubmit={handleSubmit} className="flex flex-col gap-6">
                 
                 {step === 1 && (
                   <div className="flex flex-col gap-5 animate-in fade-in duration-500">
@@ -623,7 +690,8 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
           )}
 
         </div>
-      </main>
+      </section>
+    </main>
       <Footer onNavigate={onNavigate} />
     </div>
   );

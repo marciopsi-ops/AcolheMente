@@ -20,6 +20,8 @@ import {
   Layers,
   Zap,
   X,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { motion } from "motion/react";
@@ -49,6 +51,128 @@ const COMPANY_LOGOS = [
   { icon: Layers, name: "Stack Innovations" },
   { icon: Zap, name: "Zapp Power" },
 ];
+
+const FAQ_ITEMS = [
+  {
+    question: "Como funciona o processo de triagem?",
+    answer: "A triagem é o nosso primeiro passo para entender suas necessidades. Você preenche um formulário rápido e seguro, e nossa equipe técnica analisa suas respostas para conectar você ao profissional mais adequado ao seu perfil e demandas."
+  },
+  {
+    question: "Os valores das sessões são acessíveis?",
+    answer: "Sim! Nosso compromisso é democratizar o acesso à saúde mental. Trabalhamos com uma rede de profissionais parceiros que oferecem horários com valores reduzidos, adequados à realidade de quem busca ajuda."
+  },
+  {
+    question: "Como funciona o benefício corporativo?",
+    answer: "Empresas parceiras podem oferecer a AcolheMente como benefício para seus colaboradores (ajudando no cumprimento da NR1). O colaborador recebe um código da empresa, insere na nossa plataforma e tem acesso imediato à nossa rede de profissionais com o subsídio corporativo."
+  },
+  {
+    question: "Posso escolher o meu psicólogo?",
+    answer: "Nossa equipe realiza a indicação inicial baseada no seu perfil para garantir a melhor compatibilidade técnica e terapêutica. Porém, caso você não se adapte, o processo de troca é simples e você tem total liberdade para solicitar."
+  },
+  {
+    question: "Como faço para doar uma sessão?",
+    answer: "Qualquer pessoa pode apadrinhar o tratamento de alguém em situação de vulnerabilidade. Basta clicar em 'Doe uma sessão de terapia', escolher o valor e realizar o PIX. 100% do valor é convertido em sessões para nossa lista de espera."
+  },
+  {
+    question: "Quanto tempo dura uma sessão de terapia?",
+    answer: "As sessões de terapia têm duração média de 45 a 50 minutos, tempo ideal para garantir um atendimento de qualidade e profundidade."
+  },
+  {
+    question: "Os psicólogos e terapeutas são todos licenciados?",
+    answer: "Sim, todos os profissionais parceiros passam por um processo rigoroso de seleção, onde o critério básico é possuir o registro profissional (CRP) ativo e atualizado, além de comprovada experiência em atendimento clínico."
+  },
+  {
+    question: "Atende crianças?",
+    answer: "Nossos atendimentos são focados em pessoas a partir de 12 anos. O formato de terapia online apresenta limitações para o público infantil devido à necessidade de recursos e ferramentas terapêuticas lúdicas presenciais. Por isso, recomendamos a idade mínima de 12 anos para garantir a eficácia do tratamento."
+  },
+  {
+    question: "Os preços são fixos?",
+    answer: "Respeitamos faixas de valores solidários que variam entre R$ 30 e R$ 110 por sessão. Uma vez que você aceita a proposta com as condições de atendimento, o valor combinado mantém-se fixo, sendo reajustado apenas anualmente com base no índice do INPC."
+  }
+];
+
+function FAQItem({ question, answer }: { question: string; answer: string }) {
+  const [isOpen, setIsOpen] = useState(false);
+  
+  return (
+    <div className="border border-soft rounded-2xl bg-white overflow-hidden shadow-sm transition-all duration-300">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full px-6 py-5 flex items-center justify-between gap-4 text-left focus:outline-none group hover:bg-warm/30 transition-colors"
+      >
+        <span className="font-serif font-medium text-lg text-forest group-hover:text-forest/80 transition-colors">{question}</span>
+        <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-colors ${isOpen ? 'bg-sun text-forest' : 'bg-warm text-forest/60'}`}>
+          {isOpen ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+        </div>
+      </button>
+      <motion.div
+        initial={false}
+        animate={{ height: isOpen ? "auto" : 0, opacity: isOpen ? 1 : 0 }}
+        transition={{ duration: 0.3, ease: "easeInOut" }}
+        className="overflow-hidden"
+      >
+        <div className="px-6 pb-6 text-forest/75 leading-relaxed text-sm">
+          {answer}
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+function FAQSection() {
+  const [faqSearch, setFaqSearch] = useState("");
+
+  const filteredFaqs = FAQ_ITEMS.filter((item) =>
+    item.question.toLowerCase().includes(faqSearch.toLowerCase()) ||
+    item.answer.toLowerCase().includes(faqSearch.toLowerCase())
+  );
+
+  return (
+    <section className="w-full bg-warm pb-20 pt-10 flex flex-col items-center">
+      <div className="w-full max-w-[800px] px-6 md:px-12 flex flex-col items-center gap-8">
+        <div className="text-center flex flex-col items-center gap-3">
+          <h2 className="font-serif text-3xl md:text-4xl text-forest">
+            Perguntas Frequentes
+          </h2>
+          <p className="text-forest/70 text-sm md:text-base max-w-md">
+            Tire suas dúvidas sobre nosso processo de triagem, valores e benefícios.
+          </p>
+        </div>
+
+        <div className="w-full relative max-w-md">
+          <SearchCheck className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-forest/40" />
+          <input
+            type="text"
+            value={faqSearch}
+            onChange={(e) => setFaqSearch(e.target.value)}
+            placeholder="Buscar dúvida..."
+            className="w-full pl-12 pr-4 py-3 rounded-full border border-soft focus:outline-none focus:border-forest/40 focus:ring-2 focus:ring-forest/10 transition-all text-forest placeholder:text-forest/40 bg-white"
+          />
+          {faqSearch && (
+            <button
+              onClick={() => setFaqSearch("")}
+              className="absolute right-4 top-1/2 -translate-y-1/2 text-forest/40 hover:text-forest transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+        
+        <div className="w-full flex flex-col gap-4">
+          {filteredFaqs.length > 0 ? (
+            filteredFaqs.map((item, index) => (
+              <FAQItem key={index} question={item.question} answer={item.answer} />
+            ))
+          ) : (
+            <div className="text-center py-8 text-forest/60">
+              Nenhuma pergunta encontrada para "{faqSearch}".
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
 
 export default function App() {
   const params = new URLSearchParams(window.location.search);
@@ -591,6 +715,9 @@ function LandingPage({
             </motion.div>
           </div>
         </section>
+        
+        {/* FAQ Section */}
+        <FAQSection />
       </main>
 
       {/* Footer */}

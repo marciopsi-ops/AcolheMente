@@ -35,6 +35,10 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
     descricao: "",
     data: "",
     hora: "",
+    contatoEmail: profile.email || "",
+    contatoTelefone: profile.telefone || profile.whatsapp || profile.phone || "",
+    contatoPreferencial: "email" as "email" | "whatsapp",
+    modoInscricao: "plataforma" as "contato" | "plataforma",
   });
 
   // Formulário de Serviço
@@ -48,7 +52,27 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
     linkInscricao: "",
     valor: "",
     isGratuito: false,
+    contatoEmail: profile.email || "",
+    contatoTelefone: profile.telefone || profile.whatsapp || profile.phone || "",
+    contatoPreferencial: "email" as "email" | "whatsapp",
+    modoInscricao: "plataforma" as "contato" | "plataforma",
   });
+
+  const getContactLink = (item: any) => {
+    const isWhatsapp = item.contatoPreferencial === "whatsapp";
+    if (isWhatsapp) {
+      const rawPhone = item.contatoTelefone || item.criadorContato || "";
+      const cleanPhone = rawPhone.replace(/\D/g, "");
+      const phoneWithCountry = cleanPhone.length === 11 || cleanPhone.length === 10 ? `55${cleanPhone}` : cleanPhone;
+      const text = encodeURIComponent(`Olá! Gostaria de me inscrever ou saber mais sobre o evento/serviço "${item.titulo}" que vi no AcolheMente.`);
+      return `https://wa.me/${phoneWithCountry}?text=${text}`;
+    } else {
+      const email = item.contatoEmail || item.criadorContato || "";
+      const subject = encodeURIComponent(`Inscrição: ${item.titulo}`);
+      const body = encodeURIComponent(`Olá, gostaria de realizar minha inscrição no evento/serviço "${item.titulo}" anunciado no AcolheMente.`);
+      return `mailto:${email}?subject=${subject}&body=${body}`;
+    }
+  };
 
   const pullProfileInfo = () => {
     const infos = [];
@@ -58,7 +82,9 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
     
     setServicoForm(prev => ({
       ...prev,
-      contato: infos.join("\n") || prev.contato
+      contato: infos.join("\n") || prev.contato,
+      contatoEmail: profile.email || prev.contatoEmail,
+      contatoTelefone: profile.telefone || profile.whatsapp || profile.phone || prev.contatoTelefone,
     }));
   };
 
@@ -88,12 +114,14 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
     if (profile.role !== "master" && profile.role !== "triagem") return;
 
     try {
+      const criadorContato = eventoForm.contatoPreferencial === "whatsapp" ? eventoForm.contatoTelefone : eventoForm.contatoEmail;
       if (editingEventId) {
         await updateDoc(doc(db, "eventos", editingEventId), {
           ...eventoForm,
           criadorNome: profile.name,
           criadorFoto: profile.photoUrl || profile.photo || null,
           criadorPixKey: profile.pixKey || null,
+          criadorContato: criadorContato || "",
         });
       } else {
         await addDoc(collection(db, "eventos"), {
@@ -102,12 +130,23 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
           criadorNome: profile.name,
           criadorFoto: profile.photoUrl || profile.photo || null,
           criadorPixKey: profile.pixKey || null,
+          criadorContato: criadorContato || "",
           createdAt: serverTimestamp(),
         });
       }
       setIsEventModalOpen(false);
       setEditingEventId(null);
-      setEventoForm({ titulo: "", tipo: "", descricao: "", data: "", hora: "" });
+      setEventoForm({
+        titulo: "",
+        tipo: "",
+        descricao: "",
+        data: "",
+        hora: "",
+        contatoEmail: profile.email || "",
+        contatoTelefone: profile.telefone || profile.whatsapp || profile.phone || "",
+        contatoPreferencial: "email",
+        modoInscricao: "plataforma",
+      });
     } catch (error) {
       console.error(error);
       alert("Erro ao salvar evento.");
@@ -121,6 +160,10 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
       descricao: ev.descricao || "",
       data: ev.data || "",
       hora: ev.hora || "",
+      contatoEmail: ev.contatoEmail || profile.email || "",
+      contatoTelefone: ev.contatoTelefone || profile.telefone || profile.whatsapp || profile.phone || "",
+      contatoPreferencial: ev.contatoPreferencial || "email",
+      modoInscricao: ev.modoInscricao || "plataforma",
     });
     setEditingEventId(ev.id);
     setIsEventModalOpen(true);
@@ -154,13 +197,14 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
   const handleCreateServico = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      const criadorContato = servicoForm.contatoPreferencial === "whatsapp" ? servicoForm.contatoTelefone : servicoForm.contatoEmail;
       if (editingServiceId) {
         await updateDoc(doc(db, "servicos", editingServiceId), {
           ...servicoForm,
           criadorNome: profile.name,
           criadorFoto: profile.photoUrl || profile.photo || null,
           criadorPixKey: profile.pixKey || null,
-          criadorContato: profile.telefone || profile.whatsapp || profile.email || "",
+          criadorContato: criadorContato || "",
         });
       } else {
         await addDoc(collection(db, "servicos"), {
@@ -169,13 +213,27 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
           criadorNome: profile.name,
           criadorFoto: profile.photoUrl || profile.photo || null,
           criadorPixKey: profile.pixKey || null,
-          criadorContato: profile.telefone || profile.whatsapp || profile.email || "",
+          criadorContato: criadorContato || "",
           createdAt: serverTimestamp(),
         });
       }
       setIsServiceModalOpen(false);
       setEditingServiceId(null);
-      setServicoForm({ titulo: "", tipo: "", descricao: "", contato: "", data: "", hora: "", linkInscricao: "", valor: "", isGratuito: false });
+      setServicoForm({
+        titulo: "",
+        tipo: "",
+        descricao: "",
+        contato: "",
+        data: "",
+        hora: "",
+        linkInscricao: "",
+        valor: "",
+        isGratuito: false,
+        contatoEmail: profile.email || "",
+        contatoTelefone: profile.telefone || profile.whatsapp || profile.phone || "",
+        contatoPreferencial: "email",
+        modoInscricao: "plataforma",
+      });
     } catch (error) {
       console.error(error);
       alert("Erro ao salvar serviço.");
@@ -201,6 +259,10 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
       linkInscricao: svc.linkInscricao || "",
       valor: svc.valor || "",
       isGratuito: svc.isGratuito || false,
+      contatoEmail: svc.contatoEmail || profile.email || "",
+      contatoTelefone: svc.contatoTelefone || profile.telefone || profile.whatsapp || profile.phone || "",
+      contatoPreferencial: svc.contatoPreferencial || "email",
+      modoInscricao: svc.modoInscricao || "plataforma",
     });
     setEditingServiceId(svc.id);
     setIsServiceModalOpen(true);
@@ -243,7 +305,17 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
               <button 
                 onClick={() => {
                   setEditingEventId(null);
-                  setEventoForm({ titulo: "", tipo: "", descricao: "", data: "", hora: "" });
+                  setEventoForm({
+                    titulo: "",
+                    tipo: "",
+                    descricao: "",
+                    data: "",
+                    hora: "",
+                    contatoEmail: profile.email || "",
+                    contatoTelefone: profile.telefone || profile.whatsapp || profile.phone || "",
+                    contatoPreferencial: "email",
+                    modoInscricao: "plataforma",
+                  });
                   setIsEventModalOpen(true);
                 }}
                 className="flex items-center gap-2 bg-sun text-forest font-semibold text-sm px-4 py-2 rounded-xl hover:bg-sun-dark transition-colors"
@@ -341,12 +413,23 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
                 {/* Actions Row */}
                 <div className="flex items-center gap-2 pt-2 border-t border-soft/60">
                   {profile.role === "profissional" && !isCreator && (
-                    <button 
-                      onClick={() => setSubscribingItem(ev)}
-                      className="flex-1 py-2.5 bg-forest hover:bg-forest/90 text-white font-serif font-semibold rounded-xl text-xs transition-colors shadow-sm"
-                    >
-                      Me Inscrever
-                    </button>
+                    ev.modoInscricao === "contato" ? (
+                      <a 
+                        href={getContactLink(ev)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex-1 text-center py-2.5 bg-forest hover:bg-forest/90 text-white font-serif font-semibold rounded-xl text-xs transition-colors shadow-sm flex items-center justify-center"
+                      >
+                        {ev.contatoPreferencial === "whatsapp" ? "Inscrição via WhatsApp" : "Inscrição via E-mail"}
+                      </a>
+                    ) : (
+                      <button 
+                        onClick={() => setSubscribingItem(ev)}
+                        className="flex-1 py-2.5 bg-forest hover:bg-forest/90 text-white font-serif font-semibold rounded-xl text-xs transition-colors shadow-sm"
+                      >
+                        Me Inscrever
+                      </button>
+                    )
                   )}
                   {isCreator && (
                     <a 
@@ -383,7 +466,21 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
             <button 
               onClick={() => {
                 setEditingServiceId(null);
-                setServicoForm({ titulo: "", tipo: "", descricao: "", contato: getProfileContactStr(), data: "", hora: "", linkInscricao: "", valor: "", isGratuito: false });
+                setServicoForm({
+                  titulo: "",
+                  tipo: "",
+                  descricao: "",
+                  contato: getProfileContactStr(),
+                  data: "",
+                  hora: "",
+                  linkInscricao: "",
+                  valor: "",
+                  isGratuito: false,
+                  contatoEmail: profile.email || "",
+                  contatoTelefone: profile.telefone || profile.whatsapp || profile.phone || "",
+                  contatoPreferencial: "email",
+                  modoInscricao: "plataforma",
+                });
                 setIsServiceModalOpen(true);
               }}
               className="flex items-center gap-2 bg-sun text-forest font-semibold text-sm px-4 py-2 rounded-xl hover:bg-sun-dark transition-colors"
@@ -466,15 +563,38 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
                       </span>
                     </div>
 
-                    {svc.contato && (
-                      <div className="py-1">
-                        <span className="text-forest/50 font-medium flex items-center gap-1.5 mb-1 block">
-                          Contato para Inscrição:
+                    {(svc.contatoEmail || svc.contatoTelefone) ? (
+                      <div className="py-1 flex flex-col gap-1">
+                        <span className="text-forest/50 font-medium flex items-center gap-1.5 mb-0.5 block">
+                          Informações de Contato:
                         </span>
-                        <div className="text-[11px] font-mono text-forest/90 bg-white/70 p-2 rounded-xl border border-soft/40 break-all select-all">
-                          {svc.contato}
-                        </div>
+                        {svc.contatoEmail && (
+                          <div className="text-[11px] text-forest/90">
+                            <strong>E-mail:</strong> {svc.contatoEmail}
+                          </div>
+                        )}
+                        {svc.contatoTelefone && (
+                          <div className="text-[11px] text-forest/90">
+                            <strong>WhatsApp/Tel:</strong> {svc.contatoTelefone}
+                          </div>
+                        )}
+                        {svc.contatoPreferencial && (
+                          <div className="text-[10px] text-forest/50 mt-1 italic">
+                            Preferencial: {svc.contatoPreferencial === "whatsapp" ? "WhatsApp/Tel" : "E-mail"}
+                          </div>
+                        )}
                       </div>
+                    ) : (
+                      svc.contato && (
+                        <div className="py-1">
+                          <span className="text-forest/50 font-medium flex items-center gap-1.5 mb-1 block">
+                            Contato para Inscrição:
+                          </span>
+                          <div className="text-[11px] font-mono text-forest/90 bg-white/70 p-2 rounded-xl border border-soft/40 break-all select-all">
+                            {svc.contato}
+                          </div>
+                        </div>
+                      )
                     )}
                   </div>
 
@@ -497,12 +617,23 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
                   {/* Actions Row */}
                   <div className="flex items-center gap-2 pt-2 border-t border-soft/60">
                     {profile.role === "profissional" && !isCreator && (
-                      <button 
-                        onClick={() => setSubscribingItem(svc)}
-                        className="flex-1 py-2.5 bg-forest hover:bg-forest/90 text-white font-serif font-semibold rounded-xl text-xs transition-colors shadow-sm"
-                      >
-                        Me Inscrever
-                      </button>
+                      svc.modoInscricao === "contato" ? (
+                        <a 
+                          href={getContactLink(svc)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex-1 text-center py-2.5 bg-forest hover:bg-forest/90 text-white font-serif font-semibold rounded-xl text-xs transition-colors shadow-sm flex items-center justify-center"
+                        >
+                          {svc.contatoPreferencial === "whatsapp" ? "Inscrição via WhatsApp" : "Inscrição via E-mail"}
+                        </a>
+                      ) : (
+                        <button 
+                          onClick={() => setSubscribingItem(svc)}
+                          className="flex-1 py-2.5 bg-forest hover:bg-forest/90 text-white font-serif font-semibold rounded-xl text-xs transition-colors shadow-sm"
+                        >
+                          Me Inscrever
+                        </button>
+                      )
                     )}
                     {isCreator && (
                       <a 
@@ -564,6 +695,38 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
                 <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Descrição</label>
                 <textarea required rows={4} value={eventoForm.descricao} onChange={e => setEventoForm({...eventoForm, descricao: e.target.value})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest" />
               </div>
+
+              <div className="border-t border-soft pt-4 flex flex-col gap-4">
+                <h4 className="text-sm font-serif font-bold text-forest">Opções de Contato e Inscrição</h4>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">E-mail de Contato</label>
+                    <input type="email" value={eventoForm.contatoEmail} onChange={e => setEventoForm({...eventoForm, contatoEmail: e.target.value})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none text-forest" placeholder="email@exemplo.com" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Telefone / WhatsApp</label>
+                    <input type="text" value={eventoForm.contatoTelefone} onChange={e => setEventoForm({...eventoForm, contatoTelefone: e.target.value})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none text-forest" placeholder="(00) 00000-0000" />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Contato Preferencial para Dúvidas</label>
+                  <select value={eventoForm.contatoPreferencial} onChange={e => setEventoForm({...eventoForm, contatoPreferencial: e.target.value as any})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none text-forest">
+                    <option value="email">E-mail</option>
+                    <option value="whatsapp">Telefone / WhatsApp</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Como atender às inscrições / dúvidas?</label>
+                  <select value={eventoForm.modoInscricao} onChange={e => setEventoForm({...eventoForm, modoInscricao: e.target.value as any})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none text-forest">
+                    <option value="plataforma">Diretamente pela plataforma no botão "Quero me inscrever"</option>
+                    <option value="contato">Fazer inscrição pelo contato selecionado (e-mail ou whats)</option>
+                  </select>
+                </div>
+              </div>
+
               <button disabled={!eventoForm.titulo || !eventoForm.descricao || !eventoForm.data} type="submit" className="w-full mt-4 py-3 bg-sun text-forest font-bold rounded-xl hover:bg-sun-dark transition-colors disabled:opacity-50">
                 {editingEventId ? "Salvar Alterações" : "Publicar Evento"}
               </button>
@@ -624,14 +787,46 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
                 <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Link de Inscrição / Mais Informações (Opcional)</label>
                 <input type="url" placeholder="https://" value={servicoForm.linkInscricao} onChange={e => setServicoForm({...servicoForm, linkInscricao: e.target.value})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest" />
               </div>
+
+              <div className="border-t border-soft pt-4 flex flex-col gap-4">
+                <h4 className="text-sm font-serif font-bold text-forest">Opções de Contato e Inscrição</h4>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">E-mail de Contato</label>
+                    <input type="email" value={servicoForm.contatoEmail} onChange={e => setServicoForm({...servicoForm, contatoEmail: e.target.value})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none text-forest" placeholder="email@exemplo.com" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Telefone / WhatsApp</label>
+                    <input type="text" value={servicoForm.contatoTelefone} onChange={e => setServicoForm({...servicoForm, contatoTelefone: e.target.value})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none text-forest" placeholder="(00) 00000-0000" />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Contato Preferencial para Dúvidas</label>
+                  <select value={servicoForm.contatoPreferencial} onChange={e => setServicoForm({...servicoForm, contatoPreferencial: e.target.value as any})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none text-forest">
+                    <option value="email">E-mail</option>
+                    <option value="whatsapp">Telefone / WhatsApp</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Como atender às inscrições / dúvidas?</label>
+                  <select value={servicoForm.modoInscricao} onChange={e => setServicoForm({...servicoForm, modoInscricao: e.target.value as any})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none text-forest">
+                    <option value="plataforma">Diretamente pela plataforma no botão "Quero me inscrever"</option>
+                    <option value="contato">Fazer inscrição pelo contato selecionado (e-mail ou whats)</option>
+                  </select>
+                </div>
+              </div>
+
                <div>
                 <div className="flex items-center justify-between mb-2">
-                  <label className="text-xs font-bold uppercase tracking-wider text-forest/70 block">Informações de Contato / Outros (Opcional)</label>
+                  <label className="text-xs font-bold uppercase tracking-wider text-forest/70 block">Informações de Contato / Outros (Opcional - Texto Livre)</label>
                   <button type="button" onClick={pullProfileInfo} className="text-[10px] text-blue-600 bg-blue-50 hover:bg-blue-100 px-2 py-1 rounded font-semibold transition-colors">
                     Puxar do meu perfil
                   </button>
                 </div>
-                <textarea rows={2} value={servicoForm.contato} onChange={e => setServicoForm({...servicoForm, contato: e.target.value})} placeholder="Email, WhatsApp, Endereço..." className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest custom-scrollbar" />
+                <textarea rows={2} value={servicoForm.contato} onChange={e => setServicoForm({...servicoForm, contato: e.target.value})} placeholder="Informações extras ou outros meios de contato..." className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest custom-scrollbar" />
               </div>
                <button disabled={!servicoForm.titulo || !servicoForm.descricao || !servicoForm.tipo} type="submit" className="w-full mt-4 py-3 bg-sun text-forest font-bold rounded-xl hover:bg-sun-dark transition-colors disabled:opacity-50">
                 {editingServiceId ? "Salvar Alterações" : "Publicar Serviço"}

@@ -25,6 +25,22 @@ export function PublicServiceView({ serviceId, eventId, onBack }: PublicServiceV
     mensagem: "",
   });
 
+  const getContactLink = (item: any) => {
+    const isWhatsapp = item.contatoPreferencial === "whatsapp";
+    if (isWhatsapp) {
+      const rawPhone = item.contatoTelefone || item.criadorContato || "";
+      const cleanPhone = rawPhone.replace(/\D/g, "");
+      const phoneWithCountry = cleanPhone.length === 11 || cleanPhone.length === 10 ? `55${cleanPhone}` : cleanPhone;
+      const text = encodeURIComponent(`Olá! Gostaria de me inscrever ou saber mais sobre o evento/serviço "${item.titulo}" que vi no AcolheMente.`);
+      return `https://wa.me/${phoneWithCountry}?text=${text}`;
+    } else {
+      const email = item.contatoEmail || item.criadorContato || "";
+      const subject = encodeURIComponent(`Inscrição: ${item.titulo}`);
+      const body = encodeURIComponent(`Olá, gostaria de realizar minha inscrição no evento/serviço "${item.titulo}" anunciado no AcolheMente.`);
+      return `mailto:${email}?subject=${subject}&body=${body}`;
+    }
+  };
+
   useEffect(() => {
     async function fetchItem() {
       try {
@@ -211,10 +227,44 @@ export function PublicServiceView({ serviceId, eventId, onBack }: PublicServiceV
             )}
           </div>
 
+          {(item.contatoEmail || item.contatoTelefone) && (
+            <div className="bg-warm/15 p-5 rounded-2xl border border-soft/60 flex flex-col gap-2">
+              <h4 className="text-[11px] uppercase font-bold tracking-wider text-forest/50 font-serif font-bold">Contato do Responsável</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm mt-1">
+                {item.contatoEmail && (
+                  <div>
+                    <span className="text-xs text-forest/60 block">E-mail</span>
+                    <span className="font-medium text-forest/95 select-all font-mono text-xs">{item.contatoEmail}</span>
+                  </div>
+                )}
+                {item.contatoTelefone && (
+                  <div>
+                    <span className="text-xs text-forest/60 block">WhatsApp / Telefone</span>
+                    <span className="font-medium text-forest/95 select-all font-mono text-xs">{item.contatoTelefone}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Subscription Section */}
           <div className="mt-4 pt-6 border-t border-soft flex flex-col gap-4">
             
-            {!inscribed ? (
+            {item.modoInscricao === "contato" ? (
+              <div className="flex flex-col gap-3 text-center bg-warm/10 p-6 rounded-2xl border border-soft">
+                <p className="text-xs text-forest/70">
+                  O organizador optou por receber inscrições e dúvidas diretamente via {item.contatoPreferencial === "whatsapp" ? "WhatsApp" : "E-mail"}. Clique no botão abaixo para iniciar o contato:
+                </p>
+                <a 
+                  href={getContactLink(item)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full py-4 bg-forest text-white rounded-full font-serif font-medium text-base hover:bg-forest/95 transition-all shadow-md shadow-forest/15 hover:shadow-lg flex items-center justify-center gap-2"
+                >
+                  {item.contatoPreferencial === "whatsapp" ? "Entrar em contato via WhatsApp" : "Enviar e-mail para inscrição"}
+                </a>
+              </div>
+            ) : !inscribed ? (
               <>
                 {!showInscribeForm ? (
                   <button 
