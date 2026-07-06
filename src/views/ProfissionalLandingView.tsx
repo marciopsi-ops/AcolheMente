@@ -28,6 +28,7 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
     motivacao: ''
   });
   
+  const [step, setStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -47,39 +48,80 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
     });
   };
 
+  const handleBack = (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (step > 1) {
+      setStep(prev => prev - 1);
+      setErrorMsg('');
+    }
+  };
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    setIsSubmitting(true);
-    setErrorMsg('');
 
-    try {
-      const q = query(collection(db, "profissionais_leads"), where("email", "==", formData.email));
-      const querySnapshot = await getDocs(q);
-      if (!querySnapshot.empty) {
-        setErrorMsg("Este email já aparece em nossa triagem ou em nosso banco de dados.");
-        setIsSubmitting(false);
+    if (step === 1) {
+      if (!formData.nome || !formData.email || !formData.telefone || !formData.cpf || !formData.cidade || !formData.uf) {
+        setErrorMsg("Por favor, preencha todos os campos obrigatórios.");
         return;
       }
+      setErrorMsg('');
+      setStep(2);
+      return;
+    }
 
-      await addDoc(collection(db, "profissionais_leads"), {
-        ...formData,
-        status: 'Aguardando Entrevista',
-        notificacao: 'Novo cadastro de psicólogo voluntário/candidato.',
-        createdAt: serverTimestamp()
-      });
+    if (step === 2) {
+      if (!formData.abordagem || !formData.anoFormacao || !formData.horasDisponiveis) {
+        setErrorMsg("Por favor, preencha todos os campos obrigatórios.");
+        return;
+      }
+      setErrorMsg('');
+      setStep(3);
+      return;
+    }
+
+    if (step === 3) {
+      setErrorMsg('');
+      setStep(4);
+      return;
+    }
+
+    if (step === 4) {
+      if (!formData.motivacao) {
+        setErrorMsg("Por favor, preencha todos os campos obrigatórios.");
+        return;
+      }
+      setIsSubmitting(true);
+      setErrorMsg('');
 
       try {
-        await sendProfessionalLeadEmail(formData.nome, formData.email);
-      } catch (emailErr) {
-        console.error("Failed to send professional confirmation email:", emailErr);
-      }
+        const q = query(collection(db, "profissionais_leads"), where("email", "==", formData.email));
+        const querySnapshot = await getDocs(q);
+        if (!querySnapshot.empty) {
+          setErrorMsg("Este email já aparece em nossa triagem ou em nosso banco de dados.");
+          setIsSubmitting(false);
+          return;
+        }
 
-      setIsSuccess(true);
-    } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, "profissionais_leads");
-      setErrorMsg("Ocorreu um erro ao processar o cadastro.");
-    } finally {
-      setIsSubmitting(false);
+        await addDoc(collection(db, "profissionais_leads"), {
+          ...formData,
+          status: 'Aguardando Entrevista',
+          notificacao: 'Novo cadastro de psicólogo voluntário/candidato.',
+          createdAt: serverTimestamp()
+        });
+
+        try {
+          await sendProfessionalLeadEmail(formData.nome, formData.email);
+        } catch (emailErr) {
+          console.error("Failed to send professional confirmation email:", emailErr);
+        }
+
+        setIsSuccess(true);
+      } catch (error) {
+        handleFirestoreError(error, OperationType.WRITE, "profissionais_leads");
+        setErrorMsg("Ocorreu um erro ao processar o cadastro.");
+      } finally {
+        setIsSubmitting(false);
+      }
     }
   };
 
@@ -180,11 +222,25 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
               </div>
             ) : (
               <>
-                <div className="text-center mb-10">
-                  <h2 className="font-serif text-3xl font-medium text-forest mb-3">Formulário de Cadastro</h2>
+                <div className="mb-8">
+                  <h2 className="font-serif text-3xl font-medium text-forest mb-2">
+                    {step === 1 && "Dados Pessoais"}
+                    {step === 2 && "Sua Formação"}
+                    {step === 3 && "Público-Alvo"}
+                    {step === 4 && "Seu Propósito"}
+                  </h2>
                   <p className="text-forest/80 text-sm">
-                    Preencha o formulário abaixo para iniciarmos o processo de aprovação na nossa rede de psicólogos.
+                    {step === 1 && "Preencha suas informações de identificação e contato."}
+                    {step === 2 && "Conte-nos um pouco sobre sua formação e disponibilidade."}
+                    {step === 3 && "Selecione os públicos com os quais você tem experiência ou prefere atender."}
+                    {step === 4 && "Diga-nos o que te motiva a fazer parte do AcolheMente."}
                   </p>
+                  
+                  <div className="flex gap-2 mt-6">
+                    {Array.from({ length: 4 }).map((_, idx) => (
+                      <div key={idx} className={`h-1.5 flex-1 rounded-full transition-colors duration-500 ${idx < step ? 'bg-sun-dark' : 'bg-soft'}`} />
+                    ))}
+                  </div>
                 </div>
 
                 {errorMsg && (
@@ -194,271 +250,316 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
                 )}
 
                 <form onSubmit={handleSubmit} className="flex flex-col gap-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="flex flex-col gap-1">
-                      <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">Nome Completo *</label>
-                      <input 
-                        required 
-                        name="nome"
-                        value={formData.nome}
-                        onChange={handleChange}
-                        className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest" 
-                        placeholder="Ex: Maria da Silva" 
-                      />
-                    </div>
-                    
-                    <div className="flex flex-col gap-1">
-                      <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">Abordagens Psicológicas de Atendimento *</label>
-                      <input 
-                        required 
-                        name="abordagem"
-                        value={formData.abordagem}
-                        onChange={handleChange}
-                        className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest" 
-                        placeholder="Ex: TCC, Psicanálise, Humanista..." 
-                      />
-                    </div>
-                  </div>
+                
+                  {step === 1 && (
+                    <div className="flex flex-col gap-6 animate-in fade-in duration-500">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="flex flex-col gap-1">
+                          <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">Nome Completo *</label>
+                          <input 
+                            required 
+                            name="nome"
+                            value={formData.nome}
+                            onChange={handleChange}
+                            className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest" 
+                            placeholder="Ex: Maria da Silva" 
+                          />
+                        </div>
+                        
+                        <div className="flex flex-col gap-1">
+                          <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">CPF *</label>
+                          <input 
+                            required
+                            name="cpf"
+                            value={formData.cpf}
+                            onChange={handleChange}
+                            className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest" 
+                            placeholder="000.000.000-00" 
+                          />
+                        </div>
+                      </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="flex flex-col gap-1">
-                      <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">Ano de formação / graduação *</label>
-                      <input 
-                        required
-                        type="number"
-                        name="anoFormacao"
-                        value={formData.anoFormacao}
-                        onChange={handleChange}
-                        className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest" 
-                        placeholder="Ex: 2015" 
-                      />
-                    </div>
-                    
-                    <div className="flex flex-col gap-1">
-                      <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">Especialidade / Pós-graduação</label>
-                      <input 
-                        name="especialidade"
-                        value={formData.especialidade}
-                        onChange={handleChange}
-                        className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest" 
-                        placeholder="Ex: Especialidade em saúde mental..." 
-                      />
-                    </div>
-                  </div>
+                      {formData.nome.trim().length >= 3 && formData.cpf.trim().length >= 3 && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in duration-500">
+                          <div className="flex flex-col gap-1">
+                            <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">E-mail *</label>
+                            <input 
+                              required 
+                              type="email"
+                              name="email"
+                              value={formData.email}
+                              onChange={handleChange}
+                              className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest" 
+                              placeholder="maria@exemplo.com"
+                            />
+                          </div>
+                          
+                          <div className="flex flex-col gap-1">
+                            <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">Telefone / WhatsApp *</label>
+                            <input 
+                              required 
+                              type="tel"
+                              name="telefone"
+                              value={formData.telefone}
+                              onChange={handleChange}
+                              className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest" 
+                              placeholder="(00) 00000-0000"
+                            />
+                          </div>
+                        </div>
+                      )}
 
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div className="flex flex-col gap-1">
-                      <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">CRP / Registro (Se houver)</label>
-                      <input 
-                        name="crp"
-                        value={formData.crp}
-                        onChange={handleChange}
-                        className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest" 
-                        placeholder="00/00000" 
-                      />
+                      {formData.nome.trim().length >= 3 && formData.cpf.trim().length >= 3 && formData.email.includes('@') && formData.telefone.trim().length >= 4 && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in duration-500 border-t border-soft pt-6">
+                          <div className="flex flex-col gap-1">
+                            <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">Cidade *</label>
+                            <input 
+                              required 
+                              name="cidade"
+                              value={formData.cidade}
+                              onChange={handleChange}
+                              className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest" 
+                              placeholder="Ex: São Paulo"
+                            />
+                          </div>
+                          
+                          <div className="flex flex-col gap-1">
+                            <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">Estado / UF *</label>
+                            <select 
+                              required 
+                              name="uf"
+                              value={formData.uf}
+                              onChange={handleChange}
+                              className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest appearance-none" 
+                            >
+                              <option value="">Selecione...</option>
+                              <option value="AC">Acre</option>
+                              <option value="AL">Alagoas</option>
+                              <option value="AP">Amapá</option>
+                              <option value="AM">Amazonas</option>
+                              <option value="BA">Bahia</option>
+                              <option value="CE">Ceará</option>
+                              <option value="DF">Distrito Federal</option>
+                              <option value="ES">Espírito Santo</option>
+                              <option value="GO">Goiás</option>
+                              <option value="MA">Maranhão</option>
+                              <option value="MT">Mato Grosso</option>
+                              <option value="MS">Mato Grosso do Sul</option>
+                              <option value="MG">Minas Gerais</option>
+                              <option value="PA">Pará</option>
+                              <option value="PB">Paraíba</option>
+                              <option value="PR">Paraná</option>
+                              <option value="PE">Pernambuco</option>
+                              <option value="PI">Piauí</option>
+                              <option value="RJ">Rio de Janeiro</option>
+                              <option value="RN">Rio Grande do Norte</option>
+                              <option value="RS">Rio Grande do Sul</option>
+                              <option value="RO">Rondônia</option>
+                              <option value="RR">Roraima</option>
+                              <option value="SC">Santa Catarina</option>
+                              <option value="SP">São Paulo</option>
+                              <option value="SE">Sergipe</option>
+                              <option value="TO">Tocantins</option>
+                            </select>
+                          </div>
+                        </div>
+                      )}
                     </div>
+                  )}
 
-                    <div className="flex flex-col gap-1">
-                      <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">CPF *</label>
-                      <input 
-                        required
-                        name="cpf"
-                        value={formData.cpf}
-                        onChange={handleChange}
-                        className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest" 
-                        placeholder="000.000.000-00" 
-                      />
-                    </div>
-                    
-                    <div className="flex flex-col gap-1">
-                      <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">Horas mens. disponíveis *</label>
-                      <select 
-                        required 
-                        name="horasDisponiveis"
-                        value={formData.horasDisponiveis}
-                        onChange={handleChange}
-                        className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest appearance-none" 
-                      >
-                        <option value="1 a 3 horas/mês">1 a 3 horas/mês</option>
-                        <option value="4 a 8 horas/mês">4 a 8 horas/mês</option>
-                        <option value="9 a 15 horas/mês">9 a 15 horas/mês</option>
-                        <option value="16 a 20 horas/mês">16 a 20 horas/mês</option>
-                        <option value="Mais de 20 horas/mês">Mais de 20 horas/mês</option>
-                      </select>
-                    </div>
-                  </div>
+                  {step === 2 && (
+                    <div className="flex flex-col gap-6 animate-in fade-in duration-500">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="flex flex-col gap-1">
+                          <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">Abordagens Psicológicas de Atendimento *</label>
+                          <input 
+                            required 
+                            name="abordagem"
+                            value={formData.abordagem}
+                            onChange={handleChange}
+                            className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest" 
+                            placeholder="Ex: TCC, Psicanálise, Humanista..." 
+                          />
+                        </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="flex flex-col gap-1">
-                      <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">E-mail *</label>
-                      <input 
-                        required 
-                        type="email"
-                        name="email"
-                        value={formData.email}
-                        onChange={handleChange}
-                        className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest" 
-                      />
-                    </div>
-                    
-                    <div className="flex flex-col gap-1">
-                      <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">Telefone / WhatsApp *</label>
-                      <input 
-                        required 
-                        type="tel"
-                        name="telefone"
-                        value={formData.telefone}
-                        onChange={handleChange}
-                        className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest" 
-                      />
-                    </div>
-                  </div>
+                        <div className="flex flex-col gap-1">
+                          <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">Ano de formação / graduação *</label>
+                          <input 
+                            required
+                            type="number"
+                            name="anoFormacao"
+                            value={formData.anoFormacao}
+                            onChange={handleChange}
+                            className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest" 
+                            placeholder="Ex: 2015" 
+                          />
+                        </div>
+                      </div>
 
-                  {/* Multiple Choice Audiences */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 border-t border-soft pt-6 mt-2">
-                    <div className="flex flex-col gap-3">
-                      <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2 leading-relaxed">
-                        Experiência de no mínimo um ano com atendimento clínico de:
-                      </label>
-                      <div className="flex flex-col gap-2 px-2">
-                        {['Adulto', 'Idoso', 'Criança', 'Adolescente', 'Casal', 'Família', 'Outros'].map(op => (
-                          <label key={`exp-${op}`} className="flex items-center gap-2 text-sm text-forest cursor-pointer w-fit">
+                      {formData.abordagem.trim().length >= 2 && formData.anoFormacao.trim().length >= 4 && (
+                        <div className="flex flex-col gap-6 animate-in fade-in duration-500 border-t border-soft pt-6">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div className="flex flex-col gap-1">
+                              <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">CRP / Registro (Se houver)</label>
+                              <input 
+                                name="crp"
+                                value={formData.crp}
+                                onChange={handleChange}
+                                className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest" 
+                                placeholder="00/00000" 
+                              />
+                            </div>
+
+                            <div className="flex flex-col gap-1">
+                              <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">Especialidade / Pós-graduação</label>
+                              <input 
+                                name="especialidade"
+                                value={formData.especialidade}
+                                onChange={handleChange}
+                                className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest" 
+                                placeholder="Ex: Especialidade em saúde mental..." 
+                              />
+                            </div>
+                          </div>
+
+                          <div className="flex flex-col gap-1">
+                            <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">Horas mensais disponíveis *</label>
+                            <select 
+                              required 
+                              name="horasDisponiveis"
+                              value={formData.horasDisponiveis}
+                              onChange={handleChange}
+                              className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest appearance-none" 
+                            >
+                              <option value="1 a 3 horas/mês">1 a 3 horas/mês</option>
+                              <option value="4 a 8 horas/mês">4 a 8 horas/mês</option>
+                              <option value="9 a 15 horas/mês">9 a 15 horas/mês</option>
+                              <option value="16 a 20 horas/mês">16 a 20 horas/mês</option>
+                              <option value="Mais de 20 horas/mês">Mais de 20 horas/mês</option>
+                            </select>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {step === 3 && (
+                    <div className="flex flex-col gap-6 animate-in fade-in duration-500">
+                      <div className="flex flex-col gap-3">
+                        <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2 leading-relaxed">
+                          Experiência de no mínimo um ano com atendimento clínico de:
+                        </label>
+                        <div className="flex flex-col gap-2 px-2">
+                          {['Adulto', 'Idoso', 'Criança', 'Adolescente', 'Casal', 'Família', 'Outros'].map(op => (
+                            <label key={`exp-${op}`} className="flex items-center gap-2 text-sm text-forest cursor-pointer w-fit">
+                              <input 
+                                type="checkbox" 
+                                checked={formData.publicosExperiencia.includes(op)}
+                                onChange={() => handleCheckboxChange('publicosExperiencia', op)}
+                                className="accent-sun-dark w-4 h-4 cursor-pointer" 
+                              />
+                              {op}
+                            </label>
+                          ))}
+                          {formData.publicosExperiencia.includes('Outros') && (
+                            <input 
+                              type="text"
+                              name="outrosPublicosExperiencia"
+                              placeholder="Especifique outros públicos"
+                              value={formData.outrosPublicosExperiencia}
+                              onChange={handleChange}
+                              className="w-full mt-1 border-b border-soft bg-transparent focus:outline-none focus:border-sun-dark text-sm py-2 px-1"
+                            />
+                          )}
+                        </div>
+                      </div>
+
+                      {formData.publicosExperiencia.length > 0 && (
+                        <div className="flex flex-col gap-3 animate-in fade-in duration-500 border-t border-soft pt-6">
+                          <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2 leading-relaxed">
+                            Gosto de atender:
+                          </label>
+                          <div className="flex flex-col gap-2 px-2">
+                            {['Adulto', 'Idoso', 'Criança', 'Adolescente', 'Casal', 'Família', 'Outros'].map(op => (
+                              <label key={`gosto-${op}`} className="flex items-center gap-2 text-sm text-forest cursor-pointer w-fit">
+                                <input 
+                                  type="checkbox" 
+                                  checked={formData.publicosGosto.includes(op)}
+                                  onChange={() => handleCheckboxChange('publicosGosto', op)}
+                                  className="accent-sun-dark w-4 h-4 cursor-pointer" 
+                                />
+                                {op}
+                              </label>
+                            ))}
+                            {formData.publicosGosto.includes('Outros') && (
+                              <input 
+                                type="text"
+                                name="outrosPublicosGosto"
+                                placeholder="Especifique outros públicos"
+                                value={formData.outrosPublicosGosto}
+                                onChange={handleChange}
+                                className="w-full mt-1 border-b border-soft bg-transparent focus:outline-none focus:border-sun-dark text-sm py-2 px-1"
+                              />
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {step === 4 && (
+                    <div className="flex flex-col gap-6 animate-in fade-in duration-500">
+                      <div className="flex flex-col gap-1">
+                        <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">Por que você quer fazer parte desse projeto? *</label>
+                        <textarea 
+                          required 
+                          name="motivacao"
+                          rows={3}
+                          value={formData.motivacao}
+                          onChange={handleChange}
+                          className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest resize-none" 
+                          placeholder="Fale um pouco sobre as suas motivações..."
+                        />
+                      </div>
+
+                      {formData.motivacao.trim().length >= 10 && (
+                        <div className="flex flex-col gap-6 animate-in fade-in duration-500 border-t border-soft pt-6">
+                          <label className="flex items-start gap-3 cursor-pointer group">
                             <input 
                               type="checkbox" 
-                              checked={formData.publicosExperiencia.includes(op)}
-                              onChange={() => handleCheckboxChange('publicosExperiencia', op)}
-                              className="accent-sun-dark w-4 h-4 cursor-pointer" 
+                              required 
+                              className="mt-1 w-5 h-5 rounded border-soft text-sun-dark focus:ring-sun-dark/20 accent-sun-dark cursor-pointer"
                             />
-                            {op}
+                            <span className="text-xs text-forest/70 leading-relaxed">
+                              <strong>Privacidade e LGPD:</strong> Estou ciente e concordo que meus dados profissionais e de contato serão tratados de forma sigilosa para fins de validação e cadastro na plataforma, conforme a Lei Geral de Proteção de Dados (LGPD).
+                            </span>
                           </label>
-                        ))}
-                        {formData.publicosExperiencia.includes('Outros') && (
-                          <input 
-                            type="text"
-                            name="outrosPublicosExperiencia"
-                            placeholder="Especifique outros públicos"
-                            value={formData.outrosPublicosExperiencia}
-                            onChange={handleChange}
-                            className="w-full mt-1 border-b border-soft bg-transparent focus:outline-none focus:border-sun-dark text-sm py-2 px-1"
-                          />
-                        )}
-                      </div>
+                        </div>
+                      )}
                     </div>
+                  )}
 
-                    <div className="flex flex-col gap-3">
-                      <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2 leading-relaxed">
-                        Gosto de atender:
-                      </label>
-                      <div className="flex flex-col gap-2 px-2">
-                        {['Adulto', 'Idoso', 'Criança', 'Adolescente', 'Casal', 'Família', 'Outros'].map(op => (
-                          <label key={`gosto-${op}`} className="flex items-center gap-2 text-sm text-forest cursor-pointer w-fit">
-                            <input 
-                              type="checkbox" 
-                              checked={formData.publicosGosto.includes(op)}
-                              onChange={() => handleCheckboxChange('publicosGosto', op)}
-                              className="accent-sun-dark w-4 h-4 cursor-pointer" 
-                            />
-                            {op}
-                          </label>
-                        ))}
-                        {formData.publicosGosto.includes('Outros') && (
-                          <input 
-                            type="text"
-                            name="outrosPublicosGosto"
-                            placeholder="Especifique outros públicos"
-                            value={formData.outrosPublicosGosto}
-                            onChange={handleChange}
-                            className="w-full mt-1 border-b border-soft bg-transparent focus:outline-none focus:border-sun-dark text-sm py-2 px-1"
-                          />
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 border-t border-soft pt-6 mt-2">
-                    <div className="flex flex-col gap-1">
-                      <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">Cidade *</label>
-                      <input 
-                        required 
-                        name="cidade"
-                        value={formData.cidade}
-                        onChange={handleChange}
-                        className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest" 
-                      />
-                    </div>
-                    
-                    <div className="flex flex-col gap-1">
-                      <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">Estado / UF *</label>
-                      <select 
-                        required 
-                        name="uf"
-                        value={formData.uf}
-                        onChange={handleChange}
-                        className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest appearance-none" 
+                  <div className="flex gap-4 border-t border-soft pt-6 mt-4">
+                    {step > 1 && (
+                      <button 
+                        type="button" 
+                        onClick={handleBack}
+                        className="flex-1 py-4 px-6 border border-soft text-forest hover:bg-forest/5 rounded-full font-semibold transition-all text-center"
                       >
-                        <option value="">Selecione...</option>
-                        <option value="AC">Acre</option>
-                        <option value="AL">Alagoas</option>
-                        <option value="AP">Amapá</option>
-                        <option value="AM">Amazonas</option>
-                        <option value="BA">Bahia</option>
-                        <option value="CE">Ceará</option>
-                        <option value="DF">Distrito Federal</option>
-                        <option value="ES">Espírito Santo</option>
-                        <option value="GO">Goiás</option>
-                        <option value="MA">Maranhão</option>
-                        <option value="MT">Mato Grosso</option>
-                        <option value="MS">Mato Grosso do Sul</option>
-                        <option value="MG">Minas Gerais</option>
-                        <option value="PA">Pará</option>
-                        <option value="PB">Paraíba</option>
-                        <option value="PR">Paraná</option>
-                        <option value="PE">Pernambuco</option>
-                        <option value="PI">Piauí</option>
-                        <option value="RJ">Rio de Janeiro</option>
-                        <option value="RN">Rio Grande do Norte</option>
-                        <option value="RS">Rio Grande do Sul</option>
-                        <option value="RO">Rondônia</option>
-                        <option value="RR">Roraima</option>
-                        <option value="SC">Santa Catarina</option>
-                        <option value="SP">São Paulo</option>
-                        <option value="SE">Sergipe</option>
-                        <option value="TO">Tocantins</option>
-                      </select>
-                    </div>
+                        Voltar
+                      </button>
+                    )}
+                    
+                    <button 
+                      disabled={isSubmitting}
+                      type="submit" 
+                      className="flex-1 py-4 px-6 bg-forest text-white rounded-full font-semibold shadow-md hover:bg-forest/90 transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
+                    >
+                      {step < 4 ? "Avançar" : (isSubmitting ? "Enviando..." : "Finalizar Cadastro")}
+                    </button>
                   </div>
-
-                  <div className="flex flex-col gap-1">
-                    <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">Por que você quer fazer parte desse projeto? *</label>
-                    <textarea 
-                      required 
-                      name="motivacao"
-                      rows={3}
-                      value={formData.motivacao}
-                      onChange={handleChange}
-                      className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest resize-none" 
-                    />
-                  </div>
-
-                  <label className="flex items-start gap-3 mt-2 cursor-pointer group">
-                    <input 
-                      type="checkbox" 
-                      required 
-                      className="mt-1 w-5 h-5 rounded border-soft text-sun-dark focus:ring-sun-dark/20 accent-sun-dark cursor-pointer"
-                    />
-                    <span className="text-xs text-forest/70 leading-relaxed">
-                      <strong>Privacidade e LGPD:</strong> Estou ciente e concordo que meus dados profissionais e de contato serão tratados de forma sigilosa para fins de validação e cadastro na plataforma, conforme a Lei Geral de Proteção de Dados (LGPD).
-                    </span>
-                  </label>
-
-                  <button 
-                    disabled={isSubmitting}
-                    type="submit" 
-                    className="w-full py-5 px-8 mt-4 bg-forest text-white rounded-full font-semibold shadow-md hover:bg-forest/90 transition-all flex items-center justify-center gap-2 group disabled:opacity-70 disabled:cursor-not-allowed"
-                  >
-                    {isSubmitting ? 'Enviando...' : 'Finalizar Cadastro'}
-                  </button>
-                  <p className="text-center text-[11px] text-forest/60 uppercase tracking-widest font-semibold mt-2">
+                  
+                  <p className="text-center text-[10px] text-forest/60 uppercase tracking-widest font-semibold mt-2">
                     Agradecemos pela sua disposição em apoiar esse projeto.
                   </p>
                 </form>

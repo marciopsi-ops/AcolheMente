@@ -21,6 +21,7 @@ export function EmpresaView({ onNavigate }: { onNavigate: (view: 'landing' | 'ac
     telefone: ''
   });
   
+  const [step, setStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -29,38 +30,73 @@ export function EmpresaView({ onNavigate }: { onNavigate: (view: 'landing' | 'ac
     setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
   };
 
+  const handleBack = (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (step > 1) {
+      setStep(prev => prev - 1);
+      setErrorMsg('');
+    }
+  };
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    setIsSubmitting(true);
-    setErrorMsg('');
 
-    try {
-      const q = query(collection(db, "empresa_leads"), where("email", "==", formData.email));
-      const querySnapshot = await getDocs(q);
-      if (!querySnapshot.empty) {
-        setErrorMsg("Este email já aparece em nossa triagem ou em nosso banco de dados.");
-        setIsSubmitting(false);
+    if (step === 1) {
+      if (!formData.nomeEmpresa || !formData.cnpj || !formData.ramoAtividade) {
+        setErrorMsg("Por favor, preencha todos os campos obrigatórios.");
         return;
       }
+      setErrorMsg('');
+      setStep(2);
+      return;
+    }
 
-      await addDoc(collection(db, "empresa_leads"), {
-        ...formData,
-        notificacao: 'Nova empresa interessada.',
-        createdAt: serverTimestamp()
-      });
+    if (step === 2) {
+      if (!formData.local || !formData.colaboradores) {
+        setErrorMsg("Por favor, preencha todos os campos obrigatórios.");
+        return;
+      }
+      setErrorMsg('');
+      setStep(3);
+      return;
+    }
+
+    if (step === 3) {
+      if (!formData.contatoNome || !formData.contatoDepartamento || !formData.email || !formData.telefone) {
+        setErrorMsg("Por favor, preencha todos os campos obrigatórios.");
+        return;
+      }
+      setIsSubmitting(true);
+      setErrorMsg('');
 
       try {
-        await sendCompanyLeadEmail(formData.contatoNome, formData.nomeEmpresa, formData.email);
-      } catch (emailErr) {
-        console.error("Failed to send company confirmation email:", emailErr);
-      }
+        const q = query(collection(db, "empresa_leads"), where("email", "==", formData.email));
+        const querySnapshot = await getDocs(q);
+        if (!querySnapshot.empty) {
+          setErrorMsg("Este email já aparece em nossa triagem ou em nosso banco de dados.");
+          setIsSubmitting(false);
+          return;
+        }
 
-      setIsSuccess(true);
-    } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, "empresa_leads");
-      setErrorMsg("Ocorreu um erro ao processar o cadastro.");
-    } finally {
-      setIsSubmitting(false);
+        await addDoc(collection(db, "empresa_leads"), {
+          ...formData,
+          notificacao: 'Nova empresa interessada.',
+          createdAt: serverTimestamp()
+        });
+
+        try {
+          await sendCompanyLeadEmail(formData.contatoNome, formData.nomeEmpresa, formData.email);
+        } catch (emailErr) {
+          console.error("Failed to send company confirmation email:", emailErr);
+        }
+
+        setIsSuccess(true);
+      } catch (error) {
+        handleFirestoreError(error, OperationType.WRITE, "empresa_leads");
+        setErrorMsg("Ocorreu um erro ao processar o cadastro.");
+      } finally {
+        setIsSubmitting(false);
+      }
     }
   };
 
@@ -240,11 +276,23 @@ export function EmpresaView({ onNavigate }: { onNavigate: (view: 'landing' | 'ac
               </div>
             ) : (
               <>
-                <div className="text-center mb-10">
-                  <h2 className="font-serif text-3xl font-medium text-forest mb-3">Seja uma parceira</h2>
-                  <p className="text-forest/70/80 text-sm">
-                    Preencha o formulário abaixo para agendarmos uma conversa sem compromisso e apresentarmos nossa plataforma.
+                <div className="mb-8">
+                  <h2 className="font-serif text-3xl font-medium text-forest mb-2">
+                    {step === 1 && "Dados da Empresa"}
+                    {step === 2 && "Porte e Localização"}
+                    {step === 3 && "Contato Comercial"}
+                  </h2>
+                  <p className="text-forest/80 text-sm">
+                    {step === 1 && "Informe o nome, CNPJ e atividade principal da empresa."}
+                    {step === 2 && "Conte-nos sobre a sede e o tamanho da sua equipe."}
+                    {step === 3 && "Dados da pessoa responsável para enviarmos a proposta."}
                   </p>
+                  
+                  <div className="flex gap-2 mt-6">
+                    {Array.from({ length: 3 }).map((_, idx) => (
+                      <div key={idx} className={`h-1.5 flex-1 rounded-full transition-colors duration-500 ${idx < step ? 'bg-sun-dark' : 'bg-soft'}`} />
+                    ))}
+                  </div>
                 </div>
 
                 {errorMsg && (
@@ -254,155 +302,189 @@ export function EmpresaView({ onNavigate }: { onNavigate: (view: 'landing' | 'ac
                 )}
 
                 <form onSubmit={handleSubmit} className="flex flex-col gap-6">
-                  <div className="flex flex-col gap-1">
-                    <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">Nome da Empresa *</label>
-                    <input 
-                      required 
-                      name="nomeEmpresa"
-                      value={formData.nomeEmpresa}
-                      onChange={handleChange}
-                      className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest" 
-                      placeholder="Ex: Minha Empresa LTDA" 
-                    />
-                  </div>
+                
+                  {step === 1 && (
+                    <div className="flex flex-col gap-6 animate-in fade-in duration-500">
+                      <div className="flex flex-col gap-1">
+                        <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">Nome da Empresa *</label>
+                        <input 
+                          required 
+                          name="nomeEmpresa"
+                          value={formData.nomeEmpresa}
+                          onChange={handleChange}
+                          className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest" 
+                          placeholder="Ex: Minha Empresa LTDA" 
+                        />
+                      </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="flex flex-col gap-1">
-                      <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">CNPJ *</label>
-                      <input 
-                        required 
-                        name="cnpj"
-                        value={formData.cnpj}
-                        onChange={handleChange}
-                        className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest" 
-                        placeholder="00.000.000/0001-00" 
-                      />
+                      {formData.nomeEmpresa.trim().length >= 3 && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in duration-500 border-t border-soft pt-6">
+                          <div className="flex flex-col gap-1">
+                            <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">CNPJ *</label>
+                            <input 
+                              required 
+                              name="cnpj"
+                              value={formData.cnpj}
+                              onChange={handleChange}
+                              className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest" 
+                              placeholder="00.000.000/0001-00" 
+                            />
+                          </div>
+
+                          <div className="flex flex-col gap-1">
+                            <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">Ramo de Atividade *</label>
+                            <select 
+                              required 
+                              name="ramoAtividade"
+                              value={formData.ramoAtividade}
+                              onChange={handleChange}
+                              className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest appearance-none" 
+                            >
+                              <option value="">Selecione...</option>
+                              <option value="Tecnologia">Tecnologia</option>
+                              <option value="Saúde">Saúde</option>
+                              <option value="Varejo">Varejo / Comércio</option>
+                              <option value="Indústria">Indústria</option>
+                              <option value="Serviços">Serviços</option>
+                              <option value="Educação">Educação</option>
+                              <option value="Outros">Outros</option>
+                            </select>
+                          </div>
+                        </div>
+                      )}
                     </div>
+                  )}
 
-                    <div className="flex flex-col gap-1">
-                      <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">Ramo de Atividade *</label>
-                      <select 
-                        required 
-                        name="ramoAtividade"
-                        value={formData.ramoAtividade}
-                        onChange={handleChange}
-                        className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest appearance-none" 
+                  {step === 2 && (
+                    <div className="flex flex-col gap-6 animate-in fade-in duration-500">
+                      <div className="flex flex-col gap-1">
+                        <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">Local / Sede *</label>
+                        <input 
+                          required 
+                          name="local"
+                          value={formData.local}
+                          onChange={handleChange}
+                          className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest" 
+                          placeholder="Ex: São Paulo, SP" 
+                        />
+                      </div>
+
+                      {formData.local.trim().length >= 3 && (
+                        <div className="flex flex-col gap-1 animate-in fade-in duration-500 border-t border-soft pt-6">
+                          <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">Quantidade de colaboradores (não contar terceiros) *</label>
+                          <select 
+                            required 
+                            name="colaboradores"
+                            value={formData.colaboradores}
+                            onChange={handleChange}
+                            className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest appearance-none" 
+                          >
+                            <option value="">Selecione...</option>
+                            <option value="1 a 10">1 a 10 pessoas</option>
+                            <option value="11 a 50">11 a 50 pessoas</option>
+                            <option value="51 a 200">51 a 200 pessoas</option>
+                            <option value="Mais de 200">Mais de 200 pessoas</option>
+                          </select>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {step === 3 && (
+                    <div className="flex flex-col gap-6 animate-in fade-in duration-500">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="flex flex-col gap-1">
+                          <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">Nome do Contato *</label>
+                          <input 
+                            required 
+                            name="contatoNome"
+                            value={formData.contatoNome}
+                            onChange={handleChange}
+                            className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest" 
+                            placeholder="Ex: João Silva" 
+                          />
+                        </div>
+                        
+                        <div className="flex flex-col gap-1">
+                          <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">Departamento *</label>
+                          <input 
+                            required 
+                            name="contatoDepartamento"
+                            value={formData.contatoDepartamento}
+                            onChange={handleChange}
+                            className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest" 
+                            placeholder="Ex: RH / Benefícios" 
+                          />
+                        </div>
+                      </div>
+
+                      {formData.contatoNome.trim().length >= 3 && formData.contatoDepartamento.trim().length >= 3 && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in duration-500 border-t border-soft pt-6">
+                          <div className="flex flex-col gap-1">
+                            <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">E-mail Corporativo *</label>
+                            <input 
+                              required 
+                              type="email"
+                              name="email"
+                              value={formData.email}
+                              onChange={handleChange}
+                              className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest" 
+                              placeholder="contato@empresa.com" 
+                            />
+                          </div>
+                          
+                          <div className="flex flex-col gap-1">
+                            <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">Telefone / WhatsApp *</label>
+                            <input 
+                              required 
+                              type="tel"
+                              name="telefone"
+                              value={formData.telefone}
+                              onChange={handleChange}
+                              className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest" 
+                              placeholder="(00) 00000-0000" 
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {formData.contatoNome.trim().length >= 3 && formData.contatoDepartamento.trim().length >= 3 && formData.email.includes('@') && formData.telefone.trim().length >= 4 && (
+                        <div className="flex flex-col gap-6 animate-in fade-in duration-500 border-t border-soft pt-6">
+                          <label className="flex items-start gap-3 cursor-pointer group">
+                            <input 
+                              type="checkbox" 
+                              required 
+                              className="mt-1 w-5 h-5 rounded border-soft text-sun-dark focus:ring-sun-dark/20 accent-sun-dark cursor-pointer"
+                            />
+                            <span className="text-xs text-forest/70 leading-relaxed">
+                              <strong>Privacidade e LGPD:</strong> Estou ciente e concordo que os dados corporativos e de contato fornecidos serão tratados de forma sigilosa para fins de proposta e comunicação comercial, conforme a Lei Geral de Proteção de Dados (LGPD).
+                            </span>
+                          </label>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="flex gap-4 border-t border-soft pt-6 mt-4">
+                    {step > 1 && (
+                      <button 
+                        type="button" 
+                        onClick={handleBack}
+                        className="flex-1 py-4 px-6 border border-soft text-forest hover:bg-forest/5 rounded-full font-semibold transition-all text-center"
                       >
-                        <option value="">Selecione...</option>
-                        <option value="Tecnologia">Tecnologia</option>
-                        <option value="Saúde">Saúde</option>
-                        <option value="Varejo">Varejo / Comércio</option>
-                        <option value="Indústria">Indústria</option>
-                        <option value="Serviços">Serviços</option>
-                        <option value="Educação">Educação</option>
-                        <option value="Outros">Outros</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="flex flex-col gap-1">
-                      <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">Local / Sede *</label>
-                      <input 
-                        required 
-                        name="local"
-                        value={formData.local}
-                        onChange={handleChange}
-                        className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest" 
-                        placeholder="Ex: São Paulo, SP" 
-                      />
-                    </div>
+                        Voltar
+                      </button>
+                    )}
                     
-                    <div className="flex flex-col gap-1">
-                      <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">Quantidade de colaboradores (não contar terceiros) *</label>
-                      <select 
-                        required 
-                        name="colaboradores"
-                        value={formData.colaboradores}
-                        onChange={handleChange}
-                        className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest appearance-none" 
-                      >
-                        <option value="">Selecione...</option>
-                        <option value="1 a 10">1 a 10 pessoas</option>
-                        <option value="11 a 50">11 a 50 pessoas</option>
-                        <option value="51 a 200">51 a 200 pessoas</option>
-                        <option value="Mais de 200">Mais de 200 pessoas</option>
-                      </select>
-                    </div>
+                    <button 
+                      disabled={isSubmitting}
+                      type="submit" 
+                      className="flex-1 py-4 px-6 bg-forest text-white rounded-full font-semibold shadow-md hover:bg-forest/90 transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
+                    >
+                      {step < 3 ? "Avançar" : (isSubmitting ? "Enviando..." : "Solicitar Proposta")}
+                    </button>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="flex flex-col gap-1">
-                      <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">Nome do Contato *</label>
-                      <input 
-                        required 
-                        name="contatoNome"
-                        value={formData.contatoNome}
-                        onChange={handleChange}
-                        className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest" 
-                        placeholder="Ex: João Silva" 
-                      />
-                    </div>
-                    
-                    <div className="flex flex-col gap-1">
-                      <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">Departamento *</label>
-                      <input 
-                        required 
-                        name="contatoDepartamento"
-                        value={formData.contatoDepartamento}
-                        onChange={handleChange}
-                        className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest" 
-                        placeholder="Ex: RH / Benefícios" 
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="flex flex-col gap-1">
-                      <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">E-mail Corporativo *</label>
-                      <input 
-                        required 
-                        type="email"
-                        name="email"
-                        value={formData.email}
-                        onChange={handleChange}
-                        className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest" 
-                        placeholder="contato@empresa.com" 
-                      />
-                    </div>
-                    
-                    <div className="flex flex-col gap-1">
-                      <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">Telefone / WhatsApp *</label>
-                      <input 
-                        required 
-                        type="tel"
-                        name="telefone"
-                        value={formData.telefone}
-                        onChange={handleChange}
-                        className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest" 
-                        placeholder="(00) 00000-0000" 
-                      />
-                    </div>
-                  </div>
-
-                  <label className="flex items-start gap-3 mt-2 cursor-pointer group">
-                    <input 
-                      type="checkbox" 
-                      required 
-                      className="mt-1 w-5 h-5 rounded border-soft text-sun-dark focus:ring-sun-dark/20 accent-sun-dark cursor-pointer"
-                    />
-                    <span className="text-xs text-forest/70 leading-relaxed">
-                      <strong>Privacidade e LGPD:</strong> Estou ciente e concordo que os dados corporativos e de contato fornecidos serão tratados de forma sigilosa para fins de proposta e comunicação comercial, conforme a Lei Geral de Proteção de Dados (LGPD).
-                    </span>
-                  </label>
-
-                  <button 
-                    disabled={isSubmitting}
-                    type="submit" 
-                    className="w-full py-5 px-8 mt-4 bg-forest text-white rounded-full font-semibold shadow-md hover:bg-forest/90 transition-all flex items-center justify-center gap-2 group disabled:opacity-70 disabled:cursor-not-allowed"
-                  >
-                    {isSubmitting ? 'Enviando...' : 'Solicitar Proposta'}
-                  </button>
                   <p className="text-center text-[11px] text-forest/70/60 uppercase tracking-widest font-semibold mt-2">
                     Garantimos o sigilo de todas as informações.
                   </p>

@@ -205,7 +205,7 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
                     <div>
                       <h4 className="font-serif font-bold text-sm text-forest">Investimento Coerente</h4>
                       <p className="text-[11px] text-forest/70 mt-1 leading-relaxed">
-                        Valores de atendimento acessíveis e solidários que respeitam a sua realidade financeira.
+                        Valores entre R$ 30 e R$ 110 por sessão. O valor combinado com o profissional é mantido fixo, com reajuste anual pelo INPC.
                       </p>
                     </div>
                   </div>
