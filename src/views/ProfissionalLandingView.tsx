@@ -105,7 +105,7 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
         await addDoc(collection(db, "profissionais_leads"), {
           ...formData,
           status: 'Aguardando Entrevista',
-          notificacao: 'Novo cadastro de psicólogo voluntário/candidato.',
+          notificacao: 'Novo cadastro de psicólogo associado/candidato.',
           createdAt: serverTimestamp()
         });
 
@@ -134,7 +134,7 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
             <ArrowLeft className="w-6 h-6" />
           </button>
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-sun rounded-full flex items-center justify-center text-forest overflow-hidden">
+            <div className="w-12 h-12 bg-sun rounded-full flex items-center justify-center text-forest overflow-hidden shadow-sm">
               <img src={logoImage} alt="AcolheMente Logo" className="w-full h-full object-cover" />
             </div>
             <span className="font-serif text-2xl font-semibold tracking-tight text-forest">AcolheMente <span className="text-forest/70 font-medium">Para Psicólogos</span></span>

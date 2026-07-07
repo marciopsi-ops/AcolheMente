@@ -108,8 +108,8 @@ export function EmpresaView({ onNavigate }: { onNavigate: (view: 'landing' | 'ac
           <button onClick={() => onNavigate('landing')} className="text-forest/70 hover:text-forest transition-colors p-2 -ml-2 rounded-full hover:bg-forest/5">
             <ArrowLeft className="w-6 h-6" />
           </button>
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-full overflow-hidden shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 bg-sun rounded-full flex items-center justify-center text-forest overflow-hidden shrink-0 shadow-sm">
                <img src={logoImage} alt="AcolheMente Logo" className="w-full h-full object-cover" />
             </div>
             <span className="font-serif text-2xl font-semibold tracking-tight text-forest">AcolheMente <span className="text-forest/70 font-medium opacity-70">Para Empresas</span></span>

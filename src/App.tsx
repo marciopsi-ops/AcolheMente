@@ -22,11 +22,13 @@ import {
   X,
   ChevronDown,
   ChevronUp,
+  Menu,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { motion } from "motion/react";
 import { onAuthStateChanged } from "firebase/auth";
-import { auth } from "./lib/firebase";
+import { doc, getDoc } from "firebase/firestore";
+import { auth, db } from "./lib/firebase";
 import { AcolhimentoView } from "./views/AcolhimentoView";
 import { PublicProfProfileView } from "./views/PublicProfProfileView";
 import { PublicServiceView } from "./views/PublicServiceView";
@@ -209,6 +211,24 @@ export default function App() {
   );
 
   const [user, setUser] = useState<any>(null);
+  const [doacoesAtivas, setDoacoesAtivas] = useState(true);
+
+  useEffect(() => {
+    const fetchConfigs = async () => {
+      try {
+        const snap = await getDoc(doc(db, "configuracoes", "master"));
+        if (snap.exists()) {
+          const data = snap.data();
+          if (data.doacoesAtivas !== undefined) {
+            setDoacoesAtivas(!!data.doacoesAtivas);
+          }
+        }
+      } catch (err) {
+        console.error("Error fetching configs in App.tsx", err);
+      }
+    };
+    fetchConfigs();
+  }, []);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (u) => {
@@ -225,7 +245,9 @@ export default function App() {
 
   const handleNavigate = (view: any) => {
     if (view === "doacao") {
-      setShowDoacaoConfirm(true);
+      if (doacoesAtivas) {
+        setShowDoacaoConfirm(true);
+      }
     } else if (view === "landing" && auth.currentUser) {
       setCurrentView("dashboard");
     } else {
@@ -283,7 +305,7 @@ export default function App() {
   let content;
 
   if (currentView === "landing") {
-    content = <LandingPage onNavigate={handleNavigate} />;
+    content = <LandingPage onNavigate={handleNavigate} doacoesAtivas={doacoesAtivas} />;
   } else if (currentView === "acolhimento") {
     content = <AcolhimentoView onNavigate={handleNavigate} />;
   } else if (currentView === "dashboard") {
@@ -402,6 +424,7 @@ export default function App() {
 
 function LandingPage({
   onNavigate,
+  doacoesAtivas = true,
 }: {
   onNavigate: (
     view:
@@ -413,38 +436,95 @@ function LandingPage({
       | "doacao"
       | "profissional",
   ) => void;
+  doacoesAtivas?: boolean;
 }) {
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+
   return (
     <div className="min-h-screen flex flex-col relative overflow-x-hidden bg-warm">
       {/* Navbar */}
-      <nav className="w-full py-4 sm:py-6 px-4 sm:px-6 md:px-12 flex justify-between items-center border-b border-soft gap-2">
-        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-          <div className="w-8 h-8 sm:w-10 sm:h-10 bg-sun rounded-full flex items-center justify-center text-forest overflow-hidden shrink-0">
+      <nav className="w-full py-4 sm:py-6 px-4 sm:px-6 md:px-12 flex justify-between items-center border-b border-soft gap-2 relative z-50 bg-warm/80 backdrop-blur-md">
+        <div className="flex items-center gap-3 sm:gap-4 shrink-0">
+          <div className="w-12 h-12 sm:w-16 sm:h-16 bg-sun rounded-full flex items-center justify-center text-forest overflow-hidden shrink-0 shadow-sm">
             <img
               src={logoImage}
               alt="AcolheMente Logo"
               className="w-full h-full object-cover"
             />
           </div>
-          <span className="font-serif text-[18px] sm:text-2xl font-semibold tracking-tight text-forest">
+          <span className="font-serif text-[20px] sm:text-2xl font-semibold tracking-tight text-forest">
             AcolheMente
           </span>
         </div>
-        <div className="hidden md:flex gap-8 text-sm font-medium uppercase tracking-widest text-forest/70">
-          <a href="#projeto" className="hover:text-forest transition-colors">
-            O Projeto
-          </a>
-          <a href="#jornada" className="hover:text-forest transition-colors">
-            Como Funciona
-          </a>
+
+        {/* Minimalist 3-line classic menu dropdown */}
+        <div className="relative">
+          <button
+            onClick={() => setIsMenuOpen(!isMenuOpen)}
+            className="p-2.5 text-forest hover:bg-forest/5 rounded-full transition-all duration-200 focus:outline-none flex items-center justify-center border border-soft/80"
+            aria-label="Menu"
+            id="nav-menu-button"
+          >
+            {isMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          </button>
+
+          {isMenuOpen && (
+            <motion.div
+              initial={{ opacity: 0, y: 12, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ duration: 0.2, ease: "easeOut" }}
+              className="absolute right-0 mt-3 w-72 bg-white border border-soft rounded-[2rem] shadow-2xl py-6 px-6 flex flex-col gap-4 z-50"
+            >
+              <div className="flex flex-col gap-2.5">
+                <span className="text-[10px] uppercase tracking-wider text-forest/40 font-bold px-3">Navegação</span>
+                <a 
+                  href="#projeto" 
+                  onClick={() => setIsMenuOpen(false)}
+                  className="font-sans text-sm text-forest/85 hover:text-forest hover:bg-warm/40 px-3 py-2.5 rounded-xl transition-all font-medium"
+                >
+                  O Projeto
+                </a>
+                <a 
+                  href="#jornada" 
+                  onClick={() => setIsMenuOpen(false)}
+                  className="font-sans text-sm text-forest/85 hover:text-forest hover:bg-warm/40 px-3 py-2.5 rounded-xl transition-all font-medium"
+                >
+                  Como Funciona
+                </a>
+                <button 
+                  onClick={() => { setIsMenuOpen(false); onNavigate("empresa"); }}
+                  className="text-left font-sans text-sm text-forest/85 hover:text-forest hover:bg-warm/40 px-3 py-2.5 rounded-xl transition-all font-medium"
+                >
+                  Seja uma Empresa Parceira
+                </button>
+                <button 
+                  onClick={() => { setIsMenuOpen(false); onNavigate("profissional"); }}
+                  className="text-left font-sans text-sm text-forest/85 hover:text-forest hover:bg-warm/40 px-3 py-2.5 rounded-xl transition-all font-medium"
+                >
+                  Seja Psicólogo / Terapeuta Associado
+                </button>
+                {doacoesAtivas && (
+                  <button 
+                    onClick={() => { setIsMenuOpen(false); onNavigate("doacao"); }}
+                    className="text-left font-sans text-sm text-forest/85 hover:text-forest hover:bg-warm/40 px-3 py-2.5 rounded-xl transition-all font-medium"
+                  >
+                    Doe uma sessão de terapia
+                  </button>
+                )}
+              </div>
+              
+              <div className="border-t border-soft pt-4 flex flex-col gap-2.5">
+                <span className="text-[10px] uppercase tracking-wider text-forest/40 font-bold px-3">Restrito</span>
+                <button
+                  onClick={() => { setIsMenuOpen(false); onNavigate("dashboard"); }}
+                  className="w-full py-3 px-4 bg-sun hover:bg-sun-dark text-forest font-bold text-xs uppercase tracking-wider rounded-full transition-colors shadow-sm text-center"
+                >
+                  Área do Profissional
+                </button>
+              </div>
+            </motion.div>
+          )}
         </div>
-        <button
-          onClick={() => onNavigate("dashboard")}
-          className="px-4 sm:px-6 py-1.5 sm:py-2 bg-sun text-forest text-[9px] sm:text-xs font-semibold uppercase tracking-wider rounded-full hover:bg-sun-dark transition-colors shadow-sm text-center font-bold"
-        >
-          Área do
-          <br className="sm:hidden" /> Profissional
-        </button>
       </nav>
 
       {/* Hero Section */}
@@ -732,12 +812,14 @@ function LandingPage({
           Iniciar meu Acolhimento
           <ArrowRight className="w-4 h-4 md:w-5 md:h-5" />
         </button>
-        <button
-          onClick={() => onNavigate("doacao")}
-          className="w-full sm:w-auto px-6 py-2.5 sm:px-8 sm:py-3 md:py-4 border-2 border-sun/50 text-forest rounded-full font-semibold bg-white/90 backdrop-blur hover:bg-sun-light transition-all whitespace-nowrap text-xs sm:text-sm md:text-base pointer-events-auto text-center"
-        >
-          Doe uma sessão de terapia
-        </button>
+        {doacoesAtivas && (
+          <button
+            onClick={() => onNavigate("doacao")}
+            className="w-full sm:w-auto px-6 py-2.5 sm:px-8 sm:py-3 md:py-4 border-2 border-sun/50 text-forest rounded-full font-semibold bg-white/90 backdrop-blur hover:bg-sun-light transition-all whitespace-nowrap text-xs sm:text-sm md:text-base pointer-events-auto text-center"
+          >
+            Doe uma sessão de terapia
+          </button>
+        )}
       </div>
     </div>
   );

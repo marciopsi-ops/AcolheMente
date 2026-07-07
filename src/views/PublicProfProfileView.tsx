@@ -73,11 +73,11 @@ export function PublicProfProfileView({ profUid, onBack }: { profUid: string; on
         >
           <ArrowLeft className="w-4 h-4" /> Voltar para Home
         </button>
-        <div className="flex items-center gap-2">
-          <div className="w-6 h-6 rounded-full overflow-hidden shrink-0">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-sun rounded-full flex items-center justify-center text-forest overflow-hidden shrink-0 shadow-sm">
              <img src={logoImage} alt="AcolheMente Logo" className="w-full h-full object-cover" />
           </div>
-          <span className="font-serif font-semibold text-sm sm:text-base tracking-tight">AcolheMente</span>
+          <span className="font-serif font-semibold text-sm sm:text-base tracking-tight text-forest">AcolheMente</span>
           <span className="text-[10px] sm:text-xs text-forest/60 px-2 py-0.5 rounded-full bg-forest/5 font-semibold">Parceiro</span>
         </div>
       </header>

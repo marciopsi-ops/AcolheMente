@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
 import { EventosServicosView } from "./EventosServicosView";
 import { ComplianceModal } from "../components/ComplianceModal";
 import {
@@ -533,6 +534,19 @@ export function DashboardView({
     null,
   );
 
+  const [toast, setToast] = useState<{
+    show: boolean;
+    message: string;
+    type: "success" | "error" | "info";
+  }>({ show: false, message: "", type: "success" });
+
+  const showToast = (message: string, type: "success" | "error" | "info" = "success") => {
+    setToast({ show: true, message, type });
+    setTimeout(() => {
+      setToast((prev) => ({ ...prev, show: false }));
+    }, 4000);
+  };
+
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
   const [globalConfigs, setGlobalConfigs] = useState({
     telefoneSuporte: "",
@@ -540,6 +554,15 @@ export function DashboardView({
     fraseSuporte: "",
     faixasValores: ["", "", "", "", ""],
     cidadesRodape: "",
+    footerEmail: "",
+    footerTelefone: "",
+    footerInstagram: "",
+    footerLinkedin: "",
+    footerDescricao: "",
+    urlTermosUso: "",
+    urlPoliticaPrivacidade: "",
+    urlContratoPrestacao: "",
+    doacoesAtivas: true,
   });
 
   // Psychologist State
@@ -690,7 +713,11 @@ export function DashboardView({
           doc(db, "configuracoes", "master"),
           (docSnap) => {
             if (docSnap.exists()) {
-              setGlobalConfigs(docSnap.data() as any);
+              const data = docSnap.data();
+              setGlobalConfigs({
+                doacoesAtivas: true,
+                ...data,
+              } as any);
             }
           },
           (error) => {
@@ -955,10 +982,10 @@ export function DashboardView({
       await setDoc(doc(db, "configuracoes", "master"), globalConfigs, {
         merge: true,
       });
-      alert("Configurações salvas com sucesso!");
+      showToast("Configurações salvas com sucesso!", "success");
     } catch (err) {
       console.error(err);
-      alert("Erro ao salvar as configurações.");
+      showToast("Erro ao salvar as configurações.", "error");
     }
   };
 
@@ -1608,7 +1635,7 @@ export function DashboardView({
       "thaliamartins.psi@gmail.com"
     ];
     
-    alert("Iniciando busca profunda no banco de dados...");
+    showToast("Iniciando busca profunda no banco de dados...", "info");
     try {
       const collectionsToCheck = ["users", "acolhimentos", "profissionais_leads", "solicitacoes_doacao", "doacoes", "empresa_leads"];
       let found = 0;
@@ -1667,10 +1694,10 @@ export function DashboardView({
           found++;
         }
       }
-      alert(`Busca concluída.\nRecuperados/Criados: ${found}\nJá existiam em Cadastros: ${alreadyInLeads}`);
+      showToast(`Busca concluída. Recuperados/Criados: ${found}. Já existiam: ${alreadyInLeads}`, "success");
     } catch (e) {
       console.error(e);
-      alert("Erro na busca: " + String(e));
+      showToast("Erro na busca profunda: " + String(e), "error");
     }
   };
 
@@ -2856,6 +2883,43 @@ export function DashboardView({
 
   return (
     <div className="h-screen flex flex-col bg-warm overflow-hidden">
+      <AnimatePresence>
+        {toast.show && (
+          <motion.div
+            initial={{ opacity: 0, y: -50, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, scale: 0.95 }}
+            className="fixed top-6 left-1/2 -translate-x-1/2 z-[9999] flex items-center gap-3 bg-white/95 backdrop-blur border border-soft shadow-xl px-5 py-3.5 rounded-2xl min-w-[320px] max-w-md"
+          >
+            {toast.type === "success" && (
+              <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 shrink-0">
+                <CheckCircle2 className="w-5 h-5" />
+              </div>
+            )}
+            {toast.type === "error" && (
+              <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center text-red-600 shrink-0">
+                <XCircle className="w-5 h-5" />
+              </div>
+            )}
+            {toast.type === "info" && (
+              <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center text-amber-600 shrink-0">
+                <Info className="w-5 h-5" />
+              </div>
+            )}
+            <div className="flex-1">
+              <p className="text-[10px] font-bold font-sans uppercase tracking-wider text-forest/40">Notificação</p>
+              <p className="text-sm font-medium text-forest/90 leading-snug mt-0.5">{toast.message}</p>
+            </div>
+            <button
+              onClick={() => setToast((prev) => ({ ...prev, show: false }))}
+              className="p-1 hover:bg-forest/5 rounded-lg text-forest/30 hover:text-forest/70 transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {renderOnboardingModal()}
       {/* Topbar */}
       <nav className="shrink-0 bg-white border-b border-soft px-4 sm:px-6 py-3 flex flex-wrap gap-3 sm:gap-4 justify-between items-center z-10 w-full shadow-sm">
@@ -2868,7 +2932,7 @@ export function DashboardView({
           </button>
           <div className="h-6 w-px bg-soft"></div>
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-sun rounded-full flex items-center justify-center text-forest overflow-hidden hidden sm:flex">
+            <div className="w-11 h-11 bg-sun rounded-full flex items-center justify-center text-forest overflow-hidden hidden sm:flex shadow-sm">
               <img
                 src={logoImage}
                 alt="AcolheMente Logo"
@@ -3386,6 +3450,41 @@ export function DashboardView({
 
                   <div className="bg-warm/30 p-6 rounded-2xl border border-soft space-y-4">
                     <h4 className="text-sm font-bold uppercase tracking-wider text-forest/70 border-b border-soft pb-2 mb-4">
+                      Funcionalidades do Portal
+                    </h4>
+                    <p className="text-xs text-forest/70 mb-2">
+                      Ative ou desative recursos do portal de acordo com o momento estratégico do negócio.
+                    </p>
+                    <div className="flex items-center justify-between p-4 bg-white border border-soft rounded-xl mt-2">
+                      <div className="flex flex-col gap-1 pr-4">
+                        <span className="text-sm font-bold text-forest">Módulo de Doação de Sessões</span>
+                        <span className="text-xs text-forest/65">
+                          Exibe a opção de doar sessões no menu superior, rodapé e nos botões de ação do portal.
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleUpdateConfiguracoesProperty(
+                            "doacoesAtivas",
+                            !globalConfigs.doacoesAtivas,
+                          )
+                        }
+                        className={`w-14 h-8 rounded-full transition-colors relative flex items-center shrink-0 ${
+                          globalConfigs.doacoesAtivas ? "bg-forest" : "bg-forest/15"
+                        }`}
+                      >
+                        <span
+                          className={`w-6 h-6 bg-white rounded-full absolute shadow-md transition-all ${
+                            globalConfigs.doacoesAtivas ? "left-7" : "left-1"
+                          }`}
+                        />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="bg-warm/30 p-6 rounded-2xl border border-soft space-y-4">
+                    <h4 className="text-sm font-bold uppercase tracking-wider text-forest/70 border-b border-soft pb-2 mb-4">
                       Suporte aos Profissionais da Plataforma
                     </h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -3445,25 +3544,189 @@ export function DashboardView({
                     </div>
                   </div>
 
-                  <div className="bg-warm/30 p-6 rounded-2xl border border-soft space-y-4">
-                    <h4 className="text-sm font-bold uppercase tracking-wider text-forest/70 border-b border-soft pb-2 mb-4">
+                  <div className="bg-warm/30 p-6 rounded-2xl border border-soft space-y-6">
+                    <h4 className="text-sm font-bold uppercase tracking-wider text-forest/70 border-b border-soft pb-2 mb-2">
                       Rodapé do Site
                     </h4>
-                    <div className="flex flex-col gap-1">
-                      <label className="text-[10px] font-semibold uppercase text-forest/70/60 ml-2">
-                        Cidades de Atuação
-                      </label>
-                      <input
-                        className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
-                        placeholder="Ex: Brasil • São Paulo • online"
-                        value={globalConfigs.cidadesRodape || ""}
-                        onChange={(e) =>
-                          handleUpdateConfiguracoesProperty(
-                            "cidadesRodape",
-                            e.target.value,
-                          )
-                        }
-                      />
+                    
+                    {/* Descrição e Cidades */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-semibold uppercase text-forest/70/60 ml-2">
+                          Breve Descrição Institucional
+                        </label>
+                        <textarea
+                          className="text-sm bg-white border border-soft px-4 py-3 rounded-xl focus:outline-none focus:border-sun-dark transition-colors resize-none h-28"
+                          placeholder="Uma iniciativa focada em democratizar o acesso à saúde mental..."
+                          value={globalConfigs.footerDescricao || ""}
+                          onChange={(e) =>
+                            handleUpdateConfiguracoesProperty(
+                              "footerDescricao",
+                              e.target.value,
+                            )
+                          }
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1 justify-between">
+                        <div className="flex flex-col gap-1">
+                          <label className="text-[10px] font-semibold uppercase text-forest/70/60 ml-2">
+                            Cidades de Atuação
+                          </label>
+                          <input
+                            className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
+                            placeholder="Ex: Brasil • São Paulo • online"
+                            value={globalConfigs.cidadesRodape || ""}
+                            onChange={(e) =>
+                              handleUpdateConfiguracoesProperty(
+                                "cidadesRodape",
+                                e.target.value,
+                              )
+                            }
+                          />
+                        </div>
+                        <p className="text-[10px] text-forest/50 ml-2 mb-1 leading-relaxed">
+                          Edite as cidades que aparecem no canto inferior direito do rodapé ou mude a descrição principal da sua história para os visitantes.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Contato do Rodapé */}
+                    <div className="border-t border-soft/50 pt-4">
+                      <span className="text-[11px] font-bold uppercase text-forest/60 tracking-wider block mb-3">Informações de Contato</span>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="flex flex-col gap-1">
+                          <label className="text-[10px] font-semibold uppercase text-forest/70/60 ml-2">
+                            E-mail de Contato do Rodapé
+                          </label>
+                          <input
+                            type="email"
+                            className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
+                            placeholder="Ex: contato@acolhemente.com"
+                            value={globalConfigs.footerEmail || ""}
+                            onChange={(e) =>
+                              handleUpdateConfiguracoesProperty(
+                                "footerEmail",
+                                e.target.value,
+                              )
+                            }
+                          />
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <label className="text-[10px] font-semibold uppercase text-forest/70/60 ml-2">
+                            Telefone de Contato do Rodapé
+                          </label>
+                          <input
+                            className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
+                            placeholder="Ex: (61) 9999-9999"
+                            value={globalConfigs.footerTelefone || ""}
+                            onChange={(e) =>
+                              handleUpdateConfiguracoesProperty(
+                                "footerTelefone",
+                                e.target.value,
+                              )
+                            }
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Redes Sociais */}
+                    <div className="border-t border-soft/50 pt-4">
+                      <span className="text-[11px] font-bold uppercase text-forest/60 tracking-wider block mb-3">Redes Sociais (URLs)</span>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="flex flex-col gap-1">
+                          <label className="text-[10px] font-semibold uppercase text-forest/70/60 ml-2">
+                            Link do Instagram
+                          </label>
+                          <input
+                            type="url"
+                            className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
+                            placeholder="Ex: https://instagram.com/acolhemente"
+                            value={globalConfigs.footerInstagram || ""}
+                            onChange={(e) =>
+                              handleUpdateConfiguracoesProperty(
+                                "footerInstagram",
+                                e.target.value,
+                              )
+                            }
+                          />
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <label className="text-[10px] font-semibold uppercase text-forest/70/60 ml-2">
+                            Link do LinkedIn
+                          </label>
+                          <input
+                            type="url"
+                            className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
+                            placeholder="Ex: https://linkedin.com/company/acolhemente"
+                            value={globalConfigs.footerLinkedin || ""}
+                            onChange={(e) =>
+                              handleUpdateConfiguracoesProperty(
+                                "footerLinkedin",
+                                e.target.value,
+                              )
+                            }
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Links Legais */}
+                    <div className="border-t border-soft/50 pt-4">
+                      <span className="text-[11px] font-bold uppercase text-forest/60 tracking-wider block mb-3">Links Legais & Documentos</span>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="flex flex-col gap-1">
+                          <label className="text-[10px] font-semibold uppercase text-forest/70/60 ml-2">
+                            Link - Termos de Uso
+                          </label>
+                          <input
+                            type="url"
+                            className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
+                            placeholder="Ex: https://acolhemente.com/termos"
+                            value={globalConfigs.urlTermosUso || ""}
+                            onChange={(e) =>
+                              handleUpdateConfiguracoesProperty(
+                                "urlTermosUso",
+                                e.target.value,
+                              )
+                            }
+                          />
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <label className="text-[10px] font-semibold uppercase text-forest/70/60 ml-2">
+                            Link - Política de Privacidade
+                          </label>
+                          <input
+                            type="url"
+                            className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
+                            placeholder="Ex: https://acolhemente.com/privacidade"
+                            value={globalConfigs.urlPoliticaPrivacidade || ""}
+                            onChange={(e) =>
+                              handleUpdateConfiguracoesProperty(
+                                "urlPoliticaPrivacidade",
+                                e.target.value,
+                              )
+                            }
+                          />
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <label className="text-[10px] font-semibold uppercase text-forest/70/60 ml-2">
+                            Link - Contrato de Prestação
+                          </label>
+                          <input
+                            type="url"
+                            className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
+                            placeholder="Ex: https://acolhemente.com/contrato"
+                            value={globalConfigs.urlContratoPrestacao || ""}
+                            onChange={(e) =>
+                              handleUpdateConfiguracoesProperty(
+                                "urlContratoPrestacao",
+                                e.target.value,
+                              )
+                            }
+                          />
+                        </div>
+                      </div>
                     </div>
                   </div>
 
@@ -4582,7 +4845,7 @@ export function DashboardView({
                   <span className="w-6 h-6 rounded-full bg-forest/10 text-forest text-xs flex items-center justify-center font-bold">
                     4
                   </span>
-                  Apresentação, Biografia & Propósito do Voluntariado
+                  Apresentação, Biografia & Propósito como Associado
                 </h3>
 
                 <div className="flex flex-col gap-2">
@@ -4613,7 +4876,7 @@ export function DashboardView({
                     onChange={(val) =>
                       setProfile({ ...profile, motivacaoProjeto: val })
                     }
-                    placeholder="Conte o que impulsiona o seu voluntariado ou parceria com o AcolheMente..."
+                    placeholder="Conte o que impulsiona a sua associação ou parceria com o AcolheMente..."
                     className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark resize-none h-32 text-sm leading-relaxed text-forest"
                   />
                 </div>
@@ -7145,7 +7408,7 @@ export function DashboardView({
                         ),
                       );
                       setIsEditingTemplate(false);
-                      alert("Modelo atualizado com sucesso!");
+                      showToast("Modelo atualizado com sucesso!", "success");
                     }}
                     className="mt-2 text-xs font-semibold px-4 py-1.5 bg-sun-dark text-forest rounded-lg hover:bg-sun-dark-dark transition-colors"
                   >
@@ -7181,13 +7444,13 @@ export function DashboardView({
                         notificacaoName || "Notificação Projeto AcolheMente",
                         `<h3>Olá!</h3><p>${notificacaoMsg.replace(/\n/g, "<br>")}</p>`
                       );
-                      alert("E-mail enfileirado para envio automático via plataforma!");
+                      showToast("E-mail enfileirado para envio automático!", "success");
                     } catch (err) {
                       console.error("Erro ao enviar e-mail pela plataforma:", err);
-                      alert("Ocorreu um erro ao enviar via plataforma.");
+                      showToast("Ocorreu um erro ao enviar via plataforma.", "error");
                     }
                   } else {
-                    alert("Este destinatário não possui e-mail cadastrado.");
+                    showToast("Este destinatário não possui e-mail cadastrado.", "error");
                   }
                   setShowNotificarModal(false);
                 }}
@@ -7255,7 +7518,7 @@ export function DashboardView({
                     "contratoText",
                     contratoText,
                   );
-                  alert("Contrato atualizado para o paciente!");
+                  showToast("Contrato atualizado para o paciente!", "success");
                   setShowContratoModal(false);
                 }}
                 className="px-5 py-2 bg-sun-dark text-forest rounded-full text-sm font-semibold hover:bg-sun-dark-dark transition-colors flex items-center gap-2"

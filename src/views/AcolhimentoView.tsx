@@ -147,7 +147,7 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
           <span className="text-sm font-semibold uppercase tracking-wider">Voltar ao Início</span>
         </button>
         <div className="flex items-center gap-3 absolute left-1/2 -translate-x-1/2">
-          <div className="w-8 h-8 bg-sun rounded-full flex items-center justify-center text-forest overflow-hidden">
+          <div className="w-12 h-12 bg-sun rounded-full flex items-center justify-center text-forest overflow-hidden shadow-sm">
             <img src={logoImage} alt="AcolheMente Logo" className="w-full h-full object-cover" />
           </div>
           <span className="font-serif text-xl font-semibold tracking-tight text-forest hidden sm:block">
