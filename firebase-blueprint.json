@@ -39,6 +39,24 @@
         "createdAt": { "type": "timestamp" }
       },
       "required": ["profissionalId", "profissionalNome", "nome", "publicoAlvo", "orcamentoAcessivel", "createdAt"]
+    },
+    "Inscricao": {
+      "title": "Inscricao",
+      "description": "Inscrições enviadas por visitantes para eventos ou serviços.",
+      "type": "object",
+      "properties": {
+        "itemId": { "type": "string" },
+        "itemTitulo": { "type": "string" },
+        "itemTipo": { "type": "string", "enum": ["evento", "servico"] },
+        "criadorId": { "type": "string" },
+        "nomeCompleto": { "type": "string" },
+        "whatsapp": { "type": "string" },
+        "email": { "type": "string" },
+        "profissao": { "type": "string" },
+        "mensagem": { "type": "string" },
+        "createdAt": { "type": "timestamp" }
+      },
+      "required": ["itemId", "itemTitulo", "itemTipo", "nomeCompleto", "whatsapp", "email", "profissao", "createdAt"]
     }
   },
   "firestore": {
@@ -49,6 +67,10 @@
     "servicos_profissionais": {
       "schema": { "$ref": "#/entities/ServicoProfissional" },
       "description": "Serviços cadastrados por profissionais individuais."
+    },
+    "inscricoes": {
+      "schema": { "$ref": "#/entities/Inscricao" },
+      "description": "Inscrições enviadas por visitantes para eventos ou serviços."
     }
   }
 }

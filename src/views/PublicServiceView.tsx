@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { ArrowLeft, Calendar, Clock, CreditCard, User, Phone, Mail, CheckCircle2, Share2, Heart, ExternalLink, ShieldCheck, Sparkles, ArrowRight } from "lucide-react";
 import { doc, getDoc, collection, query, where, getDocs, addDoc, serverTimestamp, onSnapshot } from "firebase/firestore";
-import { db } from "../lib/firebase";
+import { db, handleFirestoreError, OperationType } from "../lib/firebase";
 import logoImage from "../assets/images/logo_acolhe.jpeg";
 import { Breadcrumbs } from "../components/Breadcrumbs";
 
@@ -85,6 +85,7 @@ export function PublicServiceView({ serviceId, eventId, onBack }: PublicServiceV
       setSubscribers(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
     }, (error) => {
       console.error("Erro ao carregar inscritos em tempo real:", error);
+      handleFirestoreError(error, OperationType.GET, "inscricoes");
     });
 
     return () => unsubscribe();
@@ -128,6 +129,7 @@ export function PublicServiceView({ serviceId, eventId, onBack }: PublicServiceV
     } catch (err) {
       console.error("Erro ao realizar inscrição:", err);
       alert("Erro ao realizar inscrição. Por favor, tente novamente.");
+      handleFirestoreError(err, OperationType.CREATE, "inscricoes");
     }
   };
 

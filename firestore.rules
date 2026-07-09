@@ -55,6 +55,20 @@ service cloud.firestore {
         && data.createdAt is timestamp;
     }
 
+    function isValidInscricao(data) {
+      return data.keys().hasAll(['itemId', 'itemTitulo', 'itemTipo', 'nomeCompleto', 'whatsapp', 'email', 'profissao', 'createdAt'])
+        && data.itemId is string
+        && data.itemTitulo is string
+        && (data.itemTipo == 'evento' || data.itemTipo == 'servico')
+        && (data.criadorId == null || data.criadorId is string)
+        && data.nomeCompleto is string && data.nomeCompleto.size() <= 200
+        && data.whatsapp is string && data.whatsapp.size() <= 50
+        && data.email is string && data.email.size() <= 200
+        && data.profissao is string && data.profissao.size() <= 200
+        && (data.mensagem == null || (data.mensagem is string && data.mensagem.size() <= 1000))
+        && data.createdAt is timestamp;
+    }
+
     function isMaster() {
       return exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'master';
@@ -106,6 +120,10 @@ service cloud.firestore {
     }
     match /servicos_profissionais/{servicoId} {
       allow read, write: if true;
+    }
+    match /inscricoes/{inscricaoId} {
+      allow read: if true;
+      allow create: if isValidInscricao(request.resource.data) && request.resource.data.createdAt == request.time;
     }
     match /compliance/{complianceId} {
       allow create: if true;
