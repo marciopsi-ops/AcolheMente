@@ -108,7 +108,10 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
     });
 
     const uid = profile.uid || profile.id;
-    const qInscricoes = query(collection(db, "inscricoes"), where("criadorId", "==", uid || ""));
+    const isGestorUser = profile.role === "master" || profile.role === "triagem";
+    const qInscricoes = isGestorUser
+      ? query(collection(db, "inscricoes"), orderBy("createdAt", "desc"))
+      : query(collection(db, "inscricoes"), where("criadorId", "==", uid || ""));
     const unsubInscricoes = onSnapshot(qInscricoes, (snap) => {
       setInscricoes(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     }, (error) => {
@@ -120,7 +123,7 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
       unsubServicos();
       unsubInscricoes();
     };
-  }, [profile.uid, profile.id]);
+  }, [profile.uid, profile.id, profile.role]);
 
   const handleCreateEvento = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -428,8 +431,8 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
                   )}
                 </div>
 
-                {/* Real-time subscriber tracking for the creator */}
-                {isCreator && (
+                {/* Real-time subscriber tracking for the creator or manager */}
+                {(isCreator || isGestor) && (
                   <div className="mt-2 pt-3 border-t border-soft/50 flex flex-col gap-2">
                     {(() => {
                       const itemInscricoes = inscricoes.filter(i => i.itemId === ev.id);
@@ -673,8 +676,8 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
                     )}
                   </div>
 
-                  {/* Real-time subscriber tracking for the creator */}
-                  {isCreator && (
+                  {/* Real-time subscriber tracking for the creator or manager */}
+                  {(isCreator || isGestor) && (
                     <div className="mt-2 pt-3 border-t border-soft/50 flex flex-col gap-2">
                       {(() => {
                         const itemInscricoes = inscricoes.filter(i => i.itemId === svc.id);

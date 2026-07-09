@@ -266,42 +266,19 @@ export function PublicProfProfileView({ profUid, onBack }: { profUid: string; on
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {/* Serviços selecionados no formulário */}
                 {prof.servicosOferecidos && prof.servicosOferecidos.map((srv: string) => {
-                  const isAcessivel = prof.servicosOrcamentoAcessivel?.includes(srv);
                   return (
-                    <div key={`std-svc-${srv}`} className="p-5 rounded-2xl bg-warm/20 border border-soft/60 flex flex-col gap-3 hover:shadow-md transition-all justify-between">
-                      <div>
-                        <h4 className="font-serif text-base sm:text-lg font-bold text-forest leading-tight">
-                          {srv === "Outros" ? `Outros: ${prof.outrosServicos || "Especifique"}` : srv}
-                        </h4>
-                        <span className="inline-block mt-2 text-[10px] sm:text-xs font-semibold tracking-wider uppercase text-sun-dark bg-warm px-2.5 py-1 rounded-full">
-                          Modalidade / Serviço
-                        </span>
-                      </div>
-                      {isAcessivel && (
-                        <div className="pt-2 border-t border-soft/40 flex items-center gap-1.5 text-xs text-emerald-700 font-bold">
-                          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                          Disponível para orçamento acessível
-                        </div>
-                      )}
+                    <div key={`std-svc-${srv}`} className="p-5 rounded-2xl bg-warm/20 border border-soft/60 flex items-center hover:shadow-md transition-all">
+                      <h4 className="font-serif text-base sm:text-lg font-bold text-forest leading-tight">
+                        {srv === "Outros" ? `Outros: ${prof.outrosServicos || "Especifique"}` : srv}
+                      </h4>
                     </div>
                   );
                 })}
 
                 {/* Serviços da coleção legado se houver */}
                 {servicos.map((svc) => (
-                  <div key={svc.id} className="p-5 rounded-2xl bg-warm/20 border border-soft/60 flex flex-col gap-3 hover:shadow-md transition-all justify-between">
-                    <div>
-                      <h4 className="font-serif text-base sm:text-lg font-bold text-forest leading-tight">{svc.nome}</h4>
-                      <span className="inline-block mt-2 text-[10px] sm:text-xs font-semibold tracking-wider uppercase text-sun-dark bg-warm px-2.5 py-1 rounded-full">
-                        {svc.publicoAlvo}
-                      </span>
-                    </div>
-                    {svc.orcamentoAcessivel && (
-                      <div className="pt-2 border-t border-soft/40 flex items-center gap-1.5 text-xs text-emerald-700 font-bold">
-                        <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                        Disponível para orçamento acessível
-                      </div>
-                    )}
+                  <div key={svc.id} className="p-5 rounded-2xl bg-warm/20 border border-soft/60 flex items-center hover:shadow-md transition-all">
+                    <h4 className="font-serif text-base sm:text-lg font-bold text-forest leading-tight">{svc.nome}</h4>
                   </div>
                 ))}
               </div>

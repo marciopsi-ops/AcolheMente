@@ -123,7 +123,7 @@ service cloud.firestore {
     }
     match /inscricoes/{inscricaoId} {
       allow read: if true;
-      allow create: if isValidInscricao(request.resource.data) && request.resource.data.createdAt == request.time;
+      allow create: if isValidInscricao(request.resource.data);
     }
     match /compliance/{complianceId} {
       allow create: if true;
