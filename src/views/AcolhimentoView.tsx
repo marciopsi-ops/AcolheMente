@@ -29,6 +29,8 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
   const [responsavelNome, setResponsavelNome] = useState("");
   const [responsavelCpf, setResponsavelCpf] = useState("");
   const [comoConheceu, setComoConheceu] = useState("");
+  const [genero, setGenero] = useState("");
+  const [deficiencia, setDeficiencia] = useState("");
 
   // Step 2: Finanças (Particular)
   const [fonteRenda, setFonteRenda] = useState("");
@@ -57,7 +59,7 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
     if (step === 1) {
       if (!tratamentoPara) return;
       if (tratamentoPara === "Outra pessoa" && !idadeTratamento) return;
-      if (!name || !email || !telefone || !cpf || !dataNascimento || !accessType || !comoConheceu) return;
+      if (!name || !email || !telefone || !cpf || !dataNascimento || !accessType || !comoConheceu || !genero || !deficiencia) return;
       if (tratamentoPara === "Outra pessoa" && (!responsavelNome || !responsavelCpf)) return;
       if (accessType === "Corporativo" && !companyCode) return;
       setStep(accessType === "Particular" ? 2 : 4);
@@ -89,6 +91,8 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
           telefone,
           cpf,
           dataNascimento,
+          genero,
+          deficiencia,
           tratamentoPara,
           idadeTratamento,
           responsavelNome,
@@ -409,6 +413,45 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
                             placeholder="(00) 00000-0000"
                             className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark focus:ring-1 focus:ring-sun-dark transition-all text-forest"
                           />
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 animate-in fade-in slide-in-from-top-2">
+                          <div>
+                            <label className="block text-sm font-semibold uppercase tracking-wider text-forest/70 mb-2">Gênero</label>
+                            <select 
+                              required
+                              value={genero}
+                              onChange={(e) => setGenero(e.target.value)}
+                              className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark focus:ring-1 focus:ring-sun-dark transition-all text-forest"
+                            >
+                              <option value="">Selecione...</option>
+                              <option value="Feminino">Feminino</option>
+                              <option value="Masculino">Masculino</option>
+                              <option value="Não-binário">Não-binário</option>
+                              <option value="Prefiro não informar">Prefiro não informar</option>
+                              <option value="Outro">Outro</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-sm font-semibold uppercase tracking-wider text-forest/70 mb-2">Deficiência ou Necessidade Especial?</label>
+                            <select 
+                              required
+                              value={deficiencia}
+                              onChange={(e) => setDeficiencia(e.target.value)}
+                              className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark focus:ring-1 focus:ring-sun-dark transition-all text-forest"
+                            >
+                              <option value="">Selecione...</option>
+                              <option value="Não possuo">Não possuo</option>
+                              <option value="Deficiência física">Deficiência física (motora)</option>
+                              <option value="Deficiência visual">Deficiência visual</option>
+                              <option value="Deficiência auditiva">Deficiência auditiva</option>
+                              <option value="Deficiência intelectual/cognitiva">Deficiência intelectual/cognitiva</option>
+                              <option value="Transtorno do Espectro Autista (TEA)">Transtorno do Espectro Autista (TEA)</option>
+                              <option value="Múltiplas deficiências">Múltiplas deficiências</option>
+                              <option value="Outra necessidade especial">Outra necessidade especial</option>
+                              <option value="Prefiro não responder">Prefiro não responder</option>
+                            </select>
+                          </div>
                         </div>
 
                         <div className="animate-in fade-in slide-in-from-top-2">

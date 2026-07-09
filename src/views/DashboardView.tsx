@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { EventosServicosView } from "./EventosServicosView";
-import { CadastroServicos } from "../components/CadastroServicos";
 import { ComplianceModal } from "../components/ComplianceModal";
 import {
   ArrowLeft,
@@ -46,6 +45,7 @@ import {
   Upload,
   Table,
   Download,
+  Eye,
 } from "lucide-react";
 import { auth, db, handleFirestoreError, OperationType } from "../lib/firebase";
 import { triggerEmail } from "../lib/emailService";
@@ -110,6 +110,21 @@ const safeLocalStorage = {
 };
 
 type Role = "master" | "triagem" | "profissional";
+
+export const OPCOES_SERVICOS = [
+  "Terapia Individual (Adulto)",
+  "Terapia de Casal",
+  "Terapia Familiar",
+  "Terapia Adolescente",
+  "Terapia Infantil On Line (Acima dos 12 anos de idade)",
+  "Avaliação Psicológica",
+  "Avaliação Neuropsicológica",
+  "Acompanhamento e Orientação Vocacional/ Transição Profissional e Carreira",
+  "Psicologia Jurídica",
+  "Laudo para Cirurgias",
+  "Terapias Integrativas",
+  "Outros"
+];
 
 interface UserProfile {
   uid?: string;
@@ -1390,6 +1405,9 @@ export function DashboardView({
               publicosGosto: data.publicosGosto || [],
               outrosPublicosExperiencia: data.outrosPublicosExperiencia || "",
               outrosPublicosGosto: data.outrosPublicosGosto || "",
+              servicosOferecidos: data.servicosOferecidos || [],
+              servicosOrcamentoAcessivel: data.servicosOrcamentoAcessivel || [],
+              outrosServicos: data.outrosServicos || "",
               registrosDeReunioes: data.registrosDeReunioes || "",
               notificacao: data.notificacao || "",
             };
@@ -1767,6 +1785,8 @@ export function DashboardView({
       "E-mail",
       "Telefone",
       "CPF",
+      "Gênero",
+      "Deficiência ou Necessidade Especial",
       "CRP",
       "Cidade",
       "UF",
@@ -1804,6 +1824,8 @@ export function DashboardView({
         lead.email || "",
         lead.telefone || "",
         lead.cpf || "",
+        lead.genero || "",
+        lead.deficiencia || "",
         lead.crp || "",
         lead.cidade || "",
         lead.uf || "",
@@ -2283,7 +2305,12 @@ export function DashboardView({
       (l.crp || "").toLowerCase().includes(lowerQuery) ||
       (l.email || "").toLowerCase().includes(lowerQuery) ||
       (l.telefone || "").toLowerCase().includes(lowerQuery) ||
-      (l.motivacao || "").toLowerCase().includes(lowerQuery),
+      (l.motivacao || "").toLowerCase().includes(lowerQuery) ||
+      (Array.isArray(l.servicosOferecidos) &&
+        l.servicosOferecidos.some((s: string) =>
+          s.toLowerCase().includes(lowerQuery)
+        )) ||
+      (l.outrosServicos || "").toLowerCase().includes(lowerQuery),
   );
 
   const filteredAtivos = profissionaisAtivos.filter(
@@ -2291,7 +2318,12 @@ export function DashboardView({
       !searchQuery ||
       (p.name || "").toLowerCase().includes(lowerQuery) ||
       (p.email || "").toLowerCase().includes(lowerQuery) ||
-      (p.role || "").toLowerCase().includes(lowerQuery),
+      (p.role || "").toLowerCase().includes(lowerQuery) ||
+      (Array.isArray(p.servicosOferecidos) &&
+        p.servicosOferecidos.some((s: string) =>
+          s.toLowerCase().includes(lowerQuery)
+        )) ||
+      (p.outrosServicos || "").toLowerCase().includes(lowerQuery),
   );
 
   const prevDataLengths = React.useRef({
@@ -3153,12 +3185,6 @@ export function DashboardView({
               className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "servicos" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
             >
               Serviços da Rede
-            </button>
-            <button
-              onClick={() => setActiveTab("meusServicos")}
-              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "meusServicos" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
-            >
-              Meus Serviços (Cadastro)
             </button>
             <button
               onClick={() => setActiveTab("tarefasProfissional")}
@@ -4512,10 +4538,23 @@ export function DashboardView({
       ) : currentRole === "profissional" && activeTab === "perfil" ? (
         <div className="flex-1 overflow-auto p-6 md:p-8 flex flex-col gap-8 slide-up font-sans">
           <div className="max-w-4xl w-full mx-auto">
-            <h2 className="font-serif text-3xl text-forest bg-white px-8 py-6 rounded-[2rem] shadow-sm border border-soft flex items-center gap-4 mb-8">
-              <User className="w-8 h-8 text-forest/70" />
-              Ficha Cadastral de Profissional & Perfil de Apresentação
-            </h2>
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8 bg-white px-8 py-6 rounded-[2rem] shadow-sm border border-soft">
+              <div className="flex items-center gap-4">
+                <User className="w-8 h-8 text-forest/70 shrink-0" />
+                <h2 className="font-serif text-2xl sm:text-3xl text-forest font-medium">
+                  Ficha Cadastral de Profissional & Perfil de Apresentação
+                </h2>
+              </div>
+              <a
+                href={`?prof=${profile.uid || profile.id || ""}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-center gap-2 px-5 py-3 bg-sun-dark text-forest rounded-2xl text-xs sm:text-sm font-bold uppercase tracking-wider transition-all hover:bg-forest hover:text-white shadow-xs hover:shadow active:scale-95 shrink-0"
+              >
+                <Eye className="w-4.5 h-4.5" />
+                Ver minha página pessoal
+              </a>
+            </div>
 
             <div className="bg-white p-8 sm:p-10 rounded-[2rem] shadow-sm border border-soft flex flex-col gap-10">
               {/* Profile Photo upload component */}
@@ -4652,6 +4691,44 @@ export function DashboardView({
                       onChange={(val) => setProfile({ ...profile, crp: val })}
                       className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors text-sm text-forest"
                     />
+                  </div>
+                  <div>
+                    <label className="text-xs uppercase font-bold tracking-wider text-forest/60">
+                      Gênero
+                    </label>
+                    <select
+                      value={profile.genero || ""}
+                      onChange={(e) => setProfile({ ...profile, genero: e.target.value })}
+                      className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors text-sm text-forest"
+                    >
+                      <option value="">Selecione...</option>
+                      <option value="Feminino">Feminino</option>
+                      <option value="Masculino">Masculino</option>
+                      <option value="Não-binário">Não-binário</option>
+                      <option value="Prefiro não informar">Prefiro não informar</option>
+                      <option value="Outro">Outro</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs uppercase font-bold tracking-wider text-forest/60">
+                      Deficiência ou Necessidade Especial
+                    </label>
+                    <select
+                      value={profile.deficiencia || ""}
+                      onChange={(e) => setProfile({ ...profile, deficiencia: e.target.value })}
+                      className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors text-sm text-forest"
+                    >
+                      <option value="">Selecione...</option>
+                      <option value="Não possuo">Não possuo</option>
+                      <option value="Deficiência física">Deficiência física (motora)</option>
+                      <option value="Deficiência visual">Deficiência visual</option>
+                      <option value="Deficiência auditiva">Deficiência auditiva</option>
+                      <option value="Deficiência intelectual/cognitiva">Deficiência intelectual/cognitiva</option>
+                      <option value="Transtorno do Espectro Autista (TEA)">Transtorno do Espectro Autista (TEA)</option>
+                      <option value="Múltiplas deficiências">Múltiplas deficiências</option>
+                      <option value="Outra necessidade especial">Outra necessidade especial</option>
+                      <option value="Prefiro não responder">Prefiro não responder</option>
+                    </select>
                   </div>
                 </div>
               </div>
@@ -4902,6 +4979,83 @@ export function DashboardView({
                 </div>
               </div>
 
+              {/* SECTION 3.5: Serviços profissionais que ofereço */}
+              <div className="space-y-6 pt-4 border-t border-soft">
+                <h3 className="font-serif text-xl text-forest pb-2 border-b border-soft flex items-center gap-2">
+                  <span className="w-6 h-6 rounded-full bg-forest/10 text-forest text-xs flex items-center justify-center font-bold">
+                    3.5
+                  </span>
+                  Serviços profissionais que ofereço
+                </h3>
+                
+                <div className="flex flex-col gap-3 bg-warm/30 p-5 rounded-2xl border border-soft/60">
+                  <label className="text-xs font-bold uppercase tracking-wider text-forest/80 leading-relaxed">
+                    Selecione quais serviços você oferece e, se for o caso, marque se ele está disponível para orçamento acessível:
+                  </label>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-2">
+                    {OPCOES_SERVICOS.map(op => {
+                      const currentOferecidos = Array.isArray(profile.servicosOferecidos) ? profile.servicosOferecidos : [];
+                      const currentAcessivel = Array.isArray(profile.servicosOrcamentoAcessivel) ? profile.servicosOrcamentoAcessivel : [];
+                      const isOferecido = currentOferecidos.includes(op);
+                      const isAcessivel = currentAcessivel.includes(op);
+
+                      return (
+                        <div key={`srv-edit-${op}`} className="p-4 bg-white rounded-xl border border-soft shadow-xs flex flex-col gap-2">
+                          <label className="flex items-center gap-2.5 text-sm font-semibold text-forest cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              checked={isOferecido}
+                              onChange={() => {
+                                let nextOferecidos: string[];
+                                if (isOferecido) {
+                                  nextOferecidos = currentOferecidos.filter((v: string) => v !== op);
+                                } else {
+                                  nextOferecidos = [...currentOferecidos, op];
+                                }
+                                setProfile({ ...profile, servicosOferecidos: nextOferecidos });
+                              }}
+                              className="accent-forest rounded border-soft w-4.5 h-4.5 cursor-pointer"
+                            />
+                            {op === "Outros" ? "Outros: Especifique" : op}
+                          </label>
+                          {isOferecido && (
+                            <div className="pl-7 flex flex-col gap-2 animate-in fade-in slide-in-from-top-1 duration-200 border-t border-soft/40 pt-2">
+                              {op === "Outros" && (
+                                <DebouncedInput
+                                  type="text"
+                                  placeholder="Especifique outros serviços..."
+                                  value={profile.outrosServicos || ""}
+                                  onChange={(val) => setProfile({ ...profile, outrosServicos: val })}
+                                  className="w-full px-3 py-2 bg-warm/20 border border-soft rounded-lg text-xs focus:outline-none focus:border-sun-dark text-forest"
+                                />
+                              )}
+                              <label className="flex items-center gap-2 text-xs text-forest/70 cursor-pointer select-none font-medium">
+                                <input
+                                  type="checkbox"
+                                  checked={isAcessivel}
+                                  onChange={() => {
+                                    let nextAcessivel: string[];
+                                    if (isAcessivel) {
+                                      nextAcessivel = currentAcessivel.filter((v: string) => v !== op);
+                                    } else {
+                                      nextAcessivel = [...currentAcessivel, op];
+                                    }
+                                    setProfile({ ...profile, servicosOrcamentoAcessivel: nextAcessivel });
+                                  }}
+                                  className="accent-emerald-600 rounded border-soft w-4 h-4 cursor-pointer"
+                                />
+                                Disponibilizar para orçamento acessível
+                              </label>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
               {/* SECTION 4: Biografia e Motivação */}
               <div className="space-y-6 pt-4 border-t border-soft">
                 <h3 className="font-serif text-xl text-forest pb-2 border-b border-soft flex items-center gap-2">
@@ -4970,6 +5124,9 @@ export function DashboardView({
                       outrosPublicosExperiencia:
                         profile.outrosPublicosExperiencia || "",
                       outrosPublicosGosto: profile.outrosPublicosGosto || "",
+                      servicosOferecidos: profile.servicosOferecidos || [],
+                      servicosOrcamentoAcessivel: profile.servicosOrcamentoAcessivel || [],
+                      outrosServicos: profile.outrosServicos || "",
                     })
                   }
                   className="px-6 py-4 bg-forest text-white rounded-2xl font-bold uppercase tracking-wider text-xs hover:bg-forest/90 transition-all shadow-sm shrink-0 hover:shadow"
@@ -5568,6 +5725,8 @@ export function DashboardView({
                           <th className="px-4 py-3 border-r border-soft/30 w-52">E-mail</th>
                           <th className="px-4 py-3 border-r border-soft/30 w-36">Telefone</th>
                           <th className="px-4 py-3 border-r border-soft/30 w-36">CPF</th>
+                          <th className="px-4 py-3 border-r border-soft/30 w-36">Gênero</th>
+                          <th className="px-4 py-3 border-r border-soft/30 w-48">Deficiência / Nec. Especial</th>
                           <th className="px-4 py-3 border-r border-soft/30 w-28 font-mono">CRP</th>
                           <th className="px-4 py-3 border-r border-soft/30 w-36">Cidade/UF</th>
                           <th className="px-4 py-3 border-r border-soft/30 w-52">Especialidade</th>
@@ -5611,7 +5770,7 @@ export function DashboardView({
                           if (listWithOriginalOrder.length === 0) {
                             return (
                               <tr>
-                                <td colSpan={17} className="text-center p-8 text-forest/50 font-medium">
+                                <td colSpan={19} className="text-center p-8 text-forest/50 font-medium">
                                   Nenhum registro encontrado com os filtros aplicados.
                                 </td>
                               </tr>
@@ -5663,6 +5822,12 @@ export function DashboardView({
                                 </td>
                                 <td className="px-4 py-2 border-r border-soft/30 font-mono text-xs text-forest/60 whitespace-nowrap">
                                   {lead.cpf || "-"}
+                                </td>
+                                <td className="px-4 py-2 border-r border-soft/30 text-xs text-forest/80 whitespace-nowrap">
+                                  {lead.genero || "-"}
+                                </td>
+                                <td className="px-4 py-2 border-r border-soft/30 text-xs text-forest/80 truncate max-w-[150px]" title={lead.deficiencia}>
+                                  {lead.deficiencia || "-"}
                                 </td>
                                 <td className="px-4 py-2 border-r border-soft/30 font-mono text-xs font-semibold text-forest/80 whitespace-nowrap">
                                   {lead.crp || "-"}
@@ -6135,6 +6300,27 @@ export function DashboardView({
                         )}
                       </div>
 
+                      {p.role === "profissional" && p.servicosOferecidos && p.servicosOferecidos.length > 0 && (
+                        <div className="flex flex-col gap-1.5 px-1">
+                          <span className="text-[10px] font-bold text-forest/50 uppercase tracking-wider">
+                            Serviços Oferecidos:
+                          </span>
+                          <div className="flex flex-wrap gap-1">
+                            {p.servicosOferecidos.map((srv: string) => {
+                              const isAcessivel = p.servicosOrcamentoAcessivel?.includes(srv);
+                              return (
+                                <span key={srv} className="inline-flex items-center gap-1 text-[10px] font-semibold text-forest bg-warm px-2 py-0.5 rounded-md border border-soft/80" title={isAcessivel ? "Disponível para orçamento acessível" : ""}>
+                                  {srv === "Outros" ? `Outros: ${p.outrosServicos || "Especifique"}` : srv}
+                                  {isAcessivel && (
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" title="Orçamento Acessível" />
+                                  )}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
                       {/* Action buttons */}
                       <div className="flex items-center gap-2 pt-2 border-t border-soft/60">
                         <button
@@ -6458,12 +6644,6 @@ export function DashboardView({
         </div>
       ) : activeTab === "eventos" || activeTab === "servicos" ? (
         <EventosServicosView activeSection={activeTab} profile={profile} />
-      ) : activeTab === "meusServicos" ? (
-        <div className="flex-1 overflow-auto p-6 md:p-8 flex flex-col gap-8 slide-up">
-          <div className="max-w-4xl w-full mx-auto">
-            <CadastroServicos profile={profile} />
-          </div>
-        </div>
       ) : null}
 
       {/* Card Details Modal */}
@@ -6654,6 +6834,24 @@ export function DashboardView({
                         label="Estado Civil"
                         value={selectedCard.estadoCivil}
                         field="estadoCivil"
+                        onChange={(f, v) =>
+                          handleUpdateAcolhimentoProperty(selectedCard.id, f, v)
+                        }
+                        isEditing={isEditingCard}
+                      />
+                      <EditableField
+                        label="Gênero"
+                        value={selectedCard.genero}
+                        field="genero"
+                        onChange={(f, v) =>
+                          handleUpdateAcolhimentoProperty(selectedCard.id, f, v)
+                        }
+                        isEditing={isEditingCard}
+                      />
+                      <EditableField
+                        label="Deficiência / Necessidade Especial"
+                        value={selectedCard.deficiencia}
+                        field="deficiencia"
                         onChange={(f, v) =>
                           handleUpdateAcolhimentoProperty(selectedCard.id, f, v)
                         }
@@ -8202,6 +8400,36 @@ export function DashboardView({
                         isEditing={isEditingCard}
                       />
                       <EditableField
+                        label="Gênero"
+                        value={selectedProfissional.genero}
+                        field="genero"
+                        onChange={(f, v) =>
+                          handleUpdateProfissionalProperty(
+                            "id" in selectedProfissional
+                              ? selectedProfissional.id
+                              : selectedProfissional.uid,
+                            f,
+                            v,
+                          )
+                        }
+                        isEditing={isEditingCard}
+                      />
+                      <EditableField
+                        label="Deficiência ou Necessidade Especial"
+                        value={selectedProfissional.deficiencia}
+                        field="deficiencia"
+                        onChange={(f, v) =>
+                          handleUpdateProfissionalProperty(
+                            "id" in selectedProfissional
+                              ? selectedProfissional.id
+                              : selectedProfissional.uid,
+                            f,
+                            v,
+                          )
+                        }
+                        isEditing={isEditingCard}
+                      />
+                      <EditableField
                         label="Motivação"
                         value={selectedProfissional.motivacao}
                         field="motivacao"
@@ -8443,6 +8671,33 @@ export function DashboardView({
                               : ""}
                           </span>
                         )}
+                      </div>
+
+                      <div className="pt-2">
+                        <span className="block text-[10px] font-semibold uppercase text-forest/70/60 content-start">
+                          Serviços profissionais que oferece
+                        </span>
+                        <div className="flex flex-col gap-1.5 mt-1">
+                          {selectedProfissional.servicosOferecidos && selectedProfissional.servicosOferecidos.length > 0 ? (
+                            selectedProfissional.servicosOferecidos.map((srv: string) => {
+                              const isAcessivel = selectedProfissional.servicosOrcamentoAcessivel?.includes(srv);
+                              return (
+                                <div key={srv} className="flex items-center justify-between text-xs font-medium text-forest bg-warm/30 px-2.5 py-1 rounded-lg border border-soft/50">
+                                  <span>
+                                    {srv === "Outros" ? `Outros: ${selectedProfissional.outrosServicos || "Especifique"}` : srv}
+                                  </span>
+                                  {isAcessivel && (
+                                    <span className="bg-emerald-50 text-emerald-700 text-[9px] font-bold px-1.5 py-0.5 rounded-md border border-emerald-200">
+                                      Orçamento Acessível
+                                    </span>
+                                  )}
+                                </div>
+                              );
+                            })
+                          ) : (
+                            <span className="text-sm font-medium text-forest">-</span>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </section>

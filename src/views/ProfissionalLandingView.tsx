@@ -9,6 +9,21 @@ import { Breadcrumbs } from "../components/Breadcrumbs";
 import psicologoHero from '../assets/images/psicologo_hero_photo_1781024080247.png';
 import logoImage from '../assets/images/logo_acolhe.jpeg';
 
+export const OPCOES_SERVICOS = [
+  "Terapia Individual (Adulto)",
+  "Terapia de Casal",
+  "Terapia Familiar",
+  "Terapia Adolescente",
+  "Terapia Infantil On Line (Acima dos 12 anos de idade)",
+  "Avaliação Psicológica",
+  "Avaliação Neuropsicológica",
+  "Acompanhamento e Orientação Vocacional/ Transição Profissional e Carreira",
+  "Psicologia Jurídica",
+  "Laudo para Cirurgias",
+  "Terapias Integrativas",
+  "Outros"
+];
+
 export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'landing' | 'acolhimento' | 'dashboard' | 'profile' | 'empresa' | 'doacao' | 'profissional') => void }) {
   const [formData, setFormData] = useState({
     nome: '',
@@ -21,12 +36,17 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
     telefone: '',
     cidade: '',
     uf: '',
+    genero: '',
+    deficiencia: '',
     horasDisponiveis: '1 a 3 horas/mês',
     publicosExperiencia: [] as string[],
     publicosGosto: [] as string[],
     outrosPublicosExperiencia: '',
     outrosPublicosGosto: '',
-    motivacao: ''
+    motivacao: '',
+    servicosOferecidos: [] as string[],
+    servicosOrcamentoAcessivel: [] as string[],
+    outrosServicos: ''
   });
   
   const [step, setStep] = useState(1);
@@ -49,6 +69,37 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
     });
   };
 
+  const handleServiceCheckboxChange = (service: string) => {
+    setFormData(prev => {
+      const current = prev.servicosOferecidos || [];
+      const isChecked = current.includes(service);
+      const nextOferecidos = isChecked
+        ? current.filter(s => s !== service)
+        : [...current, service];
+      
+      const currentAcessivel = prev.servicosOrcamentoAcessivel || [];
+      const nextAcessivel = isChecked
+        ? currentAcessivel.filter(s => s !== service)
+        : currentAcessivel;
+
+      return {
+        ...prev,
+        servicosOferecidos: nextOferecidos,
+        servicosOrcamentoAcessivel: nextAcessivel
+      };
+    });
+  };
+
+  const handleServiceAccessibleChange = (service: string) => {
+    setFormData(prev => {
+      const current = prev.servicosOrcamentoAcessivel || [];
+      const next = current.includes(service)
+        ? current.filter(s => s !== service)
+        : [...current, service];
+      return { ...prev, servicosOrcamentoAcessivel: next };
+    });
+  };
+
   const handleBack = (e: React.MouseEvent) => {
     e.preventDefault();
     if (step > 1) {
@@ -61,7 +112,7 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
     e.preventDefault();
 
     if (step === 1) {
-      if (!formData.nome || !formData.email || !formData.telefone || !formData.cpf || !formData.cidade || !formData.uf) {
+      if (!formData.nome || !formData.email || !formData.telefone || !formData.cpf || !formData.cidade || !formData.uf || !formData.genero || !formData.deficiencia) {
         setErrorMsg("Por favor, preencha todos os campos obrigatórios.");
         return;
       }
@@ -81,6 +132,10 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
     }
 
     if (step === 3) {
+      if (!formData.servicosOferecidos || formData.servicosOferecidos.length === 0) {
+        setErrorMsg("Por favor, selecione pelo menos um serviço profissional que você oferece.");
+        return;
+      }
       setErrorMsg('');
       setStep(4);
       return;
@@ -312,7 +367,8 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
                       )}
 
                       {formData.nome.trim().length >= 3 && formData.cpf.trim().length >= 3 && formData.email.includes('@') && formData.telefone.trim().length >= 4 && (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in duration-500 border-t border-soft pt-6">
+                        <>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in duration-500 border-t border-soft pt-6">
                           <div className="flex flex-col gap-1">
                             <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">Cidade *</label>
                             <input 
@@ -365,7 +421,50 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
                             </select>
                           </div>
                         </div>
-                      )}
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in duration-500 border-t border-soft pt-6 mt-2">
+                          <div className="flex flex-col gap-1">
+                            <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">Gênero *</label>
+                            <select 
+                              required 
+                              name="genero"
+                              value={formData.genero}
+                              onChange={handleChange}
+                              className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest appearance-none"
+                            >
+                              <option value="">Selecione...</option>
+                              <option value="Feminino">Feminino</option>
+                              <option value="Masculino">Masculino</option>
+                              <option value="Não-binário">Não-binário</option>
+                              <option value="Prefiro não informar">Prefiro não informar</option>
+                              <option value="Outro">Outro</option>
+                            </select>
+                          </div>
+
+                          <div className="flex flex-col gap-1">
+                            <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">Deficiência ou Necessidade Especial *</label>
+                            <select 
+                              required 
+                              name="deficiencia"
+                              value={formData.deficiencia}
+                              onChange={handleChange}
+                              className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest appearance-none"
+                            >
+                              <option value="">Selecione...</option>
+                              <option value="Não possuo">Não possuo</option>
+                              <option value="Deficiência física">Deficiência física (motora)</option>
+                              <option value="Deficiência visual">Deficiência visual</option>
+                              <option value="Deficiência auditiva">Deficiência auditiva</option>
+                              <option value="Deficiência intelectual/cognitiva">Deficiência intelectual/cognitiva</option>
+                              <option value="Transtorno do Espectro Autista (TEA)">Transtorno do Espectro Autista (TEA)</option>
+                              <option value="Múltiplas deficiências">Múltiplas deficiências</option>
+                              <option value="Outra necessidade especial">Outra necessidade especial</option>
+                              <option value="Prefiro não responder">Prefiro não responder</option>
+                            </select>
+                          </div>
+                        </div>
+                      </>
+                    )}
                     </div>
                   )}
 
@@ -447,6 +546,62 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
 
                   {step === 3 && (
                     <div className="flex flex-col gap-6 animate-in fade-in duration-500">
+                      
+                      {/* Questão: Serviços profissionais que ofereço */}
+                      <div className="flex flex-col gap-3 bg-warm/30 p-5 rounded-2xl border border-soft/80">
+                        <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2 leading-relaxed">
+                          Serviços profissionais que ofereço *
+                        </label>
+                        <p className="text-[11px] text-forest/60 -mt-1 ml-2 leading-relaxed">
+                          Marque os serviços que você realiza e selecione "Disponibilizar para orçamento acessível" caso queira oferecer valores de atendimento social/acessível para o mesmo.
+                        </p>
+                        
+                        <div className="flex flex-col gap-3 mt-2">
+                          {OPCOES_SERVICOS.map(op => {
+                            const isOferecido = (formData.servicosOferecidos || []).includes(op);
+                            const isAcessivel = (formData.servicosOrcamentoAcessivel || []).includes(op);
+                            
+                            return (
+                              <div key={`srv-chk-${op}`} className="bg-white p-4 rounded-xl border border-soft shadow-xs flex flex-col gap-2">
+                                <label className="flex items-center gap-2.5 text-sm font-semibold text-forest cursor-pointer select-none">
+                                  <input 
+                                    type="checkbox" 
+                                    checked={isOferecido}
+                                    onChange={() => handleServiceCheckboxChange(op)}
+                                    className="accent-forest rounded border-soft w-4.5 h-4.5 cursor-pointer" 
+                                  />
+                                  {op === "Outros" ? "Outros: Especifique" : op}
+                                </label>
+                                
+                                {isOferecido && (
+                                  <div className="pl-7 flex flex-col gap-2 animate-in fade-in slide-in-from-top-1 duration-200 border-t border-soft/40 pt-2">
+                                    {op === "Outros" && (
+                                      <input 
+                                        type="text"
+                                        name="outrosServicos"
+                                        placeholder="Especifique o outro serviço..."
+                                        value={formData.outrosServicos || ''}
+                                        onChange={handleChange}
+                                        className="w-full px-3 py-1.5 bg-warm/30 border border-soft rounded-lg text-xs focus:outline-none focus:border-sun-dark text-forest"
+                                      />
+                                    )}
+                                    <label className="flex items-center gap-2 text-xs text-forest/70 cursor-pointer select-none font-medium">
+                                      <input 
+                                        type="checkbox" 
+                                        checked={isAcessivel}
+                                        onChange={() => handleServiceAccessibleChange(op)}
+                                        className="accent-emerald-600 rounded border-soft w-4 h-4 cursor-pointer" 
+                                      />
+                                      Disponibilizar para orçamento acessível
+                                    </label>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
                       <div className="flex flex-col gap-3">
                         <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2 leading-relaxed">
                           Experiência de no mínimo um ano com atendimento clínico de:
