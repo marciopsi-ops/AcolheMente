@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from "react";
 import { ArrowLeft, User, Phone, MapPin, Calendar, Award, Heart, CheckCircle2, Instagram, Linkedin, Globe, Share2 } from "lucide-react";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, collection, query, where, onSnapshot } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import logoImage from '../assets/images/logo_acolhe.jpeg';
+import { Breadcrumbs } from "../components/Breadcrumbs";
 
 export function PublicProfProfileView({ profUid, onBack }: { profUid: string; onBack: () => void }) {
   const [prof, setProf] = useState<any>(null);
+  const [servicos, setServicos] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -26,6 +28,24 @@ export function PublicProfProfileView({ profUid, onBack }: { profUid: string; on
       }
     }
     fetchProfile();
+  }, [profUid]);
+
+  useEffect(() => {
+    if (!profUid) return;
+    const q = query(
+      collection(db, "servicos_profissionais"),
+      where("profissionalId", "==", profUid)
+    );
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const list: any[] = [];
+      snapshot.forEach((docSnap) => {
+        list.push({ id: docSnap.id, ...docSnap.data() });
+      });
+      setServicos(list);
+    }, (err) => {
+      console.error("Erro ao carregar serviços do profissional:", err);
+    });
+    return () => unsubscribe();
   }, [profUid]);
 
   if (loading) {
@@ -81,6 +101,8 @@ export function PublicProfProfileView({ profUid, onBack }: { profUid: string; on
           <span className="text-[10px] sm:text-xs text-forest/60 px-2 py-0.5 rounded-full bg-forest/5 font-semibold">Parceiro</span>
         </div>
       </header>
+      
+      <Breadcrumbs items={[{ label: "Início", onClick: onBack }, { label: prof ? `Psicólogo(a) ${prof.name}` : "Perfil do Psicólogo", active: true }]} className="max-w-4xl px-0 mb-6" />
 
       {/* Main Showcase Layout */}
       <main className="w-full max-w-4xl grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -230,6 +252,36 @@ export function PublicProfProfileView({ profUid, onBack }: { profUid: string; on
                 </div>
               </div>
             </div>
+          </div>
+
+          {/* Services Section */}
+          <div className="bg-white p-6 sm:p-10 rounded-[2rem] border border-soft shadow-sm flex flex-col gap-6">
+            <div className="flex items-center gap-3 border-b border-soft/60 pb-4">
+              <Award className="w-6 h-6 text-sun-dark shrink-0" />
+              <h2 className="font-serif text-xl sm:text-2xl font-semibold">Serviços Oferecidos</h2>
+            </div>
+            {servicos.length === 0 ? (
+              <p className="text-sm text-forest/50 italic py-4">Este profissional ainda não especificou seus serviços individuais.</p>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {servicos.map((svc) => (
+                  <div key={svc.id} className="p-5 rounded-2xl bg-warm/20 border border-soft/60 flex flex-col gap-3 hover:shadow-md transition-all">
+                    <div>
+                      <h4 className="font-serif text-base sm:text-lg font-bold text-forest leading-tight">{svc.nome}</h4>
+                      <span className="inline-block mt-2 text-[10px] sm:text-xs font-semibold tracking-wider uppercase text-sun-dark bg-warm px-2.5 py-1 rounded-full">
+                        {svc.publicoAlvo}
+                      </span>
+                    </div>
+                    {svc.orcamentoAcessivel && (
+                      <div className="mt-auto pt-2 border-t border-soft/40 flex items-center gap-1.5 text-xs text-emerald-700 font-bold">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                        Disponível para orçamento acessível
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Call-to-Action Footer for Platform */}

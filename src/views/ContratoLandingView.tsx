@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { Leaf, Heart, CheckCircle2 } from "lucide-react";
+import { Breadcrumbs } from "../components/Breadcrumbs";
 
 export function ContratoLandingView({
   contratoId,
@@ -114,6 +115,10 @@ export function ContratoLandingView({
           </span>
         </div>
       </nav>
+
+      <div className="max-w-7xl mx-auto w-full px-6 md:px-12 mt-4">
+        <Breadcrumbs items={[{ label: "Início", onClick: onBack }, { label: "Assinatura de Contrato", active: true }]} className="!px-0 !mt-0" />
+      </div>
 
       <main className="flex-1 flex flex-col lg:flex-row max-w-7xl mx-auto w-full gap-12 p-6 md:p-12">
         <div className="flex-1 lg:max-w-2xl flex flex-col justify-center slide-up">

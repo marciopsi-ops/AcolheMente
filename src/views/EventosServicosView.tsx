@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { collection, query, onSnapshot, addDoc, deleteDoc, doc, updateDoc, serverTimestamp, orderBy } from "firebase/firestore";
+import { collection, query, onSnapshot, addDoc, deleteDoc, doc, updateDoc, serverTimestamp, orderBy, where } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { Calendar, Clock, Plus, Trash2, Briefcase, X, Edit3, User, Share2, ExternalLink, CreditCard } from "lucide-react";
 
@@ -27,6 +27,8 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
   const [editingServiceId, setEditingServiceId] = useState<string | null>(null);
   const [subscribingItem, setSubscribingItem] = useState<any>(null);
+  const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
+  const [inscricoes, setInscricoes] = useState<any[]>([]);
 
   // Formulário de Evento
   const [eventoForm, setEventoForm] = useState({
@@ -35,6 +37,7 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
     descricao: "",
     data: "",
     hora: "",
+    vagas: "" as string | number,
     contatoEmail: profile.email || "",
     contatoTelefone: profile.telefone || profile.whatsapp || profile.phone || "",
     contatoPreferencial: "email" as "email" | "whatsapp",
@@ -49,6 +52,7 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
     contato: "",
     data: "",
     hora: "",
+    vagas: "" as string | number,
     linkInscricao: "",
     valor: "",
     isGratuito: false,
@@ -103,11 +107,20 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
       console.error("Error in servicos snapshot:", error);
     });
 
+    const uid = profile.uid || profile.id;
+    const qInscricoes = query(collection(db, "inscricoes"), where("criadorId", "==", uid || ""));
+    const unsubInscricoes = onSnapshot(qInscricoes, (snap) => {
+      setInscricoes(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, (error) => {
+      console.error("Error in inscricoes snapshot:", error);
+    });
+
     return () => {
       unsubEventos();
       unsubServicos();
+      unsubInscricoes();
     };
-  }, []);
+  }, [profile.uid, profile.id]);
 
   const handleCreateEvento = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -142,6 +155,7 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
         descricao: "",
         data: "",
         hora: "",
+        vagas: "",
         contatoEmail: profile.email || "",
         contatoTelefone: profile.telefone || profile.whatsapp || profile.phone || "",
         contatoPreferencial: "email",
@@ -160,6 +174,7 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
       descricao: ev.descricao || "",
       data: ev.data || "",
       hora: ev.hora || "",
+      vagas: ev.vagas || "",
       contatoEmail: ev.contatoEmail || profile.email || "",
       contatoTelefone: ev.contatoTelefone || profile.telefone || profile.whatsapp || profile.phone || "",
       contatoPreferencial: ev.contatoPreferencial || "email",
@@ -226,6 +241,7 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
         contato: "",
         data: "",
         hora: "",
+        vagas: "",
         linkInscricao: "",
         valor: "",
         isGratuito: false,
@@ -256,6 +272,7 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
       contato: svc.contato || getProfileContactStr(),
       data: svc.data || "",
       hora: svc.hora || "",
+      vagas: svc.vagas || "",
       linkInscricao: svc.linkInscricao || "",
       valor: svc.valor || "",
       isGratuito: svc.isGratuito || false,
@@ -311,6 +328,7 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
                     descricao: "",
                     data: "",
                     hora: "",
+                    vagas: "",
                     contatoEmail: profile.email || "",
                     contatoTelefone: profile.telefone || profile.whatsapp || profile.phone || "",
                     contatoPreferencial: "email",
@@ -409,27 +427,67 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
                      <a href={`${window.location.origin}?prof=${ev.criadorId}`} target="_blank" rel="noopener noreferrer" className="flex-shrink-0 px-3 py-1.5 text-xs text-forest bg-warm font-semibold rounded-xl border border-soft hover:bg-soft transition-colors tracking-wide">Ver Perfil</a>
                   )}
                 </div>
+
+                {/* Real-time subscriber tracking for the creator */}
+                {isCreator && (
+                  <div className="mt-2 pt-3 border-t border-soft/50 flex flex-col gap-2">
+                    {(() => {
+                      const itemInscricoes = inscricoes.filter(i => i.itemId === ev.id);
+                      const hasVagas = ev.vagas && !isNaN(Number(ev.vagas));
+                      const maxVagas = hasVagas ? Number(ev.vagas) : null;
+                      const isFull = maxVagas && itemInscricoes.length >= maxVagas;
+
+                      return (
+                        <>
+                          <div className={`p-3 rounded-xl text-xs flex items-center justify-between font-semibold ${isFull ? "bg-red-50 text-red-800 border border-red-100" : "bg-emerald-50 text-emerald-800 border border-emerald-100"}`}>
+                            <span>👥 {itemInscricoes.length} {itemInscricoes.length === 1 ? "inscrito" : "inscritos"} em tempo real {maxVagas ? `de ${maxVagas} vagas` : ""}</span>
+                            {isFull && <span className="text-[10px] uppercase bg-red-100 px-2 py-0.5 rounded font-bold">Esgotado</span>}
+                          </div>
+
+                          {itemInscricoes.length > 0 && (
+                            <div className="flex flex-col gap-1.5">
+                              <button 
+                                type="button"
+                                onClick={() => setExpandedItemId(expandedItemId === ev.id ? null : ev.id)}
+                                className="w-full text-center py-1.5 text-[11px] font-bold text-forest bg-warm hover:bg-soft rounded-lg transition-colors border border-soft"
+                              >
+                                {expandedItemId === ev.id ? "Ocultar Inscritos" : `Ver Dados dos Inscritos (${itemInscricoes.length})`}
+                              </button>
+
+                              {expandedItemId === ev.id && (
+                                <div className="max-h-[200px] overflow-y-auto border border-soft rounded-lg bg-warm/25 p-2 flex flex-col gap-2 custom-scrollbar">
+                                  {itemInscricoes.map((ins, index) => (
+                                    <div key={ins.id} className="text-[11px] bg-white p-2 rounded-md border border-soft/50 shadow-sm">
+                                      <div className="font-semibold text-forest">#{index + 1} - {ins.nomeCompleto}</div>
+                                      <div className="text-forest/70 mt-0.5">
+                                        <p>📞 {ins.whatsapp}</p>
+                                        <p>✉️ {ins.email}</p>
+                                        <p>💼 {ins.profissao}</p>
+                                        {ins.mensagem && <p className="italic mt-1 bg-warm/40 p-1 rounded text-[10px]">💬 {ins.mensagem}</p>}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
+                  </div>
+                )}
                 
                 {/* Actions Row */}
                 <div className="flex items-center gap-2 pt-2 border-t border-soft/60">
                   {profile.role === "profissional" && !isCreator && (
-                    ev.modoInscricao === "contato" ? (
-                      <a 
-                        href={getContactLink(ev)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex-1 text-center py-2.5 bg-forest hover:bg-forest/90 text-white font-serif font-semibold rounded-xl text-xs transition-colors shadow-sm flex items-center justify-center"
-                      >
-                        {ev.contatoPreferencial === "whatsapp" ? "Inscrição via WhatsApp" : "Inscrição via E-mail"}
-                      </a>
-                    ) : (
-                      <button 
-                        onClick={() => setSubscribingItem(ev)}
-                        className="flex-1 py-2.5 bg-forest hover:bg-forest/90 text-white font-serif font-semibold rounded-xl text-xs transition-colors shadow-sm"
-                      >
-                        Me Inscrever
-                      </button>
-                    )
+                    <a 
+                      href={`${window.location.origin}?evento=${ev.id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-1 text-center py-2.5 bg-forest hover:bg-forest/90 text-white font-serif font-semibold rounded-xl text-xs transition-colors shadow-sm flex items-center justify-center gap-1"
+                    >
+                      Saiba mais ou inscreva-se
+                    </a>
                   )}
                   {isCreator && (
                     <a 
@@ -473,6 +531,7 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
                   contato: getProfileContactStr(),
                   data: "",
                   hora: "",
+                  vagas: "",
                   linkInscricao: "",
                   valor: "",
                   isGratuito: false,
@@ -614,26 +673,66 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
                     )}
                   </div>
 
+                  {/* Real-time subscriber tracking for the creator */}
+                  {isCreator && (
+                    <div className="mt-2 pt-3 border-t border-soft/50 flex flex-col gap-2">
+                      {(() => {
+                        const itemInscricoes = inscricoes.filter(i => i.itemId === svc.id);
+                        const hasVagas = svc.vagas && !isNaN(Number(svc.vagas));
+                        const maxVagas = hasVagas ? Number(svc.vagas) : null;
+                        const isFull = maxVagas && itemInscricoes.length >= maxVagas;
+
+                        return (
+                          <>
+                            <div className={`p-3 rounded-xl text-xs flex items-center justify-between font-semibold ${isFull ? "bg-red-50 text-red-800 border border-red-100" : "bg-emerald-50 text-emerald-800 border border-emerald-100"}`}>
+                              <span>👥 {itemInscricoes.length} {itemInscricoes.length === 1 ? "inscrito" : "inscritos"} em tempo real {maxVagas ? `de ${maxVagas} vagas` : ""}</span>
+                              {isFull && <span className="text-[10px] uppercase bg-red-100 px-2 py-0.5 rounded font-bold">Esgotado</span>}
+                            </div>
+
+                            {itemInscricoes.length > 0 && (
+                              <div className="flex flex-col gap-1.5">
+                                <button 
+                                  type="button"
+                                  onClick={() => setExpandedItemId(expandedItemId === svc.id ? null : svc.id)}
+                                  className="w-full text-center py-1.5 text-[11px] font-bold text-forest bg-warm hover:bg-soft rounded-lg transition-colors border border-soft"
+                                >
+                                  {expandedItemId === svc.id ? "Ocultar Inscritos" : `Ver Dados dos Inscritos (${itemInscricoes.length})`}
+                                </button>
+
+                                {expandedItemId === svc.id && (
+                                  <div className="max-h-[200px] overflow-y-auto border border-soft rounded-lg bg-warm/25 p-2 flex flex-col gap-2 custom-scrollbar">
+                                    {itemInscricoes.map((ins, index) => (
+                                      <div key={ins.id} className="text-[11px] bg-white p-2 rounded-md border border-soft/50 shadow-sm">
+                                        <div className="font-semibold text-forest">#{index + 1} - {ins.nomeCompleto}</div>
+                                        <div className="text-forest/70 mt-0.5">
+                                          <p>📞 {ins.whatsapp}</p>
+                                          <p>✉️ {ins.email}</p>
+                                          <p>💼 {ins.profissao}</p>
+                                          {ins.mensagem && <p className="italic mt-1 bg-warm/40 p-1 rounded text-[10px]">💬 {ins.mensagem}</p>}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
+                    </div>
+                  )}
+
                   {/* Actions Row */}
                   <div className="flex items-center gap-2 pt-2 border-t border-soft/60">
                     {profile.role === "profissional" && !isCreator && (
-                      svc.modoInscricao === "contato" ? (
-                        <a 
-                          href={getContactLink(svc)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex-1 text-center py-2.5 bg-forest hover:bg-forest/90 text-white font-serif font-semibold rounded-xl text-xs transition-colors shadow-sm flex items-center justify-center"
-                        >
-                          {svc.contatoPreferencial === "whatsapp" ? "Inscrição via WhatsApp" : "Inscrição via E-mail"}
-                        </a>
-                      ) : (
-                        <button 
-                          onClick={() => setSubscribingItem(svc)}
-                          className="flex-1 py-2.5 bg-forest hover:bg-forest/90 text-white font-serif font-semibold rounded-xl text-xs transition-colors shadow-sm"
-                        >
-                          Me Inscrever
-                        </button>
-                      )
+                      <a 
+                        href={`${window.location.origin}?servico=${svc.id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex-1 text-center py-2.5 bg-forest hover:bg-forest/90 text-white font-serif font-semibold rounded-xl text-xs transition-colors shadow-sm flex items-center justify-center gap-1"
+                      >
+                        Saiba mais ou inscreva-se
+                      </a>
                     )}
                     {isCreator && (
                       <a 
@@ -687,9 +786,15 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
                    <input required type="date" value={eventoForm.data} onChange={e => setEventoForm({...eventoForm, data: e.target.value})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest" />
                 </div>
               </div>
-              <div>
-                 <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Hora</label>
-                 <input required type="time" value={eventoForm.hora} onChange={e => setEventoForm({...eventoForm, hora: e.target.value})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest" />
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                   <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Hora</label>
+                   <input required type="time" value={eventoForm.hora} onChange={e => setEventoForm({...eventoForm, hora: e.target.value})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest" />
+                </div>
+                <div>
+                   <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Vagas (Opcional)</label>
+                   <input type="number" min="1" placeholder="Ex: 50" value={eventoForm.vagas} onChange={e => setEventoForm({...eventoForm, vagas: e.target.value})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest" />
+                </div>
               </div>
               <div>
                 <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Descrição</label>
@@ -718,13 +823,7 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
                   </select>
                 </div>
 
-                <div>
-                  <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Como atender às inscrições / dúvidas?</label>
-                  <select value={eventoForm.modoInscricao} onChange={e => setEventoForm({...eventoForm, modoInscricao: e.target.value as any})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none text-forest">
-                    <option value="plataforma">Diretamente pela plataforma no botão "Quero me inscrever"</option>
-                    <option value="contato">Fazer inscrição pelo contato selecionado (e-mail ou whats)</option>
-                  </select>
-                </div>
+
               </div>
 
               <button disabled={!eventoForm.titulo || !eventoForm.descricao || !eventoForm.data} type="submit" className="w-full mt-4 py-3 bg-sun text-forest font-bold rounded-xl hover:bg-sun-dark transition-colors disabled:opacity-50">
@@ -768,6 +867,10 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
                    <input type="time" value={servicoForm.hora} onChange={e => setServicoForm({...servicoForm, hora: e.target.value})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest" />
                 </div>
               </div>
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Vagas (Opcional)</label>
+                <input type="number" min="1" placeholder="Ex: 50" value={servicoForm.vagas} onChange={e => setServicoForm({...servicoForm, vagas: e.target.value})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest" />
+              </div>
               <div className="grid grid-cols-5 gap-4 items-end">
                 <div className="col-span-3">
                   <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Valor (Opcional)</label>
@@ -810,24 +913,10 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
                   </select>
                 </div>
 
-                <div>
-                  <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Como atender às inscrições / dúvidas?</label>
-                  <select value={servicoForm.modoInscricao} onChange={e => setServicoForm({...servicoForm, modoInscricao: e.target.value as any})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none text-forest">
-                    <option value="plataforma">Diretamente pela plataforma no botão "Quero me inscrever"</option>
-                    <option value="contato">Fazer inscrição pelo contato selecionado (e-mail ou whats)</option>
-                  </select>
-                </div>
+
               </div>
 
-               <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-xs font-bold uppercase tracking-wider text-forest/70 block">Informações de Contato / Outros (Opcional - Texto Livre)</label>
-                  <button type="button" onClick={pullProfileInfo} className="text-[10px] text-blue-600 bg-blue-50 hover:bg-blue-100 px-2 py-1 rounded font-semibold transition-colors">
-                    Puxar do meu perfil
-                  </button>
-                </div>
-                <textarea rows={2} value={servicoForm.contato} onChange={e => setServicoForm({...servicoForm, contato: e.target.value})} placeholder="Informações extras ou outros meios de contato..." className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest custom-scrollbar" />
-              </div>
+
                <button disabled={!servicoForm.titulo || !servicoForm.descricao || !servicoForm.tipo} type="submit" className="w-full mt-4 py-3 bg-sun text-forest font-bold rounded-xl hover:bg-sun-dark transition-colors disabled:opacity-50">
                 {editingServiceId ? "Salvar Alterações" : "Publicar Serviço"}
               </button>

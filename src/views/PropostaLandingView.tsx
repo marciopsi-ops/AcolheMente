@@ -7,6 +7,7 @@ import {
   sendProposalAcceptedToProfessionalEmail, 
   sendProposalRevisionRequestEmail 
 } from "../lib/emailService";
+import { Breadcrumbs } from "../components/Breadcrumbs";
 
 export function PropostaLandingView({
   propostaId,
@@ -167,6 +168,10 @@ export function PropostaLandingView({
           </span>
         </div>
       </nav>
+
+      <div className="max-w-7xl mx-auto w-full px-6 md:px-12 mt-4">
+        <Breadcrumbs items={[{ label: "Início", onClick: onBack }, { label: "Proposta de Atendimento", active: true }]} className="!px-0 !mt-0" />
+      </div>
 
       <main className="flex-1 flex flex-col lg:flex-row max-w-7xl mx-auto w-full gap-12 p-6 md:p-12">
         <div className="flex-1 lg:max-w-2xl flex flex-col justify-center slide-up">

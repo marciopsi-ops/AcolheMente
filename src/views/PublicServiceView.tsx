@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { ArrowLeft, Calendar, Clock, CreditCard, User, Phone, Mail, CheckCircle2, Share2, Heart, ExternalLink, ShieldCheck, Sparkles, ArrowRight } from "lucide-react";
-import { doc, getDoc, collection, query, where, getDocs } from "firebase/firestore";
+import { doc, getDoc, collection, query, where, getDocs, addDoc, serverTimestamp, onSnapshot } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import logoImage from "../assets/images/logo_acolhe.jpeg";
+import { Breadcrumbs } from "../components/Breadcrumbs";
 
 interface PublicServiceViewProps {
   serviceId?: string | null;
@@ -14,14 +15,23 @@ export function PublicServiceView({ serviceId, eventId, onBack }: PublicServiceV
   const [loading, setLoading] = useState(true);
   const [item, setItem] = useState<any>(null);
   const [isEvent, setIsEvent] = useState(false);
-  const [showInscribeForm, setShowInscribeForm] = useState(false);
+  const [showInscribeForm, setShowInscribeForm] = useState(true);
   const [inscribed, setInscribed] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [subscribers, setSubscribers] = useState<any[]>([]);
+
+  const totalInscritos = subscribers.length;
+  const hasVagas = item && item.vagas && !isNaN(Number(item.vagas));
+  const maxVagas = hasVagas ? Number(item.vagas) : null;
+  const isFull = maxVagas !== null && totalInscritos >= maxVagas;
+  const restamVagas = maxVagas !== null ? Math.max(0, maxVagas - totalInscritos) : null;
 
   // Form states for guest inscription
   const [guestForm, setGuestForm] = useState({
-    nome: "",
-    contato: "",
+    nomeCompleto: "",
+    whatsapp: "",
+    email: "",
+    profissao: "",
     mensagem: "",
   });
 
@@ -66,6 +76,20 @@ export function PublicServiceView({ serviceId, eventId, onBack }: PublicServiceV
     fetchItem();
   }, [serviceId, eventId]);
 
+  useEffect(() => {
+    const id = serviceId || eventId;
+    if (!id) return;
+
+    const q = query(collection(db, "inscricoes"), where("itemId", "==", id));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setSubscribers(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, (error) => {
+      console.error("Erro ao carregar inscritos em tempo real:", error);
+    });
+
+    return () => unsubscribe();
+  }, [serviceId, eventId]);
+
   const handleShare = () => {
     const isEv = !!eventId;
     const url = isEv 
@@ -80,13 +104,31 @@ export function PublicServiceView({ serviceId, eventId, onBack }: PublicServiceV
     });
   };
 
-  const handleInscribeSubmit = (e: React.FormEvent) => {
+  const handleInscribeSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!guestForm.nome || !guestForm.contato) {
-      alert("Por favor, preencha seu nome e contato.");
+    if (!guestForm.nomeCompleto || !guestForm.whatsapp || !guestForm.email || !guestForm.profissao) {
+      alert("Por favor, preencha todos os campos obrigatórios.");
       return;
     }
-    setInscribed(true);
+    
+    try {
+      await addDoc(collection(db, "inscricoes"), {
+        itemId: item.id,
+        itemTitulo: item.titulo,
+        itemTipo: isEvent ? "evento" : "servico",
+        criadorId: item.criadorId || "",
+        nomeCompleto: guestForm.nomeCompleto,
+        whatsapp: guestForm.whatsapp,
+        email: guestForm.email,
+        profissao: guestForm.profissao,
+        mensagem: guestForm.mensagem,
+        createdAt: serverTimestamp(),
+      });
+      setInscribed(true);
+    } catch (err) {
+      console.error("Erro ao realizar inscrição:", err);
+      alert("Erro ao realizar inscrição. Por favor, tente novamente.");
+    }
   };
 
   if (loading) {
@@ -137,6 +179,8 @@ export function PublicServiceView({ serviceId, eventId, onBack }: PublicServiceV
         </div>
       </header>
 
+      <Breadcrumbs items={[{ label: "Início", onClick: onBack }, { label: item ? item.titulo : (isEvent ? "Evento" : "Serviço"), active: true }]} className="max-w-2xl px-0 mb-6" />
+
       {/* Main Single-View Content Wrapper */}
       <main className="w-full max-w-2xl bg-white rounded-[2.5rem] border border-soft shadow-xl overflow-hidden flex flex-col slide-up">
         
@@ -183,6 +227,15 @@ export function PublicServiceView({ serviceId, eventId, onBack }: PublicServiceV
                 <span className={item.isGratuito ? "text-emerald-600 font-bold" : ""}>
                   {item.isGratuito ? "Gratuito" : (item.valor || "Sob consulta")}
                 </span>
+              </span>
+            )}
+            {maxVagas !== null ? (
+              <span className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border font-semibold ${isFull ? "bg-red-50 text-red-700 border-red-200" : "bg-emerald-50 text-emerald-700 border-emerald-200"}`}>
+                <User className="w-4 h-4 text-current" /> {totalInscritos} de {maxVagas} vagas preenchidas {isFull ? "(Esgotado)" : ""}
+              </span>
+            ) : (
+              <span className="flex items-center gap-1.5 bg-emerald-50/50 text-emerald-800 px-3 py-1.5 rounded-xl border border-emerald-100/60 font-semibold">
+                <User className="w-4 h-4 text-current" /> {totalInscritos} {totalInscritos === 1 ? "inscrito" : "inscritos"} em tempo real
               </span>
             )}
           </div>
@@ -249,6 +302,29 @@ export function PublicServiceView({ serviceId, eventId, onBack }: PublicServiceV
 
           {/* Subscription Section */}
           <div className="mt-4 pt-6 border-t border-soft flex flex-col gap-4">
+            {/* Real-time Vacancies & Subscribers Info */}
+            <div className={`p-5 rounded-2xl border flex flex-col sm:flex-row items-center justify-between gap-4 ${isFull ? "bg-red-50/40 border-red-100" : "bg-emerald-50/20 border-emerald-100"}`}>
+              <div className="flex items-center gap-3 w-full sm:w-auto">
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg shrink-0 ${isFull ? "bg-red-100 text-red-800" : "bg-emerald-100/60 text-emerald-800"}`}>
+                  👥
+                </div>
+                <div>
+                  <span className="block text-[10px] text-forest/50 uppercase font-bold tracking-wider leading-none mb-1">Inscrições Realizadas</span>
+                  <span className="font-serif font-semibold text-sm text-forest leading-snug">
+                    {totalInscritos} {totalInscritos === 1 ? "pessoa inscrita" : "pessoas inscritas"} em tempo real
+                  </span>
+                </div>
+              </div>
+
+              {maxVagas !== null && (
+                <div className="text-right flex flex-col items-center sm:items-end w-full sm:w-auto border-t sm:border-t-0 pt-2 sm:pt-0 border-soft/30">
+                  <span className="block text-[10px] text-forest/50 uppercase font-bold tracking-wider leading-none mb-1">Status de Vagas</span>
+                  <span className={`px-3 py-1 rounded-full text-xs font-bold inline-block ${isFull ? "bg-red-100 text-red-800 border border-red-200" : "bg-emerald-100 text-emerald-800 border border-emerald-200"}`}>
+                    {isFull ? "Vagas Esgotadas" : `${restamVagas} vagas disponíveis`}
+                  </span>
+                </div>
+              )}
+            </div>
             
             {item.modoInscricao === "contato" ? (
               <div className="flex flex-col gap-3 text-center bg-warm/10 p-6 rounded-2xl border border-soft">
@@ -263,6 +339,15 @@ export function PublicServiceView({ serviceId, eventId, onBack }: PublicServiceV
                 >
                   {item.contatoPreferencial === "whatsapp" ? "Entrar em contato via WhatsApp" : "Enviar e-mail para inscrição"}
                 </a>
+              </div>
+            ) : isFull ? (
+              <div className="flex flex-col gap-3 text-center bg-red-50/30 p-6 rounded-2xl border border-red-100">
+                <p className="text-sm text-red-900 font-serif font-semibold">
+                  ⚠️ Inscrições Esgotadas!
+                </p>
+                <p className="text-xs text-red-800/80">
+                  Desculpe, todas as {maxVagas} vagas para este {isEvent ? "evento" : "serviço"} foram preenchidas em tempo real. Fique atento a novas publicações ou entre em contato com o profissional responsável para demonstrar interesse em futuras turmas.
+                </p>
               </div>
             ) : !inscribed ? (
               <>
@@ -301,21 +386,45 @@ export function PublicServiceView({ serviceId, eventId, onBack }: PublicServiceV
                       <input 
                         type="text" 
                         required
-                        value={guestForm.nome}
-                        onChange={(e) => setGuestForm(prev => ({ ...prev, nome: e.target.value }))}
-                        placeholder="Ex: Dra. Larissa Mello"
+                        value={guestForm.nomeCompleto}
+                        onChange={(e) => setGuestForm(prev => ({ ...prev, nomeCompleto: e.target.value }))}
+                        placeholder="Ex: Larissa Mello"
                         className="w-full p-3 bg-white border border-soft text-xs text-forest rounded-xl focus:outline-none focus:border-forest/50"
                       />
                     </div>
 
                     <div className="flex flex-col gap-1.5">
-                      <label className="text-[10px] uppercase font-bold tracking-wider text-forest/50 font-sans">Seu Contato (WhatsApp ou E-mail) *</label>
+                      <label className="text-[10px] uppercase font-bold tracking-wider text-forest/50">Seu Telefone / WhatsApp *</label>
                       <input 
                         type="text" 
                         required
-                        value={guestForm.contato}
-                        onChange={(e) => setGuestForm(prev => ({ ...prev, contato: e.target.value }))}
-                        placeholder="Ex: (11) 98765-4321 ou larissa@email.com"
+                        value={guestForm.whatsapp}
+                        onChange={(e) => setGuestForm(prev => ({ ...prev, whatsapp: e.target.value }))}
+                        placeholder="Ex: (11) 98765-4321"
+                        className="w-full p-3 bg-white border border-soft text-xs text-forest rounded-xl focus:outline-none focus:border-forest/50"
+                      />
+                    </div>
+
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[10px] uppercase font-bold tracking-wider text-forest/50">Seu E-mail *</label>
+                      <input 
+                        type="email" 
+                        required
+                        value={guestForm.email}
+                        onChange={(e) => setGuestForm(prev => ({ ...prev, email: e.target.value }))}
+                        placeholder="Ex: larissa@email.com"
+                        className="w-full p-3 bg-white border border-soft text-xs text-forest rounded-xl focus:outline-none focus:border-forest/50"
+                      />
+                    </div>
+
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[10px] uppercase font-bold tracking-wider text-forest/50">Sua Profissão *</label>
+                      <input 
+                        type="text" 
+                        required
+                        value={guestForm.profissao}
+                        onChange={(e) => setGuestForm(prev => ({ ...prev, profissao: e.target.value }))}
+                        placeholder="Ex: Psicólogo, Estudante, etc"
                         className="w-full p-3 bg-white border border-soft text-xs text-forest rounded-xl focus:outline-none focus:border-forest/50"
                       />
                     </div>
@@ -331,12 +440,29 @@ export function PublicServiceView({ serviceId, eventId, onBack }: PublicServiceV
                       />
                     </div>
 
-                    <button 
-                      type="submit"
-                      className="w-full py-3 bg-forest text-white rounded-full font-serif font-semibold text-sm hover:bg-forest/90 transition-colors mt-2"
-                    >
-                      Confirmar Envio da Inscrição
-                    </button>
+                    {(() => {
+                      const isFormValid = guestForm.nomeCompleto.trim().length > 0 &&
+                                          guestForm.whatsapp.trim().length > 0 &&
+                                          guestForm.email.trim().includes("@") &&
+                                          guestForm.profissao.trim().length > 0;
+
+                      if (!isFormValid) {
+                        return (
+                          <div className="text-center p-3.5 bg-forest/5 text-forest/70 text-xs font-semibold rounded-2xl border border-soft/50 animate-pulse">
+                            💡 Preencha Nome Completo, WhatsApp/Telefone, E-mail válido e Profissão para liberar o botão de inscrição.
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <button 
+                          type="submit"
+                          className="w-full py-4 bg-forest text-white rounded-full font-serif font-semibold text-base hover:bg-forest/95 transition-all shadow-md shadow-forest/15 hover:shadow-lg flex items-center justify-center gap-2 animate-[scaleUp_0.15s_ease-out]"
+                        >
+                          Confirmar Envio da Inscrição
+                        </button>
+                      );
+                    })()}
                   </form>
                 )}
               </>
@@ -365,8 +491,8 @@ export function PublicServiceView({ serviceId, eventId, onBack }: PublicServiceV
                 <button 
                   onClick={() => {
                     setInscribed(false);
-                    setShowInscribeForm(false);
-                    setGuestForm({ nome: "", contato: "", mensagem: "" });
+                    setShowInscribeForm(true);
+                    setGuestForm({ nomeCompleto: "", whatsapp: "", email: "", profissao: "", mensagem: "" });
                   }}
                   className="text-xs text-emerald-800 font-bold underline hover:text-emerald-950 mt-1"
                 >
@@ -385,17 +511,19 @@ export function PublicServiceView({ serviceId, eventId, onBack }: PublicServiceV
             <Sparkles className="w-6 h-6 text-sun" />
           </div>
           <div>
-            <h4 className="font-serif text-lg font-bold text-white leading-snug">Você é profissional de Psicologia ou Terapia?</h4>
+            <h4 className="font-serif text-lg font-bold text-white leading-snug">Você é Psicólogo ou Terapeuta?</h4>
             <p className="text-xs text-white/85 mt-2 max-w-md leading-relaxed font-sans">
-              Junte-se como associado ou crie seus próprios eventos e serviços clínicos no <strong>AcolheMente</strong>. Apoie nosso ecossistema e faça a diferença para quem mais precisa.
+              Conheça nosso ecossistema e torne-se um associado. Aqui você fará parte de uma rede de profissionais de saúde mental, divulgando seus próprios eventos e serviços clínicos e ainda fazer a diferença para quem mais precisa.
             </p>
           </div>
         </div>
         <button
-          onClick={onBack}
-          className="w-full md:w-auto px-6 py-2.5 bg-white hover:bg-sun text-forest font-bold rounded-full text-xs uppercase tracking-wider transition-colors shrink-0 flex items-center justify-center gap-1.5 shadow-md hover:scale-[1.02] active:scale-[0.98] duration-250"
+          onClick={() => {
+            window.location.href = window.location.origin + "?view=profissional";
+          }}
+          className="w-full md:w-auto px-6 py-2.5 bg-white hover:bg-sun text-forest font-bold rounded-full text-xs uppercase tracking-wider transition-colors shrink-0 flex items-center justify-center gap-1.5 shadow-md hover:scale-[1.02] active:scale-[0.98] duration-250 font-sans"
         >
-          Fazer Parte do Projeto <ArrowRight className="w-4 h-4 text-forest" />
+          Saiba mais e faça parte do AcolheMente <ArrowRight className="w-4 h-4 text-forest" />
         </button>
       </div>
 

@@ -25,12 +25,30 @@
         "createdAt": { "type": "timestamp" }
       },
       "required": ["nome", "email", "viaAcesso", "motivo", "createdAt", "status"]
+    },
+    "ServicoProfissional": {
+      "title": "ServicoProfissional",
+      "description": "Serviços específicos ofertados e cadastrados por profissionais.",
+      "type": "object",
+      "properties": {
+        "profissionalId": { "type": "string" },
+        "profissionalNome": { "type": "string" },
+        "nome": { "type": "string" },
+        "publicoAlvo": { "type": "string", "enum": ["Para pessoas", "Para Psicólogos", "Para Psicólogos e Terapeutas", "Para Empresas"] },
+        "orcamentoAcessivel": { "type": "boolean" },
+        "createdAt": { "type": "timestamp" }
+      },
+      "required": ["profissionalId", "profissionalNome", "nome", "publicoAlvo", "orcamentoAcessivel", "createdAt"]
     }
   },
   "firestore": {
     "acolhimentos": {
       "schema": { "$ref": "#/entities/Acolhimento" },
       "description": "Coleção de registros de acolhimento (público mas seguro para criação)."
+    },
+    "servicos_profissionais": {
+      "schema": { "$ref": "#/entities/ServicoProfissional" },
+      "description": "Serviços cadastrados por profissionais individuais."
     }
   }
 }

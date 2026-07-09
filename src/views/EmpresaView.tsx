@@ -4,6 +4,7 @@ import React, { FormEvent, useState } from "react";
 import { collection, addDoc, serverTimestamp, getDocs, query, where } from "firebase/firestore";
 import { db, handleFirestoreError, OperationType } from "../lib/firebase";
 import { sendCompanyLeadEmail } from "../lib/emailService";
+import { Breadcrumbs } from "../components/Breadcrumbs";
 
 import empresaHero from '../assets/images/empresa_hero_photo_1781024092529.png';
 import logoImage from '../assets/images/logo_acolhe.jpeg';
@@ -118,6 +119,7 @@ export function EmpresaView({ onNavigate }: { onNavigate: (view: 'landing' | 'ac
       </nav>
 
       <main className="flex-1 flex flex-col items-center pb-16">
+        <Breadcrumbs items={[{ label: "Início", onClick: () => onNavigate("landing") }, { label: "Para Empresas", active: true }]} />
         {/* Presentation Section */}
         <section className="w-full px-6 md:px-12 py-12 md:py-16 flex justify-center bg-warm text-forest border-b border-soft">
           <div className="max-w-[1440px] w-full flex flex-col items-center justify-between gap-8">

@@ -3,6 +3,7 @@ import { ArrowLeft, CheckCircle2, HeartHandshake, QrCode, ClipboardList, HandHea
 import { FormEvent, useState } from "react";
 import { collection, addDoc, serverTimestamp, getDocs, query, where } from "firebase/firestore";
 import { db, handleFirestoreError, OperationType } from "../lib/firebase";
+import { Breadcrumbs } from "../components/Breadcrumbs";
 
 import doacaoHero from '../assets/images/doacao_hero_photo_1781024105563.png';
 import logoImage from '../assets/images/logo_acolhe.jpeg';
@@ -89,6 +90,7 @@ export function DoacaoView({ onNavigate }: { onNavigate: (view: 'landing' | 'aco
       </nav>
 
       <main className="flex-1 flex flex-col items-center pb-16">
+        <Breadcrumbs items={[{ label: "Início", onClick: () => onNavigate("landing") }, { label: "Apoio Solidário", active: true }]} />
         {activeTab === 'intro' && (
           <section className="w-full px-6 md:px-12 py-12 flex justify-center fade-in">
             <div className="max-w-[1200px] w-full flex flex-col lg:flex-row items-center justify-between gap-8">

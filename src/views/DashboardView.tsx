@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { EventosServicosView } from "./EventosServicosView";
+import { CadastroServicos } from "../components/CadastroServicos";
 import { ComplianceModal } from "../components/ComplianceModal";
 import {
   ArrowLeft,
@@ -78,6 +79,7 @@ import { initializeApp } from "firebase/app";
 import firebaseConfig from "../../firebase-applet-config.json";
 import logoImage from "../assets/images/logo_acolhe.jpeg";
 import { parseCSV, parseAndValidateData, ParseResult, ImportedProfissional } from "../lib/importParser";
+import { Breadcrumbs } from "../components/Breadcrumbs";
 
 const safeLocalStorage = {
   getItem: (key: string): string | null => {
@@ -391,6 +393,31 @@ export function DashboardView({
   const currentRole = activeRoleView || profile?.role || "profissional";
   const modifiedProfile = profile ? { ...profile, role: currentRole } : null;
 
+  const getDashboardBreadcrumbs = () => {
+    const roleName = currentRole === "master" ? "Gestor Master" : currentRole === "triagem" ? "Equipe de Triagem" : "Psicólogo Parceiro";
+    const tabNames: Record<string, string> = {
+      estatisticas: "Estatísticas & Relatórios",
+      kanban: "Triagem & Acolhimentos",
+      pacientesAcolhidos: "Gestão de Pacientes",
+      doacoes: "Apoio Solidário & Doações",
+      profissionais: "Profissionais Parceiros",
+      empresas: "Empresas Parceiras",
+      tarefas: "Tarefas & Pendências",
+      acessos: "Níveis de Acesso",
+      eventos: "Gestão de Eventos",
+      servicos: "Parcerias de Serviços",
+      compliance: "Compliance Legal & Termos",
+      pacientes: "Meus Pacientes Clínicos",
+      tarefasProfissional: "Minhas Pendências",
+      perfil: "Configurações de Perfil",
+    };
+    return [
+      { label: "Painel", onClick: () => onNavigate("landing") },
+      { label: roleName },
+      { label: tabNames[activeTab] || activeTab, active: true }
+    ];
+  };
+
   // Tabs
   const [activeTab, setActiveTab] = useState<
     | "kanban"
@@ -406,6 +433,7 @@ export function DashboardView({
     | "perfil"
     | "eventos"
     | "servicos"
+    | "meusServicos"
     | "compliance"
   >("kanban");
 
@@ -567,6 +595,35 @@ export function DashboardView({
 
   // Psychologist State
   const [meusPacientes, setMeusPacientes] = useState<Acolhimento[]>([]);
+
+  // Services registered by the currently selected professional (Admin / Triagem view)
+  const [selectedProfServicos, setSelectedProfServicos] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (!selectedProfissional) {
+      setSelectedProfServicos([]);
+      return;
+    }
+    const profId = "id" in selectedProfissional ? selectedProfissional.id : selectedProfissional.uid;
+    if (!profId) return;
+
+    const q = query(
+      collection(db, "servicos_profissionais"),
+      where("profissionalId", "==", profId)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const list: any[] = [];
+      snapshot.forEach((docSnap) => {
+        list.push({ id: docSnap.id, ...docSnap.data() });
+      });
+      setSelectedProfServicos(list);
+    }, (err) => {
+      console.error("Erro ao carregar servicos do profissional selecionado:", err);
+    });
+
+    return () => unsubscribe();
+  }, [selectedProfissional]);
 
   // Onboarding State
   const [showOnboarding, setShowOnboarding] = useState(false);
@@ -3096,6 +3153,12 @@ export function DashboardView({
               className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "servicos" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
             >
               Serviços da Rede
+            </button>
+            <button
+              onClick={() => setActiveTab("meusServicos")}
+              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "meusServicos" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
+            >
+              Meus Serviços (Cadastro)
             </button>
             <button
               onClick={() => setActiveTab("tarefasProfissional")}
@@ -6395,6 +6458,12 @@ export function DashboardView({
         </div>
       ) : activeTab === "eventos" || activeTab === "servicos" ? (
         <EventosServicosView activeSection={activeTab} profile={profile} />
+      ) : activeTab === "meusServicos" ? (
+        <div className="flex-1 overflow-auto p-6 md:p-8 flex flex-col gap-8 slide-up">
+          <div className="max-w-4xl w-full mx-auto">
+            <CadastroServicos profile={profile} />
+          </div>
+        </div>
       ) : null}
 
       {/* Card Details Modal */}
@@ -8418,6 +8487,39 @@ export function DashboardView({
                     )
                   }
                 />
+              </section>
+
+              <section className="bg-warm/30 p-5 rounded-2xl border border-soft/80">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-3 flex items-center gap-2">
+                  <Briefcase className="w-4 h-4 text-sun-dark" /> Serviços Cadastrados pelo Profissional
+                </h4>
+                {selectedProfServicos.length === 0 ? (
+                  <p className="text-xs text-forest/50 italic py-2">
+                    Nenhum serviço cadastrado por este profissional ainda.
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
+                    {selectedProfServicos.map((svc) => (
+                      <div key={svc.id} className="bg-white p-4 rounded-xl border border-soft shadow-xs flex flex-col gap-1.5">
+                        <span className="font-serif font-semibold text-forest text-sm">{svc.nome}</span>
+                        <div className="flex flex-wrap items-center gap-2 text-[10px]">
+                          <span className="px-2 py-0.5 bg-warm rounded-full font-semibold text-forest">
+                            Público: {svc.publicoAlvo}
+                          </span>
+                          {svc.orcamentoAcessivel ? (
+                            <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 font-bold border border-emerald-100 rounded-full">
+                              Orçamento Acessível
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 bg-gray-50 text-gray-400 font-semibold border border-gray-100 rounded-full">
+                              Orçamento Padrão
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </section>
             </div>
 
