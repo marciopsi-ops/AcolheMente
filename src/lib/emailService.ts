@@ -1,5 +1,6 @@
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "./firebase";
+import { sendWebhookNotification, WebhookEventPayload } from "./webhookNotifier";
 
 // Beautiful corporate email template wrapper
 function wrapInEmailTemplate(contentHtml: string): string {
@@ -27,8 +28,8 @@ function wrapInEmailTemplate(contentHtml: string): string {
   `;
 }
 
-// Low-level helper to trigger a Firestore mail document
-export async function triggerEmail(to: string, subject: string, html: string, text?: string) {
+// Low-level helper to trigger a Firestore mail document & webhook notification
+export async function triggerEmail(to: string, subject: string, html: string, text?: string, eventType: WebhookEventPayload['event'] = 'novo_acolhimento') {
   if (!to) return;
   try {
     await addDoc(collection(db, "mail"), {
@@ -44,6 +45,18 @@ export async function triggerEmail(to: string, subject: string, html: string, te
   } catch (err) {
     console.error("[EmailService] Error queueing email to Trigger Email Firestore extension:", err);
   }
+
+  // Dual-dispatch to HTTP Webhook (Brevo, Make, N8n, Zapier)
+  sendWebhookNotification({
+    event: eventType,
+    recipientEmail: to,
+    title: subject,
+    message: text || subject,
+    data: {
+      subject,
+      contentPreview: (text || subject).substring(0, 200),
+    }
+  });
 }
 
 // 1. Patient Registration Email
@@ -193,3 +206,41 @@ export async function sendProposalRevisionRequestEmail(nome: string, email: stri
   `;
   await triggerEmail(email, subject, html);
 }
+
+// 7. Automated Checkout Link Email 7 Days After Admission Date
+export async function sendTrialExpiredCheckoutEmail(
+  nome: string,
+  email: string,
+  checkoutUrl?: string,
+  dataAdmissaoFmt?: string
+) {
+  const subject = "AcolheMente - Link para pagamento da taxa associativa (Vencimento 1ª Taxa)";
+  const finalCheckoutUrl = checkoutUrl || "https://buy.stripe.com/acolhemente";
+  const html = `
+    <h3 style="font-family: 'Georgia', serif; font-size: 22px; color: #1e352f; margin-top: 0;">Olá, Dr(a). ${nome}!</h3>
+    <p>Esperamos que os seus primeiros dias no <strong>Projeto AcolheMente Saúde</strong> estejam sendo muito produtivos!</p>
+    
+    <p>Conforme o nosso alinhamento, o prazo de 7 dias após a sua admissão (realizada em ${dataAdmissaoFmt || "sua data de ingresso"}) para realização do seu primeiro pagamento expirou.</p>
+    
+    <div style="background-color: #faf9f6; border: 1px solid #ebdcb9; border-radius: 16px; padding: 20px; margin: 25px 0;">
+      <h4 style="margin-top: 0; color: #1e352f; font-family: 'Georgia', serif; font-size: 16px;">Manutenção do Seu Perfil & Atendimentos:</h4>
+      <p style="font-size: 14px; color: #2e443e; margin-bottom: 15px;">
+        Para manter a visibilidade do seu perfil no catálogo oficial, continuar recebendo encaminhamentos de pacientes e utilizar as ferramentas de gestão clínica, efetue o pagamento da sua taxa associativa mensal.
+      </p>
+      
+      <div style="text-align: center; margin: 25px 0;">
+        <a href="${finalCheckoutUrl}" target="_blank" style="background-color: #1e352f; color: #ffffff; padding: 14px 28px; border-radius: 50px; text-decoration: none; font-weight: bold; font-size: 15px; display: inline-block; box-shadow: 0 4px 12px rgba(30, 53, 47, 0.15);">
+          💳 Efetuar Pagamento da Taxa Associativa
+        </a>
+      </div>
+      
+      <p style="font-size: 12px; color: #737c76; text-align: center; margin: 0;">
+        Link direto seguro via Stripe: <a href="${finalCheckoutUrl}" style="color: #1e352f;">${finalCheckoutUrl}</a>
+      </p>
+    </div>
+    
+    <p>Qualquer dúvida ou caso necessite de suporte com seu pagamento, entre em contato com a nossa equipe de suporte.</p>
+  `;
+  await triggerEmail(email, subject, html, undefined, "pagamento_profissional");
+}
+

@@ -1,7 +1,7 @@
 import { Footer } from '../components/Footer';
 import { ArrowLeft, Briefcase, Building2, CheckCircle2, HeartHandshake, TrendingUp, Sparkles, UserCheck, Coins, ArrowRight, MessageCircle } from "lucide-react";
-import React, { FormEvent, useState } from "react";
-import { collection, addDoc, serverTimestamp, getDocs, query, where } from "firebase/firestore";
+import React, { FormEvent, useState, useEffect } from "react";
+import { collection, addDoc, serverTimestamp, getDocs, query, where, doc, getDoc } from "firebase/firestore";
 import { db, handleFirestoreError, OperationType } from "../lib/firebase";
 import { sendCompanyLeadEmail } from "../lib/emailService";
 import { Breadcrumbs } from "../components/Breadcrumbs";
@@ -26,6 +26,41 @@ export function EmpresaView({ onNavigate }: { onNavigate: (view: 'landing' | 'ac
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [configs, setConfigs] = useState<any>({
+    telefoneSuporte: "",
+    footerTelefone: "",
+  });
+
+  useEffect(() => {
+    const fetchConfigs = async () => {
+      try {
+        const snap = await getDoc(doc(db, "configuracoes", "master"));
+        if (snap.exists()) {
+          const data = snap.data();
+          setConfigs((prev: any) => ({
+            ...prev,
+            ...data
+          }));
+        }
+      } catch (err: any) {
+        if (err.code !== 'permission-denied') {
+          console.error("Error fetching configs for EmpresaView", err);
+        }
+      }
+    };
+    fetchConfigs();
+  }, []);
+
+  const getWhatsAppUrl = () => {
+    const rawPhone = configs.telefoneSuporte || configs.footerTelefone || "(61) 9999-9999";
+    let cleanPhone = rawPhone.replace(/\D/g, "");
+    if (!cleanPhone) cleanPhone = "556199999999";
+    if (cleanPhone.length === 10 || cleanPhone.length === 11) {
+      cleanPhone = `55${cleanPhone}`;
+    }
+    const msg = "Olá! Sou representante de uma empresa e gostaria de falar com um consultor sobre o AcolheMente para empresas.";
+    return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`;
+  };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
@@ -134,6 +169,17 @@ export function EmpresaView({ onNavigate }: { onNavigate: (view: 'landing' | 'ac
                 <p className="text-lg text-forest/80 leading-relaxed max-w-lg mt-4">
                   Antecipe-se às exigências da <strong>NR1</strong> implementando um programa efetivo de prevenção aos riscos psicossociais e <strong>evite multas e passivos trabalhistas</strong> por não conformidade. Mais do que um benefício (como um "Gympass da Mente"), é um cuidado estratégico que garante apoio emocional e psicológico à sua equipe, blindando a empresa e valorizando as pessoas.
                 </p>
+                <div className="flex flex-wrap items-center gap-4 mt-4">
+                  <a
+                    href={getWhatsAppUrl()}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-6 py-3.5 bg-[#25D366] hover:bg-[#1ebd5b] text-white rounded-full font-semibold shadow-md transition-all flex items-center gap-2 text-sm cursor-pointer"
+                  >
+                    <MessageCircle className="w-5 h-5" />
+                    Falar com Consultor via WhatsApp
+                  </a>
+                </div>
               </div>
               <div className="w-full lg:w-1/2 flex justify-center lg:justify-end">
                  <img src={empresaHero} alt="Ilustração Empresa e RH" className="w-full max-w-lg object-contain rounded-3xl mix-blend-multiply" referrerPolicy="no-referrer" />
@@ -500,11 +546,11 @@ export function EmpresaView({ onNavigate }: { onNavigate: (view: 'landing' | 'ac
       
       {/* Floating WhatsApp Button */}
       <a 
-        href="https://wa.me/5511999999999?text=Olá, quero falar com um consultor sobre o AcolheMente para empresas." 
+        href={getWhatsAppUrl()} 
         target="_blank" 
         rel="noopener noreferrer"
         className="fixed bottom-6 right-6 bg-[#25D366] hover:bg-[#1ebd5b] text-white p-4 rounded-full shadow-lg shadow-[#25D366]/20 transition-all flex items-center justify-center group z-50 animate-in slide-in-from-bottom-5 duration-500 hover:scale-110"
-        title="Falar com um consultor"
+        title="Falar com um consultor via WhatsApp"
       >
         <MessageCircle className="w-6 h-6 mr-0 group-hover:mr-3 transition-all" />
         <span className="max-w-0 overflow-hidden whitespace-nowrap group-hover:max-w-xs transition-all duration-300 font-medium text-sm">

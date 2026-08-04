@@ -254,6 +254,17 @@ export function PublicServiceView({ serviceId, eventId, onBack }: PublicServiceV
             </p>
           </div>
 
+          {item.requisitos && (
+            <div className="flex flex-col gap-2 p-4 bg-amber-50/20 border border-amber-200/50 rounded-2xl">
+              <h4 className="text-[11px] uppercase font-bold tracking-wider text-amber-800">
+                Requisitos Necessários
+              </h4>
+              <p className="text-xs sm:text-sm text-forest/80 leading-relaxed whitespace-pre-wrap font-sans">
+                {item.requisitos}
+              </p>
+            </div>
+          )}
+
           {/* Publisher block */}
           <div className="bg-[#FDFBF7] p-5 rounded-2xl border border-soft flex items-center justify-between gap-4 mt-2">
             <div className="flex items-center gap-3">
@@ -474,7 +485,9 @@ export function PublicServiceView({ serviceId, eventId, onBack }: PublicServiceV
                 <div>
                   <h4 className="font-serif text-lg font-bold">Solicitação Enviada!</h4>
                   <p className="text-xs mt-1 text-emerald-700 max-w-sm mx-auto leading-relaxed">
-                    Sua inscrição foi confirmada temporariamente. Envie o comprovante ou uma mensagem de confirmação para o contato do profissional abaixo:
+                    {item.solicitarComprovante 
+                      ? "Inscrição pré-registrada! É necessário enviar o comprovante de pagamento ou o documento solicitado para validar sua inscrição. Clique no botão de contato direto abaixo:"
+                      : "Sua inscrição foi registrada! Para confirmar sua participação ou enviar comprovantes, por favor entre em contato direto com o organizador pelo botão abaixo:"}
                   </p>
                 </div>
 
@@ -489,6 +502,25 @@ export function PublicServiceView({ serviceId, eventId, onBack }: PublicServiceV
                     </div>
                   )}
                 </div>
+
+                <a 
+                  href={getContactLink(item)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full max-w-md py-3 px-5 bg-forest text-white rounded-full font-serif font-medium text-sm hover:bg-forest/90 transition-all shadow-md flex items-center justify-center gap-2 mt-1 hover:scale-[1.01] active:scale-[0.99] duration-150"
+                >
+                  {item.contatoPreferencial === "whatsapp" ? (
+                    <>
+                      <Phone className="w-4 h-4 shrink-0" />
+                      Enviar Mensagem via WhatsApp
+                    </>
+                  ) : (
+                    <>
+                      <Mail className="w-4 h-4 shrink-0" />
+                      Enviar E-mail de Confirmação
+                    </>
+                  )}
+                </a>
 
                 <button 
                   onClick={() => {

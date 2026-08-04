@@ -40,6 +40,7 @@ import { ContratoLandingView } from "./views/ContratoLandingView";
 import { PropostaLandingView } from "./views/PropostaLandingView";
 
 import { Footer } from "./components/Footer";
+import { ProfissionaisCarousel } from "./components/ProfissionaisCarousel";
 
 import homeHero from "./assets/images/home_hero_photo_parda_1781024318036.png";
 import logoImage from "./assets/images/logo_acolhe.jpeg";
@@ -501,7 +502,7 @@ function LandingPage({
                   onClick={() => { setIsMenuOpen(false); onNavigate("profissional"); }}
                   className="text-left font-sans text-sm text-forest/85 hover:text-forest hover:bg-warm/40 px-3 py-2.5 rounded-xl transition-all font-medium"
                 >
-                  Seja Psicólogo / Terapeuta Associado
+                  Seja Profissional Associado
                 </button>
                 {doacoesAtivas && (
                   <button 
@@ -671,7 +672,7 @@ function LandingPage({
                 150+
               </span>
               <span className="text-[10px] uppercase tracking-[0.2em] font-bold mt-2 text-forest/70">
-                Psicólogos
+                Profissionais
               </span>
             </div>
             <div className="flex flex-col items-center">
@@ -798,6 +799,9 @@ function LandingPage({
         
         {/* FAQ Section */}
         <FAQSection />
+
+        {/* Professionals Showcase Carousel */}
+        <ProfissionaisCarousel />
       </main>
 
       {/* Footer */}

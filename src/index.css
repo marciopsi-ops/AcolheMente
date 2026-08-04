@@ -35,3 +35,16 @@ body {
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background-color: var(--color-sage-dark);
 }
+
+@keyframes carousel-scroll {
+  0% {
+    transform: translateX(0%);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-carousel-scroll {
+  animation: carousel-scroll 55s linear infinite;
+}

@@ -1,10 +1,12 @@
 import { Footer } from '../components/Footer';
-import { ArrowLeft, CheckCircle2, HeartHandshake, UserPlus, Clock, PiggyBank, Network, Wallet } from "lucide-react";
-import React, { FormEvent, useState } from "react";
-import { collection, addDoc, serverTimestamp, getDocs, query, where } from "firebase/firestore";
+import { ArrowLeft, CheckCircle2, HeartHandshake, UserPlus, Clock, PiggyBank, Network, Wallet, Check, CreditCard, Sparkles } from "lucide-react";
+import React, { FormEvent, useState, useEffect } from "react";
+import { collection, addDoc, serverTimestamp, getDocs, query, where, doc, onSnapshot } from "firebase/firestore";
 import { db, handleFirestoreError, OperationType } from "../lib/firebase";
 import { sendProfessionalLeadEmail } from "../lib/emailService";
+import { sendWebhookNotification } from "../lib/webhookNotifier";
 import { Breadcrumbs } from "../components/Breadcrumbs";
+import { StripeCheckoutModal } from "../components/StripeCheckoutModal";
 
 import psicologoHero from '../assets/images/psicologo_hero_photo_1781024080247.png';
 import logoImage from '../assets/images/logo_acolhe.jpeg';
@@ -27,6 +29,7 @@ export const OPCOES_SERVICOS = [
 export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'landing' | 'acolhimento' | 'dashboard' | 'profile' | 'empresa' | 'doacao' | 'profissional') => void }) {
   const [formData, setFormData] = useState({
     nome: '',
+    profissao: 'Psicólogo(a)',
     especialidade: '',
     abordagem: '',
     anoFormacao: '',
@@ -53,6 +56,29 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  
+  const [taxaAssociativaMensal, setTaxaAssociativaMensal] = useState("29,90");
+  const [stripeConfig, setStripeConfig] = useState<any>(null);
+  const [cienciaTaxa, setCienciaTaxa] = useState(false);
+  const [showCheckoutModal, setShowCheckoutModal] = useState(false);
+  const [registeredLeadId, setRegisteredLeadId] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, "configuracoes", "master"), (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data.taxaAssociativaMensal) {
+          setTaxaAssociativaMensal(data.taxaAssociativaMensal);
+        }
+        setStripeConfig({
+          stripeEnabled: data.stripeEnabled,
+          stripePublicKey: data.stripePublicKey,
+          stripeCheckoutUrl: data.stripeCheckoutUrl,
+        });
+      }
+    }, (err) => console.error("Error fetching config:", err));
+    return () => unsub();
+  }, []);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
@@ -146,6 +172,10 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
         setErrorMsg("Por favor, preencha todos os campos obrigatórios.");
         return;
       }
+      if (!cienciaTaxa) {
+        setErrorMsg(`Para prosseguir, você deve declarar estar ciente da taxa associativa de R$ ${taxaAssociativaMensal}/mês.`);
+        return;
+      }
       setIsSubmitting(true);
       setErrorMsg('');
 
@@ -158,17 +188,44 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
           return;
         }
 
-        await addDoc(collection(db, "profissionais_leads"), {
+        const docRef = await addDoc(collection(db, "profissionais_leads"), {
           ...formData,
+          taxaAssociativaMensal,
+          cienciaTaxaAceita: true,
+          statusPagamento: 'pendente',
           status: 'Aguardando Entrevista',
           notificacao: 'Novo cadastro de psicólogo associado/candidato.',
           createdAt: serverTimestamp()
         });
 
+        setRegisteredLeadId(docRef.id);
+
         try {
           await sendProfessionalLeadEmail(formData.nome, formData.email);
         } catch (emailErr) {
           console.error("Failed to send professional confirmation email:", emailErr);
+        }
+
+        // Webhook dispatch
+        try {
+          await sendWebhookNotification({
+            event: 'novo_profissional',
+            recipientEmail: formData.email,
+            recipientName: formData.nome,
+            title: 'Novo Profissional Cadastrado - AcolheMente',
+            message: `Dr(a). ${formData.nome} realizou o cadastro de profissional associado.`,
+            data: {
+              leadId: docRef.id,
+              nome: formData.nome,
+              email: formData.email,
+              telefone: formData.telefone,
+              crp: formData.crp,
+              especialidade: formData.especialidade,
+              taxaAssociativaMensal,
+            }
+          });
+        } catch (webhookErr) {
+          console.error("Webhook notification error:", webhookErr);
         }
 
         setIsSuccess(true);
@@ -249,10 +306,71 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
                 <h3 className="font-semibold text-lg text-forest">Conexão entre Profissionais</h3>
                 <p className="text-sm text-forest/80">Ofereça e usufrua de serviços exclusivos na plataforma: supervisão, cursos, workshops e consultorias.</p>
               </div>
-              <div className="bg-warm/50 p-6 rounded-3xl border border-soft flex flex-col gap-3">
-                <Wallet className="w-8 h-8 text-sun-dark" />
-                <h3 className="font-semibold text-lg text-forest">Taxa Associativa Acessível</h3>
-                <p className="text-sm text-forest/80">Acesse tudo isso com uma única taxa mensal, muito abaixo de outras plataformas, essencial para a sustentabilidade do projeto.</p>
+              <div className="col-span-1 sm:col-span-2 lg:col-span-3 bg-gradient-to-br from-forest via-[#1d3c2b] to-[#12281c] text-white p-8 md:p-10 rounded-3xl border-2 border-sun-dark/40 shadow-xl relative overflow-hidden group hover:border-sun-dark transition-all duration-300 my-2">
+                {/* Background glow accent */}
+                <div className="absolute -right-12 -bottom-12 w-64 h-64 bg-sun/10 rounded-full blur-3xl pointer-events-none" />
+                <div className="absolute -left-12 -top-12 w-48 h-48 bg-emerald-500/10 rounded-full blur-2xl pointer-events-none" />
+
+                <div className="relative z-10 flex flex-col lg:flex-row gap-8 items-start lg:items-center justify-between">
+                  <div className="flex-1 space-y-3">
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      <span className="px-3 py-1 bg-sun text-forest text-[11px] font-black uppercase tracking-wider rounded-full shadow-sm">
+                        ⭐ Destaque do Projeto
+                      </span>
+                      <span className="px-3 py-1 bg-white/10 text-sun-light text-[11px] font-semibold rounded-full border border-white/20">
+                        Cobrança Somente Após Aceite & Contrato
+                      </span>
+                    </div>
+
+                    <h3 className="font-serif text-2xl md:text-3xl font-bold text-white tracking-tight flex items-center gap-3">
+                      <Wallet className="w-7 h-7 text-sun shrink-0" />
+                      Taxa Associativa Acessível
+                    </h3>
+
+                    <p className="text-white/90 text-sm md:text-base leading-relaxed max-w-2xl">
+                      Contribuição mensal única de <strong className="text-sun font-bold text-lg">R$ {taxaAssociativaMensal}</strong> para manutenção da plataforma, infraestrutura técnica e triagem de casos.
+                    </p>
+
+                    <div className="bg-white/10 backdrop-blur-sm p-4 rounded-xl border border-white/15 text-xs text-white/90 space-y-1.5 max-w-2xl">
+                      <p className="font-bold text-sun text-xs uppercase tracking-wide flex items-center gap-1.5">
+                        <Sparkles className="w-4 h-4 text-sun" /> Como funciona o processo de adesão?
+                      </p>
+                      <p className="leading-relaxed">
+                        O preenchimento da inscrição é <strong className="text-white underline decoration-sun underline-offset-2">100% gratuito</strong>. A taxa associativa mensal <strong className="text-sun font-semibold">só passará a ser cobrada a partir da entrevista de alinhamento, aprovação pela gestão do projeto e assinatura formal do contrato de parceria</strong>.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="w-full lg:w-auto bg-white/10 backdrop-blur-md p-6 rounded-2xl border border-white/20 flex flex-col items-center justify-center text-center shrink-0 min-w-[240px]">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-sun-light">Valor Fixo Mensal</span>
+                    <div className="flex items-baseline gap-1 my-1">
+                      <span className="text-sm font-bold text-sun">R$</span>
+                      <span className="text-4xl font-extrabold text-white font-serif">{taxaAssociativaMensal}</span>
+                    </div>
+                    <span className="text-[11px] text-white/80 bg-white/15 px-3 py-1 rounded-full mt-1 border border-white/20">
+                      Cobrado apenas pós-contrato
+                    </span>
+                  </div>
+                </div>
+
+                <div className="mt-8 pt-6 border-t border-white/15 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs text-white/90 relative z-10">
+                  <div className="flex items-start gap-3 bg-white/5 p-3.5 rounded-xl border border-white/10 hover:bg-white/10 transition-colors">
+                    <Check className="w-4 h-4 text-sun shrink-0 mt-0.5" />
+                    <span>Conexão com profissionais para divulgação e troca de serviços a valores acessíveis</span>
+                  </div>
+                  <div className="flex items-start gap-3 bg-white/5 p-3.5 rounded-xl border border-white/10 hover:bg-white/10 transition-colors">
+                    <Check className="w-4 h-4 text-sun shrink-0 mt-0.5" />
+                    <span>Page profissional pessoal no catálogo público da plataforma</span>
+                  </div>
+                  <div className="flex items-start gap-3 bg-white/5 p-3.5 rounded-xl border border-white/10 hover:bg-white/10 transition-colors">
+                    <Check className="w-4 h-4 text-sun shrink-0 mt-0.5" />
+                    <span>Respaldo e consultoria sob demanda elaborada pelos gestores do projeto</span>
+                  </div>
+                  <div className="flex items-start gap-3 bg-white/5 p-3.5 rounded-xl border border-white/10 hover:bg-white/10 transition-colors">
+                    <Check className="w-4 h-4 text-sun shrink-0 mt-0.5" />
+                    <span>Triagem e encaminhamento ativo dos casos para atendimento</span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -262,20 +380,70 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
         <section className="w-full px-6 md:px-12 py-16 flex justify-center relative -mt-10">
           <div className="max-w-2xl w-full bg-white rounded-3xl shadow-xl shadow-forest/5 p-8 md:p-12 border border-soft">
             {isSuccess ? (
-              <div className="flex flex-col items-center text-center py-10 animate-in zoom-in-95 duration-500">
-                <div className="w-20 h-20 bg-sun-light rounded-full flex items-center justify-center mb-6">
+              <div className="flex flex-col items-center text-center py-6 animate-in zoom-in-95 duration-500">
+                <div className="w-20 h-20 bg-sun-light rounded-full flex items-center justify-center mb-4 border border-sun-dark/30 shadow-xs">
                   <CheckCircle2 className="w-10 h-10 text-forest" />
                 </div>
-                <h2 className="font-serif text-3xl text-forest mb-4">Cadastro Realizado!</h2>
-                <p className="text-forest/80 max-w-md mx-auto mb-8 text-lg">
-                  Muito obrigado pela iniciativa em fazer parte. Nossa equipe realizará a validação dos dados e entrará em contato para ativar sua conta na plataforma em até 24h.
+                <h2 className="font-serif text-3xl font-bold text-forest mb-2">Pré-Inscrição Concluída!</h2>
+                <p className="text-forest/80 max-w-lg mx-auto mb-5 text-sm leading-relaxed">
+                  Muito obrigado pela iniciativa em fazer parte do Projeto AcolheMente! Recebemos suas informações e nossa equipe entrará em contato em breve para realizar a <strong className="text-forest font-semibold">entrevista de alinhamento</strong>.
                 </p>
-                <button 
-                  onClick={() => onNavigate('landing')}
-                  className="px-8 py-4 bg-forest text-white rounded-full font-semibold hover:bg-forest/90 transition-all shadow-md"
-                >
-                  Voltar para o Início
-                </button>
+
+                {/* Clear Process / Fee Policy Banner */}
+                <div className="w-full max-w-lg bg-emerald-50/90 p-4 rounded-2xl border border-emerald-200/80 mb-6 text-left flex flex-col gap-2">
+                  <div className="flex items-center gap-2 text-emerald-900 font-bold text-xs uppercase tracking-wider">
+                    <Clock className="w-4 h-4 text-emerald-700 shrink-0" />
+                    <span>Próximas Etapas do Processo</span>
+                  </div>
+                  <ol className="text-xs text-forest/90 space-y-1.5 list-decimal pl-4 leading-relaxed">
+                    <li><strong>Análise de Perfil:</strong> Validação dos dados profissionais e CRP pela equipe de gestão.</li>
+                    <li><strong>Entrevista de Alinhamento:</strong> Reunião online com nossos coordenadores.</li>
+                    <li><strong>Aceite & Assinatura de Contrato:</strong> Formalização e liberação de acesso ao catálogo e pacientes.</li>
+                  </ol>
+                  <p className="text-[11px] text-emerald-800 italic border-t border-emerald-200/60 pt-2 mt-1">
+                    💡 <strong>Lembrete:</strong> Nenhuma cobrança é efetuada neste momento. A taxa associativa (R$ {taxaAssociativaMensal}/mês) só é devida após a aprovação e assinatura formal do contrato.
+                  </p>
+                </div>
+
+                {/* Stripe Checkout Call to Action for already-approved members */}
+                {stripeConfig?.stripeEnabled && (
+                  <div className="w-full max-w-lg bg-warm/60 p-5 rounded-2xl border border-soft mb-6 flex flex-col gap-3 text-left">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <CreditCard className="w-5 h-5 text-forest" />
+                        <span className="font-bold text-sm text-forest">Já passou pela entrevista e assinou o contrato?</span>
+                      </div>
+                      <span className="px-2 py-0.5 bg-sun-light text-forest text-[10px] font-bold rounded uppercase">
+                        Adesão
+                      </span>
+                    </div>
+                    <p className="text-xs text-forest/80 leading-relaxed">
+                      Se você já foi aprovado na entrevista e concluiu o contrato, ative sua taxa associativa (R$ {taxaAssociativaMensal}/mês) com total segurança via Pix ou Cartão de Crédito.
+                    </p>
+                    <button
+                      onClick={() => setShowCheckoutModal(true)}
+                      className="w-full py-3.5 px-6 bg-forest text-white rounded-xl font-bold hover:bg-forest/90 transition-all shadow-md flex items-center justify-center gap-2 text-sm mt-1"
+                    >
+                      <Sparkles className="w-4 h-4 text-sun" />
+                      Efetuar Pagamento da Taxa Associativa (R$ {taxaAssociativaMensal}/mês)
+                    </button>
+                  </div>
+                )}
+
+                <div className="flex flex-col sm:flex-row gap-3 w-full max-w-lg">
+                  <button 
+                    onClick={() => onNavigate('landing')}
+                    className="flex-1 py-3 px-6 border border-soft text-forest rounded-full font-semibold hover:bg-forest/5 transition-all text-sm"
+                  >
+                    Voltar ao Início
+                  </button>
+                  <button 
+                    onClick={() => onNavigate('dashboard')}
+                    className="flex-1 py-3 px-6 bg-warm text-forest border border-soft rounded-full font-semibold hover:bg-warm/80 transition-all text-sm"
+                  >
+                    Acessar Meu Painel
+                  </button>
+                </div>
               </div>
             ) : (
               <>
@@ -470,6 +638,42 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
 
                   {step === 2 && (
                     <div className="flex flex-col gap-6 animate-in fade-in duration-500">
+                      <div className="flex flex-col gap-2">
+                        <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">Profissão / Atuação Principal *</label>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <select 
+                            name="profissao"
+                            value={
+                              ["Psicólogo(a)", "Psicólogo(a) Clínico(a)", "Psicanalista", "Terapeuta", "Terapeuta Holístico(a)", "Psicopedagogo(a)"].includes(formData.profissao)
+                                ? formData.profissao
+                                : "Outro"
+                            }
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              if (val !== "Outro") {
+                                setFormData(prev => ({ ...prev, profissao: val }));
+                              }
+                            }}
+                            className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest"
+                          >
+                            <option value="Psicólogo(a)">Psicólogo(a)</option>
+                            <option value="Psicólogo(a) Clínico(a)">Psicólogo(a) Clínico(a)</option>
+                            <option value="Psicanalista">Psicanalista</option>
+                            <option value="Terapeuta">Terapeuta</option>
+                            <option value="Terapeuta Holístico(a)">Terapeuta Holístico(a)</option>
+                            <option value="Psicopedagogo(a)">Psicopedagogo(a)</option>
+                            <option value="Outro">Outra Profissão / Título</option>
+                          </select>
+                          <input 
+                            name="profissao"
+                            value={formData.profissao}
+                            onChange={handleChange}
+                            className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest" 
+                            placeholder="Sua profissão (ex: Terapeuta, Psicanalista...)" 
+                          />
+                        </div>
+                      </div>
+
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="flex flex-col gap-1">
                           <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">Abordagens Psicológicas de Atendimento *</label>
@@ -681,6 +885,58 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
 
                       {formData.motivacao.trim().length >= 10 && (
                         <div className="flex flex-col gap-6 animate-in fade-in duration-500 border-t border-soft pt-6">
+                          {/* Taxa Associativa Awareness Box */}
+                          <div className="bg-amber-50/90 p-5 rounded-2xl border border-amber-200 flex flex-col gap-3.5 shadow-xs">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-2 text-forest font-bold text-sm">
+                                <Wallet className="w-5 h-5 text-amber-800 shrink-0" />
+                                <span>Taxa Associativa: R$ {taxaAssociativaMensal}/mês (Apenas Pós-Aprovação)</span>
+                              </div>
+                              <span className="px-2.5 py-0.5 bg-amber-200/80 text-amber-900 text-[10px] font-bold rounded-full uppercase shrink-0">
+                                Inscrição Gratuita
+                              </span>
+                            </div>
+
+                            <div className="bg-amber-100/60 p-3 rounded-xl border border-amber-300/50 text-xs text-amber-950 leading-relaxed font-medium">
+                              📌 <strong>Regra de Cobrança Transparente:</strong> O preenchimento desta inscrição é <strong>100% gratuito</strong>. O valor da taxa associativa mensal (R$ {taxaAssociativaMensal}) <strong>NÃO</strong> é cobrado agora e <strong>só passará a ser devido após a realização da entrevista, aceite formal pela gestão e assinatura do contrato de parceria</strong>.
+                            </div>
+
+                            <div className="bg-white/90 p-3.5 rounded-xl border border-amber-200 text-xs text-forest/90 space-y-1.5">
+                              <p className="font-bold text-[10px] uppercase tracking-wider text-amber-900 mb-1">
+                                Benefícios incluídos após o aceite e assinatura do contrato:
+                              </p>
+                              <div className="flex items-start gap-2">
+                                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                                <span>Triagem ativa e encaminhamento direto de pacientes para atendimento</span>
+                              </div>
+                              <div className="flex items-start gap-2">
+                                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                                <span>Página profissional personalizada no catálogo oficial do projeto</span>
+                              </div>
+                              <div className="flex items-start gap-2">
+                                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                                <span>Suporte técnico, consultorias e respaldo institucional contínuo</span>
+                              </div>
+                              <div className="flex items-start gap-2">
+                                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                                <span>Rede de troca de serviços, supervisão e eventos exclusivos</span>
+                              </div>
+                            </div>
+
+                            <label className="flex items-start gap-3 cursor-pointer mt-1 group">
+                              <input 
+                                type="checkbox" 
+                                required
+                                checked={cienciaTaxa}
+                                onChange={(e) => setCienciaTaxa(e.target.checked)}
+                                className="mt-1 w-5 h-5 rounded border-amber-300 text-forest focus:ring-amber-500/20 accent-forest cursor-pointer shrink-0"
+                              />
+                              <span className="text-xs font-semibold text-forest leading-relaxed">
+                                Declaro estar ciente de que esta pré-inscrição é gratuita e que a taxa associativa mensal de R$ {taxaAssociativaMensal} só passará a ser cobrada após a realização da entrevista, o aceite formal da gestão para ingresso no projeto e a assinatura do contrato. *
+                              </span>
+                            </label>
+                          </div>
+
                           <label className="flex items-start gap-3 cursor-pointer group">
                             <input 
                               type="checkbox" 
@@ -726,6 +982,18 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
         </section>
       </main>
       <Footer onNavigate={onNavigate} />
+
+      {/* Stripe Checkout Modal */}
+      {showCheckoutModal && (
+        <StripeCheckoutModal
+          isOpen={showCheckoutModal}
+          onClose={() => setShowCheckoutModal(false)}
+          amountFormatted={taxaAssociativaMensal}
+          professionalName={formData.nome || "Profissional Associado"}
+          professionalEmail={formData.email}
+          leadId={registeredLeadId}
+        />
+      )}
     </div>
   );
 }

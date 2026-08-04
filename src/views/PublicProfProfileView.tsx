@@ -31,6 +31,51 @@ export function PublicProfProfileView({ profUid, onBack }: { profUid: string; on
   }, [profUid]);
 
   useEffect(() => {
+    if (!prof) return;
+
+    const originalTitle = document.title;
+    const profissaoOuTitulo = prof.profissao || (prof.especialidade ? `Profissional - ${prof.especialidade}` : "Profissional de Saúde");
+    const formattedTitle = `${prof.name} | ${profissaoOuTitulo} - Projeto AcolheMente`;
+
+    document.title = formattedTitle;
+
+    // Atualiza meta tags dinamicamente para compartilhamento e preview em redes sociais / WhatsApp
+    const descriptionText = prof.bioCurta || (prof.biografia ? prof.biografia.slice(0, 150) + "..." : `Conheça o perfil profissional de ${prof.name} (${profissaoOuTitulo}) no Projeto AcolheMente Saúde.`);
+
+    const metaMap: Record<string, { attr: string; val: string }> = {
+      description: { attr: "name", val: descriptionText },
+      "og:title": { attr: "property", val: `${prof.name} - ${profissaoOuTitulo}` },
+      "og:description": { attr: "property", val: descriptionText },
+      "og:type": { attr: "property", val: "profile" },
+      "twitter:title": { attr: "name", val: `${prof.name} - ${profissaoOuTitulo}` },
+      "twitter:description": { attr: "name", val: descriptionText },
+    };
+
+    if (prof.photoUrl) {
+      metaMap["og:image"] = { attr: "property", val: prof.photoUrl };
+      metaMap["twitter:image"] = { attr: "name", val: prof.photoUrl };
+    }
+
+    const createdElements: HTMLMetaElement[] = [];
+
+    Object.entries(metaMap).forEach(([key, { attr, val }]) => {
+      let el = document.querySelector(`meta[${attr}="${key}"]`) as HTMLMetaElement | null;
+      if (!el) {
+        el = document.createElement("meta");
+        el.setAttribute(attr, key);
+        document.head.appendChild(el);
+        createdElements.push(el);
+      }
+      el.setAttribute("content", val);
+    });
+
+    return () => {
+      document.title = originalTitle;
+      createdElements.forEach((el) => el.remove());
+    };
+  }, [prof]);
+
+  useEffect(() => {
     if (!profUid) return;
     const q = query(
       collection(db, "servicos_profissionais"),
@@ -102,7 +147,7 @@ export function PublicProfProfileView({ profUid, onBack }: { profUid: string; on
         </div>
       </header>
       
-      <Breadcrumbs items={[{ label: "Início", onClick: onBack }, { label: prof ? `Psicólogo(a) ${prof.name}` : "Perfil do Psicólogo", active: true }]} className="max-w-4xl px-0 mb-6" />
+      <Breadcrumbs items={[{ label: "Início", onClick: onBack }, { label: prof ? `${prof.profissao || "Profissional"} ${prof.name}` : "Perfil do Profissional", active: true }]} className="max-w-4xl px-0 mb-6" />
 
       {/* Main Showcase Layout */}
       <main className="w-full max-w-4xl grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -119,7 +164,9 @@ export function PublicProfProfileView({ profUid, onBack }: { profUid: string; on
           
           <div className="flex flex-col gap-1 items-center">
             <h1 className="font-serif text-2xl font-semibold leading-tight">{prof.name}</h1>
-            <span className="text-xs uppercase tracking-wider font-bold text-sun-dark mt-1">Psicólogo Clínico</span>
+            <span className="text-xs uppercase tracking-wider font-bold text-sun-dark mt-1">
+              {prof.profissao || "Profissional de Saúde"}
+            </span>
             
             {prof.bioCurta && (
               <p className="text-sm text-forest/80 italic mt-3 px-2 text-center">"{prof.bioCurta}"</p>
@@ -144,11 +191,23 @@ export function PublicProfProfileView({ profUid, onBack }: { profUid: string; on
               <button 
                 onClick={() => {
                   const url = `${window.location.origin}?prof=${profUid}`;
-                  navigator.clipboard.writeText(url).then(() => {
-                    alert("Link do perfil copiado com sucesso!");
-                  }).catch(e => console.error(e));
+                  const profissaoOuTitulo = prof.profissao || (prof.especialidade ? `Profissional - ${prof.especialidade}` : "Profissional de Saúde");
+                  const shareTitle = `${prof.name} - ${profissaoOuTitulo}`;
+                  const shareText = `Conheça o perfil profissional de ${prof.name} (${profissaoOuTitulo}) no Projeto AcolheMente Saúde.`;
+
+                  if (navigator.share) {
+                    navigator.share({
+                      title: shareTitle,
+                      text: shareText,
+                      url: url,
+                    }).catch(() => {});
+                  } else {
+                    navigator.clipboard.writeText(url).then(() => {
+                      alert(`Link do perfil de ${prof.name} (${profissaoOuTitulo}) copiado com sucesso!`);
+                    }).catch(e => console.error(e));
+                  }
                 }}
-                className="p-2 bg-warm rounded-full text-forest/70 hover:text-forest hover:bg-soft transition-colors shadow-sm" 
+                className="p-2 bg-warm rounded-full text-forest/70 hover:text-forest hover:bg-soft transition-colors shadow-sm cursor-pointer" 
                 title="Compartilhar Perfil"
               >
                 <Share2 className="w-4 h-4" />

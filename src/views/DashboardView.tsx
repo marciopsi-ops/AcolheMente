@@ -1,4 +1,6 @@
 import React, { useEffect, useState } from "react";
+import { sendWebhookNotification } from "../lib/webhookNotifier";
+import { StripeCheckoutModal } from "../components/StripeCheckoutModal";
 import { AnimatePresence, motion } from "motion/react";
 import { EventosServicosView } from "./EventosServicosView";
 import { ComplianceModal } from "../components/ComplianceModal";
@@ -41,14 +43,25 @@ import {
   UserPlus,
   Heart,
   ShieldAlert,
+  MessageCircle,
+  Share2,
   Star,
   Upload,
   Table,
   Download,
   Eye,
+  CreditCard,
+  Sparkles,
+  Wallet,
+  Gift,
+  UserCheck,
+  RotateCcw,
+  AlertTriangle,
+  ClipboardList,
+  MessageSquare,
 } from "lucide-react";
 import { auth, db, handleFirestoreError, OperationType } from "../lib/firebase";
-import { triggerEmail } from "../lib/emailService";
+import { triggerEmail, sendTrialExpiredCheckoutEmail } from "../lib/emailService";
 import {
   GoogleAuthProvider,
   signInWithPopup,
@@ -109,6 +122,67 @@ const safeLocalStorage = {
   },
 };
 
+export function parseDateSafely(val: any): Date {
+  if (!val) return new Date();
+  if (val instanceof Date) {
+    return isNaN(val.getTime()) ? new Date() : val;
+  }
+  if (typeof val?.toDate === "function") {
+    try {
+      const d = val.toDate();
+      if (d instanceof Date && !isNaN(d.getTime())) return d;
+    } catch (e) {}
+  }
+  if (typeof val?.toMillis === "function") {
+    try {
+      const ms = val.toMillis();
+      if (typeof ms === "number" && !isNaN(ms)) return new Date(ms);
+    } catch (e) {}
+  }
+  if (typeof val === "object") {
+    if (typeof val.seconds === "number" && !isNaN(val.seconds)) {
+      return new Date(val.seconds * 1000);
+    }
+    if (typeof val._seconds === "number" && !isNaN(val._seconds)) {
+      return new Date(val._seconds * 1000);
+    }
+  }
+  if (typeof val === "number" && !isNaN(val)) {
+    return new Date(val > 1e11 ? val : val * 1000);
+  }
+  if (typeof val === "string") {
+    const parsed = new Date(val);
+    if (!isNaN(parsed.getTime())) return parsed;
+  }
+  return new Date();
+}
+
+export function formatDateSafely(val: any, fallback = "-"): string {
+  if (!val) return fallback;
+  try {
+    const d = parseDateSafely(val);
+    if (isNaN(d.getTime())) return fallback;
+    return d.toLocaleDateString("pt-BR");
+  } catch (e) {
+    return fallback;
+  }
+}
+
+export function formatDateTimeSafely(val: any, fallback = "-"): string {
+  if (!val) return fallback;
+  try {
+    const d = parseDateSafely(val);
+    if (isNaN(d.getTime())) return fallback;
+    return (
+      d.toLocaleDateString("pt-BR") +
+      " " +
+      d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
+    );
+  } catch (e) {
+    return fallback;
+  }
+}
+
 type Role = "master" | "triagem" | "profissional";
 
 export const OPCOES_SERVICOS = [
@@ -149,6 +223,80 @@ interface Acolhimento {
   createdAt?: any;
   profissionalId?: string;
   [key: string]: any;
+}
+
+export function getPatientFlowDetails(card: any) {
+  if (!card) {
+    return {
+      isQuestionarioDone: false,
+      isPropostaEnviada: false,
+      propostaAceita: false,
+      propostaRevisao: false,
+      isAceiteOuRevisaoDone: false,
+      isAtribuido: false,
+      isAtribuicaoAceita: false,
+      isAtribuicaoDevolvida: false,
+      isAtendimentoIniciado: false,
+      activeStep: 1,
+    };
+  }
+
+  const isQuestionarioDone = true;
+
+  const isPropostaEnviada =
+    card.propostaEnviada === true ||
+    !!card.propostaEnviadaEm ||
+    !!card.propostaStatus ||
+    card.status === "Aprovado" ||
+    card.status === "Em Atendimento";
+
+  const propostaAceita = card.propostaStatus === "Proposta aceita pelo paciente";
+  const propostaRevisao = card.propostaStatus === "Paciente solicita revisão da proposta";
+  const isAceiteOuRevisaoDone = propostaAceita || propostaRevisao;
+
+  const isAtribuido = !!(card.profissionalId || card.profissionalUid);
+
+  const isAtribuicaoAceita = card.atribuicaoStatus === "Aceito";
+  const isAtribuicaoDevolvida =
+    card.atribuicaoStatus === "Devolvido" ||
+    card.atribuicaoStatus === "Rejeitado";
+
+  const isAtendimentoIniciado =
+    isAtribuicaoAceita &&
+    !isAtribuicaoDevolvida &&
+    (card.contatoEnviado === true ||
+      card.status === "Em Atendimento" ||
+      !!card.contatoEnviadoEm);
+
+  let activeStep = 1;
+  if (isAtendimentoIniciado) {
+    activeStep = 6;
+  } else if (isAtribuicaoDevolvida) {
+    activeStep = 5;
+  } else if (isAtribuicaoAceita) {
+    activeStep = 6; // Se aceito pelo profissional, passa direto para Conectar Profissional e Paciente (Step 6)
+  } else if (isAtribuido) {
+    activeStep = 5;
+  } else if (isAceiteOuRevisaoDone) {
+    activeStep = 4;
+  } else if (isPropostaEnviada) {
+    activeStep = 3;
+  } else {
+    activeStep = 1;
+  }
+
+  return {
+    isQuestionarioDone,
+    isPropostaEnviada,
+    propostaAceita,
+    propostaRevisao,
+    isAceiteOuRevisaoDone,
+    isAtribuido,
+    isAtribuicaoAceita,
+    isAtribuicaoDevolvida,
+    isAtendimentoIniciado,
+    activeStep,
+  };
 }
 
 interface Doacao {
@@ -345,18 +493,25 @@ const EditableField = ({
   field,
   onChange,
   isEditing,
+  type = "text",
 }: {
   label: string;
   value: any;
   field: string;
   onChange: (f: string, v: any) => void;
   isEditing: boolean;
+  type?: string;
 }) => {
   const [localValue, setLocalValue] = useState(value);
 
   useEffect(() => {
     setLocalValue(value);
   }, [value]);
+
+  let formattedDisplay = value || "-";
+  if (type === "date" && value) {
+    formattedDisplay = formatDateSafely(value, "-");
+  }
 
   return (
     <div>
@@ -365,7 +520,8 @@ const EditableField = ({
       </span>
       {isEditing ? (
         <input
-          value={localValue || ""}
+          type={type}
+          value={type === "date" && localValue ? String(localValue).substring(0, 10) : (localValue || "")}
           onChange={(e) => setLocalValue(e.target.value)}
           onBlur={() => {
             if (localValue !== value) {
@@ -380,7 +536,7 @@ const EditableField = ({
           className="text-sm font-medium text-forest border-b border-sun-dark focus:outline-none bg-transparent w-full"
         />
       ) : (
-        <span className="text-sm font-medium text-forest">{value || "-"}</span>
+        <span className="text-sm font-medium text-forest">{formattedDisplay}</span>
       )}
     </div>
   );
@@ -409,7 +565,7 @@ export function DashboardView({
   const modifiedProfile = profile ? { ...profile, role: currentRole } : null;
 
   const getDashboardBreadcrumbs = () => {
-    const roleName = currentRole === "master" ? "Gestor Master" : currentRole === "triagem" ? "Equipe de Triagem" : "Psicólogo Parceiro";
+    const roleName = currentRole === "master" ? "Gestão" : currentRole === "triagem" ? "Equipe de Triagem" : (profile?.profissao ? `${profile.profissao} Parceiro(a)` : "Profissional Parceiro");
     const tabNames: Record<string, string> = {
       estatisticas: "Estatísticas & Relatórios",
       kanban: "Triagem & Acolhimentos",
@@ -425,6 +581,7 @@ export function DashboardView({
       pacientes: "Meus Pacientes Clínicos",
       tarefasProfissional: "Minhas Pendências",
       perfil: "Configurações de Perfil",
+      pagamentosProfissional: "Gerenciar Meus Pagamentos",
     };
     return [
       { label: "Painel", onClick: () => onNavigate("landing") },
@@ -446,6 +603,7 @@ export function DashboardView({
     | "pacientesAcolhidos"
     | "tarefasProfissional"
     | "perfil"
+    | "pagamentosProfissional"
     | "eventos"
     | "servicos"
     | "meusServicos"
@@ -569,6 +727,9 @@ export function DashboardView({
   const [complianceMessages, setComplianceMessages] = useState<any[]>([]);
   const [isReconciling, setIsReconciling] = useState(false);
   const [showComplianceModal, setShowComplianceModal] = useState(false);
+  const [showCheckoutModal, setShowCheckoutModal] = useState(false);
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [motivoCancelamentoInput, setMotivoCancelamentoInput] = useState("");
 
   const [selectedProfissional, setSelectedProfissional] = useState<
     ProfissionalLead | UserProfile | null
@@ -606,6 +767,14 @@ export function DashboardView({
     urlPoliticaPrivacidade: "",
     urlContratoPrestacao: "",
     doacoesAtivas: true,
+    carrosselProfissionaisAtivo: true,
+    taxaAssociativaMensal: "29,90",
+    stripeEnabled: true,
+    stripePublicKey: "",
+    stripeCheckoutUrl: "",
+    webhookEmailEnabled: true,
+    webhookEmailUrl: "",
+    webhookEmailSecret: "",
   });
 
   // Psychologist State
@@ -684,6 +853,20 @@ export function DashboardView({
       const updates: any = { [property]: value, updatedAt: serverTimestamp() };
       if (property === "status") updates.statusUpdatedAt = serverTimestamp();
       if (property === "ativo") updates.ativoUpdatedAt = serverTimestamp();
+      if (property === "dataAdmissao" && value) {
+        const parsedAdm = parseDateSafely(value);
+        if (parsedAdm && !isNaN(parsedAdm.getTime())) {
+          const newVenc = new Date(parsedAdm.getTime() + 7 * 86400000).toISOString();
+          updates.vencimentoPagamento = newVenc;
+          if (selectedProfissional) {
+            setSelectedProfissional((prev: any) => ({
+              ...prev,
+              dataAdmissao: value,
+              vencimentoPagamento: newVenc,
+            }));
+          }
+        }
+      }
 
       const leadDocRef = doc(db, "profissionais_leads", id);
       const userDocRef = doc(db, "users", id);
@@ -726,6 +909,95 @@ export function DashboardView({
     setShowOnboarding(false);
     setOnboardingStep(0);
   };
+
+  // Automated trial checkout link sender (7 days after dataAdmissao)
+  const checkAndSendTrialCheckoutLinks = async (
+    profsList: UserProfile[],
+    configs: any,
+  ) => {
+    if (!profsList || profsList.length === 0) return;
+    const now = new Date();
+    const stripeUrl =
+      configs?.stripeCheckoutUrl || "https://buy.stripe.com/acolhemente";
+
+    for (const prof of profsList) {
+      try {
+        if (!prof || prof.role !== "profissional") continue;
+        const isPago =
+          prof.statusPagamento === "pago" || prof.statusPagamento === "paga";
+        const isIsento =
+          prof.statusPagamento === "isento" ||
+          prof.isCortesia === true ||
+          prof.statusAssociado === "isento";
+
+        // Skip if already paid, exempt, or link already sent automatically
+        if (isPago || isIsento || prof.checkoutTrial7DiasEnviado) continue;
+
+        // Determine admission date (or fallback to createdAt)
+        const admDateRaw = prof.dataAdmissao || prof.createdAt;
+        if (!admDateRaw) continue;
+
+        const admDate = parseDateSafely(admDateRaw);
+        if (!admDate || isNaN(admDate.getTime())) continue;
+
+        // 7 days after admission date
+        const trialExpiration = new Date(
+          admDate.getTime() + 7 * 24 * 60 * 60 * 1000,
+        );
+
+        // If 7 days have passed since admission date
+        if (now.getTime() >= trialExpiration.getTime()) {
+          const profId = prof.uid || prof.id;
+          const profEmail = prof.email;
+          const profName = prof.name || prof.nome || "Profissional";
+
+          if (!profEmail || !profId) continue;
+
+          console.log(
+            `[TrialCheckoutAuto] 7 dias passados desde a admissão (${admDate.toLocaleDateString("pt-BR")}). Enviando link de checkout para ${profEmail}`,
+          );
+
+          const admFmt = formatDateSafely(admDate, "Admissão");
+          await sendTrialExpiredCheckoutEmail(
+            profName,
+            profEmail,
+            stripeUrl,
+            admFmt,
+          );
+
+          // Update Firestore
+          const userRef = doc(db, "users", profId);
+          await updateDoc(userRef, {
+            checkoutTrial7DiasEnviado: true,
+            checkoutTrial7DiasEnviadoEm: new Date().toISOString(),
+            notificacao: `Link de checkout para a taxa associativa enviado por e-mail 7 dias após a admissão realizada em ${admFmt}.`,
+            updatedAt: serverTimestamp(),
+          });
+        }
+      } catch (err) {
+        console.error(
+          "Erro ao verificar/enviar checkout de 7 dias pós-admissão:",
+          err,
+        );
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (profissionaisAtivos && profissionaisAtivos.length > 0) {
+      checkAndSendTrialCheckoutLinks(profissionaisAtivos, globalConfigs);
+    }
+  }, [profissionaisAtivos, globalConfigs]);
+
+  useEffect(() => {
+    if (
+      profile &&
+      profile.role === "profissional" &&
+      !profile.checkoutTrial7DiasEnviado
+    ) {
+      checkAndSendTrialCheckoutLinks([profile], globalConfigs);
+    }
+  }, [profile, globalConfigs]);
 
   useEffect(() => {
     let unsubCards: (() => void) | undefined;
@@ -1357,10 +1629,28 @@ export function DashboardView({
       );
       await updateDoc(doc(db, "users", profile.uid), cleanUpdates);
       setProfile({ ...profile, ...cleanUpdates } as UserProfile);
+      setProfissionaisAtivos((prev) =>
+        prev.map((p) => (p.uid === profile.uid ? { ...p, ...cleanUpdates } : p)),
+      );
       setSuccessMsg("Perfil profissional salvo com sucesso!");
     } catch (err) {
       console.error(err);
       alert("Erro ao atualizar perfil.");
+    }
+  };
+
+  const handleToggleCortesia = async (profUid: string, currentStatus: boolean) => {
+    try {
+      const newStatus = !currentStatus;
+      await updateDoc(doc(db, "users", profUid), {
+        isCortesia: newStatus,
+      });
+      setProfissionaisAtivos((prev) =>
+        prev.map((p) => (p.uid === profUid ? { ...p, isCortesia: newStatus } : p)),
+      );
+    } catch (err) {
+      console.error("Erro ao atualizar status de cortesia:", err);
+      alert("Erro ao alterar status de cortesia do profissional.");
     }
   };
 
@@ -1433,12 +1723,20 @@ export function DashboardView({
         newProfPassword,
       );
 
+      const nowAdmissao = new Date();
+      const vencimentoPagamento = new Date(nowAdmissao.getTime() + 7 * 24 * 60 * 60 * 1000);
+      const taxaAssociativaVal = globalConfigs.taxaAssociativaMensal || "29,90";
+
       // Cria o registro no Firestore usando a conexão principal db existente
       await setDoc(doc(db, "users", cred.user.uid), {
         name: newProfName,
         email: newProfEmail,
         role: newProfRole,
         requirePasswordChange: true,
+        dataAdmissao: nowAdmissao.toISOString(),
+        vencimentoPagamento: vencimentoPagamento.toISOString(),
+        statusPagamento: "em_degustacao",
+        taxaAssociativaMensal: taxaAssociativaVal,
         createdAt: new Date(),
         ...leadData,
       });
@@ -1454,9 +1752,12 @@ export function DashboardView({
 
       await signOut(secondaryAuth);
 
+      const dataAdmissaoFmt = nowAdmissao.toLocaleDateString("pt-BR");
+      const vencimentoFmt = vencimentoPagamento.toLocaleDateString("pt-BR");
+
       const emailBodyProvider = useGoogleLogin
-        ? `Sua conta foi criada no sistema. Como você utiliza um e-mail do Google (Gmail), você pode acessar a plataforma clicando diretamente no botão "Entrar com Conta Google".`
-        : `Sua conta foi criada no sistema.\n\nLink de Acesso: ${window.location.origin}\nEmail: ${newProfEmail}\nSenha Provisória: ${newProfPassword}\n\nPor favor, acesse o sistema e redefina sua senha no primeiro acesso.`;
+        ? `Sua conta e admissão foram aprovadas no Projeto AcolheMente em ${dataAdmissaoFmt}.\n\nComo você utiliza e-mail Google (Gmail), acesse a plataforma clicando no botão "Entrar com Conta Google".\n\n📌 PRAZO PARA 1º PAGAMENTO (7 DIAS): O seu primeiro pagamento da taxa associativa mensal (R$ ${taxaAssociativaVal}) vence em ${vencimentoFmt} (7 dias após a admissão). O pagamento pode ser realizado e gerenciado no seu painel em "Gerenciar Meus Pagamentos".`
+        : `Sua conta e admissão foram aprovadas no Projeto AcolheMente em ${dataAdmissaoFmt}.\n\nLink de Acesso: ${window.location.origin}\nEmail: ${newProfEmail}\nSenha Provisória: ${newProfPassword}\n\n📌 PRAZO PARA 1º PAGAMENTO (7 DIAS): O seu primeiro pagamento da taxa associativa mensal (R$ ${taxaAssociativaVal}) vence em ${vencimentoFmt} (7 dias após a admissão). O pagamento pode ser realizado e gerenciado no seu painel no menu "Gerenciar Meus Pagamentos".\n\nPor favor, acesse o sistema e redefina sua senha no primeiro acesso.`;
 
       const emailParams = `subject=Bem-vindo(a) ao Projeto AcolheMente Saúde&body=Olá ${newProfName},%0A%0A${encodeURIComponent(emailBodyProvider)}`;
 
@@ -1807,14 +2108,7 @@ export function DashboardView({
     const rows = sortedLeadsForExport.map((lead, idx) => {
       let dateStr = "";
       if (lead.createdAt) {
-        try {
-          const dateObj = typeof lead.createdAt.toDate === "function"
-            ? lead.createdAt.toDate()
-            : (lead.createdAt.seconds ? new Date(lead.createdAt.seconds * 1000) : new Date(lead.createdAt));
-          dateStr = dateObj.toLocaleDateString("pt-BR");
-        } catch (e) {
-          dateStr = "";
-        }
+        dateStr = formatDateSafely(lead.createdAt, "");
       }
       return [
         idx + 1,
@@ -1998,13 +2292,7 @@ export function DashboardView({
 
     const formatDateVal = (ts: any) => {
       if (!ts) return "Sem data";
-      if (typeof ts.toMillis === "function") {
-        return new Date(ts.toMillis()).toLocaleString("pt-BR");
-      }
-      if (ts instanceof Date) {
-        return ts.toLocaleString("pt-BR");
-      }
-      return String(ts);
+      return formatDateTimeSafely(ts, String(ts));
     };
 
     const getMillisVal = (ts: any) => {
@@ -2710,7 +2998,7 @@ export function DashboardView({
   );
 
   const roleLabels = {
-    master: "Gestor Master",
+    master: "Gestão",
     triagem: "Triagem",
     profissional: "Psicólogo",
   };
@@ -3198,8 +3486,20 @@ export function DashboardView({
               )}
             </button>
             <button
+              onClick={() => setActiveTab("pagamentosProfissional")}
+              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "pagamentosProfissional" ? "bg-white shadow-sm text-forest" : "text-forest/70 hover:text-forest"}`}
+            >
+              <CreditCard className="w-3.5 h-3.5 text-forest" />
+              <span>{profile?.isCortesia ? "Status / Convidado" : "Gerenciar Pagamentos"}</span>
+              {profile?.isCortesia && (
+                <span className="px-2 py-0.5 bg-purple-100 text-purple-900 text-[10px] font-black rounded-full border border-purple-200">
+                  Convidado
+                </span>
+              )}
+            </button>
+            <button
               onClick={() => setActiveTab("perfil")}
-              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap ${activeTab === "perfil" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
+              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap ${activeTab === "perfil" ? "bg-white shadow-sm text-forest" : "text-forest/70 hover:text-forest"}`}
             >
               Meu Perfil
             </button>
@@ -3238,7 +3538,7 @@ export function DashboardView({
                   }`}
                 >
                   {r === "master"
-                    ? "Master"
+                    ? "Gestão"
                     : r === "triagem"
                       ? "Triagem"
                       : "Psicólogo"}
@@ -3258,6 +3558,43 @@ export function DashboardView({
           </button>
         </div>
       </nav>
+
+      {/* Professional Trial Banner */}
+      {currentRole === "profissional" && profile?.isCortesia ? (
+        <div className="bg-gradient-to-r from-purple-500/10 via-purple-500/15 to-emerald-500/10 border-b border-purple-200/80 px-6 py-2.5 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-forest font-medium animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <Gift className="w-4 h-4 text-purple-600 shrink-0" />
+            <span>
+              <strong>Status: Profissional Convidado (Isenção Cortesia):</strong> Você está cadastrado(a) na plataforma como <strong>Convidado Especial</strong> pela Gestão. Seu acesso às ferramentas e atendimentos é livre de avisos de cobrança ou mensalidades.
+            </span>
+          </div>
+          <button
+            onClick={() => setActiveTab("pagamentosProfissional")}
+            className="px-3.5 py-1.5 bg-purple-700 text-white hover:bg-purple-800 rounded-xl text-[11px] font-bold transition-all shrink-0 flex items-center gap-1.5 shadow-xs cursor-pointer"
+          >
+            <CreditCard className="w-3.5 h-3.5 text-purple-200" />
+            Ver Status
+          </button>
+        </div>
+      ) : currentRole === "profissional" && profile?.statusPagamento !== "pago" && !profile?.solicitacaoCancelamento && (
+        <div className="bg-gradient-to-r from-amber-500/10 via-amber-500/15 to-emerald-500/10 border-b border-amber-200/80 px-6 py-2.5 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-forest font-medium animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>
+              <strong>Prazo para o 1º Pagamento (7 dias):</strong> Sua admissão foi realizada em{" "}
+              {profile?.dataAdmissao ? formatDateSafely(profile.dataAdmissao) : "recentemente"}. O seu primeiro pagamento vence em{" "}
+              {profile?.vencimentoPagamento ? formatDateSafely(profile.vencimentoPagamento) : "7 dias após a entrada"}.
+            </span>
+          </div>
+          <button
+            onClick={() => setActiveTab("pagamentosProfissional")}
+            className="px-3.5 py-1.5 bg-forest text-white hover:bg-forest/90 rounded-xl text-[11px] font-bold transition-all shrink-0 flex items-center gap-1.5 shadow-xs"
+          >
+            <CreditCard className="w-3.5 h-3.5 text-sun" />
+            Gerenciar Meu Pagamento
+          </button>
+        </div>
+      )}
 
       {/* Main Content */}
       {(currentRole === "master" || currentRole === "triagem") &&
@@ -3570,6 +3907,35 @@ export function DashboardView({
                         />
                       </button>
                     </div>
+
+                    <div className="flex items-center justify-between p-4 bg-white border border-soft rounded-xl mt-3">
+                      <div className="flex flex-col gap-1 pr-4">
+                        <span className="text-sm font-bold text-forest">Carrossel de Profissionais na Home</span>
+                        <span className="text-xs text-forest/65">
+                          Exibe o carrossel contínuo com os psicólogos da plataforma na página principal (após o FAQ). Somente exibido para quem cadastrou foto de perfil.
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleUpdateConfiguracoesProperty(
+                            "carrosselProfissionaisAtivo",
+                            globalConfigs.carrosselProfissionaisAtivo === undefined
+                              ? false
+                              : !globalConfigs.carrosselProfissionaisAtivo,
+                          )
+                        }
+                        className={`w-14 h-8 rounded-full transition-colors relative flex items-center shrink-0 ${
+                          (globalConfigs.carrosselProfissionaisAtivo ?? true) ? "bg-forest" : "bg-forest/15"
+                        }`}
+                      >
+                        <span
+                          className={`w-6 h-6 bg-white rounded-full absolute shadow-md transition-all ${
+                            (globalConfigs.carrosselProfissionaisAtivo ?? true) ? "left-7" : "left-1"
+                          }`}
+                        />
+                      </button>
+                    </div>
                   </div>
 
                   <div className="bg-warm/30 p-6 rounded-2xl border border-soft space-y-4">
@@ -3630,6 +3996,208 @@ export function DashboardView({
                         Esta mensagem será sugerida ao profissional quando este
                         acionar o suporte via WhatsApp.
                       </p>
+                    </div>
+                  </div>
+
+                  {/* Taxa Associativa dos Profissionais */}
+                  <div className="bg-warm/30 p-6 rounded-2xl border border-soft space-y-4">
+                    <div className="flex justify-between items-center border-b border-soft pb-2">
+                      <h4 className="text-sm font-bold uppercase tracking-wider text-forest/70">
+                        Taxa Associativa dos Profissionais
+                      </h4>
+                      <span className="px-2.5 py-0.5 bg-sun-light text-forest text-[10px] font-bold rounded-full border border-sun-dark/30 uppercase">
+                        Plano Profissional
+                      </span>
+                    </div>
+                    <p className="text-xs text-forest/70 leading-relaxed">
+                      Defina o valor mensal cobrado dos profissionais para manutenção do ecossistema, consultorias e triagem dos casos. O valor alterado se refletirá imediatamente na landing page e nos formulários.
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-semibold uppercase text-forest/70 ml-2">
+                          Valor da Taxa Mensal (R$) *
+                        </label>
+                        <div className="relative flex items-center">
+                          <span className="absolute left-4 text-sm font-bold text-forest/60">R$</span>
+                          <input
+                            type="text"
+                            className="w-full text-sm font-bold bg-white border border-soft pl-12 pr-4 py-2.5 rounded-xl focus:outline-none focus:border-sun-dark transition-colors text-forest"
+                            placeholder="29,90"
+                            value={globalConfigs.taxaAssociativaMensal || "29,90"}
+                            onChange={(e) =>
+                              handleUpdateConfiguracoesProperty(
+                                "taxaAssociativaMensal",
+                                e.target.value,
+                              )
+                            }
+                          />
+                        </div>
+                      </div>
+                      <div className="flex flex-col justify-end">
+                        <p className="text-[11px] text-forest/60 italic bg-white/60 p-2.5 rounded-xl border border-soft/50">
+                          Exibido nos cards e no checkbox de ciência e concordância no final da inscrição do profissional.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Configuração do Stripe Checkout */}
+                  <div className="bg-warm/30 p-6 rounded-2xl border border-soft space-y-4">
+                    <div className="flex justify-between items-center border-b border-soft pb-2">
+                      <h4 className="text-sm font-bold uppercase tracking-wider text-forest/70">
+                        Checkout & Configuração Stripe
+                      </h4>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          className="w-4 h-4 accent-forest rounded cursor-pointer"
+                          checked={globalConfigs.stripeEnabled ?? true}
+                          onChange={(e) =>
+                            handleUpdateConfiguracoesProperty(
+                              "stripeEnabled",
+                              e.target.checked,
+                            )
+                          }
+                        />
+                        <span className="text-xs font-bold text-forest uppercase tracking-wider">
+                          Stripe Ativo
+                        </span>
+                      </label>
+                    </div>
+                    <p className="text-xs text-forest/70 leading-relaxed">
+                      Configure suas chaves públicas e links de pagamento do Stripe para processar cobranças da taxa associativa via cartão de crédito, Pix e boleto.
+                    </p>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-semibold uppercase text-forest/70 ml-2">
+                          Chave Pública do Stripe (pk_live_... ou pk_test_...)
+                        </label>
+                        <input
+                          type="text"
+                          className="text-sm font-mono bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
+                          placeholder="pk_test_51Nx..."
+                          value={globalConfigs.stripePublicKey || ""}
+                          onChange={(e) =>
+                            handleUpdateConfiguracoesProperty(
+                              "stripePublicKey",
+                              e.target.value,
+                            )
+                          }
+                        />
+                      </div>
+
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-semibold uppercase text-forest/70 ml-2">
+                          Link de Checkout Direto Stripe (Payment Link)
+                        </label>
+                        <input
+                          type="url"
+                          className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
+                          placeholder="https://buy.stripe.com/..."
+                          value={globalConfigs.stripeCheckoutUrl || ""}
+                          onChange={(e) =>
+                            handleUpdateConfiguracoesProperty(
+                              "stripeCheckoutUrl",
+                              e.target.value,
+                            )
+                          }
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Webhook & Automação de E-mails */}
+                  <div className="bg-warm/30 p-6 rounded-2xl border border-soft space-y-4">
+                    <div className="flex justify-between items-center border-b border-soft pb-2">
+                      <h4 className="text-sm font-bold uppercase tracking-wider text-forest/70">
+                        Webhook & Automações por E-mail (Brevo / Make / N8n / Zapier)
+                      </h4>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          className="w-4 h-4 accent-forest rounded cursor-pointer"
+                          checked={globalConfigs.webhookEmailEnabled ?? true}
+                          onChange={(e) =>
+                            handleUpdateConfiguracoesProperty(
+                              "webhookEmailEnabled",
+                              e.target.checked,
+                            )
+                          }
+                        />
+                        <span className="text-xs font-bold text-forest uppercase tracking-wider">
+                          Webhook Ativo
+                        </span>
+                      </label>
+                    </div>
+                    <p className="text-xs text-forest/70 leading-relaxed">
+                      Envia notificações transacionais em tempo real via HTTP POST para Brevo, Make, N8n, Zapier ou seu servidor de automação de e-mails sempre que houver novidades na plataforma.
+                    </p>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-semibold uppercase text-forest/70 ml-2">
+                          URL Endpoint do Webhook (HTTP POST) *
+                        </label>
+                        <input
+                          type="url"
+                          className="text-sm font-mono bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
+                          placeholder="https://api.brevo.com/v3/smtp/email ou https://hook.eu1.make.com/..."
+                          value={globalConfigs.webhookEmailUrl || ""}
+                          onChange={(e) =>
+                            handleUpdateConfiguracoesProperty(
+                              "webhookEmailUrl",
+                              e.target.value,
+                            )
+                          }
+                        />
+                      </div>
+
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-semibold uppercase text-forest/70 ml-2">
+                          Segredo / Token de Autenticação (X-Webhook-Secret)
+                        </label>
+                        <input
+                          type="password"
+                          className="text-sm font-mono bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
+                          placeholder="Secret Token de Segurança"
+                          value={globalConfigs.webhookEmailSecret || ""}
+                          onChange={(e) =>
+                            handleUpdateConfiguracoesProperty(
+                              "webhookEmailSecret",
+                              e.target.value,
+                            )
+                          }
+                        />
+                      </div>
+                    </div>
+
+                    <div className="pt-2 flex justify-between items-center">
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            await sendWebhookNotification({
+                              event: "teste_webhook",
+                              recipientEmail: globalConfigs.emailSuporte || "adm@acolhemente.com",
+                              recipientName: "Gestão",
+                              title: "Teste de Webhook - Projeto AcolheMente",
+                              message: "Sua integração de Webhook e e-mails automáticos está funcionando perfeitamente!",
+                              data: {
+                                testMessage: "Disparo de teste realizado pelo Painel de Gestão.",
+                                timestamp: new Date().toISOString(),
+                              },
+                            });
+                            alert("Disparo de teste de Webhook acionado com sucesso! Verifique seu endpoint ou ferramentas de automação.");
+                          } catch (err) {
+                            alert("Erro ao disparar teste de Webhook: " + err);
+                          }
+                        }}
+                        className="px-4 py-2 bg-forest/10 text-forest hover:bg-forest hover:text-white rounded-xl font-bold text-xs transition-all uppercase tracking-wider flex items-center gap-2"
+                      >
+                        <Send className="w-3.5 h-3.5" />
+                        Testar Disparo de Webhook
+                      </button>
                     </div>
                   </div>
 
@@ -3998,11 +4566,7 @@ export function DashboardView({
               ) : (
                 filteredMeusPacientes.map((p) => {
                   const entryDate = p.createdAt
-                    ? new Date(
-                        p.createdAt.toMillis
-                          ? p.createdAt.toMillis()
-                          : p.createdAt.seconds * 1000,
-                      ).toLocaleDateString()
+                    ? formatDateSafely(p.createdAt, "Desconhecida")
                     : "Desconhecida";
 
                   return (
@@ -4680,9 +5244,47 @@ export function DashboardView({
                       className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors text-sm text-forest"
                     />
                   </div>
+                  <div className="col-span-1 sm:col-span-2 bg-warm/30 p-4 rounded-xl border border-soft space-y-2">
+                    <label className="text-xs uppercase font-bold tracking-wider text-forest/70 flex items-center justify-between">
+                      <span>Profissão / Atuação Principal *</span>
+                      <span className="text-[10px] text-forest/50 font-normal">Ex: Psicólogo(a), Terapeuta, Psicanalista...</span>
+                    </label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <select
+                        value={
+                          ["Psicólogo(a)", "Psicólogo(a) Clínico(a)", "Psicanalista", "Terapeuta", "Terapeuta Holístico(a)", "Psicopedagogo(a)"].includes(profile.profissao)
+                            ? profile.profissao
+                            : profile.profissao ? "Outro" : ""
+                        }
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val !== "Outro") {
+                            setProfile({ ...profile, profissao: val });
+                          }
+                        }}
+                        className="w-full px-4 py-3 bg-white border border-soft rounded-xl focus:outline-none focus:border-sun-dark text-sm text-forest"
+                      >
+                        <option value="">Selecione uma profissão...</option>
+                        <option value="Psicólogo(a)">Psicólogo(a)</option>
+                        <option value="Psicólogo(a) Clínico(a)">Psicólogo(a) Clínico(a)</option>
+                        <option value="Psicanalista">Psicanalista</option>
+                        <option value="Terapeuta">Terapeuta</option>
+                        <option value="Terapeuta Holístico(a)">Terapeuta Holístico(a)</option>
+                        <option value="Psicopedagogo(a)">Psicopedagogo(a)</option>
+                        <option value="Outro">Outra opção (digitar ao lado)</option>
+                      </select>
+                      <DebouncedInput
+                        type="text"
+                        value={profile.profissao || ""}
+                        placeholder="Nome exato da profissão..."
+                        onChange={(val) => setProfile({ ...profile, profissao: val })}
+                        className="w-full px-4 py-3 bg-white border border-soft rounded-xl focus:outline-none focus:border-sun-dark text-sm text-forest"
+                      />
+                    </div>
+                  </div>
                   <div>
                     <label className="text-xs uppercase font-bold tracking-wider text-forest/60">
-                      CRP (Registro Profissional)
+                      CRP / Conselho Profissional (Se houver)
                     </label>
                     <DebouncedInput
                       type="text"
@@ -4691,6 +5293,38 @@ export function DashboardView({
                       onChange={(val) => setProfile({ ...profile, crp: val })}
                       className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors text-sm text-forest"
                     />
+                  </div>
+                  <div>
+                    <label className="text-xs uppercase font-bold tracking-wider text-forest/60">
+                      Data de Admissão no Projeto
+                    </label>
+                    <DebouncedInput
+                      type="date"
+                      value={
+                        profile.dataAdmissao
+                          ? String(profile.dataAdmissao).substring(0, 10)
+                          : profile.createdAt
+                            ? parseDateSafely(profile.createdAt).toISOString().substring(0, 10)
+                            : ""
+                      }
+                      onChange={(val) => {
+                        const newVenc = val
+                          ? new Date(new Date(val).getTime() + 7 * 86400000).toISOString()
+                          : profile.vencimentoPagamento;
+                        setProfile({
+                          ...profile,
+                          dataAdmissao: val,
+                          vencimentoPagamento: newVenc,
+                        });
+                      }}
+                      className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors text-sm text-forest"
+                    />
+                    <span className="text-[10px] text-forest/50 mt-1 block">
+                      Data de admissão. Prazo de 7 dias para o 1º pagamento até{" "}
+                      {profile.vencimentoPagamento
+                        ? formatDateSafely(profile.vencimentoPagamento)
+                        : "7 dias após a admissão"}.
+                    </span>
                   </div>
                   <div>
                     <label className="text-xs uppercase font-bold tracking-wider text-forest/60">
@@ -5105,9 +5739,12 @@ export function DashboardView({
                   onClick={() =>
                     handleUpdateSelfProfile({
                       name: profile.name,
+                      profissao: profile.profissao || "",
                       telefone: profile.telefone,
                       crp: profile.crp,
                       cpf: profile.cpf,
+                      genero: profile.genero || "",
+                      deficiencia: profile.deficiencia || "",
                       especialidade: profile.especialidade,
                       horasDisponiveis: profile.horasDisponiveis,
                       cidade: profile.cidade,
@@ -5138,25 +5775,330 @@ export function DashboardView({
                 {profile.uid &&
                   (() => {
                     const shareLink = `${window.location.origin}?prof=${profile.uid}`;
+                    const profTitulo = profile.profissao || (profile.especialidade ? `Profissional - ${profile.especialidade}` : "Profissional de Saúde");
+                    const shareTitle = `${profile.name} - ${profTitulo}`;
+                    const shareText = `Conheça meu perfil profissional no Projeto AcolheMente Saúde (${profTitulo}): ${shareLink}`;
+
                     return (
-                      <div className="bg-warm/60 border border-soft rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs w-full sm:max-w-md">
-                        <div className="truncate text-forest/70 max-w-[200px] font-mono select-all shrink leading-tight">
-                          {shareLink}
+                      <div className="bg-warm/60 border border-soft rounded-2xl p-4 flex flex-col gap-2.5 text-xs w-full sm:max-w-lg">
+                        <div className="flex items-center justify-between gap-2 border-b border-soft/50 pb-2">
+                          <div>
+                            <span className="font-bold text-forest block text-sm">{profile.name}</span>
+                            <span className="text-[11px] text-forest/70 font-medium">{profTitulo}</span>
+                          </div>
+                          <span className="px-2.5 py-0.5 bg-sun text-forest font-bold text-[10px] rounded-md uppercase tracking-wide">
+                            Perfil Público
+                          </span>
                         </div>
-                        <button
-                          onClick={() => {
-                            navigator.clipboard.writeText(shareLink);
-                            alert("Link de Apresentação copiado!");
-                          }}
-                          className="px-3 py-2 bg-sun-dark text-forest font-bold text-[10px] uppercase rounded-xl hover:bg-sun-dark/85 transition-colors shrink-0 shadow-xs"
-                        >
-                          Copiar Link de Apresentação
-                        </button>
+
+                        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-1">
+                          <div className="truncate text-forest/70 max-w-[220px] font-mono select-all shrink leading-tight">
+                            {shareLink}
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText(shareLink);
+                                alert(`Link do perfil de ${profile.name} (${profTitulo}) copiado com sucesso!`);
+                              }}
+                              className="px-3 py-2 bg-warm hover:bg-soft text-forest font-bold text-[10px] uppercase rounded-xl transition-colors border border-soft shadow-xs cursor-pointer"
+                            >
+                              Copiar Link
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (navigator.share) {
+                                  navigator.share({
+                                    title: shareTitle,
+                                    text: shareText,
+                                    url: shareLink,
+                                  }).catch(() => {});
+                                } else {
+                                  navigator.clipboard.writeText(`${shareTitle}\n${shareText}`).then(() => {
+                                    alert("Dados do perfil e link copiados com sucesso!");
+                                  });
+                                }
+                              }}
+                              className="px-3 py-2 bg-sun-dark text-forest font-bold text-[10px] uppercase rounded-xl hover:bg-sun-dark/85 transition-colors shadow-xs flex items-center gap-1 cursor-pointer"
+                            >
+                              <Share2 className="w-3.5 h-3.5" />
+                              Compartilhar
+                            </button>
+                          </div>
+                        </div>
                       </div>
                     );
                   })()}
               </div>
             </div>
+          </div>
+        </div>
+      ) : currentRole === "profissional" && activeTab === "pagamentosProfissional" ? (
+        <div className="flex-1 overflow-auto p-6 md:p-8 flex flex-col gap-8 slide-up font-sans">
+          <div className="max-w-4xl w-full mx-auto space-y-8">
+            {/* Header Banner */}
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 bg-white px-8 py-6 rounded-[2rem] shadow-sm border border-soft">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-sun-light flex items-center justify-center text-forest border border-sun-dark/30 shrink-0">
+                  <CreditCard className="w-6 h-6 text-forest" />
+                </div>
+                <div>
+                  <h2 className="font-serif text-2xl sm:text-3xl text-forest font-bold">
+                    {profile?.isCortesia ? "Status de Convidado & Isenção de Taxa" : "Gerenciar Meus Pagamentos & Taxa Associativa"}
+                  </h2>
+                  <p className="text-xs text-forest/70 mt-1">
+                    {profile?.isCortesia
+                      ? "Você está cadastrado(a) na plataforma como Profissional Convidado, com isenção total de mensalidades."
+                      : "Acompanhe seu status financeiro, prazos de vencimento e gerencie suas contribuições."}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Main Status & Management Card */}
+            {(() => {
+              const taxaVal = profile?.taxaAssociativaMensal || globalConfigs.taxaAssociativaMensal || "29,90";
+              const admDateStr = profile?.dataAdmissao || profile?.createdAt;
+              const admDate = parseDateSafely(admDateStr);
+              const vencDateStr = profile?.vencimentoPagamento;
+              const vencDate = vencDateStr ? parseDateSafely(vencDateStr) : new Date(admDate.getTime() + 7 * 86400000);
+              const now = new Date();
+              const diffTime = vencDate.getTime() - now.getTime();
+              const diffDays = Math.max(0, Math.ceil(diffTime / (1000 * 3600 * 24)));
+
+              const isCortesia = profile?.isCortesia === true;
+              const isPago = profile?.statusPagamento === "pago";
+              const isCancelRequested = profile?.solicitacaoCancelamento === true;
+              const isTrialActive = !isPago && !isCancelRequested && !isCortesia && diffDays > 0;
+
+              return (
+                <div className="space-y-6">
+                  {/* Status Hero Box */}
+                  <div
+                    className={`p-8 rounded-[2rem] border shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-6 relative overflow-hidden ${
+                      isCortesia
+                        ? "bg-gradient-to-br from-purple-900 via-[#2d114d] to-forest text-white border-purple-500/40"
+                        : isCancelRequested
+                          ? "bg-amber-500/10 border-amber-300"
+                          : isPago
+                            ? "bg-emerald-900 text-white border-emerald-700"
+                            : isTrialActive
+                              ? "bg-gradient-to-br from-forest via-[#1d3c2b] to-[#12281c] text-white border-sun-dark/40"
+                              : "bg-red-950 text-white border-red-800"
+                    }`}
+                  >
+                    <div className="space-y-3 z-10 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        {isCortesia ? (
+                          <span className="px-3 py-1 bg-purple-300 text-purple-950 text-[10px] font-black rounded-full uppercase tracking-wider flex items-center gap-1 shadow-xs">
+                            <Gift className="w-3.5 h-3.5 text-purple-900" />
+                            🎁 Convidado Especial • Isenção Cortesia
+                          </span>
+                        ) : isCancelRequested ? (
+                          <span className="px-3 py-1 bg-amber-200 text-amber-900 text-[10px] font-bold rounded-full uppercase tracking-wider">
+                            Solicitação de Desligamento Registrada
+                          </span>
+                        ) : isPago ? (
+                          <span className="px-3 py-1 bg-emerald-400/20 text-emerald-200 text-[10px] font-bold rounded-full uppercase tracking-wider border border-emerald-400/30">
+                            Assinatura Ativa & Em Dia
+                          </span>
+                        ) : isTrialActive ? (
+                          <span className="px-3 py-1 bg-sun text-forest text-[10px] font-black uppercase tracking-wider rounded-full shadow-xs">
+                            ⏰ Prazo para o 1º Pagamento (7 dias)
+                          </span>
+                        ) : (
+                          <span className="px-3 py-1 bg-red-400/20 text-red-200 text-[10px] font-bold rounded-full uppercase tracking-wider border border-red-400/30">
+                            Primeira Taxa Pendente / Vencida
+                          </span>
+                        )}
+                      </div>
+
+                      <h3
+                        className={`font-serif text-2xl md:text-3xl font-bold ${
+                          isCancelRequested ? "text-amber-950" : "text-white"
+                        }`}
+                      >
+                        {isCortesia
+                          ? "Sua conta está ativa na plataforma como Profissional Convidado"
+                          : isCancelRequested
+                            ? "Sua solicitação de saída está em análise"
+                            : isPago
+                              ? "Sua taxa associativa está quitada"
+                              : isTrialActive
+                                ? `Seu 1º pagamento vence em ${diffDays} dia(s) (${formatDateSafely(vencDate)})`
+                                : "O prazo para o primeiro pagamento expirou"}
+                      </h3>
+
+                      <p
+                        className={`text-xs md:text-sm leading-relaxed max-w-xl ${
+                          isCancelRequested ? "text-amber-900/90" : "text-white/85"
+                        }`}
+                      >
+                        {isCortesia
+                          ? "A Gestão habilitou a sua conta na modalidade Profissional Convidado. Você possui isenção completa de cobranças e taxas associativas. Não há nenhum aviso ou cobrança de pagamento pendente, e você pode utilizar a plataforma e atender pacientes normalmente."
+                          : isCancelRequested
+                            ? `Sua solicitação enviada em ${formatDateSafely(profile?.dataSolicitacaoCancelamento, "breve")} está sendo processada pela Gestão. Uma entrevista de desligamento será agendada.`
+                            : isPago
+                              ? `Agradecemos sua parceria! Sua contribuição mensal de R$ ${taxaVal} mantém os servidores, equipe de suporte e atrai novos pacientes para o seu perfil.`
+                              : isTrialActive
+                                ? `O vencimento da sua primeira taxa associativa será em ${formatDateSafely(vencDate)} (${diffDays} dia(s) restante(s)).`
+                                : `Para continuar atendendo pacientes e mantendo seu perfil visível no catálogo oficial, efetue o pagamento da sua taxa associativa de R$ ${taxaVal}/mês.`}
+                      </p>
+                    </div>
+
+                    {/* Action Side Box */}
+                    <div className="w-full md:w-auto bg-white/10 backdrop-blur-md p-6 rounded-2xl border border-white/20 flex flex-col items-center justify-center text-center shrink-0 min-w-[240px] z-10">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-sun-light">
+                        Taxa Associativa
+                      </span>
+                      <div className="flex items-baseline gap-1 my-1">
+                        <span className="text-sm font-bold text-sun">R$</span>
+                        <span className="text-3xl font-extrabold text-white font-serif">
+                          {isCortesia ? "0,00" : taxaVal}
+                        </span>
+                        <span className="text-xs text-white/70">/mês</span>
+                      </div>
+
+                      {isCortesia ? (
+                        <div className="w-full mt-3 py-2.5 px-4 bg-purple-200/20 text-purple-200 border border-purple-300/30 rounded-xl font-bold text-[11px] uppercase tracking-wider flex items-center justify-center gap-2">
+                          <Gift className="w-4 h-4 text-purple-300" />
+                          Pagamento Desabilitado (Isento)
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setShowCheckoutModal(true)}
+                          className="w-full mt-3 py-3 px-5 bg-sun hover:bg-sun-dark text-forest rounded-xl font-bold text-xs uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
+                        >
+                          <Sparkles className="w-4 h-4 text-forest" />
+                          {isPago ? "Alterar / Renovar Pagamento" : "Efetuar Pagamento Agora"}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Information Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="bg-white p-6 rounded-3xl border border-soft shadow-xs space-y-2">
+                      <span className="text-[10px] font-bold uppercase text-forest/50 tracking-wider">
+                        Data de Admissão
+                      </span>
+                      <p className="text-lg font-bold text-forest flex items-center gap-2">
+                        <Clock className="w-5 h-5 text-forest/60" />
+                        {formatDateSafely(admDate)}
+                      </p>
+                      <p className="text-xs text-forest/60">
+                        Data de aprovação da sua entrada no projeto.
+                      </p>
+                    </div>
+
+                    <div className="bg-white p-6 rounded-3xl border border-soft shadow-xs space-y-2">
+                      <span className="text-[10px] font-bold uppercase text-forest/50 tracking-wider">
+                        Data de Vencimento
+                      </span>
+                      <p className="text-lg font-bold text-forest flex items-center gap-2">
+                        <Wallet className="w-5 h-5 text-amber-600" />
+                        {isCortesia ? "Isento (Sem vencimento)" : formatDateSafely(vencDate)}
+                      </p>
+                      <p className="text-xs text-forest/60">
+                        {isCortesia ? "Modalidade Cortesia / Convidado Especial." : "7 dias após a data de admissão."}
+                      </p>
+                    </div>
+
+                    <div className="bg-white p-6 rounded-3xl border border-soft shadow-xs space-y-2">
+                      <span className="text-[10px] font-bold uppercase text-forest/50 tracking-wider">
+                        Status Atual
+                      </span>
+                      <p className="text-lg font-bold text-forest flex items-center gap-2">
+                        <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                        {isCortesia
+                          ? "Cortesia / Isento"
+                          : isPago
+                            ? "Pago / Ativo"
+                            : isCancelRequested
+                              ? "Desligamento Solicitado"
+                              : isTrialActive
+                                ? `Aguardando 1º Pagamento (${diffDays}d restantes)`
+                                : "Aguardando Pagamento"}
+                      </p>
+                      <p className="text-xs text-forest/60">
+                        {isCortesia ? "Isenção total concedida pela Gestão." : isPago ? "Sua conta está regularizada." : "Sem fidelidade ou multa."}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Offboarding Request Section */}
+                  <div className="bg-white p-8 rounded-[2rem] border border-soft shadow-xs space-y-6">
+                    <div className="border-b border-soft pb-4">
+                      <h4 className="font-serif text-xl font-bold text-forest flex items-center gap-2">
+                        <ShieldAlert className="w-5 h-5 text-forest/70" />
+                        Solicitação de Saída do Projeto
+                      </h4>
+                      <p className="text-xs text-forest/70 mt-1">
+                        Assim como na entrada, os profissionais que desejam sair passam por uma breve entrevista de desligamento com a Gestão.
+                      </p>
+                    </div>
+
+                    {isCancelRequested ? (
+                      <div className="bg-amber-50 p-6 rounded-2xl border border-amber-200 space-y-4">
+                        <p className="text-xs text-amber-950 leading-relaxed font-medium">
+                          ⚠️ <strong>Sua solicitação de saída está registrada.</strong>{" "}
+                          A equipe de Gestão entrará em contato para agendar a entrevista de desligamento. Caso tenha mudado de ideia e deseje continuar no projeto, você pode cancelar o pedido a qualquer momento.
+                        </p>
+                        <button
+                          onClick={async () => {
+                            if (!profile?.uid) return;
+                            try {
+                              await updateDoc(doc(db, "users", profile.uid), {
+                                solicitacaoCancelamento: false,
+                                motivoCancelamento: "",
+                                statusPagamento: "ativo",
+                              });
+                              setProfile((prev) =>
+                                prev
+                                  ? {
+                                      ...prev,
+                                      solicitacaoCancelamento: false,
+                                      motivoCancelamento: "",
+                                      statusPagamento: "ativo",
+                                    }
+                                  : null,
+                              );
+                              alert("Solicitação de saída desfeita com sucesso!");
+                            } catch (err) {
+                              alert("Erro ao desfazer solicitação de saída.");
+                            }
+                          }}
+                          className="px-5 py-2.5 bg-forest text-white rounded-xl text-xs font-bold hover:bg-forest/90 transition-all shadow-sm cursor-pointer"
+                        >
+                          Desfazer Solicitação de Saída e Manter Perfil
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-warm/30 p-6 rounded-2xl border border-soft/60">
+                        <div className="space-y-1">
+                          <h5 className="text-sm font-bold text-forest">
+                            Deseja solicitar o seu desligamento do projeto?
+                          </h5>
+                          <p className="text-xs text-forest/70">
+                            Ao confirmar, sua solicitação será encaminhada para a Gestão agendar a entrevista de desligamento.
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => setShowCancelModal(true)}
+                          className="px-5 py-2.5 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200/80 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer flex items-center gap-2"
+                        >
+                          <LogOut className="w-4 h-4" />
+                          Solicitar Saída do Projeto
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         </div>
       ) : activeTab === "kanban" || activeTab === "pacientesAcolhidos" ? (
@@ -5404,11 +6346,7 @@ export function DashboardView({
                               <span>
                                 Acolhido em:{" "}
                                 {card.createdAt
-                                  ? new Date(
-                                      card.createdAt.toMillis
-                                        ? card.createdAt.toMillis()
-                                        : card.createdAt.seconds * 1000,
-                                    ).toLocaleDateString("pt-BR")
+                                  ? formatDateSafely(card.createdAt, "Desconhecida")
                                   : "Desconhecida"}
                               </span>
                             </div>
@@ -5424,49 +6362,55 @@ export function DashboardView({
                               )
                                 return null;
 
-                              let step = 1;
-                              if (status === "Em Atendimento") step = 3;
-                              else if (
-                                status === "Aprovado" ||
-                                card.propostaStatus
-                              )
-                                step = 2;
+                              const flow = getPatientFlowDetails(card);
 
                               return (
                                 <div className="mt-3 pt-3 border-t border-soft/50 flex flex-col gap-1.5 w-full">
-                                  <div className="flex justify-between items-center text-[8px] font-bold uppercase tracking-wider text-forest/50">
-                                    <span
-                                      className={
-                                        step >= 1 ? "text-emerald-600" : ""
-                                      }
-                                    >
-                                      Triagem
-                                    </span>
-                                    <span
-                                      className={
-                                        step >= 2 ? "text-emerald-600" : ""
-                                      }
-                                    >
-                                      Proposta
-                                    </span>
-                                    <span
-                                      className={
-                                        step >= 3 ? "text-emerald-600" : ""
-                                      }
-                                    >
-                                      Atendimento
-                                    </span>
+                                  {/* Selos de Status do Fluxo */}
+                                  <div className="flex flex-wrap gap-1 mb-1">
+                                    {flow.propostaAceita ? (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                        <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" /> Proposta Aceita
+                                      </span>
+                                    ) : flow.propostaRevisao ? (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
+                                        <HelpCircle className="w-2.5 h-2.5 text-amber-600" /> Revisão Solicitada
+                                      </span>
+                                    ) : flow.isPropostaEnviada ? (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-blue-100 text-blue-800 border border-blue-200">
+                                        <Send className="w-2.5 h-2.5 text-blue-600" /> Proposta Enviada
+                                      </span>
+                                    ) : null}
+
+                                    {flow.isAtribuicaoAceita ? (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                        <UserCheck className="w-2.5 h-2.5 text-emerald-600" /> Atribuição Aceita
+                                      </span>
+                                    ) : flow.isAtribuicaoDevolvida ? (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
+                                        <RotateCcw className="w-2.5 h-2.5 text-rose-600" /> Atribuição Devolvida
+                                      </span>
+                                    ) : flow.isAtribuido ? (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                                        <Clock className="w-2.5 h-2.5 text-amber-600" /> Aceite Pendente
+                                      </span>
+                                    ) : null}
+
+                                    {flow.isAtendimentoIniciado && (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-600 text-white">
+                                        <Sparkles className="w-2.5 h-2.5 text-emerald-200" /> Atendimento Iniciado
+                                      </span>
+                                    )}
                                   </div>
+
+                                  {/* Progress bar de 6 etapas */}
                                   <div className="flex gap-1 h-1.5 w-full">
-                                    <div
-                                      className={`flex-1 rounded-full transition-colors ${step >= 1 ? "bg-emerald-400" : "bg-warm-dark/50"}`}
-                                    ></div>
-                                    <div
-                                      className={`flex-1 rounded-full transition-colors ${step >= 2 ? "bg-emerald-400" : "bg-warm-dark/50"}`}
-                                    ></div>
-                                    <div
-                                      className={`flex-1 rounded-full transition-colors ${step >= 3 ? "bg-emerald-400" : "bg-warm-dark/50"}`}
-                                    ></div>
+                                    <div className={`flex-1 rounded-full transition-colors ${flow.activeStep >= 1 ? "bg-emerald-500" : "bg-warm-dark/40"}`} />
+                                    <div className={`flex-1 rounded-full transition-colors ${flow.activeStep >= 2 ? "bg-emerald-500" : "bg-warm-dark/40"}`} />
+                                    <div className={`flex-1 rounded-full transition-colors ${flow.propostaAceita ? "bg-emerald-500" : flow.propostaRevisao ? "bg-amber-500" : flow.activeStep >= 3 ? "bg-blue-400" : "bg-warm-dark/40"}`} />
+                                    <div className={`flex-1 rounded-full transition-colors ${flow.activeStep >= 4 ? "bg-emerald-500" : "bg-warm-dark/40"}`} />
+                                    <div className={`flex-1 rounded-full transition-colors ${flow.isAtribuicaoDevolvida ? "bg-rose-500" : flow.isAtribuicaoAceita ? "bg-emerald-500" : flow.activeStep >= 5 ? "bg-amber-400" : "bg-warm-dark/40"}`} />
+                                    <div className={`flex-1 rounded-full transition-colors ${flow.isAtendimentoIniciado || flow.isAtribuicaoAceita ? "bg-emerald-500" : "bg-warm-dark/40"}`} />
                                   </div>
                                 </div>
                               );
@@ -5548,9 +6492,7 @@ export function DashboardView({
                         <div className="text-xs text-forest/70/70 flex gap-2 items-center mt-1">
                           <span>
                             {d.createdAt
-                              ? new Date(
-                                  d.createdAt.toMillis(),
-                                ).toLocaleDateString()
+                              ? formatDateSafely(d.createdAt, "")
                               : ""}
                           </span>
                         </div>
@@ -5592,9 +6534,7 @@ export function DashboardView({
                       </h4>
                       <div className="text-[10px] text-forest/70/70 font-medium">
                         {s.createdAt
-                          ? new Date(
-                              s.createdAt.toMillis(),
-                            ).toLocaleDateString()
+                          ? formatDateSafely(s.createdAt, "")
                           : ""}
                       </div>
                     </div>
@@ -5780,14 +6720,7 @@ export function DashboardView({
                           return listWithOriginalOrder.map(({ lead, orderIndex }) => {
                             let dateStr = "";
                             if (lead.createdAt) {
-                              try {
-                                const dateObj = typeof lead.createdAt.toDate === "function"
-                                  ? lead.createdAt.toDate()
-                                  : (lead.createdAt.seconds ? new Date(lead.createdAt.seconds * 1000) : new Date(lead.createdAt));
-                                dateStr = dateObj.toLocaleDateString("pt-BR") + " " + dateObj.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-                              } catch (e) {
-                                dateStr = "";
-                              }
+                              dateStr = formatDateTimeSafely(lead.createdAt, "");
                             }
 
                             return (
@@ -6175,6 +7108,183 @@ export function DashboardView({
             </div>
           </div>
 
+          {/* Section: Solicitações de Desligamento (Entrevista Pendente) */}
+          {(() => {
+            const desligamentoList = (profissionaisAtivos || []).filter(
+              (p) =>
+                p.solicitacaoCancelamento === true ||
+                p.statusPagamento === "desligamento_solicitado" ||
+                p.statusPagamento === "cancelado_solicitado"
+            );
+
+            return (
+              <div className="w-full flex flex-col gap-4 mt-8">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-amber-50/70 px-6 py-4 rounded-2xl shadow-xs border border-amber-200">
+                  <div>
+                    <h2 className="font-serif text-2xl text-amber-950 flex items-center gap-3 font-bold">
+                      <LogOut className="w-6 h-6 text-amber-700" />
+                      Solicitações de Desligamento (Entrevista Pendente)
+                    </h2>
+                    <p className="text-xs text-amber-900/80 mt-1">
+                      Profissionais que solicitaram saída do projeto e aguardam entrevista de desligamento com a Gestão.
+                    </p>
+                  </div>
+                  <span className="px-3.5 py-1.5 bg-amber-200 text-amber-950 rounded-full font-bold text-xs shadow-xs border border-amber-300 flex items-center gap-1.5 shrink-0">
+                    <ShieldAlert className="w-4 h-4 text-amber-800" />
+                    {desligamentoList.length} solicitação(ões) pendente(s)
+                  </span>
+                </div>
+
+                {desligamentoList.length === 0 ? (
+                  <div className="bg-white/60 border border-dashed border-amber-200/80 rounded-[2rem] p-6 text-center text-xs text-forest/60">
+                    Nenhuma solicitação de desligamento pendente no momento. Todos os profissionais estão com vínculo ativo.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {desligamentoList.map((p) => {
+                      const cleanPhone = (p.telefone || p.whatsapp || p.celular || "").replace(/\D/g, "");
+                      return (
+                        <div
+                          key={p.uid || p.id}
+                          className="bg-white p-6 rounded-[2rem] shadow-md border-2 border-amber-300/80 hover:shadow-lg transition-all flex flex-col justify-between gap-4 relative"
+                        >
+                          <div className="space-y-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex items-center gap-3">
+                                <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-900 font-serif font-bold text-lg flex items-center justify-center border border-amber-200 shrink-0">
+                                  {p.name ? p.name.charAt(0).toUpperCase() : "P"}
+                                </div>
+                                <div>
+                                  <h3 className="font-serif font-bold text-forest text-base">
+                                    {p.name}
+                                  </h3>
+                                  <span className="text-xs text-forest/70 block">
+                                    {p.profissao || "Profissional de Saúde"} • CRP: {p.crp || "N/I"}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="bg-amber-50 p-3.5 rounded-xl border border-amber-200/70 space-y-1.5 text-xs text-amber-950">
+                              <p className="font-semibold flex items-center gap-1.5">
+                                <Clock className="w-3.5 h-3.5 text-amber-700" />
+                                Solicitado em: {formatDateSafely(p.dataSolicitacaoCancelamento, "Data não informada")}
+                              </p>
+                              <p className="text-forest/80">
+                                <strong>Motivo:</strong> {p.motivoCancelamento || "Não informado pelo profissional."}
+                              </p>
+                            </div>
+
+                            <div className="text-xs space-y-1 text-forest/80">
+                              <p className="truncate">📧 {p.email}</p>
+                              <p>📱 {p.telefone || p.whatsapp || p.celular || "Sem telefone"}</p>
+                            </div>
+                          </div>
+
+                          <div className="pt-3 border-t border-soft space-y-2">
+                            <a
+                              href={`https://wa.me/55${cleanPhone}?text=${encodeURIComponent(
+                                `Olá ${p.name}, sou da Gestão do Projeto AcolheMente. Recebemos sua solicitação de saída e gostaria de agendar nossa conversa de desligamento.`
+                              )}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="w-full py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-xs cursor-pointer"
+                            >
+                              <MessageCircle className="w-4 h-4" />
+                              Agendar Entrevista (WhatsApp)
+                            </a>
+
+                            <div className="grid grid-cols-2 gap-2">
+                              <button
+                                onClick={async () => {
+                                  if (
+                                    !confirm(
+                                      `Confirma a conclusão da entrevista e o encerramento do vínculo de ${p.name}? A conta do profissional será inativada.`
+                                    )
+                                  )
+                                    return;
+                                  try {
+                                    const profId = p.uid || p.id;
+                                    await updateDoc(doc(db, "users", profId), {
+                                      ativo: false,
+                                      statusPagamento: "desligado",
+                                      solicitacaoCancelamento: false,
+                                      dataDesligamentoConcluido: new Date().toISOString(),
+                                      notificacao: `Desligamento efetuado pela Gestão após entrevista em ${new Date().toLocaleDateString("pt-BR")}.`,
+                                    });
+                                    setProfissionaisAtivos((prev) =>
+                                      prev.map((item) =>
+                                        item.uid === profId || item.id === profId
+                                          ? {
+                                              ...item,
+                                              ativo: false,
+                                              statusPagamento: "desligado",
+                                              solicitacaoCancelamento: false,
+                                            }
+                                          : item
+                                      )
+                                    );
+                                    alert(`Desligamento de ${p.name} concluído com sucesso! Perfil inativado.`);
+                                  } catch (err) {
+                                    alert("Erro ao concluir desligamento.");
+                                  }
+                                }}
+                                className="py-2 px-2 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded-xl text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer"
+                                title="Concluir processo e inativar conta"
+                              >
+                                <XCircle className="w-3.5 h-3.5" />
+                                Inativar Conta
+                              </button>
+
+                              <button
+                                onClick={async () => {
+                                  if (
+                                    !confirm(
+                                      `Deseja cancelar a solicitação de saída e manter ${p.name} ativo no projeto?`
+                                    )
+                                  )
+                                    return;
+                                  try {
+                                    const profId = p.uid || p.id;
+                                    await updateDoc(doc(db, "users", profId), {
+                                      solicitacaoCancelamento: false,
+                                      motivoCancelamento: "",
+                                      statusPagamento: "ativo",
+                                    });
+                                    setProfissionaisAtivos((prev) =>
+                                      prev.map((item) =>
+                                        item.uid === profId || item.id === profId
+                                          ? {
+                                              ...item,
+                                              solicitacaoCancelamento: false,
+                                              motivoCancelamento: "",
+                                              statusPagamento: "ativo",
+                                            }
+                                          : item
+                                      )
+                                    );
+                                    alert(`Solicitação de saída de ${p.name} desfeita com sucesso.`);
+                                  } catch (err) {
+                                    alert("Erro ao reverter solicitação.");
+                                  }
+                                }}
+                                className="py-2 px-2 bg-warm hover:bg-soft text-forest border border-soft rounded-xl text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer"
+                                title="Manter profissional no projeto"
+                              >
+                                <RefreshCw className="w-3.5 h-3.5 text-forest/70" />
+                                Manter Ativo
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
           <div className="w-full flex flex-col gap-4 mt-8">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white px-6 py-4 rounded-2xl shadow-sm border border-soft">
               <h2 className="font-serif text-2xl text-forest flex items-center gap-3">
@@ -6321,6 +7431,77 @@ export function DashboardView({
                         </div>
                       )}
 
+                      {/* Payment & Adimplência Status Box */}
+                      {p.role === "profissional" && (
+                        <div className="bg-warm/40 p-3.5 rounded-2xl border border-soft/80 flex flex-col gap-2.5 text-xs">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-forest/60 flex items-center gap-1">
+                              <CreditCard className="w-3.5 h-3.5 text-forest/50" />
+                              Pagamento / Adimplência:
+                            </span>
+                            {p.isCortesia ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200 flex items-center gap-1">
+                                <Gift className="w-3 h-3 text-purple-600" />
+                                Cortesia / Convidado
+                              </span>
+                            ) : p.statusPagamento === "pago" ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1">
+                                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                Adimplente (Pago)
+                              </span>
+                            ) : p.solicitacaoCancelamento ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200 flex items-center gap-1">
+                                <ShieldAlert className="w-3 h-3 text-amber-600" />
+                                Desligamento Solicitado
+                              </span>
+                            ) : (() => {
+                                const admDateStr = p.dataAdmissao || p.createdAt;
+                                const admDate = parseDateSafely(admDateStr);
+                                const vencDateStr = p.vencimentoPagamento;
+                                const vencDate = vencDateStr ? parseDateSafely(vencDateStr) : new Date(admDate.getTime() + 7 * 86400000);
+                                const now = new Date();
+                                const isTrial = vencDate.getTime() > now.getTime();
+                                return isTrial ? (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200 flex items-center gap-1">
+                                    <Clock className="w-3 h-3 text-blue-600" />
+                                    Prazo 1º Pagamento ({formatDateSafely(vencDate)})
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-800 border border-red-200 flex items-center gap-1">
+                                    <XCircle className="w-3 h-3 text-red-600" />
+                                    Inadimplente / Pendente
+                                  </span>
+                                );
+                              })()}
+                          </div>
+
+                          {/* Toggle Cortesia Button */}
+                          {profile?.role === "master" && (
+                            <div className="flex items-center justify-between pt-2 border-t border-soft/50">
+                              <span className="text-[11px] font-medium text-forest/70">
+                                Cortesia / Convidado:
+                              </span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleToggleCortesia(p.uid!, !!p.isCortesia);
+                                }}
+                                className={`px-2.5 py-1 rounded-xl text-[10px] font-bold transition-all flex items-center gap-1 cursor-pointer border ${
+                                  p.isCortesia
+                                    ? "bg-purple-600 text-white border-purple-700 shadow-xs hover:bg-purple-700"
+                                    : "bg-white text-forest/80 border-soft hover:bg-purple-50 hover:text-purple-700 hover:border-purple-300"
+                                }`}
+                                title={p.isCortesia ? "Clique para desativar cortesia" : "Clique para isentar cobrança deste profissional"}
+                              >
+                                <Gift className="w-3.5 h-3.5" />
+                                {p.isCortesia ? "Cortesia Ativa (Isento)" : "Tornar Cortesia / Convidado"}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
                       {/* Action buttons */}
                       <div className="flex items-center gap-2 pt-2 border-t border-soft/60">
                         <button
@@ -6378,9 +7559,7 @@ export function DashboardView({
                       </div>
                       <div className="text-[10px] text-forest/70/80 font-bold bg-warm px-2 py-1 rounded-md whitespace-nowrap">
                         {lead.createdAt
-                          ? new Date(
-                              lead.createdAt.toMillis(),
-                            ).toLocaleDateString()
+                          ? formatDateSafely(lead.createdAt, "")
                           : ""}
                       </div>
                     </div>
@@ -6549,7 +7728,7 @@ export function DashboardView({
               Níveis de Acesso
             </h2>
             <span className="text-xs font-semibold text-forest/50 bg-warm px-3 py-1 rounded-full uppercase tracking-wider">
-              Gestor Master
+              Gestão
             </span>
           </div>
 
@@ -6590,7 +7769,7 @@ export function DashboardView({
                     </label>
                     <div className="flex flex-col gap-2 bg-warm/50 p-3 rounded-2xl border border-soft/55">
                       {[
-                        { key: "master", label: "Administrador (Master)" },
+                        { key: "master", label: "Gestão" },
                         { key: "triagem", label: "Gestão de Triagem" },
                         {
                           key: "profissional",
@@ -6676,33 +7855,49 @@ export function DashboardView({
                   )
                     return null;
 
-                  let step = 1;
-                  if (status === "Em Atendimento") step = 3;
-                  else if (status === "Aprovado" || selectedCard.propostaStatus)
-                    step = 2;
+                  const flow = getPatientFlowDetails(selectedCard);
 
                   return (
-                    <div className="w-full mt-4">
-                      <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-wider text-forest/50 mb-1.5">
-                        <span className={step >= 1 ? "text-emerald-600" : ""}>
-                          Triagem
-                        </span>
-                        <span className={step >= 2 ? "text-emerald-600" : ""}>
-                          Proposta / Atribuição
-                        </span>
-                        <span className={step >= 3 ? "text-emerald-600" : ""}>
-                          Atendimento Iniciado
-                        </span>
+                    <div className="w-full mt-4 bg-white/80 p-3.5 rounded-2xl border border-soft shadow-2xs">
+                      <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5 text-center text-[10px] font-bold uppercase tracking-wider mb-2">
+                        <div className={`p-1.5 rounded-xl border ${flow.activeStep >= 1 ? "text-emerald-800 bg-emerald-50/80 border-emerald-200" : "text-forest/40 bg-warm/30 border-transparent"}`}>
+                          1. Questionário
+                        </div>
+                        <div className={`p-1.5 rounded-xl border ${flow.activeStep >= 2 ? "text-emerald-800 bg-emerald-50/80 border-emerald-200" : "text-forest/40 bg-warm/30 border-transparent"}`}>
+                          2. Proposta
+                        </div>
+                        <div className={`p-1.5 rounded-xl border ${flow.isAceiteOuRevisaoDone ? (flow.propostaAceita ? "text-emerald-800 bg-emerald-50/80 border-emerald-200" : "text-amber-800 bg-amber-50/80 border-amber-200") : flow.activeStep >= 3 ? "text-blue-800 bg-blue-50/80 border-blue-200" : "text-forest/40 bg-warm/30 border-transparent"}`}>
+                          3. Aceite / Revisão
+                        </div>
+                        <div className={`p-1.5 rounded-xl border ${flow.activeStep >= 4 ? "text-emerald-800 bg-emerald-50/80 border-emerald-200" : "text-forest/40 bg-warm/30 border-transparent"}`}>
+                          4. Atribuir Prof.
+                        </div>
+                        <div className={`p-1.5 rounded-xl border ${flow.isAtribuicaoDevolvida ? "text-rose-800 bg-rose-50/80 border-rose-200" : flow.isAtribuicaoAceita ? "text-emerald-800 bg-emerald-50/80 border-emerald-200" : flow.activeStep >= 5 ? "text-amber-800 bg-amber-50/80 border-amber-200" : "text-forest/40 bg-warm/30 border-transparent"}`}>
+                          5. Atribuição
+                        </div>
+                        <div className={`p-1.5 rounded-xl border ${flow.isAtendimentoIniciado || (flow.isAtribuicaoAceita && !flow.isAtribuicaoDevolvida) ? "text-emerald-800 bg-emerald-50/80 border-emerald-200" : "text-forest/40 bg-warm/30 border-transparent"}`}>
+                          6. Atendimento
+                        </div>
                       </div>
+
                       <div className="flex gap-1.5 h-2 w-full">
                         <div
-                          className={`flex-1 rounded-full transition-colors ${step >= 1 ? "bg-emerald-400" : "bg-warm-dark/50"}`}
+                          className={`flex-1 rounded-full transition-colors ${flow.activeStep >= 1 ? "bg-emerald-500" : "bg-warm-dark/40"}`}
                         ></div>
                         <div
-                          className={`flex-1 rounded-full transition-colors ${step >= 2 ? "bg-emerald-400" : "bg-warm-dark/50"}`}
+                          className={`flex-1 rounded-full transition-colors ${flow.activeStep >= 2 ? "bg-emerald-500" : "bg-warm-dark/40"}`}
                         ></div>
                         <div
-                          className={`flex-1 rounded-full transition-colors ${step >= 3 ? "bg-emerald-400" : "bg-warm-dark/50"}`}
+                          className={`flex-1 rounded-full transition-colors ${flow.propostaAceita ? "bg-emerald-500" : flow.propostaRevisao ? "bg-amber-500" : flow.activeStep >= 3 ? "bg-blue-400" : "bg-warm-dark/40"}`}
+                        ></div>
+                        <div
+                          className={`flex-1 rounded-full transition-colors ${flow.activeStep >= 4 ? "bg-emerald-500" : "bg-warm-dark/40"}`}
+                        ></div>
+                        <div
+                          className={`flex-1 rounded-full transition-colors ${flow.isAtribuicaoDevolvida ? "bg-rose-500" : flow.isAtribuicaoAceita ? "bg-emerald-500" : flow.activeStep >= 5 ? "bg-amber-400" : "bg-warm-dark/40"}`}
+                        ></div>
+                        <div
+                          className={`flex-1 rounded-full transition-colors ${flow.isAtendimentoIniciado || flow.isAtribuicaoAceita ? "bg-emerald-500" : "bg-warm-dark/40"}`}
                         ></div>
                       </div>
                     </div>
@@ -6857,18 +8052,88 @@ export function DashboardView({
                         }
                         isEditing={isEditingCard}
                       />
-                      {selectedCard.propostaStatus && (
-                        <div
-                          className={`mt-4 p-4 border rounded-xl ${selectedCard.propostaStatus === "Proposta aceita pelo paciente" ? "bg-green-50/50 border-green-100 text-green-800" : selectedCard.propostaStatus === "Paciente solicita revisão da proposta" ? "bg-orange-50/50 border-orange-100 text-orange-800" : "bg-blue-50/50 border-blue-100 text-blue-800"}`}
-                        >
-                          <span className="block text-[10px] font-bold uppercase tracking-wider opacity-70 mb-1">
-                            Status da Proposta
-                          </span>
-                          <span className="font-semibold text-sm">
-                            {selectedCard.propostaStatus}
-                          </span>
+                      {/* Painel do Fluxo de Entrada e Aceite */}
+                      <div className="mt-4 p-4 bg-warm/40 border border-soft rounded-2xl space-y-3">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-forest/70 flex items-center gap-1.5">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Fluxo de Entrada e Aceite
+                        </span>
+
+                        <div className="space-y-2">
+                          {/* Proposta Selo */}
+                          <div className="flex items-center justify-between bg-white p-3 rounded-xl border border-soft text-xs">
+                            <span className="font-medium text-forest/70">Proposta do Paciente:</span>
+                            {selectedCard.propostaStatus === "Proposta aceita pelo paciente" ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                Proposta Aceita
+                              </span>
+                            ) : selectedCard.propostaStatus === "Paciente solicita revisão da proposta" ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                                <HelpCircle className="w-3.5 h-3.5 text-amber-600" />
+                                Revisão Solicitada
+                              </span>
+                            ) : selectedCard.propostaEnviada ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full font-bold bg-blue-100 text-blue-800 border border-blue-300">
+                                <Send className="w-3.5 h-3.5 text-blue-600" />
+                                Proposta Enviada
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full font-semibold bg-gray-100 text-gray-600">
+                                Aguardando envio
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Atribuição Selo */}
+                          <div className="flex flex-col gap-1.5 bg-white p-3 rounded-xl border border-soft text-xs">
+                            <div className="flex items-center justify-between">
+                              <span className="font-medium text-forest/70">Atribuição do Profissional:</span>
+                              {selectedCard.atribuicaoStatus === "Aceito" ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                  <UserCheck className="w-3.5 h-3.5 text-emerald-600" />
+                                  Atribuição Aceita
+                                </span>
+                              ) : selectedCard.atribuicaoStatus === "Devolvido" || selectedCard.atribuicaoStatus === "Rejeitado" ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full font-bold bg-rose-100 text-rose-800 border border-rose-300">
+                                  <RotateCcw className="w-3.5 h-3.5 text-rose-600" />
+                                  Atribuição Devolvida
+                                </span>
+                              ) : selectedCard.profissionalId ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                                  <Clock className="w-3.5 h-3.5 text-amber-600" />
+                                  Aguardando Aceite
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full font-semibold bg-gray-100 text-gray-600">
+                                  Não atribuído
+                                </span>
+                              )}
+                            </div>
+                            {(selectedCard.atribuicaoStatus === "Devolvido" || selectedCard.atribuicaoStatus === "Rejeitado") && (
+                              <div className="mt-1 p-2 bg-rose-50 border border-rose-200 rounded-lg text-[11px] text-rose-800">
+                                <span className="font-bold">Devolvido para a Triagem.</span>
+                                {selectedCard.devolvidoMotivo && (
+                                  <p className="mt-0.5 text-rose-700">Justificativa: {selectedCard.devolvidoMotivo}</p>
+                                )}
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      )}
+
+                        <div className="flex flex-wrap gap-2 pt-1">
+                          <button
+                            onClick={() => {
+                              const link = `${window.location.origin}/?proposta=${selectedCard.id}`;
+                              navigator.clipboard.writeText(link);
+                              alert("Link da Proposta copiado para a área de transferência!");
+                              handleUpdateAcolhimentoProperty(selectedCard.id, "propostaEnviada", true);
+                            }}
+                            className="text-xs font-bold text-forest bg-white hover:bg-slate-50 px-3 py-1.5 rounded-lg border border-soft transition-colors flex items-center gap-1.5 shadow-2xs"
+                          >
+                            <Copy className="w-3.5 h-3.5 text-forest/60" /> Copiar Link da Proposta
+                          </button>
+                        </div>
+                      </div>
                       {selectedCard.dadosContrato && (
                         <div className="mt-4 p-4 bg-green-50/50 border border-green-100 rounded-xl">
                           <span className="block text-[10px] font-bold uppercase tracking-wider text-green-700 mb-2">
@@ -7692,10 +8957,32 @@ export function DashboardView({
                 Cancelar
               </button>
               <button
-                onClick={() => {
+                onClick={async () => {
                   window.open(
                     `mailto:${notificarTarget.email}?subject=${encodeURIComponent(notificacaoName)}&body=${encodeURIComponent(notificacaoMsg)}`,
                   );
+                  if (notificarTarget && notificarTarget.id && "nome" in notificarTarget) {
+                    const updates: any = {};
+                    if (notificacaoType === "proposta") {
+                      updates.propostaEnviada = true;
+                      updates.propostaEnviadaEm = new Date().toISOString();
+                      if (!notificarTarget.status || notificarTarget.status === "Aguardando Avaliação") updates.status = "Aprovado";
+                    } else if (notificacaoType === "boas-vindas-atribuicao") {
+                      updates.contatoEnviado = true;
+                      updates.contatoEnviadoEm = new Date().toISOString();
+                      updates.status = "Em Atendimento";
+                    }
+                    if (Object.keys(updates).length > 0) {
+                      try {
+                        await updateDoc(doc(db, "acolhimentos", notificarTarget.id), updates);
+                        if (selectedCard && selectedCard.id === notificarTarget.id) {
+                          setSelectedCard((prev: any) => prev ? { ...prev, ...updates } : null);
+                        }
+                      } catch (err) {
+                        console.error(err);
+                      }
+                    }
+                  }
                   setShowNotificarModal(false);
                 }}
                 className="px-5 py-2 bg-white border border-soft text-forest rounded-full text-sm font-semibold hover:bg-slate-50 transition-colors flex items-center gap-2"
@@ -7719,6 +9006,28 @@ export function DashboardView({
                   } else {
                     showToast("Este destinatário não possui e-mail cadastrado.", "error");
                   }
+                  if (notificarTarget && notificarTarget.id && "nome" in notificarTarget) {
+                    const updates: any = {};
+                    if (notificacaoType === "proposta") {
+                      updates.propostaEnviada = true;
+                      updates.propostaEnviadaEm = new Date().toISOString();
+                      if (!notificarTarget.status || notificarTarget.status === "Aguardando Avaliação") updates.status = "Aprovado";
+                    } else if (notificacaoType === "boas-vindas-atribuicao") {
+                      updates.contatoEnviado = true;
+                      updates.contatoEnviadoEm = new Date().toISOString();
+                      updates.status = "Em Atendimento";
+                    }
+                    if (Object.keys(updates).length > 0) {
+                      try {
+                        await updateDoc(doc(db, "acolhimentos", notificarTarget.id), updates);
+                        if (selectedCard && selectedCard.id === notificarTarget.id) {
+                          setSelectedCard((prev: any) => prev ? { ...prev, ...updates } : null);
+                        }
+                      } catch (err) {
+                        console.error(err);
+                      }
+                    }
+                  }
                   setShowNotificarModal(false);
                 }}
                 className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-full text-sm font-semibold transition-colors flex items-center gap-2 shadow-sm"
@@ -7726,11 +9035,33 @@ export function DashboardView({
                 <Send className="w-4 h-4" /> Enviar pela Plataforma
               </button>
               <button
-                onClick={() => {
+                onClick={async () => {
                   window.open(
                     `https://wa.me/?text=${encodeURIComponent(notificacaoMsg)}`,
                     "_blank",
                   );
+                  if (notificarTarget && notificarTarget.id && "nome" in notificarTarget) {
+                    const updates: any = {};
+                    if (notificacaoType === "proposta") {
+                      updates.propostaEnviada = true;
+                      updates.propostaEnviadaEm = new Date().toISOString();
+                      if (!notificarTarget.status || notificarTarget.status === "Aguardando Avaliação") updates.status = "Aprovado";
+                    } else if (notificacaoType === "boas-vindas-atribuicao") {
+                      updates.contatoEnviado = true;
+                      updates.contatoEnviadoEm = new Date().toISOString();
+                      updates.status = "Em Atendimento";
+                    }
+                    if (Object.keys(updates).length > 0) {
+                      try {
+                        await updateDoc(doc(db, "acolhimentos", notificarTarget.id), updates);
+                        if (selectedCard && selectedCard.id === notificarTarget.id) {
+                          setSelectedCard((prev: any) => prev ? { ...prev, ...updates } : null);
+                        }
+                      } catch (err) {
+                        console.error(err);
+                      }
+                    }
+                  }
                   setShowNotificarModal(false);
                 }}
                 className="px-5 py-2 bg-[#25D366] text-white rounded-full text-sm font-semibold hover:bg-[#20b858] transition-colors flex items-center gap-2"
@@ -8370,6 +9701,61 @@ export function DashboardView({
                         isEditing={isEditingCard}
                       />
                       <EditableField
+                        label="Data de Admissão"
+                        value={selectedProfissional.dataAdmissao || selectedProfissional.createdAt}
+                        field="dataAdmissao"
+                        type="date"
+                        onChange={(f, v) =>
+                          handleUpdateProfissionalProperty(
+                            "id" in selectedProfissional
+                              ? selectedProfissional.id
+                              : selectedProfissional.uid,
+                            f,
+                            v,
+                          )
+                        }
+                        isEditing={isEditingCard}
+                      />
+                      <div className="mt-3 p-3 bg-warm/80 border border-soft rounded-xl space-y-2 text-xs text-forest">
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold text-forest/70">📌 Período de Teste (7 dias):</span>
+                          <span className="font-bold text-forest">
+                            {selectedProfissional.vencimentoPagamento
+                              ? formatDateSafely(selectedProfissional.vencimentoPagamento)
+                              : "7 dias após admissão"}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold text-forest/70">📧 Checkout Automático:</span>
+                          <span className="font-bold text-emerald-800">
+                            {selectedProfissional.checkoutTrial7DiasEnviado
+                              ? `Enviado em ${formatDateSafely(selectedProfissional.checkoutTrial7DiasEnviadoEm)}`
+                              : "Pendente (agendado 7 dias pós admissão)"}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const profEmail = selectedProfissional.email;
+                            const profName = ("nome" in selectedProfissional ? selectedProfissional.nome : selectedProfissional.name) || "Profissional";
+                            const stripeUrl = globalConfigs.stripeCheckoutUrl || "https://buy.stripe.com/acolhemente";
+                            const admFmt = formatDateSafely(selectedProfissional.dataAdmissao || selectedProfissional.createdAt);
+                            await sendTrialExpiredCheckoutEmail(profName, profEmail, stripeUrl, admFmt);
+                            const profId = "id" in selectedProfissional ? selectedProfissional.id : selectedProfissional.uid;
+                            if (profId) {
+                              await handleUpdateProfissionalProperty(profId, "checkoutTrial7DiasEnviado", true);
+                              await handleUpdateProfissionalProperty(profId, "checkoutTrial7DiasEnviadoEm", new Date().toISOString());
+                              await handleUpdateProfissionalProperty(profId, "notificacao", `Link de checkout enviado manualmente por e-mail pela Gestão em ${new Date().toLocaleDateString("pt-BR")}.`);
+                            }
+                            alert(`Link de checkout do Stripe enviado por e-mail para ${profEmail}!`);
+                          }}
+                          className="w-full mt-1.5 py-2 px-3 bg-forest text-white hover:bg-forest/90 font-bold text-[11px] rounded-lg transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                        >
+                          <CreditCard className="w-3.5 h-3.5 text-sun" />
+                          Enviar Link de Checkout Agora (E-mail)
+                        </button>
+                      </div>
+                      <EditableField
                         label="Cidade"
                         value={selectedProfissional.cidade}
                         field="cidade"
@@ -8514,6 +9900,21 @@ export function DashboardView({
                       <Briefcase className="w-4 h-4" /> Atuação e Formação
                     </h4>
                     <div className="space-y-3 ms-2">
+                      <EditableField
+                        label="Profissão / Título"
+                        value={selectedProfissional.profissao}
+                        field="profissao"
+                        onChange={(f, v) =>
+                          handleUpdateProfissionalProperty(
+                            "id" in selectedProfissional
+                              ? selectedProfissional.id
+                              : selectedProfissional.uid,
+                            f,
+                            v,
+                          )
+                        }
+                        isEditing={isEditingCard}
+                      />
                       <EditableField
                         label="CRP / Registro"
                         value={selectedProfissional.crp}
@@ -9147,7 +10548,7 @@ export function DashboardView({
                 >
                   <option value="profissional">Profissional (Psicólogo)</option>
                   <option value="triagem">Triagem (Avaliação Inicial)</option>
-                  <option value="master">Gestor (Master)</option>
+                  <option value="master">Gestão</option>
                 </select>
               </div>
 
@@ -9475,7 +10876,10 @@ export function DashboardView({
                     const updates = {
                       profissionalId: "",
                       status: "Aguardando Avaliação", // Triagem
-                      atribuicaoStatus: null,
+                      atribuicaoStatus: "Devolvido",
+                      devolvidoMotivo: observacaoFinal || "Devolvido pelo profissional para a triagem",
+                      devolvidoPor: profile?.name || "Parceiro",
+                      devolvidoEm: new Date().toISOString(),
                       notificacao: `${notificacaoAnterior}[${nowStr}] Atendimento devolvido pelo profissional ${profile?.name || "Parceiro"}.${textoMotivo} Retornou para a Triagem.`,
                     };
                     await updateDoc(
@@ -9506,6 +10910,129 @@ export function DashboardView({
           userRole={profile?.role || currentRole}
           userName={profile?.name}
           userEmail={profile?.email}
+        />
+      )}
+
+      {showCancelModal && (
+        <div className="fixed inset-0 bg-forest/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-300">
+          <div className="bg-white rounded-3xl p-6 md:p-8 max-w-md w-full shadow-2xl border border-soft space-y-6">
+            <div className="flex items-center gap-3 text-red-600">
+              <div className="w-10 h-10 rounded-2xl bg-amber-50 flex items-center justify-center shrink-0 border border-amber-100">
+                <LogOut className="w-5 h-5 text-amber-600" />
+              </div>
+              <div>
+                <h3 className="font-serif text-lg font-bold text-forest">Solicitar Saída do Projeto</h3>
+                <p className="text-xs text-forest/60">Processo de Entrevista & Desligamento</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-forest/80 leading-relaxed">
+              No Projeto AcolheMente, os profissionais passam por uma breve entrevista de desligamento com a Gestão tanto para entrar quanto para encerrar a participação. Preencha o motivo abaixo para registramos sua solicitação.
+            </p>
+
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold uppercase text-forest/70">
+                Motivo da solicitação de saída (opcional):
+              </label>
+              <textarea
+                rows={3}
+                value={motivoCancelamentoInput}
+                onChange={(e) => setMotivoCancelamentoInput(e.target.value)}
+                placeholder="Compartilhe seu motivo para podermos alinhar no atendimento..."
+                className="w-full text-xs p-3 bg-warm/40 border border-soft rounded-xl focus:outline-none focus:border-sun-dark text-forest"
+              />
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowCancelModal(false)}
+                className="flex-1 py-2.5 bg-warm hover:bg-soft/50 text-forest rounded-xl font-bold text-xs transition-colors cursor-pointer"
+              >
+                Voltar
+              </button>
+              <button
+                onClick={async () => {
+                  if (!profile?.uid) return;
+                  try {
+                    const dataCancel = new Date().toISOString();
+                    await updateDoc(doc(db, "users", profile.uid), {
+                      solicitacaoCancelamento: true,
+                      motivoCancelamento: motivoCancelamentoInput || "Não informado",
+                      dataSolicitacaoCancelamento: dataCancel,
+                      statusPagamento: "desligamento_solicitado",
+                    });
+                    setProfile((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            solicitacaoCancelamento: true,
+                            motivoCancelamento: motivoCancelamentoInput || "Não informado",
+                            dataSolicitacaoCancelamento: dataCancel,
+                            statusPagamento: "desligamento_solicitado",
+                          }
+                        : null,
+                    );
+
+                    // Notify via webhook
+                    try {
+                      await sendWebhookNotification({
+                        event: "status_lead_alterado",
+                        recipientEmail: globalConfigs.emailSuporte || "adm@acolhemente.com",
+                        recipientName: "Gestão",
+                        title: `Solicitação de Saída do Projeto - ${profile.name}`,
+                        message: `O profissional ${profile.name} (${profile.email}) solicitou a saída do projeto. Agendar entrevista de desligamento.`,
+                        data: {
+                          profissionalId: profile.uid,
+                          nome: profile.name,
+                          email: profile.email,
+                          motivo: motivoCancelamentoInput,
+                          dataCancelamento: dataCancel,
+                        },
+                      });
+                    } catch (e) {
+                      console.error("Erro webhook solicitação de saída:", e);
+                    }
+
+                    setShowCancelModal(false);
+                    setMotivoCancelamentoInput("");
+                    alert("Sua solicitação de saída do projeto foi registrada com sucesso! A equipe de Gestão entrará em contato para agendar a entrevista de desligamento.");
+                  } catch (err) {
+                    console.error(err);
+                    alert("Erro ao registrar solicitação de saída.");
+                  }
+                }}
+                className="flex-1 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold text-xs transition-colors cursor-pointer"
+              >
+                Confirmar Solicitação de Saída
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showCheckoutModal && (
+        <StripeCheckoutModal
+          isOpen={showCheckoutModal}
+          onClose={() => setShowCheckoutModal(false)}
+          professionalName={profile?.name || "Profissional AcolheMente"}
+          professionalEmail={profile?.email || ""}
+          professionalId={profile?.uid || profile?.id}
+          taxaMensal={profile?.taxaAssociativaMensal || globalConfigs.taxaAssociativaMensal || "29,90"}
+          stripeConfig={{
+            stripeEnabled: globalConfigs.stripeEnabled ?? true,
+            stripePublicKey: globalConfigs.stripePublicKey || "",
+            stripeCheckoutUrl: globalConfigs.stripeCheckoutUrl || "",
+          }}
+          onSuccess={() => {
+            if (profile) {
+              setProfile({
+                ...profile,
+                statusPagamento: "pago",
+                dataPagamento: new Date().toISOString(),
+              });
+            }
+            setShowCheckoutModal(false);
+          }}
         />
       )}
     </div>

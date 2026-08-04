@@ -42,6 +42,8 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
     contatoTelefone: profile.telefone || profile.whatsapp || profile.phone || "",
     contatoPreferencial: "email" as "email" | "whatsapp",
     modoInscricao: "plataforma" as "contato" | "plataforma",
+    requisitos: "",
+    solicitarComprovante: false,
   });
 
   // Formulário de Serviço
@@ -60,6 +62,8 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
     contatoTelefone: profile.telefone || profile.whatsapp || profile.phone || "",
     contatoPreferencial: "email" as "email" | "whatsapp",
     modoInscricao: "plataforma" as "contato" | "plataforma",
+    requisitos: "",
+    solicitarComprovante: false,
   });
 
   const getContactLink = (item: any) => {
@@ -163,6 +167,8 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
         contatoTelefone: profile.telefone || profile.whatsapp || profile.phone || "",
         contatoPreferencial: "email",
         modoInscricao: "plataforma",
+        requisitos: "",
+        solicitarComprovante: false,
       });
     } catch (error) {
       console.error(error);
@@ -182,6 +188,8 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
       contatoTelefone: ev.contatoTelefone || profile.telefone || profile.whatsapp || profile.phone || "",
       contatoPreferencial: ev.contatoPreferencial || "email",
       modoInscricao: ev.modoInscricao || "plataforma",
+      requisitos: ev.requisitos || "",
+      solicitarComprovante: ev.solicitarComprovante || false,
     });
     setEditingEventId(ev.id);
     setIsEventModalOpen(true);
@@ -252,6 +260,8 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
         contatoTelefone: profile.telefone || profile.whatsapp || profile.phone || "",
         contatoPreferencial: "email",
         modoInscricao: "plataforma",
+        requisitos: "",
+        solicitarComprovante: false,
       });
     } catch (error) {
       console.error(error);
@@ -283,6 +293,8 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
       contatoTelefone: svc.contatoTelefone || profile.telefone || profile.whatsapp || profile.phone || "",
       contatoPreferencial: svc.contatoPreferencial || "email",
       modoInscricao: svc.modoInscricao || "plataforma",
+      requisitos: svc.requisitos || "",
+      solicitarComprovante: svc.solicitarComprovante || false,
     });
     setEditingServiceId(svc.id);
     setIsServiceModalOpen(true);
@@ -336,6 +348,8 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
                     contatoTelefone: profile.telefone || profile.whatsapp || profile.phone || "",
                     contatoPreferencial: "email",
                     modoInscricao: "plataforma",
+                    requisitos: "",
+                    solicitarComprovante: false,
                   });
                   setIsEventModalOpen(true);
                 }}
@@ -542,6 +556,8 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
                   contatoTelefone: profile.telefone || profile.whatsapp || profile.phone || "",
                   contatoPreferencial: "email",
                   modoInscricao: "plataforma",
+                  requisitos: "",
+                  solicitarComprovante: false,
                 });
                 setIsServiceModalOpen(true);
               }}
@@ -801,7 +817,12 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
               </div>
               <div>
                 <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Descrição</label>
-                <textarea required rows={4} value={eventoForm.descricao} onChange={e => setEventoForm({...eventoForm, descricao: e.target.value})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest" />
+                <textarea required rows={3} value={eventoForm.descricao} onChange={e => setEventoForm({...eventoForm, descricao: e.target.value})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest" />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Requisitos Necessários para Participar (Opcional)</label>
+                <textarea rows={2} placeholder="Ex: Ser estudante de psicologia, levar caderno..." value={eventoForm.requisitos} onChange={e => setEventoForm({...eventoForm, requisitos: e.target.value})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest" />
               </div>
 
               <div className="border-t border-soft pt-4 flex flex-col gap-4">
@@ -826,7 +847,12 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
                   </select>
                 </div>
 
-
+                <div className="flex items-center gap-2 p-3 bg-white border border-soft rounded-xl shadow-sm">
+                  <label className="flex items-center gap-2 text-xs font-semibold text-forest cursor-pointer">
+                    <input type="checkbox" checked={eventoForm.solicitarComprovante} onChange={e => setEventoForm({...eventoForm, solicitarComprovante: e.target.checked})} className="w-4 h-4 accent-forest" />
+                    Solicitar envio de documento / comprovante para confirmação de inscrição
+                  </label>
+                </div>
               </div>
 
               <button disabled={!eventoForm.titulo || !eventoForm.descricao || !eventoForm.data} type="submit" className="w-full mt-4 py-3 bg-sun text-forest font-bold rounded-xl hover:bg-sun-dark transition-colors disabled:opacity-50">
@@ -890,6 +916,11 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
                 </div>
               </div>
               <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Requisitos Necessários para Participar (Opcional)</label>
+                <textarea rows={2} placeholder="Ex: Ser estudante de psicologia, levar caderno..." value={servicoForm.requisitos} onChange={e => setServicoForm({...servicoForm, requisitos: e.target.value})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest" />
+              </div>
+
+              <div>
                 <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Link de Inscrição / Mais Informações (Opcional)</label>
                 <input type="url" placeholder="https://" value={servicoForm.linkInscricao} onChange={e => setServicoForm({...servicoForm, linkInscricao: e.target.value})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest" />
               </div>
@@ -916,7 +947,12 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
                   </select>
                 </div>
 
-
+                <div className="flex items-center gap-2 p-3 bg-white border border-soft rounded-xl shadow-sm">
+                  <label className="flex items-center gap-2 text-xs font-semibold text-forest cursor-pointer">
+                    <input type="checkbox" checked={servicoForm.solicitarComprovante} onChange={e => setServicoForm({...servicoForm, solicitarComprovante: e.target.checked})} className="w-4 h-4 accent-forest" />
+                    Solicitar envio de documento / comprovante para confirmação de inscrição
+                  </label>
+                </div>
               </div>
 
 

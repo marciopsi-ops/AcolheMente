@@ -68,7 +68,7 @@ export function Footer({ onNavigate }: { onNavigate?: (view: any) => void }) {
           <ul className="flex flex-col gap-3 text-sm text-forest/70 font-medium tracking-wide">
             <li><button onClick={() => handleNav('landing')} className="hover:text-forest transition-colors">Início</button></li>
             <li><button onClick={() => handleNav('empresa')} className="hover:text-forest transition-colors">Saúde Corporativa</button></li>
-            <li><button onClick={() => handleNav('profissional')} className="hover:text-forest transition-colors">Para Psicólogos</button></li>
+            <li><button onClick={() => handleNav('profissional')} className="hover:text-forest transition-colors">Para Profissionais</button></li>
             <li><button onClick={() => handleNav('doacao')} className="hover:text-forest transition-colors">Doe uma Sessão</button></li>
             <li><button onClick={() => handleNav('dashboard')} className="hover:text-forest transition-colors">Área do Profissional</button></li>
           </ul>
@@ -131,8 +131,27 @@ export function Footer({ onNavigate }: { onNavigate?: (view: any) => void }) {
               <span id="footer-contact-email">{configs.footerEmail || "contato@acolhemente.com"}</span>
             </li>
             <li className="flex items-center gap-3">
-              <Phone className="w-4 h-4 text-sun-dark" />
-              <span id="footer-contact-phone">{configs.footerTelefone || "(61) 9999-9999"}</span>
+              <Phone className="w-4 h-4 text-sun-dark shrink-0" />
+              {(() => {
+                const rawPhone = configs.footerTelefone || configs.telefoneSuporte || "(61) 9999-9999";
+                let cleanPhone = rawPhone.replace(/\D/g, "");
+                if (!cleanPhone) cleanPhone = "556199999999";
+                if (cleanPhone.length === 10 || cleanPhone.length === 11) {
+                  cleanPhone = `55${cleanPhone}`;
+                }
+                const waUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent("Olá! Gostaria de falar com o atendimento do AcolheMente.")}`;
+                return (
+                  <a
+                    href={waUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="hover:underline hover:text-forest transition-colors"
+                    id="footer-contact-phone-link"
+                  >
+                    <span id="footer-contact-phone">{configs.footerTelefone || configs.telefoneSuporte || "(61) 9999-9999"}</span>
+                  </a>
+                );
+              })()}
             </li>
             <li className="flex items-center gap-2 mt-4 text-forest/50 font-bold uppercase tracking-wider text-[10px]" id="footer-social-title">
               Siga nas redes sociais
