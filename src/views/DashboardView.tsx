@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { sendWebhookNotification } from "../lib/webhookNotifier";
 import { StripeCheckoutModal } from "../components/StripeCheckoutModal";
 import { AnimatePresence, motion } from "motion/react";
@@ -59,6 +59,8 @@ import {
   AlertTriangle,
   ClipboardList,
   MessageSquare,
+  Calculator,
+  UserX,
 } from "lucide-react";
 import { auth, db, handleFirestoreError, OperationType } from "../lib/firebase";
 import { triggerEmail, sendTrialExpiredCheckoutEmail } from "../lib/emailService";
@@ -243,25 +245,29 @@ export function getPatientFlowDetails(card: any) {
 
   const isQuestionarioDone = true;
 
-  const isPropostaEnviada =
-    card.propostaEnviada === true ||
-    !!card.propostaEnviadaEm ||
-    !!card.propostaStatus ||
-    card.status === "Aprovado" ||
-    card.status === "Em Atendimento";
-
-  const propostaAceita = card.propostaStatus === "Proposta aceita pelo paciente";
   const propostaRevisao = card.propostaStatus === "Paciente solicita revisão da proposta";
+  const propostaAceita = !propostaRevisao && card.propostaStatus === "Proposta aceita pelo paciente";
   const isAceiteOuRevisaoDone = propostaAceita || propostaRevisao;
 
-  const isAtribuido = !!(card.profissionalId || card.profissionalUid);
+  // Se o paciente solicitou revisão, a proposta precisa ser re-elaborada e reenviada
+  const isPropostaEnviada =
+    !propostaRevisao &&
+    (card.propostaEnviada === true ||
+      !!card.propostaEnviadaEm ||
+      propostaAceita ||
+      card.status === "Aprovado" ||
+      card.status === "Em Atendimento");
 
-  const isAtribuicaoAceita = card.atribuicaoStatus === "Aceito";
+  const isAtribuido = !propostaRevisao && !!(card.profissionalId || card.profissionalUid);
+
+  const isAtribuicaoAceita = isAtribuido && card.atribuicaoStatus === "Aceito";
   const isAtribuicaoDevolvida =
-    card.atribuicaoStatus === "Devolvido" ||
-    card.atribuicaoStatus === "Rejeitado";
+    isAtribuido &&
+    (card.atribuicaoStatus === "Devolvido" ||
+      card.atribuicaoStatus === "Rejeitado");
 
   const isAtendimentoIniciado =
+    isAtribuido &&
     isAtribuicaoAceita &&
     !isAtribuicaoDevolvida &&
     (card.contatoEnviado === true ||
@@ -269,15 +275,18 @@ export function getPatientFlowDetails(card: any) {
       !!card.contatoEnviadoEm);
 
   let activeStep = 1;
-  if (isAtendimentoIniciado) {
+  if (propostaRevisao) {
+    // Quando o paciente solicita revisão da proposta, o fluxo é reiniciado e retornado para Etapa 1 (Questionário/Triagem)
+    activeStep = 1;
+  } else if (isAtendimentoIniciado) {
     activeStep = 6;
   } else if (isAtribuicaoDevolvida) {
     activeStep = 5;
   } else if (isAtribuicaoAceita) {
-    activeStep = 6; // Se aceito pelo profissional, passa direto para Conectar Profissional e Paciente (Step 6)
+    activeStep = 6;
   } else if (isAtribuido) {
     activeStep = 5;
-  } else if (isAceiteOuRevisaoDone) {
+  } else if (propostaAceita) {
     activeStep = 4;
   } else if (isPropostaEnviada) {
     activeStep = 3;
@@ -297,6 +306,66 @@ export function getPatientFlowDetails(card: any) {
     isAtendimentoIniciado,
     activeStep,
   };
+}
+
+export function buildCaseSummaryText(card: any) {
+  if (!card) return "";
+  const nome = card.nome || card.nomeCompleto || "Paciente";
+  const genero = card.genero || card.identidadeGenero || "Não informado";
+
+  let idadeStr = "Não informada";
+  if (card.idade) {
+    idadeStr = `${card.idade} anos`;
+  } else if (card.dataNascimento) {
+    try {
+      let dob: Date;
+      if (card.dataNascimento.includes("/")) {
+        const p = card.dataNascimento.split("/");
+        dob = new Date(parseInt(p[2]), parseInt(p[1]) - 1, parseInt(p[0]));
+      } else {
+        dob = new Date(card.dataNascimento);
+      }
+      if (!isNaN(dob.getTime())) {
+        const diff = Date.now() - dob.getTime();
+        const ageDate = new Date(diff);
+        const calculatedAge = Math.abs(ageDate.getUTCFullYear() - 1970);
+        idadeStr = `${calculatedAge} anos`;
+      } else {
+        idadeStr = card.dataNascimento;
+      }
+    } catch {
+      idadeStr = card.dataNascimento;
+    }
+  }
+
+  const queixa =
+    card.motivo ||
+    card.queixaPrincipal ||
+    card.observacoes ||
+    card.necessidadesDescricao ||
+    "Não informada";
+
+  let periodosStr = "Não informado";
+  if (Array.isArray(card.melhoresPeriodos) && card.melhoresPeriodos.length > 0) {
+    periodosStr = card.melhoresPeriodos.join(", ");
+  } else if (typeof card.melhoresPeriodos === "string" && card.melhoresPeriodos.trim()) {
+    periodosStr = card.melhoresPeriodos.trim();
+  }
+
+  const valor = card.valorSessao || card.valorProposto || "A combinar";
+  const frequencia = card.frequenciaSessoes || card.frequenciaProposta || "Semanal";
+
+  return `📋 RESUMO DO CASO PARA ATENDIMENTO - PROJETO ACOLHEMENTE
+
+• Paciente: ${nome}
+• Gênero: ${genero}
+• Idade: ${idadeStr}
+• Queixa / Motivo: ${queixa}
+• Melhores Períodos (Online): ${periodosStr}
+• Valor Proposto: ${valor}
+• Frequência Proposta: ${frequencia}
+
+Para mais informações e aceite, acesse a ficha de bordo do paciente na plataforma.`;
 }
 
 interface Doacao {
@@ -413,6 +482,7 @@ const DebouncedInput = ({
   type = "text",
   disabled = false,
   maxLength,
+  title,
 }: {
   value: string;
   onChange: (val: string) => void;
@@ -421,27 +491,47 @@ const DebouncedInput = ({
   type?: string;
   disabled?: boolean;
   maxLength?: number;
+  title?: string;
 }) => {
-  const [localVal, setLocalVal] = useState(value);
+  const [localVal, setLocalVal] = useState(value || "");
+  const inputRef = useRef<HTMLInputElement>(null);
+  const timeoutRef = useRef<any>(null);
 
   useEffect(() => {
-    setLocalVal(value);
+    if (document.activeElement !== inputRef.current) {
+      setLocalVal(value || "");
+    }
   }, [value]);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newVal = e.target.value;
+    setLocalVal(newVal);
+
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    timeoutRef.current = setTimeout(() => {
+      onChange(newVal);
+    }, 400);
+  };
+
+  const handleBlur = () => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    if (localVal !== value) {
+      onChange(localVal);
+    }
+  };
 
   return (
     <input
+      ref={inputRef}
       type={type}
       disabled={disabled}
       placeholder={placeholder}
       className={className}
       maxLength={maxLength}
-      value={localVal || ""}
-      onChange={(e) => setLocalVal(e.target.value)}
-      onBlur={() => {
-        if (localVal !== value) {
-          onChange(localVal);
-        }
-      }}
+      title={title}
+      value={localVal}
+      onChange={handleChange}
+      onBlur={handleBlur}
       onKeyDown={(e) => {
         if (e.key === "Enter") {
           (e.target as HTMLInputElement).blur();
@@ -457,31 +547,55 @@ const DebouncedTextArea = ({
   className,
   placeholder,
   maxLength,
+  disabled,
+  rows,
 }: {
   value: string;
   onChange: (val: string) => void;
   className?: string;
   placeholder?: string;
   maxLength?: number;
+  disabled?: boolean;
+  rows?: number;
 }) => {
-  const [localVal, setLocalVal] = useState(value);
+  const [localVal, setLocalVal] = useState(value || "");
+  const textAreaRef = useRef<HTMLTextAreaElement>(null);
+  const timeoutRef = useRef<any>(null);
 
   useEffect(() => {
-    setLocalVal(value);
+    if (document.activeElement !== textAreaRef.current) {
+      setLocalVal(value || "");
+    }
   }, [value]);
+
+  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const newVal = e.target.value;
+    setLocalVal(newVal);
+
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    timeoutRef.current = setTimeout(() => {
+      onChange(newVal);
+    }, 400);
+  };
+
+  const handleBlur = () => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    if (localVal !== value) {
+      onChange(localVal);
+    }
+  };
 
   return (
     <textarea
+      ref={textAreaRef}
       placeholder={placeholder}
       className={className}
       maxLength={maxLength}
-      value={localVal || ""}
-      onChange={(e) => setLocalVal(e.target.value)}
-      onBlur={() => {
-        if (localVal !== value) {
-          onChange(localVal);
-        }
-      }}
+      disabled={disabled}
+      rows={rows}
+      value={localVal}
+      onChange={handleChange}
+      onBlur={handleBlur}
     />
   );
 };
@@ -502,16 +616,17 @@ const EditableField = ({
   isEditing: boolean;
   type?: string;
 }) => {
-  const [localValue, setLocalValue] = useState(value);
-
-  useEffect(() => {
-    setLocalValue(value);
-  }, [value]);
-
   let formattedDisplay = value || "-";
   if (type === "date" && value) {
     formattedDisplay = formatDateSafely(value, "-");
   }
+
+  const strValue =
+    type === "date" && value
+      ? String(value).substring(0, 10)
+      : value != null
+        ? String(value)
+        : "";
 
   return (
     <div>
@@ -519,24 +634,16 @@ const EditableField = ({
         {label}
       </span>
       {isEditing ? (
-        <input
+        <DebouncedInput
           type={type}
-          value={type === "date" && localValue ? String(localValue).substring(0, 10) : (localValue || "")}
-          onChange={(e) => setLocalValue(e.target.value)}
-          onBlur={() => {
-            if (localValue !== value) {
-              onChange(field, localValue);
-            }
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              (e.target as HTMLInputElement).blur();
-            }
-          }}
+          value={strValue}
+          onChange={(val) => onChange(field, val)}
           className="text-sm font-medium text-forest border-b border-sun-dark focus:outline-none bg-transparent w-full"
         />
       ) : (
-        <span className="text-sm font-medium text-forest">{formattedDisplay}</span>
+        <span className="text-sm font-medium text-forest">
+          {formattedDisplay}
+        </span>
       )}
     </div>
   );
@@ -646,6 +753,9 @@ export function DashboardView({
   // Acolhimento Modal Actions
   const [showNotificarModal, setShowNotificarModal] = useState(false);
   const [showContratoModal, setShowContratoModal] = useState(false);
+  const [showDesligamentoModal, setShowDesligamentoModal] = useState(false);
+  const [desligamentoMotivo, setDesligamentoMotivo] = useState("");
+  const [desligamentoDetalhes, setDesligamentoDetalhes] = useState("");
   const [showNewProfissionalModal, setShowNewProfissionalModal] =
     useState(false);
   const [newProfName, setNewProfName] = useState("");
@@ -697,6 +807,11 @@ export function DashboardView({
       msg: "Olá! Segue o link com o nosso contrato de serviços para a sua leitura e assinatura: [LINK_CONTRATO]",
     },
     {
+      id: "resumo-caso",
+      name: "Resumo do Caso (Para Profissional)",
+      msg: "📋 RESUMO DO CASO PARA ATENDIMENTO - PROJETO ACOLHEMENTE\n\n• Paciente: [NOME]\n• Gênero: [GENERO]\n• Idade: [IDADE]\n• Queixa / Motivo: [MOTIVO]\n• Melhores Períodos (Online): [MELHORES_PERIODOS]\n• Valor Proposto: [VALOR_SESSAO]\n• Frequência Proposta: [FREQUENCIA]\n\nPara mais informações e aceite, acesse a ficha de bordo do paciente na plataforma.",
+    },
+    {
       id: "boas-vindas-atribuicao",
       name: "Boas Vindas (Após Atribuição)",
       msg: "Olá [NOME]! Seja muito bem-vindo(a) ao Projeto AcolheMente Saúde.\n\nEstamos felizes em informar que o seu atendimento foi atribuído ao profissional [PROFISSIONAL_NOME] (CRP: [PROFISSIONAL_CRP]). Conheça mais sobre o perfil em: [LINK_PERFIL_PROFISSIONAL]\n\nO valor enquadrado para as suas sessões será de [VALOR_SESSAO] com frequência [FREQUENCIA].\n\nObservação: O valor é referente a uma sessão de aproximadamente 45 minutos e que por mês, o valor médio será de [VALOR_MENSAL].\n\nLembramos as regras básicas do nosso acompanhamento:\n- As sessões ocorrerão de forma regular.\n- Cancelamentos ou reagendamentos devem ser informados com no mínimo 24h de antecedência para evitar cobranças.\n\nNo próximo passo, enviaremos o link do seu contrato, onde essas regras estarão detalhadas e deverão ser lidas e assinadas digitalmente.\n\nQualquer dúvida, estamos à disposição para te ajudar em sua jornada de autoconhecimento!",
@@ -704,7 +819,7 @@ export function DashboardView({
     {
       id: "proposta",
       name: "Proposta de Atendimento",
-      msg: "Olá [NOME]! Segue a proposta de valor e frequência para o seu atendimento no Projeto AcolheMente.\n\nPor favor, acesse o link abaixo para revisar e dar o seu aceite:\n[LINK_PROPOSTA]",
+      msg: "Olá [NOME]! Segue a proposta do seu atendimento no Projeto AcolheMente Saúde:\n\n• Valor por Sessão: [VALOR_SESSAO]\n• Frequência: [FREQUENCIA]\n• Estimativa Mensal Aprox.: [VALOR_MENSAL]\n\n(Lembrando que o valor da proposta é referente a cada sessão individual de ~45min, e a estimativa mensal varia de acordo com a frequência).\n\nPor favor, acesse o link abaixo para conferir os detalhes e dar o seu aceite:\n[LINK_PROPOSTA]",
     },
   ]);
   const [notificacaoType, setNotificacaoType] = useState("pagamento");
@@ -1587,9 +1702,40 @@ export function DashboardView({
           // Atribuído a alguém
           updates.status = "Em Atendimento";
           updates.atribuicaoStatus = "Pendente";
-          const profName =
-            profissionaisAtivos.find((p) => p.id === value)?.name || "Parceiro";
-          updates.notificacao = `${notifAnterior}[${nowStr}] Atribuído ao profissional ${profName}. Aguardando aceite.`;
+          const profObj =
+            allUsers.find((u) => u.uid === value || u.id === value) ||
+            profissionaisAtivos.find((p) => p.uid === value || p.id === value);
+          const profName = profObj?.name || profObj?.email || "Parceiro";
+          const profEmail = profObj?.email;
+
+          const summaryText = buildCaseSummaryText({
+            ...currentPaciente,
+            profissionalId: value,
+          });
+
+          updates.notificacao = `${notifAnterior}[${nowStr}] Atribuído ao profissional ${profName}. Notificação automática com resumo enviada por e-mail.\n\n[Resumo Enviado]:\n${summaryText}`;
+
+          if (profEmail) {
+            sendWebhookNotification({
+              event: "atribuicao_paciente_resumo",
+              recipientEmail: profEmail,
+              recipientName: profName,
+              title: `Novo Caso Atribuído: ${currentPaciente?.nome || "Paciente"} - Projeto AcolheMente`,
+              message: summaryText,
+              data: {
+                pacienteId: id,
+                pacienteNome: currentPaciente?.nome || currentPaciente?.nomeCompleto || "",
+                genero: currentPaciente?.genero || "",
+                motivo: currentPaciente?.motivo || "",
+                melhoresPeriodos: currentPaciente?.melhoresPeriodos || "",
+                valorSessao: currentPaciente?.valorSessao || "",
+                frequenciaSessoes: currentPaciente?.frequenciaSessoes || "",
+                timestamp: new Date().toISOString(),
+              },
+            }).catch((err) =>
+              console.error("Erro ao enviar email automatico do caso:", err)
+            );
+          }
         } else {
           // Desatribuído
           updates.status = "Aguardando Avaliação";
@@ -3198,21 +3344,79 @@ export function DashboardView({
 
       let valorMensal = "a combinar";
       if (target.valorSessao) {
-        let cleanValor = target.valorSessao.replace("R$", "").trim();
-        const valorNum = parseFloat(
-          cleanValor.replace(/\./g, "").replace(",", "."),
-        );
-        if (!isNaN(valorNum)) {
-          let multiplicador = 4;
-          if (target.frequenciaSessoes === "Quinzenal") multiplicador = 2;
-          if (target.frequenciaSessoes === "Mensal") multiplicador = 1;
-          if (target.frequenciaSessoes === "Sob Demanda") multiplicador = 1;
+        if (target.valorSessao.toLowerCase().includes("gratuito")) {
+          valorMensal = "Gratuito";
+        } else {
+          const matches = target.valorSessao.match(/(\d+[\d.,]*)/);
+          if (matches) {
+            let cleanValor = matches[0];
+            if (cleanValor.includes(",") && cleanValor.includes(".")) {
+              cleanValor = cleanValor.replace(/\./g, "").replace(",", ".");
+            } else if (cleanValor.includes(",")) {
+              cleanValor = cleanValor.replace(",", ".");
+            }
+            const valorNum = parseFloat(cleanValor);
+            if (!isNaN(valorNum) && valorNum > 0) {
+              let multiplicador = 4;
+              const freq = (target.frequenciaSessoes || "Semanal").toLowerCase();
+              if (freq.includes("quinzenal")) multiplicador = 2;
+              else if (freq.includes("mensal")) multiplicador = 1;
+              else if (freq.includes("sob demanda")) multiplicador = 1;
 
-          valorMensal = `R$ ${(valorNum * multiplicador).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${target.valorSessao} x ${multiplicador})`;
+              const total = valorNum * multiplicador;
+              valorMensal = `R$ ${total.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / mês (aprox. ${multiplicador} sessões x ${target.valorSessao})`;
+            }
+          }
         }
       }
 
       processedMsg = processedMsg.replace(/\[NOME\]/g, target.nome || "");
+      processedMsg = processedMsg.replace(
+        /\[GENERO\]/g,
+        target.genero || target.identidadeGenero || "Não informado",
+      );
+
+      let idadeCalculada = "Não informada";
+      if (target.idade) {
+        idadeCalculada = `${target.idade} anos`;
+      } else if (target.dataNascimento) {
+        try {
+          let dob: Date;
+          if (target.dataNascimento.includes("/")) {
+            const p = target.dataNascimento.split("/");
+            dob = new Date(parseInt(p[2]), parseInt(p[1]) - 1, parseInt(p[0]));
+          } else {
+            dob = new Date(target.dataNascimento);
+          }
+          if (!isNaN(dob.getTime())) {
+            const diff = Date.now() - dob.getTime();
+            const ageDate = new Date(diff);
+            idadeCalculada = `${Math.abs(ageDate.getUTCFullYear() - 1970)} anos`;
+          } else {
+            idadeCalculada = target.dataNascimento;
+          }
+        } catch {
+          idadeCalculada = target.dataNascimento;
+        }
+      }
+      processedMsg = processedMsg.replace(/\[IDADE\]/g, idadeCalculada);
+      processedMsg = processedMsg.replace(
+        /\[MOTIVO\]/g,
+        target.motivo ||
+          target.queixaPrincipal ||
+          target.observacoes ||
+          target.necessidadesDescricao ||
+          "Não informada",
+      );
+
+      let periodosStr = "Não informado";
+      if (Array.isArray(target.melhoresPeriodos) && target.melhoresPeriodos.length > 0) {
+        periodosStr = target.melhoresPeriodos.join(", ");
+      } else if (typeof target.melhoresPeriodos === "string" && target.melhoresPeriodos.trim()) {
+        periodosStr = target.melhoresPeriodos.trim();
+      }
+      processedMsg = processedMsg.replace(/\[MELHORES_PERIODOS\]/g, periodosStr);
+
       processedMsg = processedMsg.replace(
         /\[VALOR_SESSAO\]/g,
         target.valorSessao || "a combinar",
@@ -3848,11 +4052,11 @@ export function DashboardView({
                           <label className="text-[10px] font-semibold uppercase text-forest/70/60 ml-2">
                             Faixa {index + 1}
                           </label>
-                          <input
+                          <DebouncedInput
                             className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
                             placeholder={`Ex: R$ ${(index + 1) * 30},00`}
                             value={globalConfigs.faixasValores?.[index] || ""}
-                            onChange={(e) => {
+                            onChange={(val) => {
                               const newFaixas = [
                                 ...(globalConfigs.faixasValores || [
                                   "",
@@ -3862,7 +4066,7 @@ export function DashboardView({
                                   "",
                                 ]),
                               ];
-                              newFaixas[index] = e.target.value;
+                              newFaixas[index] = val;
                               handleUpdateConfiguracoesProperty(
                                 "faixasValores",
                                 newFaixas,
@@ -3947,14 +4151,14 @@ export function DashboardView({
                         <label className="text-[10px] font-semibold uppercase text-forest/70/60 ml-2">
                           Telefone (WhatsApp)
                         </label>
-                        <input
+                        <DebouncedInput
                           className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
                           placeholder="Ex: 11999999999"
                           value={globalConfigs.telefoneSuporte || ""}
-                          onChange={(e) =>
+                          onChange={(val) =>
                             handleUpdateConfiguracoesProperty(
                               "telefoneSuporte",
-                              e.target.value,
+                              val,
                             )
                           }
                         />
@@ -3963,15 +4167,15 @@ export function DashboardView({
                         <label className="text-[10px] font-semibold uppercase text-forest/70/60 ml-2">
                           E-mail de Suporte
                         </label>
-                        <input
+                        <DebouncedInput
                           type="email"
                           className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
                           placeholder="Ex: suporte@elohumanas.com.br"
                           value={globalConfigs.emailSuporte || ""}
-                          onChange={(e) =>
+                          onChange={(val) =>
                             handleUpdateConfiguracoesProperty(
                               "emailSuporte",
-                              e.target.value,
+                              val,
                             )
                           }
                         />
@@ -3981,14 +4185,14 @@ export function DashboardView({
                       <label className="text-[10px] font-semibold uppercase text-forest/70/60 ml-2">
                         Frase de Suporte (Mensagem Inicial)
                       </label>
-                      <textarea
+                      <DebouncedTextArea
                         className="text-sm bg-white border border-soft px-4 py-3 rounded-xl focus:outline-none focus:border-sun-dark transition-colors resize-none h-24"
                         placeholder="Ex: Olá! Preciso de ajuda com a plataforma..."
                         value={globalConfigs.fraseSuporte || ""}
-                        onChange={(e) =>
+                        onChange={(val) =>
                           handleUpdateConfiguracoesProperty(
                             "fraseSuporte",
-                            e.target.value,
+                            val,
                           )
                         }
                       />
@@ -4019,15 +4223,15 @@ export function DashboardView({
                         </label>
                         <div className="relative flex items-center">
                           <span className="absolute left-4 text-sm font-bold text-forest/60">R$</span>
-                          <input
+                          <DebouncedInput
                             type="text"
                             className="w-full text-sm font-bold bg-white border border-soft pl-12 pr-4 py-2.5 rounded-xl focus:outline-none focus:border-sun-dark transition-colors text-forest"
                             placeholder="29,90"
                             value={globalConfigs.taxaAssociativaMensal || "29,90"}
-                            onChange={(e) =>
+                            onChange={(val) =>
                               handleUpdateConfiguracoesProperty(
                                 "taxaAssociativaMensal",
-                                e.target.value,
+                                val,
                               )
                             }
                           />
@@ -4073,15 +4277,15 @@ export function DashboardView({
                         <label className="text-[10px] font-semibold uppercase text-forest/70 ml-2">
                           Chave Pública do Stripe (pk_live_... ou pk_test_...)
                         </label>
-                        <input
+                        <DebouncedInput
                           type="text"
                           className="text-sm font-mono bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
                           placeholder="pk_test_51Nx..."
                           value={globalConfigs.stripePublicKey || ""}
-                          onChange={(e) =>
+                          onChange={(val) =>
                             handleUpdateConfiguracoesProperty(
                               "stripePublicKey",
-                              e.target.value,
+                              val,
                             )
                           }
                         />
@@ -4091,15 +4295,15 @@ export function DashboardView({
                         <label className="text-[10px] font-semibold uppercase text-forest/70 ml-2">
                           Link de Checkout Direto Stripe (Payment Link)
                         </label>
-                        <input
+                        <DebouncedInput
                           type="url"
                           className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
                           placeholder="https://buy.stripe.com/..."
                           value={globalConfigs.stripeCheckoutUrl || ""}
-                          onChange={(e) =>
+                          onChange={(val) =>
                             handleUpdateConfiguracoesProperty(
                               "stripeCheckoutUrl",
-                              e.target.value,
+                              val,
                             )
                           }
                         />
@@ -4131,18 +4335,28 @@ export function DashboardView({
                       </label>
                     </div>
                     <p className="text-xs text-forest/70 leading-relaxed">
-                      Envia notificações transacionais em tempo real via HTTP POST para Brevo, Make, N8n, Zapier ou seu servidor de automação de e-mails sempre que houver novidades na plataforma.
+                      Envia notificações transacionais em tempo real para o <strong>Brevo (Sendinblue)</strong>, Make, N8n, Zapier ou seu servidor de automação de e-mails sempre que houver novidades na plataforma.
                     </p>
+
+                    <div className="flex gap-2 mb-2">
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateConfiguracoesProperty("webhookEmailUrl", "https://api.brevo.com/v3/smtp/email")}
+                        className="text-[11px] font-bold text-forest bg-forest/10 hover:bg-forest/20 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1"
+                      >
+                        ⚡ Usar API Direta do Brevo (https://api.brevo.com/v3/smtp/email)
+                      </button>
+                    </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="flex flex-col gap-1">
                         <label className="text-[10px] font-semibold uppercase text-forest/70 ml-2">
-                          URL Endpoint do Webhook (HTTP POST) *
+                          URL Endpoint do Brevo ou Webhook (HTTP POST) *
                         </label>
                         <input
                           type="url"
                           className="text-sm font-mono bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
-                          placeholder="https://api.brevo.com/v3/smtp/email ou https://hook.eu1.make.com/..."
+                          placeholder="https://api.brevo.com/v3/smtp/email"
                           value={globalConfigs.webhookEmailUrl || ""}
                           onChange={(e) =>
                             handleUpdateConfiguracoesProperty(
@@ -4155,12 +4369,12 @@ export function DashboardView({
 
                       <div className="flex flex-col gap-1">
                         <label className="text-[10px] font-semibold uppercase text-forest/70 ml-2">
-                          Segredo / Token de Autenticação (X-Webhook-Secret)
+                          Chave API do Brevo (xkeysib-...) / Token Secret
                         </label>
                         <input
                           type="password"
                           className="text-sm font-mono bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
-                          placeholder="Secret Token de Segurança"
+                          placeholder="xkeysib-..."
                           value={globalConfigs.webhookEmailSecret || ""}
                           onChange={(e) =>
                             handleUpdateConfiguracoesProperty(
@@ -4177,26 +4391,30 @@ export function DashboardView({
                         type="button"
                         onClick={async () => {
                           try {
+                            if (!globalConfigs.webhookEmailUrl) {
+                              alert("Por favor, informe a URL Endpoint do Brevo ou Webhook antes de testar.");
+                              return;
+                            }
                             await sendWebhookNotification({
                               event: "teste_webhook",
                               recipientEmail: globalConfigs.emailSuporte || "adm@acolhemente.com",
-                              recipientName: "Gestão",
-                              title: "Teste de Webhook - Projeto AcolheMente",
-                              message: "Sua integração de Webhook e e-mails automáticos está funcionando perfeitamente!",
+                              recipientName: "Gestão AcolheMente",
+                              title: "Teste de E-mail Brevo / Webhook - Projeto AcolheMente",
+                              message: "Sua integração com o Brevo e e-mails automáticos transacionais foi configurada e disparada com sucesso!",
                               data: {
                                 testMessage: "Disparo de teste realizado pelo Painel de Gestão.",
                                 timestamp: new Date().toISOString(),
                               },
                             });
-                            alert("Disparo de teste de Webhook acionado com sucesso! Verifique seu endpoint ou ferramentas de automação.");
+                            alert(`Disparo de teste acionado para ${globalConfigs.emailSuporte || 'adm@acolhemente.com'}! Verifique a caixa de entrada (ou logs do Brevo/Webhook).`);
                           } catch (err) {
-                            alert("Erro ao disparar teste de Webhook: " + err);
+                            alert("Erro ao disparar teste: " + err);
                           }
                         }}
                         className="px-4 py-2 bg-forest/10 text-forest hover:bg-forest hover:text-white rounded-xl font-bold text-xs transition-all uppercase tracking-wider flex items-center gap-2"
                       >
                         <Send className="w-3.5 h-3.5" />
-                        Testar Disparo de Webhook
+                        Testar Disparo de E-mail / Webhook
                       </button>
                     </div>
                   </div>
@@ -4212,14 +4430,14 @@ export function DashboardView({
                         <label className="text-[10px] font-semibold uppercase text-forest/70/60 ml-2">
                           Breve Descrição Institucional
                         </label>
-                        <textarea
+                        <DebouncedTextArea
                           className="text-sm bg-white border border-soft px-4 py-3 rounded-xl focus:outline-none focus:border-sun-dark transition-colors resize-none h-28"
                           placeholder="Uma iniciativa focada em democratizar o acesso à saúde mental..."
                           value={globalConfigs.footerDescricao || ""}
-                          onChange={(e) =>
+                          onChange={(val) =>
                             handleUpdateConfiguracoesProperty(
                               "footerDescricao",
-                              e.target.value,
+                              val,
                             )
                           }
                         />
@@ -4229,14 +4447,14 @@ export function DashboardView({
                           <label className="text-[10px] font-semibold uppercase text-forest/70/60 ml-2">
                             Cidades de Atuação
                           </label>
-                          <input
+                          <DebouncedInput
                             className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
                             placeholder="Ex: Brasil • São Paulo • online"
                             value={globalConfigs.cidadesRodape || ""}
-                            onChange={(e) =>
+                            onChange={(val) =>
                               handleUpdateConfiguracoesProperty(
                                 "cidadesRodape",
-                                e.target.value,
+                                val,
                               )
                             }
                           />
@@ -4255,15 +4473,15 @@ export function DashboardView({
                           <label className="text-[10px] font-semibold uppercase text-forest/70/60 ml-2">
                             E-mail de Contato do Rodapé
                           </label>
-                          <input
+                          <DebouncedInput
                             type="email"
                             className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
                             placeholder="Ex: contato@acolhemente.com"
                             value={globalConfigs.footerEmail || ""}
-                            onChange={(e) =>
+                            onChange={(val) =>
                               handleUpdateConfiguracoesProperty(
                                 "footerEmail",
-                                e.target.value,
+                                val,
                               )
                             }
                           />
@@ -4272,14 +4490,14 @@ export function DashboardView({
                           <label className="text-[10px] font-semibold uppercase text-forest/70/60 ml-2">
                             Telefone de Contato do Rodapé
                           </label>
-                          <input
+                          <DebouncedInput
                             className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
                             placeholder="Ex: (61) 9999-9999"
                             value={globalConfigs.footerTelefone || ""}
-                            onChange={(e) =>
+                            onChange={(val) =>
                               handleUpdateConfiguracoesProperty(
                                 "footerTelefone",
-                                e.target.value,
+                                val,
                               )
                             }
                           />
@@ -4295,15 +4513,15 @@ export function DashboardView({
                           <label className="text-[10px] font-semibold uppercase text-forest/70/60 ml-2">
                             Link do Instagram
                           </label>
-                          <input
+                          <DebouncedInput
                             type="url"
                             className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
                             placeholder="Ex: https://instagram.com/acolhemente"
                             value={globalConfigs.footerInstagram || ""}
-                            onChange={(e) =>
+                            onChange={(val) =>
                               handleUpdateConfiguracoesProperty(
                                 "footerInstagram",
-                                e.target.value,
+                                val,
                               )
                             }
                           />
@@ -4312,15 +4530,15 @@ export function DashboardView({
                           <label className="text-[10px] font-semibold uppercase text-forest/70/60 ml-2">
                             Link do LinkedIn
                           </label>
-                          <input
+                          <DebouncedInput
                             type="url"
                             className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
                             placeholder="Ex: https://linkedin.com/company/acolhemente"
                             value={globalConfigs.footerLinkedin || ""}
-                            onChange={(e) =>
+                            onChange={(val) =>
                               handleUpdateConfiguracoesProperty(
                                 "footerLinkedin",
-                                e.target.value,
+                                val,
                               )
                             }
                           />
@@ -4336,15 +4554,15 @@ export function DashboardView({
                           <label className="text-[10px] font-semibold uppercase text-forest/70/60 ml-2">
                             Link - Termos de Uso
                           </label>
-                          <input
+                          <DebouncedInput
                             type="url"
                             className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
                             placeholder="Ex: https://acolhemente.com/termos"
                             value={globalConfigs.urlTermosUso || ""}
-                            onChange={(e) =>
+                            onChange={(val) =>
                               handleUpdateConfiguracoesProperty(
                                 "urlTermosUso",
-                                e.target.value,
+                                val,
                               )
                             }
                           />
@@ -4353,15 +4571,15 @@ export function DashboardView({
                           <label className="text-[10px] font-semibold uppercase text-forest/70/60 ml-2">
                             Link - Política de Privacidade
                           </label>
-                          <input
+                          <DebouncedInput
                             type="url"
                             className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
                             placeholder="Ex: https://acolhemente.com/privacidade"
                             value={globalConfigs.urlPoliticaPrivacidade || ""}
-                            onChange={(e) =>
+                            onChange={(val) =>
                               handleUpdateConfiguracoesProperty(
                                 "urlPoliticaPrivacidade",
-                                e.target.value,
+                                val,
                               )
                             }
                           />
@@ -4370,15 +4588,15 @@ export function DashboardView({
                           <label className="text-[10px] font-semibold uppercase text-forest/70/60 ml-2">
                             Link - Contrato de Prestação
                           </label>
-                          <input
+                          <DebouncedInput
                             type="url"
                             className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
                             placeholder="Ex: https://acolhemente.com/contrato"
                             value={globalConfigs.urlContratoPrestacao || ""}
-                            onChange={(e) =>
+                            onChange={(val) =>
                               handleUpdateConfiguracoesProperty(
                                 "urlContratoPrestacao",
-                                e.target.value,
+                                val,
                               )
                             }
                           />
@@ -6156,14 +6374,24 @@ export function DashboardView({
                   </thead>
                   <tbody>
                     {[...filteredAcolhimentos]
-                      .filter((a) =>
-                        activeTab === "kanban"
-                          ? visibleColumns.some(
+                      .filter((a) => {
+                        const flow = getPatientFlowDetails(a);
+                        if (activeTab === "kanban") {
+                          return (
+                            flow.activeStep < 6 &&
+                            visibleColumns.some(
                               (c) =>
                                 c.id === (a.status || "Aguardando Avaliação"),
                             )
-                          : !a.status || a.status !== "Aguardando Avaliação",
-                      )
+                          );
+                        } else {
+                          return (
+                            flow.activeStep === 6 ||
+                            a.status === "Em Atendimento" ||
+                            a.status === "Alta"
+                          );
+                        }
+                      })
                       .sort((a, b) => {
                         const nomeA =
                           a.nomeDesejado || a.nomeCivil || a.nome || "";
@@ -6247,9 +6475,21 @@ export function DashboardView({
             <div className="flex-1 overflow-x-auto overflow-y-hidden p-6">
               <div className="flex h-full gap-6 shrink-0 w-max items-start">
                 {visibleColumns.map((col) => {
-                  const colCards = filteredAcolhimentos.filter(
-                    (a) => (a.status || "Aguardando Avaliação") === col.id,
-                  );
+                  const colCards = filteredAcolhimentos.filter((a) => {
+                    const cardStatus = a.status || "Aguardando Avaliação";
+                    const flow = getPatientFlowDetails(a);
+                    if (activeTab === "kanban") {
+                      return cardStatus === col.id && flow.activeStep < 6;
+                    } else {
+                      if (col.id === "Em Atendimento") {
+                        return (
+                          cardStatus === "Em Atendimento" ||
+                          (flow.activeStep === 6 && cardStatus !== "Alta")
+                        );
+                      }
+                      return cardStatus === col.id;
+                    }
+                  });
                   return (
                     <div
                       key={col.id}
@@ -6405,12 +6645,12 @@ export function DashboardView({
 
                                   {/* Progress bar de 6 etapas */}
                                   <div className="flex gap-1 h-1.5 w-full">
-                                    <div className={`flex-1 rounded-full transition-colors ${flow.activeStep >= 1 ? "bg-emerald-500" : "bg-warm-dark/40"}`} />
-                                    <div className={`flex-1 rounded-full transition-colors ${flow.activeStep >= 2 ? "bg-emerald-500" : "bg-warm-dark/40"}`} />
-                                    <div className={`flex-1 rounded-full transition-colors ${flow.propostaAceita ? "bg-emerald-500" : flow.propostaRevisao ? "bg-amber-500" : flow.activeStep >= 3 ? "bg-blue-400" : "bg-warm-dark/40"}`} />
-                                    <div className={`flex-1 rounded-full transition-colors ${flow.activeStep >= 4 ? "bg-emerald-500" : "bg-warm-dark/40"}`} />
-                                    <div className={`flex-1 rounded-full transition-colors ${flow.isAtribuicaoDevolvida ? "bg-rose-500" : flow.isAtribuicaoAceita ? "bg-emerald-500" : flow.activeStep >= 5 ? "bg-amber-400" : "bg-warm-dark/40"}`} />
-                                    <div className={`flex-1 rounded-full transition-colors ${flow.isAtendimentoIniciado || flow.isAtribuicaoAceita ? "bg-emerald-500" : "bg-warm-dark/40"}`} />
+                                    <div className={`flex-1 rounded-full transition-colors ${flow.propostaRevisao ? "bg-amber-500" : "bg-emerald-500"}`} />
+                                    <div className={`flex-1 rounded-full transition-colors ${flow.propostaRevisao ? "bg-amber-300" : (flow.isPropostaEnviada || flow.propostaAceita) ? "bg-emerald-500" : "bg-warm-dark/40"}`} />
+                                    <div className={`flex-1 rounded-full transition-colors ${flow.propostaAceita ? "bg-emerald-500" : flow.propostaRevisao ? "bg-amber-500" : flow.isPropostaEnviada ? "bg-blue-400" : "bg-warm-dark/40"}`} />
+                                    <div className={`flex-1 rounded-full transition-colors ${flow.isAtribuido ? "bg-emerald-500" : flow.propostaAceita ? "bg-amber-400" : "bg-warm-dark/40"}`} />
+                                    <div className={`flex-1 rounded-full transition-colors ${flow.isAtribuido && flow.isAtribuicaoDevolvida ? "bg-rose-500" : flow.isAtribuido && flow.isAtribuicaoAceita ? "bg-emerald-500" : flow.isAtribuido ? "bg-amber-400" : "bg-warm-dark/40"}`} />
+                                    <div className={`flex-1 rounded-full transition-colors ${flow.isAtribuido && flow.isAtribuicaoAceita && flow.isAtendimentoIniciado ? "bg-emerald-500" : "bg-warm-dark/40"}`} />
                                   </div>
                                 </div>
                               );
@@ -7825,988 +8065,1227 @@ export function DashboardView({
         <EventosServicosView activeSection={activeTab} profile={profile} />
       ) : null}
 
-      {/* Card Details Modal */}
+      {/* Card Details Modal - Ficha de Bordo do Paciente */}
       {selectedCard && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-forest/20 backdrop-blur-sm animate-in fade-in py-4">
-          <div className="bg-white rounded-3xl w-full max-w-5xl max-h-[95vh] flex flex-col shadow-2xl border border-soft overflow-hidden animate-in zoom-in-95">
-            <div className="px-6 py-4 flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-soft bg-warm/50 gap-2">
-              <div className="flex flex-col w-full max-w-lg">
-                <h3 className="font-serif text-2xl text-forest">
-                  Ficha de Acolhimento
-                </h3>
-                <div className="flex flex-col sm:flex-row gap-2 sm:gap-4 text-[11px] uppercase tracking-wider font-semibold text-forest/50 mt-1">
-                  {selectedCard.createdAt && (
-                    <span>Entrada: {formatDate(selectedCard.createdAt)}</span>
-                  )}
-                  {selectedCard.statusUpdatedAt && (
-                    <span>
-                      Ativação: {formatDate(selectedCard.statusUpdatedAt)}
-                    </span>
-                  )}
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-2 sm:px-4 bg-forest/25 backdrop-blur-sm animate-in fade-in py-2 sm:py-3">
+          <div className="bg-white rounded-3xl w-full max-w-[96vw] 2xl:max-w-[1550px] h-[95vh] flex flex-col shadow-2xl border border-soft overflow-hidden animate-in zoom-in-95">
+            {/* Header */}
+            <div className="px-6 py-4 flex flex-col border-b border-soft bg-gradient-to-r from-warm/60 via-white to-warm/40 gap-3 shrink-0">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <div className="p-2.5 bg-forest text-white rounded-xl shadow-xs">
+                    <User className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="font-serif text-2xl text-forest font-semibold">
+                        {selectedCard.nome || (selectedCard as any).nomeCompleto || "Paciente sem nome"}
+                      </h3>
+                      <span
+                        className={`text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full border ${
+                          selectedCard.ativo === false
+                            ? "bg-slate-100 text-slate-600 border-slate-200"
+                            : "bg-emerald-100 text-emerald-800 border-emerald-200"
+                        }`}
+                      >
+                        {selectedCard.ativo === false ? "Inativo" : "Ativo"}
+                      </span>
+                      {selectedCard.status && (
+                        <span className="text-[10px] font-bold uppercase px-2.5 py-0.5 rounded-full bg-sun/30 text-forest border border-sun/50">
+                          {selectedCard.status}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3 text-[11px] font-semibold text-forest/60 mt-0.5">
+                      {selectedCard.createdAt && (
+                        <span className="flex items-center gap-1">
+                          <Clock className="w-3 h-3 text-forest/40" /> Entrada: {formatDate(selectedCard.createdAt)}
+                        </span>
+                      )}
+                      {selectedCard.statusUpdatedAt && (
+                        <span className="flex items-center gap-1">
+                          <Calendar className="w-3 h-3 text-forest/40" /> Ativação: {formatDate(selectedCard.statusUpdatedAt)}
+                        </span>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
-                {(() => {
-                  const status = selectedCard.status || "Aguardando Avaliação";
-                  if (
-                    status === "Alta" ||
-                    status === "Inativo" ||
-                    status === "Encaminhamento Externo" ||
-                    status === "Desistência"
-                  )
-                    return null;
+                <button
+                  onClick={() => setSelectedCard(null)}
+                  className="p-1.5 text-forest/50 hover:text-red-500 rounded-full hover:bg-red-50 transition-colors self-end sm:self-auto"
+                  title="Fechar Ficha"
+                >
+                  <XCircle className="w-6 h-6" />
+                </button>
+              </div>
 
-                  const flow = getPatientFlowDetails(selectedCard);
+              {/* Patient Journey Flow Progress */}
+              {(() => {
+                const status = selectedCard.status || "Aguardando Avaliação";
+                if (
+                  status === "Alta" ||
+                  status === "Inativo" ||
+                  status === "Encaminhamento Externo" ||
+                  status === "Desistência"
+                )
+                  return null;
 
-                  return (
-                    <div className="w-full mt-4 bg-white/80 p-3.5 rounded-2xl border border-soft shadow-2xs">
-                      <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5 text-center text-[10px] font-bold uppercase tracking-wider mb-2">
-                        <div className={`p-1.5 rounded-xl border ${flow.activeStep >= 1 ? "text-emerald-800 bg-emerald-50/80 border-emerald-200" : "text-forest/40 bg-warm/30 border-transparent"}`}>
-                          1. Questionário
-                        </div>
-                        <div className={`p-1.5 rounded-xl border ${flow.activeStep >= 2 ? "text-emerald-800 bg-emerald-50/80 border-emerald-200" : "text-forest/40 bg-warm/30 border-transparent"}`}>
-                          2. Proposta
-                        </div>
-                        <div className={`p-1.5 rounded-xl border ${flow.isAceiteOuRevisaoDone ? (flow.propostaAceita ? "text-emerald-800 bg-emerald-50/80 border-emerald-200" : "text-amber-800 bg-amber-50/80 border-amber-200") : flow.activeStep >= 3 ? "text-blue-800 bg-blue-50/80 border-blue-200" : "text-forest/40 bg-warm/30 border-transparent"}`}>
-                          3. Aceite / Revisão
-                        </div>
-                        <div className={`p-1.5 rounded-xl border ${flow.activeStep >= 4 ? "text-emerald-800 bg-emerald-50/80 border-emerald-200" : "text-forest/40 bg-warm/30 border-transparent"}`}>
-                          4. Atribuir Prof.
-                        </div>
-                        <div className={`p-1.5 rounded-xl border ${flow.isAtribuicaoDevolvida ? "text-rose-800 bg-rose-50/80 border-rose-200" : flow.isAtribuicaoAceita ? "text-emerald-800 bg-emerald-50/80 border-emerald-200" : flow.activeStep >= 5 ? "text-amber-800 bg-amber-50/80 border-amber-200" : "text-forest/40 bg-warm/30 border-transparent"}`}>
-                          5. Atribuição
-                        </div>
-                        <div className={`p-1.5 rounded-xl border ${flow.isAtendimentoIniciado || (flow.isAtribuicaoAceita && !flow.isAtribuicaoDevolvida) ? "text-emerald-800 bg-emerald-50/80 border-emerald-200" : "text-forest/40 bg-warm/30 border-transparent"}`}>
-                          6. Atendimento
-                        </div>
+                const flow = getPatientFlowDetails(selectedCard);
+
+                return (
+                  <div className="w-full bg-white/90 p-3 rounded-2xl border border-soft shadow-2xs">
+                    <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5 text-center text-[10px] font-bold uppercase tracking-wider mb-1.5">
+                      <div className={`p-1.5 rounded-xl border transition-colors ${flow.propostaRevisao ? "text-amber-800 bg-amber-50/90 border-amber-300 font-extrabold" : flow.activeStep >= 1 ? "text-emerald-800 bg-emerald-50/90 border-emerald-200" : "text-forest/40 bg-warm/30 border-transparent"}`}>
+                        1. Questionário {flow.propostaRevisao ? "(Revisão)" : ""}
                       </div>
-
-                      <div className="flex gap-1.5 h-2 w-full">
-                        <div
-                          className={`flex-1 rounded-full transition-colors ${flow.activeStep >= 1 ? "bg-emerald-500" : "bg-warm-dark/40"}`}
-                        ></div>
-                        <div
-                          className={`flex-1 rounded-full transition-colors ${flow.activeStep >= 2 ? "bg-emerald-500" : "bg-warm-dark/40"}`}
-                        ></div>
-                        <div
-                          className={`flex-1 rounded-full transition-colors ${flow.propostaAceita ? "bg-emerald-500" : flow.propostaRevisao ? "bg-amber-500" : flow.activeStep >= 3 ? "bg-blue-400" : "bg-warm-dark/40"}`}
-                        ></div>
-                        <div
-                          className={`flex-1 rounded-full transition-colors ${flow.activeStep >= 4 ? "bg-emerald-500" : "bg-warm-dark/40"}`}
-                        ></div>
-                        <div
-                          className={`flex-1 rounded-full transition-colors ${flow.isAtribuicaoDevolvida ? "bg-rose-500" : flow.isAtribuicaoAceita ? "bg-emerald-500" : flow.activeStep >= 5 ? "bg-amber-400" : "bg-warm-dark/40"}`}
-                        ></div>
-                        <div
-                          className={`flex-1 rounded-full transition-colors ${flow.isAtendimentoIniciado || flow.isAtribuicaoAceita ? "bg-emerald-500" : "bg-warm-dark/40"}`}
-                        ></div>
+                      <div className={`p-1.5 rounded-xl border transition-colors ${flow.propostaRevisao ? "text-amber-800 bg-amber-50/90 border-amber-200" : (flow.isPropostaEnviada || flow.propostaAceita) ? "text-emerald-800 bg-emerald-50/90 border-emerald-200" : flow.activeStep === 2 ? "text-blue-800 bg-blue-50/90 border-blue-200" : "text-forest/40 bg-warm/30 border-transparent"}`}>
+                        2. Proposta
+                      </div>
+                      <div className={`p-1.5 rounded-xl border transition-colors ${flow.propostaAceita ? "text-emerald-800 bg-emerald-50/90 border-emerald-200" : flow.propostaRevisao ? "text-amber-800 bg-amber-50/90 border-amber-300 font-extrabold" : flow.isPropostaEnviada ? "text-blue-800 bg-blue-50/90 border-blue-200" : "text-forest/40 bg-warm/30 border-transparent"}`}>
+                        3. {flow.propostaRevisao ? "Revisão Solicitada" : flow.propostaAceita ? "Aceite OK" : "Aceite / Revisão"}
+                      </div>
+                      <div className={`p-1.5 rounded-xl border transition-colors ${flow.isAtribuido ? "text-emerald-800 bg-emerald-50/90 border-emerald-200" : flow.propostaAceita ? "text-amber-800 bg-amber-50/90 border-amber-300 font-bold" : "text-forest/40 bg-warm/30 border-transparent"}`}>
+                        4. Atribuir Prof. {!flow.isAtribuido && flow.propostaAceita ? "(Pendente)" : ""}
+                      </div>
+                      <div className={`p-1.5 rounded-xl border transition-colors ${flow.isAtribuicaoDevolvida ? "text-rose-800 bg-rose-50/90 border-rose-200" : flow.isAtribuicaoAceita ? "text-emerald-800 bg-emerald-50/90 border-emerald-200" : flow.isAtribuido ? "text-amber-800 bg-amber-50/90 border-amber-200" : "text-forest/40 bg-warm/30 border-transparent"}`}>
+                        5. Atribuição {!flow.isAtribuicaoAceita && flow.isAtribuido && !flow.isAtribuicaoDevolvida ? "(Pendente)" : ""}
+                      </div>
+                      <div className={`p-1.5 rounded-xl border transition-colors ${flow.isAtribuido && flow.isAtribuicaoAceita && (flow.isAtendimentoIniciado || selectedCard.status === "Em Atendimento") ? "text-emerald-800 bg-emerald-50/90 border-emerald-200" : "text-forest/40 bg-warm/30 border-transparent"}`}>
+                        6. Atendimento
                       </div>
                     </div>
-                  );
-                })()}
-              </div>
-              <button
-                onClick={() => setSelectedCard(null)}
-                className="p-2 text-forest/70 hover:text-red-500 rounded-full hover:bg-white transition-colors self-end sm:self-auto"
-              >
-                <XCircle className="w-6 h-6" />
-              </button>
+
+                    <div className="flex gap-1.5 h-1.5 w-full">
+                      <div className={`flex-1 rounded-full transition-colors ${flow.propostaRevisao ? "bg-amber-500" : "bg-emerald-500"}`}></div>
+                      <div className={`flex-1 rounded-full transition-colors ${flow.propostaRevisao ? "bg-amber-300" : (flow.isPropostaEnviada || flow.propostaAceita) ? "bg-emerald-500" : "bg-warm-dark/30"}`}></div>
+                      <div className={`flex-1 rounded-full transition-colors ${flow.propostaAceita ? "bg-emerald-500" : flow.propostaRevisao ? "bg-amber-500" : flow.isPropostaEnviada ? "bg-blue-400" : "bg-warm-dark/30"}`}></div>
+                      <div className={`flex-1 rounded-full transition-colors ${flow.isAtribuido ? "bg-emerald-500" : flow.propostaAceita ? "bg-amber-400" : "bg-warm-dark/30"}`}></div>
+                      <div className={`flex-1 rounded-full transition-colors ${flow.isAtribuido && flow.isAtribuicaoDevolvida ? "bg-rose-500" : flow.isAtribuido && flow.isAtribuicaoAceita ? "bg-emerald-500" : flow.isAtribuido ? "bg-amber-400" : "bg-warm-dark/30"}`}></div>
+                      <div className={`flex-1 rounded-full transition-colors ${flow.isAtribuido && flow.isAtribuicaoAceita && (flow.isAtendimentoIniciado || selectedCard.status === "Em Atendimento") ? "bg-emerald-500" : "bg-warm-dark/30"}`}></div>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Action Bar */}
-            <div className="flex flex-wrap items-center gap-4 py-3 px-6 bg-white border-b border-soft">
-              <button
-                onClick={() => {
-                  const tpl =
-                    templates.find((t) => t.id === "pagamento") || templates[0];
-                  setNotificacaoType(tpl.id);
-                  setNotificacaoName(tpl.name);
-                  setNotificacaoMsg(
-                    processNotificationTemplate(tpl.msg, selectedCard),
-                  );
-                  setShowNotificarModal(true);
-                }}
-                className="flex items-center gap-2 text-emerald-600 font-semibold text-sm hover:bg-emerald-50 px-3 py-1.5 rounded-lg transition-colors"
-              >
-                <Send className="w-4 h-4" /> Notificar
-              </button>
-              <button
-                onClick={() => setIsEditingCard(!isEditingCard)}
-                className="flex items-center gap-2 text-amber-500 font-semibold text-sm hover:bg-amber-50 px-3 py-1.5 rounded-lg transition-colors"
-              >
-                <Edit3 className="w-4 h-4" />{" "}
-                {isEditingCard ? "Salvar Edição" : "Editar"}
-              </button>
-              <button
-                onClick={() =>
-                  handleUpdateAcolhimentoProperty(
-                    selectedCard.id,
-                    "ativo",
-                    selectedCard.ativo === false ? true : false,
-                  )
-                }
-                className={`flex items-center gap-2 ${selectedCard.ativo === false ? "text-slate-500 hover:bg-slate-50" : "text-red-500 hover:bg-red-50"} font-semibold text-sm px-3 py-1.5 rounded-lg transition-colors`}
-              >
-                <Trash2 className="w-4 h-4" />{" "}
-                {selectedCard.ativo === false ? "Ativar" : "Inativar"}
-              </button>
+            <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-2.5 bg-white border-b border-soft shrink-0">
+              {/* Left Group */}
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={() => {
+                    const tpl =
+                      templates.find((t) => t.id === "pagamento") || templates[0];
+                    setNotificacaoType(tpl.id);
+                    setNotificacaoName(tpl.name);
+                    setNotificacaoMsg(
+                      processNotificationTemplate(tpl.msg, selectedCard),
+                    );
+                    setShowNotificarModal(true);
+                  }}
+                  className="flex items-center gap-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-bold text-xs px-3 py-1.5 rounded-xl border border-emerald-200/80 transition-colors shadow-2xs"
+                >
+                  <Send className="w-3.5 h-3.5" /> Notificar Paciente
+                </button>
 
-              {/* Contrato Assinado */}
-              <div className="flex items-center gap-2 ml-4">
+                <button
+                  onClick={() => {
+                    const link = `${window.location.origin}/?proposta=${selectedCard.id}`;
+                    navigator.clipboard.writeText(link);
+                    showToast("Link da Proposta copiado para a área de transferência!", "success");
+                    handleUpdateAcolhimentoProperty(selectedCard.id, "propostaEnviada", true);
+                  }}
+                  className="flex items-center gap-1.5 bg-white hover:bg-warm text-forest font-semibold text-xs px-3 py-1.5 rounded-xl border border-soft transition-colors shadow-2xs"
+                >
+                  <Copy className="w-3.5 h-3.5 text-forest/60" /> Link Proposta
+                </button>
+
                 <button
                   onClick={() => {
                     const link = `${window.location.origin}/?contrato=${selectedCard.id}`;
                     navigator.clipboard.writeText(link);
-                    alert(
-                      "Link do contrato copiado para a área de transferência!",
-                    );
+                    showToast("Link do contrato copiado para a área de transferência!", "success");
                   }}
-                  className="text-xs font-semibold text-sun-dark underline hover:text-forest transition-colors"
+                  className="flex items-center gap-1.5 bg-white hover:bg-warm text-forest font-semibold text-xs px-3 py-1.5 rounded-xl border border-soft transition-colors shadow-2xs"
                 >
-                  Copiar Link do Contrato
+                  <FileText className="w-3.5 h-3.5 text-forest/60" /> Link Contrato
                 </button>
+
                 <button
                   onClick={() => {
                     const defaultText = `CONTRATO DE PRESTAÇÃO DE SERVIÇOS PSICOLÓGICOS\n\nCONTRATANTE: ${selectedCard.nome || "[NOME]"}, portador(a) do e-mail ${selectedCard.email || "[EMAIL]"} e CPF ${selectedCard.cpf || "[CPF_AQUI]"}.\n\nCONTRATADO: Projeto AcolheMente Saúde...\n\nCLÁUSULA 1 - O presente contrato tem por objeto a prestação de serviços psicológicos na modalidade de Terapia Individual...\n\n(Edite as cláusulas abaixo)`;
                     setContratoText(selectedCard.contratoText || defaultText);
                     setShowContratoModal(true);
                   }}
-                  className="text-xs font-semibold text-sun-dark underline hover:text-forest transition-colors ml-4"
+                  className="flex items-center gap-1.5 text-xs font-medium text-forest/70 hover:text-forest px-2.5 py-1.5 rounded-lg hover:bg-warm transition-colors"
                 >
                   Modelo de Contrato
                 </button>
-                <div className="flex items-center gap-1.5 ml-3">
-                  <div
-                    className={`w-2 h-2 rounded-full ${selectedCard.contratoAssinado ? "bg-green-500" : "bg-red-500"}`}
-                  ></div>
-                  <span
-                    className={`text-xs font-bold uppercase tracking-wider ${selectedCard.contratoAssinado ? "text-green-600" : "text-red-500"}`}
-                  >
-                    {selectedCard.contratoAssinado
-                      ? "Contrato Assinado"
-                      : "Pendente"}
+
+                {/* Contrato Pill */}
+                <div className="flex items-center gap-1.5 px-3 py-1 bg-warm/50 border border-soft rounded-xl text-xs font-bold">
+                  <div className={`w-2 h-2 rounded-full ${selectedCard.contratoAssinado ? "bg-green-500 animate-pulse" : "bg-amber-500"}`}></div>
+                  <span className={selectedCard.contratoAssinado ? "text-green-700" : "text-amber-700"}>
+                    {selectedCard.contratoAssinado ? "Contrato Assinado" : "Contrato Pendente"}
                   </span>
                 </div>
               </div>
+
+              {/* Right Edit & Status Toggles */}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setIsEditingCard(!isEditingCard)}
+                  className={`flex items-center gap-1.5 font-bold text-xs px-3.5 py-1.5 rounded-xl border transition-all shadow-2xs ${
+                    isEditingCard
+                      ? "bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700"
+                      : "bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100"
+                  }`}
+                >
+                  <Edit3 className="w-3.5 h-3.5" />
+                  {isEditingCard ? "Salvar Edição" : "Editar Ficha"}
+                </button>
+
+                {/* Botão de Desligamento de Paciente (disponível também para Profissionais) */}
+                {(currentRole === "profissional" || currentRole === "triagem" || currentRole === "master") && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDesligamentoMotivo("");
+                      setDesligamentoDetalhes("");
+                      setShowDesligamentoModal(true);
+                    }}
+                    className="flex items-center gap-1.5 font-bold text-xs px-3 py-1.5 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 transition-colors shadow-2xs"
+                    title="Iniciar fluxo de desligamento do paciente"
+                  >
+                    <UserX className="w-3.5 h-3.5 text-rose-600" /> Desligar Paciente
+                  </button>
+                )}
+
+                {/* Multibotão de Status: Ativar / Standby / Inativar (disponível somente para Gestão e Triagem) */}
+                {(currentRole === "master" || currentRole === "triagem") && (
+                  <div className="flex items-center p-0.5 bg-warm/80 rounded-xl border border-soft shadow-2xs">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleUpdateAcolhimentoProperty(selectedCard.id, "ativo", true);
+                        handleUpdateAcolhimentoProperty(selectedCard.id, "statusInativacao", "Ativo");
+                        if (selectedCard.status === "Inativo" || selectedCard.status === "Standby") {
+                          handleUpdateAcolhimentoProperty(selectedCard.id, "status", "Aguardando Avaliação");
+                        }
+                        showToast("Status alterado para Ativo", "success");
+                      }}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
+                        selectedCard.ativo !== false && selectedCard.statusInativacao !== "Standby" && selectedCard.statusInativacao !== "Inativo"
+                          ? "bg-emerald-600 text-white shadow-2xs"
+                          : "text-forest/70 hover:text-forest hover:bg-white/60"
+                      }`}
+                      title="Ativar paciente"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" /> Ativar
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleUpdateAcolhimentoProperty(selectedCard.id, "ativo", "standby");
+                        handleUpdateAcolhimentoProperty(selectedCard.id, "statusInativacao", "Standby");
+                        showToast("Status alterado para Standby", "info");
+                      }}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
+                        selectedCard.ativo === "standby" || selectedCard.statusInativacao === "Standby"
+                          ? "bg-amber-500 text-white shadow-2xs"
+                          : "text-forest/70 hover:text-forest hover:bg-white/60"
+                      }`}
+                      title="Colocar em Standby"
+                    >
+                      <Clock className="w-3.5 h-3.5" /> Standby
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleUpdateAcolhimentoProperty(selectedCard.id, "ativo", false);
+                        handleUpdateAcolhimentoProperty(selectedCard.id, "statusInativacao", "Inativo");
+                        showToast("Status alterado para Inativo", "error");
+                      }}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
+                        selectedCard.ativo === false || selectedCard.statusInativacao === "Inativo"
+                          ? "bg-rose-600 text-white shadow-2xs"
+                          : "text-forest/70 hover:text-forest hover:bg-white/60"
+                      }`}
+                      title="Inativar paciente"
+                    >
+                      <XCircle className="w-3.5 h-3.5" /> Inativar
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-6 lg:p-8">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                {/* Column 1 */}
-                <div className="space-y-6">
-                  <section>
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-3 flex items-center gap-2">
-                      <User className="w-4 h-4" /> Informações Básicas
-                    </h4>
-                    <div className="space-y-3 ms-2">
-                      <EditableField
-                        label="Nome"
-                        value={selectedCard.nome}
-                        field="nome"
-                        onChange={(f, v) =>
-                          handleUpdateAcolhimentoProperty(selectedCard.id, f, v)
-                        }
-                        isEditing={isEditingCard}
-                      />
-                      <EditableField
-                        label="Data de Nascimento"
-                        value={selectedCard.dataNascimento}
-                        field="dataNascimento"
-                        onChange={(f, v) =>
-                          handleUpdateAcolhimentoProperty(selectedCard.id, f, v)
-                        }
-                        isEditing={isEditingCard}
-                      />
-                      <EditableField
-                        label="CPF"
-                        value={selectedCard.cpf}
-                        field="cpf"
-                        onChange={(f, v) =>
-                          handleUpdateAcolhimentoProperty(selectedCard.id, f, v)
-                        }
-                        isEditing={isEditingCard}
-                      />
-                      <EditableField
-                        label="Estado Civil"
-                        value={selectedCard.estadoCivil}
-                        field="estadoCivil"
-                        onChange={(f, v) =>
-                          handleUpdateAcolhimentoProperty(selectedCard.id, f, v)
-                        }
-                        isEditing={isEditingCard}
-                      />
-                      <EditableField
-                        label="Gênero"
-                        value={selectedCard.genero}
-                        field="genero"
-                        onChange={(f, v) =>
-                          handleUpdateAcolhimentoProperty(selectedCard.id, f, v)
-                        }
-                        isEditing={isEditingCard}
-                      />
-                      <EditableField
-                        label="Deficiência / Necessidade Especial"
-                        value={selectedCard.deficiencia}
-                        field="deficiencia"
-                        onChange={(f, v) =>
-                          handleUpdateAcolhimentoProperty(selectedCard.id, f, v)
-                        }
-                        isEditing={isEditingCard}
-                      />
-                      {/* Painel do Fluxo de Entrada e Aceite */}
-                      <div className="mt-4 p-4 bg-warm/40 border border-soft rounded-2xl space-y-3">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-forest/70 flex items-center gap-1.5">
-                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Fluxo de Entrada e Aceite
-                        </span>
+            {/* Modal Scrollable Body - Organized in 9 Distinct Ordered Sections */}
+            <div className="flex-1 overflow-y-auto p-6 lg:p-8 space-y-7 bg-warm/10">
 
-                        <div className="space-y-2">
-                          {/* Proposta Selo */}
-                          <div className="flex items-center justify-between bg-white p-3 rounded-xl border border-soft text-xs">
-                            <span className="font-medium text-forest/70">Proposta do Paciente:</span>
-                            {selectedCard.propostaStatus === "Proposta aceita pelo paciente" ? (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                                Proposta Aceita
-                              </span>
-                            ) : selectedCard.propostaStatus === "Paciente solicita revisão da proposta" ? (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full font-bold bg-amber-100 text-amber-900 border border-amber-300">
-                                <HelpCircle className="w-3.5 h-3.5 text-amber-600" />
-                                Revisão Solicitada
-                              </span>
-                            ) : selectedCard.propostaEnviada ? (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full font-bold bg-blue-100 text-blue-800 border border-blue-300">
-                                <Send className="w-3.5 h-3.5 text-blue-600" />
-                                Proposta Enviada
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full font-semibold bg-gray-100 text-gray-600">
-                                Aguardando envio
-                              </span>
-                            )}
-                          </div>
+              {/* 1. DADOS PESSOAIS */}
+              <div className="bg-white p-6 rounded-2xl border border-soft shadow-2xs space-y-4">
+                <div className="flex items-center justify-between border-b border-soft pb-3">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-forest/80 flex items-center gap-2">
+                    <User className="w-4 h-4 text-forest" /> 1. Dados Pessoais
+                  </h4>
+                  <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md bg-warm text-forest/70 border border-soft">
+                    Identificação
+                  </span>
+                </div>
 
-                          {/* Atribuição Selo */}
-                          <div className="flex flex-col gap-1.5 bg-white p-3 rounded-xl border border-soft text-xs">
-                            <div className="flex items-center justify-between">
-                              <span className="font-medium text-forest/70">Atribuição do Profissional:</span>
-                              {selectedCard.atribuicaoStatus === "Aceito" ? (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                                  <UserCheck className="w-3.5 h-3.5 text-emerald-600" />
-                                  Atribuição Aceita
-                                </span>
-                              ) : selectedCard.atribuicaoStatus === "Devolvido" || selectedCard.atribuicaoStatus === "Rejeitado" ? (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full font-bold bg-rose-100 text-rose-800 border border-rose-300">
-                                  <RotateCcw className="w-3.5 h-3.5 text-rose-600" />
-                                  Atribuição Devolvida
-                                </span>
-                              ) : selectedCard.profissionalId ? (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full font-bold bg-amber-50 text-amber-800 border border-amber-200">
-                                  <Clock className="w-3.5 h-3.5 text-amber-600" />
-                                  Aguardando Aceite
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full font-semibold bg-gray-100 text-gray-600">
-                                  Não atribuído
-                                </span>
-                              )}
-                            </div>
-                            {(selectedCard.atribuicaoStatus === "Devolvido" || selectedCard.atribuicaoStatus === "Rejeitado") && (
-                              <div className="mt-1 p-2 bg-rose-50 border border-rose-200 rounded-lg text-[11px] text-rose-800">
-                                <span className="font-bold">Devolvido para a Triagem.</span>
-                                {selectedCard.devolvidoMotivo && (
-                                  <p className="mt-0.5 text-rose-700">Justificativa: {selectedCard.devolvidoMotivo}</p>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                  <EditableField
+                    label="Nome Completo"
+                    value={selectedCard.nome}
+                    field="nome"
+                    onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
+                    isEditing={isEditingCard}
+                  />
+                  <EditableField
+                    label="CPF"
+                    value={selectedCard.cpf}
+                    field="cpf"
+                    onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
+                    isEditing={isEditingCard}
+                  />
+                  <EditableField
+                    label="Data de Nascimento"
+                    value={selectedCard.dataNascimento}
+                    field="dataNascimento"
+                    onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
+                    isEditing={isEditingCard}
+                  />
+                  <EditableField
+                    label="Gênero"
+                    value={selectedCard.genero}
+                    field="genero"
+                    onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
+                    isEditing={isEditingCard}
+                  />
+                  <EditableField
+                    label="Estado Civil"
+                    value={selectedCard.estadoCivil}
+                    field="estadoCivil"
+                    onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
+                    isEditing={isEditingCard}
+                  />
+                  <EditableField
+                    label="Deficiência / Necessidade Especial"
+                    value={selectedCard.deficiencia}
+                    field="deficiencia"
+                    onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
+                    isEditing={isEditingCard}
+                  />
+                </div>
+              </div>
 
-                        <div className="flex flex-wrap gap-2 pt-1">
-                          <button
-                            onClick={() => {
-                              const link = `${window.location.origin}/?proposta=${selectedCard.id}`;
-                              navigator.clipboard.writeText(link);
-                              alert("Link da Proposta copiado para a área de transferência!");
-                              handleUpdateAcolhimentoProperty(selectedCard.id, "propostaEnviada", true);
-                            }}
-                            className="text-xs font-bold text-forest bg-white hover:bg-slate-50 px-3 py-1.5 rounded-lg border border-soft transition-colors flex items-center gap-1.5 shadow-2xs"
-                          >
-                            <Copy className="w-3.5 h-3.5 text-forest/60" /> Copiar Link da Proposta
-                          </button>
-                        </div>
-                      </div>
-                      {selectedCard.dadosContrato && (
-                        <div className="mt-4 p-4 bg-green-50/50 border border-green-100 rounded-xl">
-                          <span className="block text-[10px] font-bold uppercase tracking-wider text-green-700 mb-2">
-                            Dados do Contrato Assinado
-                          </span>
-                          <div className="text-sm text-forest space-y-1">
-                            <p>
-                              <span className="font-semibold">Signatário:</span>{" "}
-                              {selectedCard.dadosContrato.nome}
-                            </p>
-                            <p>
-                              <span className="font-semibold">E-mail:</span>{" "}
-                              {selectedCard.dadosContrato.email}
-                            </p>
-                            <p>
-                              <span className="font-semibold">CPF:</span>{" "}
-                              {selectedCard.dadosContrato.cpf}
-                            </p>
-                            {selectedCard.dadosContrato.menorIdade && (
-                              <p className="text-sun-dark-dark font-medium">
-                                <span className="font-semibold text-forest">
-                                  Paciente (Menor):
-                                </span>{" "}
-                                {selectedCard.dadosContrato.nomeMenor}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                      <EditableField
-                        label="E-mail"
-                        value={selectedCard.email}
-                        field="email"
-                        onChange={(f, v) =>
-                          handleUpdateAcolhimentoProperty(selectedCard.id, f, v)
-                        }
-                        isEditing={isEditingCard}
-                      />
-                      <EditableField
-                        label="Telefone / WhatsApp"
-                        value={selectedCard.telefone}
-                        field="telefone"
-                        onChange={(f, v) =>
-                          handleUpdateAcolhimentoProperty(selectedCard.id, f, v)
-                        }
-                        isEditing={isEditingCard}
-                      />
-                      <EditableField
-                        label="Via de Acesso / Empresa"
-                        value={selectedCard.viaAcesso}
-                        field="viaAcesso"
-                        onChange={(f, v) =>
-                          handleUpdateAcolhimentoProperty(selectedCard.id, f, v)
-                        }
-                        isEditing={isEditingCard}
-                      />
-                      <EditableField
-                        label="De onde nos conheceu"
-                        value={selectedCard.comoConheceu}
-                        field="comoConheceu"
-                        onChange={(f, v) =>
-                          handleUpdateAcolhimentoProperty(selectedCard.id, f, v)
-                        }
-                        isEditing={isEditingCard}
-                      />
-                      {selectedCard.tratamentoPara === "Outra pessoa" && (
-                        <>
-                          <div className="mt-4 pt-4 border-t border-soft">
-                            <span className="block text-xs font-bold uppercase text-forest/70 mb-2">
-                              Dados do Responsável
-                            </span>
-                            <EditableField
-                              label="Responsável"
-                              value={selectedCard.responsavelNome}
-                              field="responsavelNome"
-                              onChange={(f, v) =>
-                                handleUpdateAcolhimentoProperty(
-                                  selectedCard.id,
-                                  f,
-                                  v,
-                                )
-                              }
-                              isEditing={isEditingCard}
-                            />
-                            <EditableField
-                              label="CPF do Responsável"
-                              value={selectedCard.responsavelCpf}
-                              field="responsavelCpf"
-                              onChange={(f, v) =>
-                                handleUpdateAcolhimentoProperty(
-                                  selectedCard.id,
-                                  f,
-                                  v,
-                                )
-                              }
-                              isEditing={isEditingCard}
-                            />
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  </section>
-
-                  {selectedCard.viaAcesso === "Particular" && (
-                    <section>
-                      <h4 className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-3 flex items-center gap-2">
-                        <FileText className="w-4 h-4" /> Perfil Socioeconômico
-                      </h4>
-                      <div className="space-y-3 ms-2 flex flex-col gap-1">
-                        <EditableField
-                          label="Renda Bruta"
-                          value={selectedCard.faixaSalarial}
-                          field="faixaSalarial"
-                          onChange={(f, v) =>
-                            handleUpdateAcolhimentoProperty(
-                              selectedCard.id,
-                              f,
-                              v,
-                            )
-                          }
-                          isEditing={isEditingCard}
-                        />
-                        <EditableField
-                          label="Fonte"
-                          value={selectedCard.fonteRenda}
-                          field="fonteRenda"
-                          onChange={(f, v) =>
-                            handleUpdateAcolhimentoProperty(
-                              selectedCard.id,
-                              f,
-                              v,
-                            )
-                          }
-                          isEditing={isEditingCard}
-                        />
-                        <EditableField
-                          label="Residentes"
-                          value={selectedCard.dependentes}
-                          field="dependentes"
-                          onChange={(f, v) =>
-                            handleUpdateAcolhimentoProperty(
-                              selectedCard.id,
-                              f,
-                              v,
-                            )
-                          }
-                          isEditing={isEditingCard}
-                        />
-                        <EditableField
-                          label="Plano de Saúde"
-                          value={selectedCard.planoSaude}
-                          field="planoSaude"
-                          onChange={(f, v) =>
-                            handleUpdateAcolhimentoProperty(
-                              selectedCard.id,
-                              f,
-                              v,
-                            )
-                          }
-                          isEditing={isEditingCard}
-                        />
-                      </div>
-                    </section>
+              {/* 2. DADOS DO RESPONSÁVEL SE MENOR */}
+              <div className="bg-white p-6 rounded-2xl border border-soft shadow-2xs space-y-4">
+                <div className="flex items-center justify-between border-b border-soft pb-3">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-forest/80 flex items-center gap-2">
+                    <UserCheck className="w-4 h-4 text-forest" /> 2. Dados do Responsável (se menor ou dependente)
+                  </h4>
+                  {selectedCard.tratamentoPara === "Outra pessoa" || selectedCard.responsavelNome || selectedCard.dadosContrato?.menorIdade ? (
+                    <span className="text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200">
+                      Responsável Requerido
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-md bg-warm text-forest/60 border border-soft">
+                      Atendimento Próprio
+                    </span>
                   )}
                 </div>
 
-                {/* Column 2 */}
-                <div className="space-y-6">
-                  {selectedCard.viaAcesso === "Particular" && (
-                    <section>
-                      <h4 className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-3">
-                        Habitação e Acesso
-                      </h4>
-                      <div className="space-y-3 ms-2">
-                        <EditableField
-                          label="Escolaridade"
-                          value={selectedCard.escolaridade}
-                          field="escolaridade"
-                          onChange={(f, v) =>
-                            handleUpdateAcolhimentoProperty(
-                              selectedCard.id,
-                              f,
-                              v,
-                            )
-                          }
-                          isEditing={isEditingCard}
-                        />
-                        <EditableField
-                          label="Moradia"
-                          value={selectedCard.moradia}
-                          field="moradia"
-                          onChange={(f, v) =>
-                            handleUpdateAcolhimentoProperty(
-                              selectedCard.id,
-                              f,
-                              v,
-                            )
-                          }
-                          isEditing={isEditingCard}
-                        />
-                        <EditableField
-                          label="Cômodos"
-                          value={selectedCard.comodos}
-                          field="comodos"
-                          onChange={(f, v) =>
-                            handleUpdateAcolhimentoProperty(
-                              selectedCard.id,
-                              f,
-                              v,
-                            )
-                          }
-                          isEditing={isEditingCard}
-                        />
-                        <EditableField
-                          label="Dispositivo / Aparelho"
-                          value={selectedCard.dispositivo}
-                          field="dispositivo"
-                          onChange={(f, v) =>
-                            handleUpdateAcolhimentoProperty(
-                              selectedCard.id,
-                              f,
-                              v,
-                            )
-                          }
-                          isEditing={isEditingCard}
-                        />
-                        <EditableField
-                          label="Internet"
-                          value={selectedCard.internet}
-                          field="internet"
-                          onChange={(f, v) =>
-                            handleUpdateAcolhimentoProperty(
-                              selectedCard.id,
-                              f,
-                              v,
-                            )
-                          }
-                          isEditing={isEditingCard}
-                        />
-                      </div>
-                    </section>
-                  )}
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                  <EditableField
+                    label="Atendimento Para"
+                    value={selectedCard.tratamentoPara || (selectedCard.responsavelNome ? "Outra pessoa (Menor/Dependente)" : "Própria pessoa")}
+                    field="tratamentoPara"
+                    onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
+                    isEditing={isEditingCard}
+                  />
+                  <EditableField
+                    label="Nome do Responsável"
+                    value={selectedCard.responsavelNome || selectedCard.dadosContrato?.nome}
+                    field="responsavelNome"
+                    onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
+                    isEditing={isEditingCard}
+                  />
+                  <EditableField
+                    label="CPF do Responsável"
+                    value={selectedCard.responsavelCpf || selectedCard.dadosContrato?.cpf}
+                    field="responsavelCpf"
+                    onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
+                    isEditing={isEditingCard}
+                  />
+                </div>
 
-                  <section>
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-3">
-                      Histórico e Motivação
-                    </h4>
-                    <div className="space-y-3 ms-2">
-                      <EditableField
-                        label="Terapia Anterior?"
-                        value={selectedCard.terapiaAnterior}
-                        field="terapiaAnterior"
-                        onChange={(f, v) =>
-                          handleUpdateAcolhimentoProperty(selectedCard.id, f, v)
-                        }
-                        isEditing={isEditingCard}
-                      />
-                      <EditableField
-                        label="Melhores Períodos (Online)"
-                        value={
-                          Array.isArray(selectedCard.melhoresPeriodos)
-                            ? selectedCard.melhoresPeriodos.join(", ")
-                            : selectedCard.melhoresPeriodos
-                        }
-                        field="melhoresPeriodos"
-                        onChange={(f, v) =>
-                          handleUpdateAcolhimentoProperty(selectedCard.id, f, v)
-                        }
-                        isEditing={isEditingCard}
-                      />
-                      <div className="bg-sun-dark-light/30 border border-sun-dark/10 p-4 rounded-xl mt-2">
-                        <span className="block text-xs font-semibold uppercase text-forest/70/60 mb-2">
-                          Motivo Declarado
-                        </span>
-                        {isEditingCard ? (
-                          <DebouncedTextArea
-                            value={selectedCard.motivo || ""}
-                            onChange={(val) =>
-                              handleUpdateAcolhimentoProperty(
-                                selectedCard.id,
-                                "motivo",
-                                val,
-                              )
-                            }
-                            className="w-full bg-transparent text-sm text-forest border-b border-sun-dark focus:outline-none resize-none h-16"
-                          />
-                        ) : (
-                          <p className="text-sm text-forest leading-relaxed">
-                            {selectedCard.motivo}
-                          </p>
-                        )}
+                {selectedCard.dadosContrato?.menorIdade && (
+                  <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl text-xs text-amber-900 flex items-center gap-2">
+                    <Info className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>Paciente confirmado como menor de idade no contrato assinado por {selectedCard.dadosContrato.nome}.</span>
+                  </div>
+                )}
+              </div>
+
+              {/* 3. DADOS DE CONTATO */}
+              <div className="bg-white p-6 rounded-2xl border border-soft shadow-2xs space-y-4">
+                <div className="flex items-center justify-between border-b border-soft pb-3">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-forest/80 flex items-center gap-2">
+                    <Phone className="w-4 h-4 text-forest" /> 3. Dados de Contato
+                  </h4>
+                  <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md bg-warm text-forest/70 border border-soft">
+                    Comunicação
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                  <EditableField
+                    label="E-mail"
+                    value={selectedCard.email}
+                    field="email"
+                    onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
+                    isEditing={isEditingCard}
+                  />
+                  <EditableField
+                    label="Telefone / WhatsApp"
+                    value={selectedCard.telefone}
+                    field="telefone"
+                    onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
+                    isEditing={isEditingCard}
+                  />
+                  <EditableField
+                    label="Cidade / Estado"
+                    value={selectedCard.cidadeEstado || (selectedCard.cidade ? `${selectedCard.cidade}${selectedCard.estado ? ` - ${selectedCard.estado}` : ''}` : '')}
+                    field="cidadeEstado"
+                    onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
+                    isEditing={isEditingCard}
+                  />
+                  <EditableField
+                    label="Endereço / Bairro"
+                    value={selectedCard.endereco}
+                    field="endereco"
+                    onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
+                    isEditing={isEditingCard}
+                  />
+                </div>
+              </div>
+
+              {/* 4. FONTE DE ACESSO (COMO CONHECEU O PROJETO) */}
+              <div className="bg-white p-6 rounded-2xl border border-soft shadow-2xs space-y-4">
+                <div className="flex items-center justify-between border-b border-soft pb-3">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-forest/80 flex items-center gap-2">
+                    <Building2 className="w-4 h-4 text-forest" /> 4. Fonte de Acesso & Perfil Socioeconômico
+                  </h4>
+                  <span className="text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
+                    {selectedCard.viaAcesso || "Acesso Direto"}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                  <EditableField
+                    label="Via de Acesso (Canal)"
+                    value={selectedCard.viaAcesso}
+                    field="viaAcesso"
+                    onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
+                    isEditing={isEditingCard}
+                  />
+                  <EditableField
+                    label="Como Nos Conheceu"
+                    value={selectedCard.comoConheceu}
+                    field="comoConheceu"
+                    onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
+                    isEditing={isEditingCard}
+                  />
+                  <EditableField
+                    label="Empresa Vinculada"
+                    value={selectedCard.empresa || (selectedCard as any).empresaVinculada}
+                    field="empresa"
+                    onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
+                    isEditing={isEditingCard}
+                  />
+                  <EditableField
+                    label="Escolaridade"
+                    value={selectedCard.escolaridade}
+                    field="escolaridade"
+                    onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
+                    isEditing={isEditingCard}
+                  />
+                </div>
+
+                {/* Bloco Socioeconômico (Particular / Social) */}
+                <div className="mt-4 pt-4 border-t border-soft space-y-3">
+                  <span className="block text-[11px] font-bold uppercase tracking-wider text-forest/70">
+                    Detalhes Socioeconômicos & Habitacionais
+                  </span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                    <EditableField
+                      label="Renda Bruta / Faixa Salarial"
+                      value={selectedCard.faixaSalarial}
+                      field="faixaSalarial"
+                      onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
+                      isEditing={isEditingCard}
+                    />
+                    <EditableField
+                      label="Fonte de Renda"
+                      value={selectedCard.fonteRenda}
+                      field="fonteRenda"
+                      onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
+                      isEditing={isEditingCard}
+                    />
+                    <EditableField
+                      label="Residentes / Dependentes"
+                      value={selectedCard.dependentes}
+                      field="dependentes"
+                      onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
+                      isEditing={isEditingCard}
+                    />
+                    <EditableField
+                      label="Plano de Saúde"
+                      value={selectedCard.planoSaude}
+                      field="planoSaude"
+                      onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
+                      isEditing={isEditingCard}
+                    />
+                    <EditableField
+                      label="Tipo de Moradia"
+                      value={selectedCard.moradia}
+                      field="moradia"
+                      onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
+                      isEditing={isEditingCard}
+                    />
+                    <EditableField
+                      label="Cômodos da Residência"
+                      value={selectedCard.comodos}
+                      field="comodos"
+                      onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
+                      isEditing={isEditingCard}
+                    />
+                    <EditableField
+                      label="Dispositivo / Aparelho"
+                      value={selectedCard.dispositivo}
+                      field="dispositivo"
+                      onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
+                      isEditing={isEditingCard}
+                    />
+                    <EditableField
+                      label="Acesso à Internet"
+                      value={selectedCard.internet}
+                      field="internet"
+                      onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
+                      isEditing={isEditingCard}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* 5. HISTÓRICO CLÍNICO E MOTIVAÇÃO */}
+              <div className="bg-white p-6 rounded-2xl border border-soft shadow-2xs space-y-4">
+                <div className="flex items-center justify-between border-b border-soft pb-3">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-forest/80 flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-forest" /> 5. Histórico Clínico & Motivação
+                  </h4>
+                  <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md bg-warm text-forest/70 border border-soft">
+                    Triagem Inicial
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <EditableField
+                    label="Terapia Anterior?"
+                    value={selectedCard.terapiaAnterior}
+                    field="terapiaAnterior"
+                    onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
+                    isEditing={isEditingCard}
+                  />
+                  <EditableField
+                    label="Melhores Períodos para Atendimento (Online)"
+                    value={
+                      Array.isArray(selectedCard.melhoresPeriodos)
+                        ? selectedCard.melhoresPeriodos.join(", ")
+                        : selectedCard.melhoresPeriodos
+                    }
+                    field="melhoresPeriodos"
+                    onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
+                    isEditing={isEditingCard}
+                  />
+                </div>
+
+                <div className="bg-sun/10 border border-sun/30 p-4.5 rounded-xl space-y-1.5 mt-2">
+                  <span className="block text-[10px] font-bold uppercase tracking-wider text-forest/70">
+                    Motivo Declarado / Queixa Principal
+                  </span>
+                  {isEditingCard ? (
+                    <DebouncedTextArea
+                      value={selectedCard.motivo || ""}
+                      onChange={(val) => handleUpdateAcolhimentoProperty(selectedCard.id, "motivo", val)}
+                      className="w-full bg-white text-sm text-forest p-3 border border-sun-dark rounded-lg focus:outline-none resize-none h-24"
+                    />
+                  ) : (
+                    <p className="text-sm text-forest leading-relaxed font-serif italic">
+                      "{selectedCard.motivo || "Nenhum motivo ou queixa principal informada no formulário."}"
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* 6. PROPOSTA E ATRIBUIÇÃO (BOTÕES PARA VALOR, FREQUENCIA E PROFISSIONAL) */}
+              <div className="bg-white p-6 rounded-2xl border border-soft shadow-2xs space-y-6">
+                <div className="flex flex-wrap items-center justify-between border-b border-soft pb-3 gap-2">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-900 flex items-center gap-2">
+                    <Calculator className="w-4 h-4 text-emerald-700" /> 6. Proposta e Atribuição
+                  </h4>
+
+                  {/* Status Pills & Proposta Action Button */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {/* Botão de Disparo / Notificação de Proposta */}
+                    {(currentRole === "master" || currentRole === "triagem") && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const isRevision = selectedCard.propostaStatus === "Paciente solicita revisão da proposta" || selectedCard.propostaStatus === "Revisão solicitada";
+                          const newPropostaStatus = isRevision ? "Revisão concluída" : "Proposta enviada";
+                          
+                          await handleUpdateAcolhimentoProperty(selectedCard.id, "propostaStatus", newPropostaStatus);
+                          await handleUpdateAcolhimentoProperty(selectedCard.id, "propostaEnviada", true);
+                          await handleUpdateAcolhimentoProperty(selectedCard.id, "propostaEnviadaEm", new Date().toISOString());
+
+                          const link = `${window.location.origin}/?proposta=${selectedCard.id}`;
+                          if (selectedCard.email) {
+                            sendWebhookNotification({
+                              event: "proposta_revisao",
+                              recipientEmail: selectedCard.email,
+                              recipientName: selectedCard.nome || "Paciente",
+                              title: isRevision ? "Sua Proposta Foi Atualizada - Projeto AcolheMente" : "Sua Proposta de Atendimento - Projeto AcolheMente",
+                              message: `Sua proposta foi ${isRevision ? "revisada e atualizada" : "elaborada"}. Acesse o link para conferir os detalhes e responder: ${link}`,
+                              data: {
+                                propostaLink: link,
+                                valorSessao: selectedCard.valorSessao || "A combinar",
+                                frequenciaSessoes: selectedCard.frequenciaSessoes || "Semanal",
+                              }
+                            }).catch((e) => console.error("Erro no envio da notificação de proposta:", e));
+                          }
+                          showToast(isRevision ? "Nova proposta notificada! Status alterado para 'Revisão concluída'." : "Proposta notificada com sucesso ao paciente!", "success");
+                        }}
+                        className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg transition-all shadow-2xs flex items-center gap-1.5"
+                        title="Notificar proposta ao paciente via e-mail e atualizar status"
+                      >
+                        <Send className="w-3.5 h-3.5" />
+                        {selectedCard.propostaStatus === "Paciente solicita revisão da proposta" ? "Notificar Nova Proposta (Concluir Revisão)" : "Notificar Proposta ao Paciente"}
+                      </button>
+                    )}
+
+                    {/* Status Proposta */}
+                    {selectedCard.propostaStatus === "Proposta aceita pelo paciente" ? (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 bg-emerald-100 px-2.5 py-1 rounded-lg border border-emerald-300">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Proposta Aceita
+                      </span>
+                    ) : selectedCard.propostaStatus === "Paciente solicita revisão da proposta" ? (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-900 bg-amber-100 px-2.5 py-1 rounded-lg border border-amber-300">
+                        <HelpCircle className="w-3.5 h-3.5 text-amber-600" /> Revisão Solicitada
+                      </span>
+                    ) : selectedCard.propostaStatus === "Revisão concluída" ? (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 bg-emerald-100 px-2.5 py-1 rounded-lg border border-emerald-300">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Revisão Concluída
+                      </span>
+                    ) : selectedCard.propostaEnviada ? (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-800 bg-blue-100 px-2.5 py-1 rounded-lg border border-blue-300">
+                        <Send className="w-3.5 h-3.5 text-blue-600" /> Proposta Enviada
+                      </span>
+                    ) : (
+                      <span className="text-[11px] font-semibold text-gray-600 bg-gray-100 px-2.5 py-1 rounded-lg">
+                        Proposta Pendente
+                      </span>
+                    )}
+
+                    {/* Status Atribuição */}
+                    {selectedCard.atribuicaoStatus === "Aceito" ? (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 bg-emerald-100 px-2.5 py-1 rounded-lg border border-emerald-300">
+                        <UserCheck className="w-3.5 h-3.5 text-emerald-600" /> Profissional Confirmado
+                      </span>
+                    ) : selectedCard.atribuicaoStatus === "Devolvido" || selectedCard.atribuicaoStatus === "Rejeitado" ? (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-800 bg-rose-100 px-2.5 py-1 rounded-lg border border-rose-300">
+                        <RotateCcw className="w-3.5 h-3.5 text-rose-600" /> Devolvido para Triagem
+                      </span>
+                    ) : selectedCard.profissionalId ? (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-800 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200">
+                        <Clock className="w-3.5 h-3.5 text-amber-600" /> Aguardando Aceite
+                      </span>
+                    ) : (
+                      <span className="text-[11px] font-semibold text-gray-600 bg-gray-100 px-2.5 py-1 rounded-lg">
+                        Não Atribuído
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Botões Rápidos de Valor da Sessão e Frequência */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* Valor da Sessão */}
+                  <div className="p-5 bg-sun/10 rounded-2xl border border-sun/30 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-bold uppercase tracking-wider text-forest/80">
+                        Valor da Sessão (R$)
+                      </label>
+                      <span className="text-xl font-extrabold text-forest">
+                        {selectedCard.valorSessao || "Não definido"}
+                      </span>
+                    </div>
+
+                    {/* Botões de Seleção Rápida de Valor */}
+                    <div className="space-y-1.5">
+                      <span className="text-[10px] font-bold uppercase text-forest/50 block">Atalhos para Ajuste Rápido:</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {["R$ 30,00", "R$ 50,00", "R$ 80,00", "R$ 100,00", "R$ 120,00", "Gratuito", "A combinar"].map((val) => (
+                          <button
+                            key={val}
+                            type="button"
+                            onClick={() => handleUpdateAcolhimentoProperty(selectedCard.id, "valorSessao", val)}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-2xs border ${
+                              selectedCard.valorSessao === val
+                                ? "bg-forest text-white border-forest shadow-xs"
+                                : "bg-white text-forest border-soft hover:bg-sun/30"
+                            }`}
+                          >
+                            {val}
+                          </button>
+                        ))}
                       </div>
                     </div>
-                  </section>
 
-                  <section className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="flex flex-col gap-1 p-5 bg-sun/10 rounded-2xl border border-sun/30">
-                      <label className="text-xs font-bold uppercase tracking-wider text-forest/70 shrink-0 mb-1">
-                        Valor da Sessão (Faixas R$)
-                      </label>
-                      {currentRole !== "profissional" && isEditingCard ? (
+                    {/* Dropdown alternativo se editando */}
+                    {isEditingCard && (
+                      <div className="pt-2 border-t border-sun/20">
                         <select
                           value={selectedCard.valorSessao || ""}
-                          onChange={(e) =>
-                            handleUpdateAcolhimentoProperty(
-                              selectedCard.id,
-                              "valorSessao",
-                              e.target.value,
-                            )
-                          }
-                          className="w-full bg-white text-base font-semibold text-forest border border-soft rounded-xl p-3 focus:outline-none focus:ring-2 focus:ring-sun-dark shadow-sm appearance-none"
+                          onChange={(e) => handleUpdateAcolhimentoProperty(selectedCard.id, "valorSessao", e.target.value)}
+                          className="w-full bg-white text-sm font-bold text-forest border border-soft rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-sun-dark shadow-2xs"
                         >
-                          <option value="">Selecione um valor...</option>
-                          {globalConfigs.faixasValores?.map(
-                            (faixa: string, idx: number) =>
-                              faixa ? (
-                                <option key={idx} value={faixa}>
-                                  {faixa}
-                                </option>
-                              ) : null,
+                          <option value="">Outro / Personalizado...</option>
+                          {globalConfigs.faixasValores?.map((faixa: string, idx: number) =>
+                            faixa ? <option key={idx} value={faixa}>{faixa}</option> : null
                           )}
                           <option value="Gratuito">Gratuito</option>
-                          <option value="Outro">Outro (A combinar)</option>
+                          <option value="A combinar">A combinar</option>
                         </select>
-                      ) : (
-                        <div className="text-2xl font-semibold text-forest">
-                          {selectedCard.valorSessao || "Não definido"}
-                        </div>
-                      )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Frequência de Sessões */}
+                  <div className="p-5 bg-emerald-50/80 rounded-2xl border border-emerald-200/90 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-bold uppercase tracking-wider text-emerald-900">
+                        Frequência de Sessões
+                      </label>
+                      <span className="text-xl font-extrabold text-forest">
+                        {selectedCard.frequenciaSessoes || "Não definida"}
+                      </span>
                     </div>
 
-                    <div className="flex flex-col gap-1 p-5 bg-emerald-50 rounded-2xl border border-emerald-100">
-                      <div className="flex justify-between items-center mb-1">
-                        <label className="text-xs font-bold uppercase tracking-wider text-emerald-800 shrink-0">
-                          Frequência de Sessões
-                        </label>
-                        {!isEditingCard && currentRole === "profissional" && (
+                    {/* Input Fluido para Frequência de Sessões */}
+                    <div className="space-y-1.5">
+                      <span className="text-[10px] font-bold uppercase text-emerald-800/60 block">Digitação Livre / Customizada:</span>
+                      <DebouncedInput
+                        placeholder="Ex: Semanal, Quinzenal, 2x por semana..."
+                        value={selectedCard.frequenciaSessoes || ""}
+                        onChange={(val) => handleUpdateAcolhimentoProperty(selectedCard.id, "frequenciaSessoes", val)}
+                        className="w-full bg-white text-xs font-bold text-forest border border-emerald-200 rounded-xl p-2.5 focus:outline-none focus:ring-1 focus:ring-emerald-500 placeholder:text-forest/40 shadow-2xs"
+                      />
+                    </div>
+
+                    {/* Botões de Seleção Rápida de Frequência */}
+                    <div className="space-y-1.5 pt-1">
+                      <span className="text-[10px] font-bold uppercase text-emerald-800/60 block">Atalhos Rápidos:</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {["Semanal", "Quinzenal", "Mensal", "Sob Demanda"].map((freq) => (
                           <button
-                            onClick={() => setIsEditingCard(true)}
-                            className="text-[10px] uppercase font-bold text-emerald-600 hover:underline"
+                            key={freq}
+                            type="button"
+                            onClick={() => handleUpdateAcolhimentoProperty(selectedCard.id, "frequenciaSessoes", freq)}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-2xs border ${
+                              selectedCard.frequenciaSessoes === freq
+                                ? "bg-emerald-700 text-white border-emerald-800 shadow-xs"
+                                : "bg-white text-emerald-900 border-emerald-200 hover:bg-emerald-100"
+                            }`}
                           >
-                            Alterar Frequência
+                            {freq}
                           </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Input de Motivo da Frequência */}
+                    <div className="pt-2 border-t border-emerald-200/60">
+                      <DebouncedInput
+                        placeholder="Motivo / Observação sobre a Frequência..."
+                        value={selectedCard.motivoFrequencia || ""}
+                        onChange={(val) => handleUpdateAcolhimentoProperty(selectedCard.id, "motivoFrequencia", val)}
+                        className="w-full bg-white text-xs text-forest border border-emerald-200 rounded-xl p-2.5 focus:outline-none focus:ring-1 focus:ring-emerald-500 placeholder:text-forest/40"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Banner de Investimento Estimado Mensal */}
+                <div className="p-4 bg-gradient-to-r from-emerald-50/90 via-white to-emerald-100/60 border border-emerald-200/90 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs shadow-2xs">
+                  <div className="flex items-center gap-3 text-forest">
+                    <div className="p-2.5 bg-emerald-700 text-white rounded-xl shadow-2xs shrink-0">
+                      <Calculator className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <span className="font-bold uppercase tracking-wider text-[10px] text-emerald-900 block">
+                        Investimento Estimado Mensal (Proposta)
+                      </span>
+                      <span className="text-lg font-extrabold text-forest block mt-0.5">
+                        {(() => {
+                          if (!selectedCard.valorSessao) return "A combinar";
+                          if (selectedCard.valorSessao.toLowerCase().includes("gratuito")) return "Gratuito";
+                          const matches = selectedCard.valorSessao.match(/(\d+[\d.,]*)/);
+                          if (!matches) return "A combinar";
+                          let cleanValor = matches[0];
+                          if (cleanValor.includes(",") && cleanValor.includes(".")) {
+                            cleanValor = cleanValor.replace(/\./g, "").replace(",", ".");
+                          } else if (cleanValor.includes(",")) {
+                            cleanValor = cleanValor.replace(",", ".");
+                          }
+                          const valorNum = parseFloat(cleanValor);
+                          if (isNaN(valorNum) || valorNum <= 0) return "A combinar";
+
+                          let mult = 4;
+                          const freq = (selectedCard.frequenciaSessoes || "Semanal").toLowerCase();
+                          if (freq.includes("quinzenal")) mult = 2;
+                          else if (freq.includes("mensal")) mult = 1;
+                          else if (freq.includes("sob demanda")) mult = 1;
+
+                          const total = valorNum * mult;
+                          return `R$ ${total.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / mês (aprox. ${mult} sessões)`;
+                        })()}
+                      </span>
+                    </div>
+                  </div>
+                  <span className="text-[11px] text-forest/70 italic bg-white/90 px-3 py-1.5 rounded-xl border border-emerald-200/80 shrink-0">
+                    *Cálculo base ({selectedCard.valorSessao || "A combinar"} x {selectedCard.frequenciaSessoes || "Semanal"})
+                  </span>
+                </div>
+
+                {/* Seleção e Atribuição de Profissional */}
+                {currentRole !== "profissional" ? (
+                  <div className="space-y-3 pt-2 border-t border-soft">
+                    <div className="flex items-center justify-between">
+                      <h5 className="text-xs font-bold uppercase tracking-wider text-forest/80 flex items-center gap-2">
+                        <UserCheck className="w-4 h-4 text-forest" /> Atribuir a Profissional Parceiro
+                      </h5>
+                      <span className="text-[11px] font-semibold text-forest/60">
+                        {profissionaisAtivos.filter(p => p.role === "profissional").length} profissionais ativos disponíveis
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[22rem] overflow-y-auto pr-1 custom-scrollbar">
+                      <div
+                        onClick={() => handleUpdateAcolhimentoProperty(selectedCard.id, "profissionalId", "")}
+                        className={`p-3.5 rounded-2xl cursor-pointer transition-all border flex items-center justify-between ${!selectedCard.profissionalId ? "border-sun bg-sun/20 shadow-2xs font-bold ring-2 ring-sun/40" : "border-soft bg-warm/20 hover:bg-white hover:border-sun/50"}`}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-xl bg-warm border border-soft flex items-center justify-center font-bold text-xs text-forest/70">
+                            <Clock className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <span className="text-xs font-bold text-forest block">Fila de Espera / Triagem</span>
+                            <span className="text-[10px] text-forest/50 uppercase block">Desatribuído</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {profissionaisAtivos.map((p) => {
+                        if (p.role !== "profissional") return null;
+                        const stats = getProfStats(p.uid!);
+                        const isSelected = selectedCard.profissionalId === p.uid;
+                        return (
+                          <div
+                            key={p.uid}
+                            onClick={() => handleUpdateAcolhimentoProperty(selectedCard.id, "profissionalId", p.uid!)}
+                            className={`p-3.5 rounded-2xl cursor-pointer transition-all border flex items-center justify-between gap-3 ${isSelected ? "border-emerald-500 bg-emerald-50/90 shadow-2xs ring-2 ring-emerald-400" : "border-soft bg-white hover:bg-warm/40 hover:border-emerald-300"}`}
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 ${isSelected ? "bg-emerald-700 text-white" : "bg-warm text-forest/70"}`}>
+                                {p.name.charAt(0).toUpperCase()}
+                              </div>
+                              <div className="flex flex-col truncate">
+                                <span className="text-xs font-bold text-forest truncate">{p.name || p.email}</span>
+                                <span className="text-[9px] uppercase font-bold text-forest/50">CRP: {p.crp || "Inscrito"}</span>
+                              </div>
+                            </div>
+
+                            <div className="flex gap-2 text-right shrink-0 bg-warm/60 px-2 py-1 rounded-xl border border-soft/60">
+                              <div className="flex flex-col items-end">
+                                <span className="text-[8px] text-forest/50 font-bold uppercase">Ativos</span>
+                                <span className="text-xs font-extrabold text-forest">{stats.ativosCount}</span>
+                              </div>
+                              <div className="w-px bg-soft"></div>
+                              <div className="flex flex-col items-end">
+                                <span className="text-[8px] text-forest/50 font-bold uppercase">Total</span>
+                                <span className="text-xs font-extrabold text-emerald-700">R$ {stats.valorTotal.toFixed(0)}</span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-4 bg-warm/30 border border-soft rounded-2xl space-y-3">
+                    <h5 className="text-xs font-bold uppercase tracking-wider text-forest/80 flex items-center gap-2">
+                      <UserCheck className="w-4 h-4 text-forest" /> Controle de Vínculo Clínico
+                    </h5>
+                    <p className="text-xs text-forest/60">
+                      Confirme o vínculo clínico abaixo. Caso necessite devolver este paciente para a Triagem, utilize o botão de devolução.
+                    </p>
+                    <div className="flex flex-wrap gap-3 pt-1">
+                      <button
+                        disabled={selectedCard.atribuicaoStatus === "Aceito"}
+                        onClick={async () => {
+                          const notifAnterior = selectedCard.notificacao ? selectedCard.notificacao + "\n\n" : "";
+                          const nowStr = new Date().toLocaleString("pt-BR");
+                          const authName = profile?.name || "Parceiro";
+                          const updates = {
+                            atribuicaoStatus: "Aceito",
+                            notificacao: `${notifAnterior}[${nowStr}] Encaminhamento ACEITO pelo profissional ${authName}.`,
+                          };
+                          await updateDoc(doc(db, "acolhimentos", selectedCard.id), updates);
+                          setSelectedCard({ ...selectedCard, ...updates });
+                        }}
+                        className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+                          selectedCard.atribuicaoStatus === "Aceito"
+                            ? "bg-[#34A853] text-white shadow-2xs disabled:opacity-100"
+                            : "bg-white text-forest border border-soft hover:bg-[#34A853]/10 hover:text-[#34A853]"
+                        }`}
+                      >
+                        <CheckCircle2 className="w-4 h-4" />
+                        {selectedCard.atribuicaoStatus === "Aceito" ? "Paciente Aceito no Vínculo" : "Aceitar Paciente"}
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          setDevolverModalConfig({
+                            isOpen: true,
+                            pacienteId: selectedCard.id,
+                            pacienteName: (selectedCard as any).nomeCompleto || "Paciente",
+                          });
+                        }}
+                        className="px-5 py-2.5 bg-white text-red-600 border border-red-200 rounded-xl text-xs font-semibold hover:bg-red-50 transition-colors"
+                      >
+                        {selectedCard.atribuicaoStatus === "Aceito" ? "Devolver / Desatribuir" : "Devolver Paciente"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Card do Profissional Responsável (quando houver) */}
+                {selectedCard.profissionalId &&
+                  (() => {
+                    const matchedProf = allUsers.find(
+                      (u) => u.uid === selectedCard.profissionalId || u.id === selectedCard.profissionalId,
+                    );
+                    if (!matchedProf) return null;
+                    const publicLink = `${window.location.origin}?prof=${matchedProf.uid || matchedProf.id || ""}`;
+                    return (
+                      <div className="bg-warm/30 p-5 rounded-2xl border border-soft space-y-3">
+                        <div className="flex items-center gap-3.5 border-b border-soft pb-3">
+                          <div className="w-12 h-12 rounded-2xl overflow-hidden bg-forest/10 border-2 border-sun shrink-0 flex items-center justify-center">
+                            {matchedProf.photoUrl ? (
+                              <img src={matchedProf.photoUrl} alt={matchedProf.name} className="w-full h-full object-cover" />
+                            ) : (
+                              <User className="w-6 h-6 text-forest/70" />
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <span className="text-[10px] font-bold text-sun-dark uppercase tracking-wider block">
+                              Profissional Responsável Vinculado
+                            </span>
+                            <h5 className="font-bold text-forest text-sm truncate">{matchedProf.name}</h5>
+                            <p className="text-xs text-forest/70 font-mono">
+                              {matchedProf.especialidade || "Psicólogo Clínico"} {matchedProf.crp ? `• CRP: ${matchedProf.crp}` : ""}
+                            </p>
+                          </div>
+
+                          <button
+                            onClick={() => {
+                              navigator.clipboard.writeText(publicLink);
+                              showToast("Link do profissional copiado!", "success");
+                            }}
+                            className="px-3 py-1.5 bg-white text-forest text-xs font-bold rounded-xl border border-soft hover:bg-warm transition-colors shrink-0 flex items-center gap-1.5"
+                          >
+                            <Copy className="w-3.5 h-3.5" /> Copiar Apresentação
+                          </button>
+                        </div>
+
+                        {matchedProf.biografia && (
+                          <div className="bg-white p-3 rounded-xl text-xs text-forest/80 italic leading-relaxed whitespace-pre-wrap max-h-24 overflow-y-auto custom-scrollbar border border-soft/60">
+                            "{matchedProf.biografia}"
+                          </div>
                         )}
                       </div>
-                      {isEditingCard ? (
-                        <div className="flex flex-col gap-2">
-                          <select
-                            value={selectedCard.frequenciaSessoes || ""}
-                            onChange={(e) =>
-                              handleUpdateAcolhimentoProperty(
-                                selectedCard.id,
-                                "frequenciaSessoes",
-                                e.target.value,
-                              )
-                            }
-                            className="w-full bg-white text-base font-semibold text-forest border border-soft rounded-xl p-2 focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-sm appearance-none"
-                          >
-                            <option value="">Selecione...</option>
-                            <option value="Semanal">Semanal</option>
-                            <option value="Quinzenal">Quinzenal</option>
-                            <option value="Mensal">Mensal</option>
-                            <option value="Sob Demanda">Sob Demanda</option>
-                          </select>
-                          <input
-                            type="text"
-                            placeholder="Motivo da alteração"
-                            value={selectedCard.motivoFrequencia || ""}
-                            onChange={(e) =>
-                              handleUpdateAcolhimentoProperty(
-                                selectedCard.id,
-                                "motivoFrequencia",
-                                e.target.value,
-                              )
-                            }
-                            className="w-full bg-white text-xs text-forest border border-soft rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                          />
-                        </div>
-                      ) : (
-                        <div>
-                          <div className="text-2xl font-semibold text-forest mb-1">
-                            {selectedCard.frequenciaSessoes || "Não definida"}
+                    );
+                  })()}
+              </div>
+
+              {/* 7. NOTIFICAÇÃO E RESUMO DO CASO */}
+              <div className="bg-white p-6 rounded-2xl border border-emerald-200/90 shadow-2xs space-y-4">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-soft pb-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2.5 bg-emerald-700 text-white rounded-xl shadow-2xs">
+                      <Send className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-forest uppercase tracking-wider">
+                        7. Notificação & Resumo do Caso
+                      </h4>
+                      <p className="text-xs text-forest/60">
+                        Encaminhamento direto e notificação ao profissional parceiro
+                      </p>
+                    </div>
+                  </div>
+
+                  {selectedCard.profissionalId && (
+                    <span className="text-[10px] font-bold px-3 py-1 bg-emerald-100 text-emerald-800 rounded-full border border-emerald-200">
+                      Pronto para Disparo
+                    </span>
+                  )}
+                </div>
+
+                {!selectedCard.profissionalId ? (
+                  <div className="p-4 bg-amber-50/90 border border-amber-200 rounded-xl text-xs text-amber-900 flex items-center gap-3">
+                    <Info className="w-5 h-5 text-amber-600 shrink-0" />
+                    <span>
+                      Nenhum profissional atribuído a este paciente ainda. Selecione um profissional parceiro na seção acima para liberar o envio do resumo do caso.
+                    </span>
+                  </div>
+                ) : (
+                  (() => {
+                    const assignedProf =
+                      allUsers.find(
+                        (u) => u.uid === selectedCard.profissionalId || u.id === selectedCard.profissionalId,
+                      ) ||
+                      profissionaisAtivos.find(
+                        (p) => p.uid === selectedCard.profissionalId || p.id === selectedCard.profissionalId,
+                      );
+
+                    const caseSummaryText = buildCaseSummaryText(selectedCard);
+                    const rawPhone = assignedProf?.telefone || assignedProf?.whatsapp || "";
+                    const digitsOnly = rawPhone.replace(/\D/g, "");
+                    const formattedPhone =
+                      digitsOnly.length > 0
+                        ? digitsOnly.startsWith("55")
+                          ? digitsOnly
+                          : `55${digitsOnly}`
+                        : "";
+
+                    return (
+                      <div className="space-y-4">
+                        <div className="p-4 bg-warm/30 border border-soft rounded-xl space-y-2">
+                          <div className="flex flex-wrap items-center justify-between text-xs text-forest/70 font-semibold border-b border-soft pb-2 gap-2">
+                            <span>Destinatário: <strong className="text-forest font-bold">{assignedProf?.name || assignedProf?.email || "Profissional Parceiro"}</strong></span>
+                            <span className="text-[11px] text-forest/60 font-mono">
+                              {assignedProf?.email || "Sem e-mail"} {assignedProf?.telefone ? `• ${assignedProf.telefone}` : ""}
+                            </span>
                           </div>
-                          {selectedCard.motivoFrequencia && (
-                            <p className="text-xs text-emerald-700 italic">
-                              Motivo: {selectedCard.motivoFrequencia}
-                            </p>
-                          )}
+
+                          <label className="text-[10px] font-bold uppercase tracking-wider text-forest/60 block pt-1">
+                            Texto Estruturado do Resumo do Caso
+                          </label>
+
+                          <div className="p-4 bg-white border border-soft rounded-lg font-sans text-xs text-forest leading-relaxed whitespace-pre-wrap select-all max-h-56 overflow-y-auto custom-scrollbar">
+                            {caseSummaryText}
+                          </div>
                         </div>
+
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                try {
+                                  const profEmail = assignedProf?.email;
+                                  if (!profEmail) {
+                                    showToast("O profissional vinculado não possui e-mail cadastrado.", "error");
+                                    return;
+                                  }
+                                  await sendWebhookNotification({
+                                    event: "notificacao_resumo_caso",
+                                    recipientEmail: profEmail,
+                                    recipientName: assignedProf?.name || "Profissional Parceiro",
+                                    title: `Resumo do Caso: ${selectedCard.nome || "Paciente"} - Projeto AcolheMente`,
+                                    message: caseSummaryText,
+                                    data: {
+                                      pacienteId: selectedCard.id,
+                                      pacienteNome: selectedCard.nome || selectedCard.nomeCompleto || "",
+                                      genero: selectedCard.genero || "",
+                                      motivo: selectedCard.motivo || "",
+                                      melhoresPeriodos: selectedCard.melhoresPeriodos || "",
+                                      valorSessao: selectedCard.valorSessao || "",
+                                      frequenciaSessoes: selectedCard.frequenciaSessoes || "",
+                                      timestamp: new Date().toISOString(),
+                                    },
+                                  });
+                                  showToast(`Resumo do caso enviado por e-mail para ${profEmail}!`, "success");
+                                } catch (err) {
+                                  console.error("Erro ao enviar email do caso:", err);
+                                  showToast("Erro ao disparar e-mail de notificação.", "error");
+                                }
+                              }}
+                              className="px-4 py-2.5 bg-forest hover:bg-forest/90 text-white font-bold text-xs rounded-xl transition-all shadow-2xs flex items-center gap-2"
+                            >
+                              <Mail className="w-4 h-4" /> Disparar E-mail
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const waUrl = formattedPhone
+                                  ? `https://wa.me/${formattedPhone}?text=${encodeURIComponent(caseSummaryText)}`
+                                  : `https://wa.me/?text=${encodeURIComponent(caseSummaryText)}`;
+                                window.open(waUrl, "_blank");
+                              }}
+                              className="px-4 py-2.5 bg-[#25D366] hover:bg-[#20b858] text-white font-bold text-xs rounded-xl transition-all shadow-2xs flex items-center gap-2"
+                            >
+                              <Phone className="w-4 h-4" /> Enviar WhatsApp
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText(caseSummaryText);
+                                showToast("Resumo do caso copiado para a área de transferência!", "success");
+                              }}
+                              className="px-3.5 py-2.5 bg-white hover:bg-warm border border-soft text-forest font-bold text-xs rounded-xl transition-all flex items-center gap-1.5"
+                            >
+                              <Copy className="w-3.5 h-3.5" /> Copiar Resumo
+                            </button>
+                          </div>
+
+                          <span className="text-[11px] text-forest/60 italic">
+                            ⚡ Notificação direta em canal seguro.
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })()
+                )}
+              </div>
+
+              {/* 8. EVOLUÇÃO E REGISTROS CLÍNICOS COMPARTILHADOS */}
+              <div className="bg-white p-6 rounded-2xl border border-soft shadow-2xs space-y-3">
+                <div className="flex items-center justify-between border-b border-soft pb-3">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-forest/80 flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-forest" /> 8. Evolução e Registros Clínicos Compartilhados
+                  </h4>
+                  <span className="text-[10px] font-semibold text-forest/60">
+                    Histórico Clínico
+                  </span>
+                </div>
+                <p className="text-xs text-forest/60">
+                  Anotações sobre a evolução clínica, encaminhamentos e apontamentos compartilhados com a equipe.
+                </p>
+                <DebouncedTextArea
+                  className="w-full text-sm bg-warm/30 border border-soft px-4 py-3.5 rounded-xl focus:outline-none focus:border-sun-dark resize-none h-32 leading-relaxed"
+                  placeholder="Digite as notas de evolução, observações clínicas ou registros de reuniões..."
+                  value={selectedCard.registrosDeReunioes || ""}
+                  onChange={(val) => handleUpdateAcolhimentoProperty(selectedCard.id, "registrosDeReunioes", val)}
+                />
+              </div>
+
+              {/* 9. ALERTAS ADM E MOVIMENTAÇÕES */}
+              <div className="bg-white p-6 rounded-2xl border border-soft shadow-2xs space-y-6">
+                <div className="flex items-center justify-between border-b border-soft pb-3">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-red-800 flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-red-600" /> 9. Alertas Administrativos e Movimentações
+                  </h4>
+                  <span className="text-[10px] font-bold text-red-700 bg-red-50 border border-red-200 px-2.5 py-0.5 rounded-full">
+                    Avisos & Timeline
+                  </span>
+                </div>
+
+                {/* Alertas Box */}
+                <div className="space-y-2">
+                  <label className="text-[11px] font-bold uppercase tracking-wider text-red-900 block">
+                    Alertas Clínicos ou Administrativos (Avisos de Risco / Notificações)
+                  </label>
+                  <DebouncedTextArea
+                    className="w-full text-sm bg-red-50/40 border border-red-200 px-4 py-3.5 rounded-xl focus:outline-none focus:border-red-400 resize-none h-24 text-red-900 placeholder:text-red-900/40 leading-relaxed"
+                    placeholder="Ex: Risco de abandono, pendência de documentação do responsável, alteração de horário..."
+                    value={selectedCard.notificacao || ""}
+                    onChange={(val) => handleUpdateAcolhimentoProperty(selectedCard.id, "notificacao", val)}
+                  />
+                </div>
+
+                {/* Desligamento Info Banner if present */}
+                {selectedCard.desligamentoMotivo && (
+                  <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl space-y-2.5">
+                    <div className="flex items-center justify-between border-b border-rose-200/60 pb-2">
+                      <span className="text-xs font-bold uppercase tracking-wider text-rose-900 flex items-center gap-1.5">
+                        <UserX className="w-4 h-4 text-rose-600" /> Registro Oficial de Desligamento
+                      </span>
+                      {selectedCard.desligadoEm && (
+                        <span className="text-[10px] font-extrabold text-rose-800 bg-white px-2.5 py-0.5 rounded-md border border-rose-200">
+                          Data: {formatDate(selectedCard.desligadoEm)}
+                        </span>
                       )}
                     </div>
-                  </section>
+                    <div className="text-xs text-rose-950 font-semibold">
+                      Motivo Declarado: <span className="font-extrabold text-rose-900 bg-white/90 px-2 py-0.5 rounded border border-rose-200">{selectedCard.desligamentoMotivo}</span>
+                      {selectedCard.desligadoPor && <span className="text-rose-700 font-normal ml-2">(Registrado por: {selectedCard.desligadoPor})</span>}
+                    </div>
+                    {selectedCard.desligamentoDetalhes && (
+                      <p className="text-xs text-rose-900 bg-white/90 p-3 rounded-xl border border-rose-200 leading-relaxed font-serif italic">
+                        "{selectedCard.desligamentoDetalhes}"
+                      </p>
+                    )}
+                  </div>
+                )}
 
-                  {currentRole !== "profissional" ? (
-                    <section className="mt-8 space-y-6">
-                      <div className="flex flex-col gap-2 p-4 bg-warm rounded-2xl border border-soft max-h-[22rem] flex flex-col">
-                        <label className="text-xs font-bold uppercase tracking-wider text-forest/70 shrink-0 mb-1">
-                          Atribuir a Profissional Parceiro
-                        </label>
-                        <div className="flex flex-col gap-2 overflow-y-auto pr-1 no-scrollbar pb-2">
-                          <div
-                            onClick={() =>
-                              handleUpdateAcolhimentoProperty(
-                                selectedCard.id,
-                                "profissionalId",
-                                "",
-                              )
-                            }
-                            className={`p-3 rounded-xl cursor-pointer transition-all border ${!selectedCard.profissionalId ? "border-sun bg-sun/30 shadow-sm" : "border-soft bg-white/60 hover:bg-white hover:border-sun/50"}`}
-                          >
-                            <span className="text-sm font-semibold text-forest">
-                              Fila de Triagem / Fila de Espera (Desatribuído)
-                            </span>
-                          </div>
-                          {profissionaisAtivos.map((p) => {
-                            if (p.role !== "profissional") return null;
-                            const stats = getProfStats(p.uid!);
-                            const isSelected =
-                              selectedCard.profissionalId === p.uid;
-                            return (
-                              <div
-                                key={p.uid}
-                                onClick={() =>
-                                  handleUpdateAcolhimentoProperty(
-                                    selectedCard.id,
-                                    "profissionalId",
-                                    p.uid!,
-                                  )
-                                }
-                                className={`p-3.5 rounded-xl cursor-pointer transition-all border flex flex-col xl:flex-row justify-between items-start xl:items-center gap-3 ${isSelected ? "border-sun bg-sun/30 shadow-sm" : "border-soft bg-white/60 hover:bg-white hover:border-sun/50"}`}
-                              >
-                                <div className="flex items-center gap-3">
-                                  <div
-                                    className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs shrink-0 ${isSelected ? "bg-white text-forest" : "bg-warm text-forest/70"}`}
-                                  >
-                                    {p.name.charAt(0).toUpperCase()}
-                                  </div>
-                                  <div className="flex flex-col">
-                                    <span className="text-sm font-bold text-forest">
-                                      {p.name || p.email}
-                                    </span>
-                                    <span className="text-[10px] uppercase font-bold text-forest/50">
-                                      Parceiro Terapêutico
-                                    </span>
-                                  </div>
-                                </div>
-                                <div className="flex gap-4 xl:text-right shrink-0 bg-white px-3 py-1.5 rounded-lg border border-soft/50 shadow-sm xl:ml-auto">
-                                  <div className="flex flex-col items-center xl:items-end">
-                                    <span className="text-[9px] text-forest/50 font-bold uppercase tracking-wider">
-                                      Ativos
-                                    </span>
-                                    <span className="text-sm font-bold text-forest">
-                                      {stats.ativosCount}
-                                    </span>
-                                  </div>
-                                  <div className="w-px bg-soft"></div>
-                                  <div className="flex flex-col items-center xl:items-end">
-                                    <span className="text-[9px] text-forest/50 font-bold uppercase tracking-wider">
-                                      Total
-                                    </span>
-                                    <span className="text-sm font-bold text-emerald-700 leading-tight">
-                                      R${" "}
-                                      {stats.valorTotal
-                                        .toFixed(2)
-                                        .replace(".", ",")}
-                                    </span>
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    </section>
-                  ) : (
-                    <section className="mt-8 space-y-4">
-                      <div className="mt-8">
-                        <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-3 block">
-                          Controle de Vínculo
-                        </label>
-                        <div className="flex flex-col gap-3 p-5 bg-warm rounded-2xl border border-soft mt-2">
-                          <p className="text-xs text-forest/60 mb-2">
-                            Confirme o vínculo clínico abaixo. Caso necessite
-                            devolver este paciente para a Triagem, utilize o
-                            botão secundário e deixe uma observação (opcional).
-                          </p>
-                          <div className="grid grid-cols-2 gap-3">
-                            <button
-                              disabled={
-                                selectedCard.atribuicaoStatus === "Aceito"
-                              }
-                              onClick={async () => {
-                                const notifAnterior = selectedCard.notificacao
-                                  ? selectedCard.notificacao + "\n\n"
-                                  : "";
-                                const nowStr = new Date().toLocaleString(
-                                  "pt-BR",
-                                );
-                                const authName = profile?.name || "Parceiro";
-                                const updates = {
-                                  atribuicaoStatus: "Aceito",
-                                  notificacao: `${notifAnterior}[${nowStr}] Encaminhamento ACEITO pelo profissional ${authName}.`,
-                                };
-                                await updateDoc(
-                                  doc(db, "acolhimentos", selectedCard.id),
-                                  updates,
-                                );
-                                setSelectedCard({
-                                  ...selectedCard,
-                                  ...updates,
-                                });
-                              }}
-                              className={`px-4 py-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-                                selectedCard.atribuicaoStatus === "Aceito"
-                                  ? "bg-[#34A853] text-white shadow-sm disabled:opacity-100" // visually look disabled but fully opaque
-                                  : "bg-white text-forest border border-soft hover:bg-[#34A853]/10 hover:text-[#34A853] hover:border-[#34A853]/30"
-                              }`}
-                            >
-                              <CheckCircle2 className="w-4 h-4" />
-                              {selectedCard.atribuicaoStatus === "Aceito"
-                                ? "Paciente Aceito"
-                                : "Aceitar Paciente"}
-                            </button>
-
-                            <button
-                              onClick={() => {
-                                setDevolverModalConfig({
-                                  isOpen: true,
-                                  pacienteId: selectedCard.id,
-                                  pacienteName:
-                                    (selectedCard as any).nomeCompleto ||
-                                    "Paciente",
-                                });
-                              }}
-                              className="px-4 py-3 bg-white text-red-600 border border-red-200 rounded-xl text-xs sm:text-sm font-semibold hover:bg-red-50 transition-colors"
-                            >
-                              {selectedCard.atribuicaoStatus === "Aceito"
-                                ? "Devolver/Desatribuir"
-                                : "Devolver Paciente"}
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    </section>
-                  )}
-
-                  {/* Show Professional presentation card inside Patient file */}
-                  {selectedCard.profissionalId &&
-                    (() => {
-                      const matchedProf = allUsers.find(
-                        (u) =>
-                          u.uid === selectedCard.profissionalId ||
-                          u.id === selectedCard.profissionalId,
-                      );
-                      if (!matchedProf) return null;
-                      const publicLink = `${window.location.origin}?prof=${matchedProf.uid || matchedProf.id || ""}`;
-                      return (
-                        <section className="mt-6 bg-white border border-soft p-5 rounded-2xl shadow-sm">
-                          <div className="flex items-center gap-4 mb-4">
-                            <div className="w-14 h-14 rounded-full overflow-hidden bg-forest/10 border-2 border-sun flex-shrink-0 flex items-center justify-center">
-                              {matchedProf.photoUrl ? (
-                                <img
-                                  src={matchedProf.photoUrl}
-                                  alt={matchedProf.name}
-                                  className="w-full h-full object-cover"
-                                />
-                              ) : (
-                                <User className="w-7 h-7 text-forest/70" />
-                              )}
-                            </div>
-                            <div>
-                              <span className="text-[10px] font-bold text-sun-dark uppercase tracking-wider">
-                                Profissional Responsável
-                              </span>
-                              <h5 className="font-semibold text-forest text-sm leading-tight mt-0.5">
-                                {matchedProf.name}
-                              </h5>
-                              <p className="text-xs text-forest/70 font-mono mt-1">
-                                {matchedProf.especialidade ||
-                                  "Psicólogo Clínico"}{" "}
-                                {matchedProf.crp
-                                  ? ` • CRP: ${matchedProf.crp}`
-                                  : ""}
-                              </p>
-                            </div>
-                          </div>
-
-                          {matchedProf.biografia && (
-                            <div className="bg-warm/50 p-3 rounded-xl text-xs text-forest/70/80 leading-relaxed italic mb-4 whitespace-pre-wrap max-h-32 overflow-y-auto custom-scrollbar">
-                              "{matchedProf.biografia}"
-                            </div>
-                          )}
-
-                          {matchedProf.motivacaoProjeto && (
-                            <div className="bg-warm/50 p-3 rounded-xl text-xs text-forest/70/80 leading-relaxed italic mb-4 whitespace-pre-wrap max-h-32 overflow-y-auto custom-scrollbar">
-                              <span className="font-semibold block mb-1">
-                                Por que faço parte deste projeto?
-                              </span>
-                              "{matchedProf.motivacaoProjeto}"
-                            </div>
-                          )}
-
-                          <div className="flex flex-col gap-2 mt-4">
-                            <div className="flex items-center justify-between p-2.5 bg-warm rounded-xl border border-soft text-xs text-forest/70">
-                              <span className="truncate max-w-[190px] font-mono select-all font-semibold">
-                                {publicLink}
-                              </span>
-                              <button
-                                onClick={() => {
-                                  navigator.clipboard.writeText(publicLink);
-                                  alert("Link de Apresentação copiado!");
-                                }}
-                                className="px-2.5 py-1 bg-forest text-white text-[10px] uppercase tracking-wider font-bold rounded-md hover:bg-forest/90 transition-colors shrink-0"
-                              >
-                                Copiar Link
-                              </button>
-                            </div>
-                            <span className="text-[9px] text-forest/70/50 mt-1">
-                              Envie esse link para que o paciente conheça o
-                              profissional antes da consulta.
-                            </span>
-                          </div>
-                        </section>
-                      );
-                    })()}
+                {/* Linha do Tempo e Movimentações */}
+                <div className="p-4 bg-warm/30 border border-soft rounded-xl space-y-3">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-forest/70 block">
+                    Histórico de Movimentações & Registros da Ficha
+                  </span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                    <div className="p-2.5 bg-white rounded-lg border border-soft">
+                      <span className="text-[10px] text-forest/50 font-bold uppercase block">Data de Entrada</span>
+                      <span className="font-semibold text-forest">{formatDate(selectedCard.createdAt)}</span>
+                    </div>
+                    <div className="p-2.5 bg-white rounded-lg border border-soft">
+                      <span className="text-[10px] text-forest/50 font-bold uppercase block">Última Atualização</span>
+                      <span className="font-semibold text-forest">{formatDate(selectedCard.statusUpdatedAt || selectedCard.createdAt)}</span>
+                    </div>
+                    <div className="p-2.5 bg-white rounded-lg border border-soft">
+                      <span className="text-[10px] text-forest/50 font-bold uppercase block">Estágio do Kanban</span>
+                      <span className="font-bold text-forest">{selectedCard.status || "Aguardando Avaliação"}</span>
+                    </div>
+                    <div className="p-2.5 bg-white rounded-lg border border-soft">
+                      <span className="text-[10px] text-forest/50 font-bold uppercase block">Contrato de Serviço</span>
+                      <span className={`font-bold ${selectedCard.contratoAssinado ? "text-green-700" : "text-amber-700"}`}>
+                        {selectedCard.contratoAssinado ? "Assinado" : "Pendente"}
+                      </span>
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              {/* Additional Ficha de Bordo info for Patients */}
-              <div className="mt-8 border-t border-soft pt-8 space-y-6">
-                <section>
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-3 flex items-center gap-2">
-                    <Clock className="w-4 h-4" /> Evolução e Registros Clínicos
-                    Compartilhados
-                  </h4>
-                  <textarea
-                    className="w-full text-sm bg-warm/50 border border-soft px-4 py-3 rounded-2xl focus:outline-none focus:border-sun-dark resize-none h-32"
-                    placeholder="Anotações sobre evolução do paciente, encaminhamentos..."
-                    value={selectedCard.registrosDeReunioes || ""}
-                    onChange={(e) =>
-                      handleUpdateAcolhimentoProperty(
-                        selectedCard.id,
-                        "registrosDeReunioes",
-                        e.target.value,
-                      )
-                    }
-                  />
-                </section>
-
-                <section>
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-3 flex items-center gap-2">
-                    <Info className="w-4 h-4" /> Alertas Clínicos ou
-                    Administrativos
-                  </h4>
-                  <textarea
-                    className="w-full text-sm bg-red-50/50 border border-red-100 px-4 py-3 rounded-2xl focus:outline-none focus:border-red-300 resize-none h-24 text-red-900 placeholder:text-red-900/50"
-                    placeholder="Ex: Risco de abandono, pendência de documentação..."
-                    value={selectedCard.notificacao || ""}
-                    onChange={(e) =>
-                      handleUpdateAcolhimentoProperty(
-                        selectedCard.id,
-                        "notificacao",
-                        e.target.value,
-                      )
-                    }
-                  />
-                </section>
-              </div>
             </div>
-            <div className="p-6 border-t border-soft bg-warm flex justify-end">
+
+            {/* Modal Footer */}
+            <div className="p-4 px-6 border-t border-soft bg-warm/50 flex items-center justify-between shrink-0">
+              <span className="text-xs text-forest/60 font-medium">
+                AcolheMente • Gestão de Ficha de Bordo
+              </span>
               <button
                 onClick={() => setSelectedCard(null)}
-                className="px-6 py-2 bg-sun-dark text-forest rounded-full text-sm font-semibold hover:bg-sun-dark-dark transition-colors"
+                className="px-6 py-2 bg-sun-dark text-forest rounded-full text-sm font-bold hover:bg-sun-dark-dark transition-colors shadow-2xs"
               >
                 Fechar Ficha
               </button>
@@ -9122,6 +9601,141 @@ export function DashboardView({
                 className="px-5 py-2 bg-sun-dark text-forest rounded-full text-sm font-semibold hover:bg-sun-dark-dark transition-colors flex items-center gap-2"
               >
                 <CheckCircle2 className="w-4 h-4" /> Salvar Contrato
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Desligamento Modal */}
+      {showDesligamentoModal && selectedCard && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center px-4 bg-forest/30 backdrop-blur-sm animate-in fade-in py-4">
+          <div className="bg-white rounded-3xl w-full max-w-xl shadow-2xl border border-soft overflow-hidden animate-in zoom-in-95 flex flex-col">
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-soft bg-gradient-to-r from-rose-50 via-white to-rose-50 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-rose-600 text-white rounded-xl shadow-xs">
+                  <UserX className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-serif text-lg font-bold text-forest">
+                    Fluxo de Desligamento de Paciente
+                  </h3>
+                  <p className="text-xs text-forest/60">
+                    Paciente: <strong className="text-forest font-bold">{selectedCard.nome || (selectedCard as any).nomeCompleto || "Paciente"}</strong>
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowDesligamentoModal(false)}
+                className="p-1.5 text-forest/50 hover:text-rose-600 rounded-full hover:bg-rose-50 transition-colors"
+                title="Fechar"
+              >
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
+              <div className="p-3 bg-rose-50/70 border border-rose-200 rounded-2xl text-xs text-rose-900 leading-relaxed">
+                <strong>Atenção:</strong> Ao concluir o desligamento, o atendimento do paciente será interrompido, o status será atualizado para <strong>Alta / Desligado</strong> e as justificativas ficarão registradas na ficha de bordo.
+              </div>
+
+              {/* Motivo de Desligamento (Select) */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold uppercase tracking-wider text-forest/80 flex items-center gap-1">
+                  Motivo do Desligamento <span className="text-rose-600 font-bold">*</span>
+                </label>
+                <select
+                  value={desligamentoMotivo}
+                  onChange={(e) => setDesligamentoMotivo(e.target.value)}
+                  className="w-full bg-white text-xs font-semibold text-forest border border-soft rounded-xl p-3 focus:outline-none focus:ring-2 focus:ring-rose-500 shadow-2xs"
+                >
+                  <option value="">-- Selecione o Motivo --</option>
+                  <option value="Alta Clínica">Alta Clínica</option>
+                  <option value="Interrupção voluntária (Iniciativa do paciente)">Interrupção voluntária (Iniciativa do paciente)</option>
+                  <option value="Interrupção involuntária (Iniciativa do profissional)">Interrupção involuntária (Iniciativa do profissional)</option>
+                  <option value="Inadimplência">Inadimplência</option>
+                  <option value="Absenteismo (Faltas/ Ausências sem justificativa)">Absenteismo (Faltas/ Ausências sem justificativa)</option>
+                  <option value="Banimento">Banimento</option>
+                  <option value="Outro (descreva)">Outro (descreva)</option>
+                </select>
+              </div>
+
+              {/* Detalhes / Justificativa (Textarea) */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold uppercase tracking-wider text-forest/80 flex items-center gap-1">
+                  Justificativa e Detalhes do Desligamento <span className="text-rose-600 font-bold">*</span>
+                </label>
+                <textarea
+                  rows={4}
+                  value={desligamentoDetalhes}
+                  onChange={(e) => setDesligamentoDetalhes(e.target.value)}
+                  placeholder="Comente e descreva os detalhes, motivo e observações do desligamento..."
+                  className="w-full bg-white text-xs text-forest p-3.5 border border-soft rounded-2xl focus:outline-none focus:ring-2 focus:ring-rose-500 resize-none leading-relaxed placeholder:text-forest/40"
+                />
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 px-6 border-t border-soft bg-warm/40 flex items-center justify-end gap-3 shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowDesligamentoModal(false)}
+                className="px-5 py-2 text-xs font-bold text-forest/70 hover:text-forest transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!desligamentoMotivo.trim()) {
+                    showToast("Por favor, selecione o motivo do desligamento.", "error");
+                    return;
+                  }
+                  if (!desligamentoDetalhes.trim()) {
+                    showToast("Por favor, preencha a justificativa e os detalhes do desligamento.", "error");
+                    return;
+                  }
+
+                  try {
+                    const nowIso = new Date().toISOString();
+                    const nowFormatted = new Date().toLocaleDateString("pt-BR");
+                    const userIdent = profile?.name || user?.email || "Profissional";
+
+                    const updates = {
+                      status: "Alta",
+                      ativo: false,
+                      statusInativacao: "Desligado",
+                      desligado: true,
+                      desligamentoMotivo: desligamentoMotivo,
+                      desligamentoDetalhes: desligamentoDetalhes,
+                      desligadoEm: nowIso,
+                      desligadoPor: userIdent,
+                      notificacao: `[DESLIGAMENTO - ${nowFormatted}] Motivo: ${desligamentoMotivo}. Responsável: ${userIdent}.\nDetalhes: ${desligamentoDetalhes}`,
+                      statusUpdatedAt: serverTimestamp(),
+                    };
+
+                    await updateDoc(doc(db, "acolhimentos", selectedCard.id), updates);
+
+                    setSelectedCard((prev: any) => prev ? { ...prev, ...updates } : null);
+                    setAcolhimentos((prev) =>
+                      prev.map((c) => (c.id === selectedCard.id ? { ...c, ...updates } : c))
+                    );
+                    setMeusPacientes((prev) =>
+                      prev.map((c) => (c.id === selectedCard.id ? { ...c, ...updates } : c))
+                    );
+
+                    showToast("Desligamento do paciente concluído com sucesso!", "success");
+                    setShowDesligamentoModal(false);
+                  } catch (err) {
+                    console.error("Erro ao desligar paciente:", err);
+                    showToast("Ocorreu um erro ao concluir o desligamento.", "error");
+                  }
+                }}
+                className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all shadow-2xs flex items-center gap-2"
+              >
+                <CheckCircle2 className="w-4 h-4" /> Concluir Desligamento
               </button>
             </div>
           </div>
@@ -10011,20 +10625,20 @@ export function DashboardView({
                           Experiência com Atendimento Clínico
                         </span>
                         {isEditingCard ? (
-                          <input
+                          <DebouncedInput
                             title="Separado por vírgula"
                             value={
                               selectedProfissional.publicosExperiencia?.join(
                                 ", ",
                               ) || ""
                             }
-                            onChange={(e) =>
+                            onChange={(val) =>
                               handleUpdateProfissionalProperty(
                                 "id" in selectedProfissional
                                   ? selectedProfissional.id
                                   : selectedProfissional.uid,
                                 "publicosExperiencia",
-                                e.target.value.split(",").map((s) => s.trim()),
+                                val.split(",").map((s) => s.trim()).filter(Boolean),
                               )
                             }
                             className="text-sm font-medium text-forest border-b border-sun-dark focus:outline-none bg-transparent w-full mt-1"
@@ -10046,19 +10660,19 @@ export function DashboardView({
                           Gosto de Atender
                         </span>
                         {isEditingCard ? (
-                          <input
+                          <DebouncedInput
                             title="Separado por vírgula"
                             value={
                               selectedProfissional.publicosGosto?.join(", ") ||
                               ""
                             }
-                            onChange={(e) =>
+                            onChange={(val) =>
                               handleUpdateProfissionalProperty(
                                 "id" in selectedProfissional
                                   ? selectedProfissional.id
                                   : selectedProfissional.uid,
                                 "publicosGosto",
-                                e.target.value.split(",").map((s) => s.trim()),
+                                val.split(",").map((s) => s.trim()).filter(Boolean),
                               )
                             }
                             className="text-sm font-medium text-forest border-b border-sun-dark focus:outline-none bg-transparent w-full mt-1"

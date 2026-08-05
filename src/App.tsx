@@ -41,6 +41,7 @@ import { PropostaLandingView } from "./views/PropostaLandingView";
 
 import { Footer } from "./components/Footer";
 import { ProfissionaisCarousel } from "./components/ProfissionaisCarousel";
+import { PWAInstallBanner } from "./components/PWAInstallBanner";
 
 import homeHero from "./assets/images/home_hero_photo_parda_1781024318036.png";
 import logoImage from "./assets/images/logo_acolhe.jpeg";
@@ -342,6 +343,7 @@ export default function App() {
   return (
     <>
       {content}
+      <PWAInstallBanner />
 
       {showDoacaoConfirm && (
         <div className="fixed inset-0 bg-forest/45 backdrop-blur-md flex items-center justify-center z-[9999] p-4">

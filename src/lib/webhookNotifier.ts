@@ -11,6 +11,8 @@ export interface WebhookEventPayload {
     | "status_lead_alterado"
     | "proposta_aceita"
     | "proposta_revisao"
+    | "atribuicao_paciente_resumo"
+    | "notificacao_resumo_caso"
     | "teste_webhook";
   recipientEmail?: string;
   recipientName?: string;
@@ -48,19 +50,49 @@ export async function sendWebhookNotification(payload: WebhookEventPayload) {
       "User-Agent": "AcolheMente-Webhook/1.0",
     };
 
+    const isBrevoApi = config.webhookEmailUrl.includes("api.brevo.com");
+
     if (config.webhookEmailSecret) {
       headers["X-Webhook-Secret"] = config.webhookEmailSecret;
       headers["Authorization"] = `Bearer ${config.webhookEmailSecret}`;
+      headers["api-key"] = config.webhookEmailSecret; // Direct Brevo API Key header
     }
 
-    const requestBody = {
-      ...payload,
-      timestamp: new Date().toISOString(),
-      platform: "Projeto AcolheMente Saúde",
-      environment: process.env.NODE_ENV || "production",
-    };
+    let requestBody: any;
 
-    console.log(`[WebhookNotifier] Dispatching webhook payload for "${payload.event}" to ${config.webhookEmailUrl}`);
+    if (isBrevoApi) {
+      const senderEmail = config.emailSuporte || "adm@acolhemente.com";
+      const senderName = "Projeto AcolheMente Saúde";
+      const recipientEmail = payload.recipientEmail || senderEmail;
+      const recipientName = payload.recipientName || recipientEmail;
+
+      const htmlBody = payload.data?.htmlContent || `
+        <div style="font-family: Arial, sans-serif; padding: 20px; color: #1e352f;">
+          <h2 style="color: #1e352f;">${payload.title || "AcolheMente Saúde"}</h2>
+          <p style="font-size: 15px; line-height: 1.6;">${(payload.message || "").replace(/\n/g, "<br>")}</p>
+          <hr style="border: none; border-top: 1px solid #e2ded5; margin: 20px 0;" />
+          <p style="font-size: 12px; color: #737c76;">Projeto AcolheMente Saúde • Notificação Automática</p>
+        </div>
+      `;
+
+      requestBody = {
+        sender: { name: senderName, email: senderEmail },
+        to: [{ email: recipientEmail, name: recipientName }],
+        subject: payload.title || "Notificação AcolheMente",
+        htmlContent: htmlBody,
+        textContent: payload.message || payload.title || "",
+        tags: [payload.event],
+      };
+    } else {
+      requestBody = {
+        ...payload,
+        timestamp: new Date().toISOString(),
+        platform: "Projeto AcolheMente Saúde",
+        environment: process.env.NODE_ENV || "production",
+      };
+    }
+
+    console.log(`[WebhookNotifier] Dispatching ${isBrevoApi ? 'Brevo Direct Email' : 'Webhook payload'} for "${payload.event}" to ${config.webhookEmailUrl}`);
 
     // Non-blocking fetch dispatch
     fetch(config.webhookEmailUrl, {

@@ -3,6 +3,10 @@ import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
 import { ErrorBoundary } from './components/ErrorBoundary.tsx';
+import { registerServiceWorker } from './pwaRegister.ts';
+
+// Registra o Service Worker para suporte PWA
+registerServiceWorker();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

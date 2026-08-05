@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { db } from "../lib/firebase";
-import { Leaf, Heart, CheckCircle2, Clock, AlertCircle } from "lucide-react";
+import { Leaf, Heart, CheckCircle2, Clock, AlertCircle, Info, Calculator } from "lucide-react";
 import { 
   sendProposalAcceptedToPatientEmail, 
   sendProposalAcceptedToProfessionalEmail, 
@@ -45,9 +45,19 @@ export function PropostaLandingView({
     try {
       setIsSubmitting(true);
       const newStatus = action === 'aceitar' ? 'Proposta aceita pelo paciente' : 'Paciente solicita revisão da proposta';
-      await updateDoc(doc(db, "acolhimentos", propostaId), {
+      
+      const updateData: any = {
         propostaStatus: newStatus,
-      });
+      };
+
+      if (action === 'revisar') {
+        // Quando o paciente solicita revisão da proposta, reinicia o fluxo para Etapa 1 (Questionário/Triagem)
+        updateData.status = "Aguardando Avaliação";
+        updateData.propostaEnviada = false;
+        updateData.atribuicaoStatus = null;
+      }
+
+      await updateDoc(doc(db, "acolhimentos", propostaId), updateData);
 
       // Retrieve professional info if assigned
       let profData: any = null;
@@ -156,6 +166,88 @@ export function PropostaLandingView({
     );
   }
 
+  // Cálculo do valor mensal aproximado com base no valor da sessão e frequência
+  const getValorMensalInfo = () => {
+    if (!data?.valorSessao) {
+      return {
+        valorMensalStr: "A combinar",
+        multiplicador: 4,
+        freqDesc: "conforme frequência",
+        isCalculado: false,
+      };
+    }
+
+    if (data.valorSessao.toLowerCase().includes("gratuito")) {
+      return {
+        valorMensalStr: "Gratuito",
+        multiplicador: 4,
+        freqDesc: "Atendimento Isento",
+        isCalculado: true,
+      };
+    }
+
+    const matches = data.valorSessao.match(/(\d+[\d.,]*)/);
+    if (!matches) {
+      return {
+        valorMensalStr: "A combinar",
+        multiplicador: 4,
+        freqDesc: "A combinar",
+        isCalculado: false,
+      };
+    }
+
+    let cleanValor = matches[0];
+    if (cleanValor.includes(",") && cleanValor.includes(".")) {
+      cleanValor = cleanValor.replace(/\./g, "").replace(",", ".");
+    } else if (cleanValor.includes(",")) {
+      cleanValor = cleanValor.replace(",", ".");
+    }
+
+    const valorNum = parseFloat(cleanValor);
+    if (isNaN(valorNum) || valorNum <= 0) {
+      return {
+        valorMensalStr: "A combinar",
+        multiplicador: 4,
+        freqDesc: "A combinar",
+        isCalculado: false,
+      };
+    }
+
+    let multiplicador = 4;
+    let freqDesc = "4 sessões/mês";
+    const freq = (data.frequenciaSessoes || "Semanal").toLowerCase();
+
+    if (freq.includes("quinzenal")) {
+      multiplicador = 2;
+      freqDesc = "2 sessões/mês";
+    } else if (freq.includes("mensal")) {
+      multiplicador = 1;
+      freqDesc = "1 sessão/mês";
+    } else if (freq.includes("sob demanda")) {
+      multiplicador = 1;
+      freqDesc = "sob demanda";
+    } else {
+      multiplicador = 4;
+      freqDesc = "4 sessões/mês";
+    }
+
+    const total = valorNum * multiplicador;
+    const valorMensalStr = `R$ ${total.toLocaleString("pt-BR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
+
+    return {
+      valorMensalStr,
+      multiplicador,
+      freqDesc,
+      valorNum,
+      isCalculado: true,
+    };
+  };
+
+  const valorMensalInfo = getValorMensalInfo();
+
   return (
     <div className="min-h-screen bg-warm flex flex-col selection:bg-sun-dark/30">
       <nav className="p-6 md:px-12 flex items-center justify-between bg-white/50 backdrop-blur-md sticky top-0 z-50 border-b border-soft">
@@ -183,14 +275,49 @@ export function PropostaLandingView({
           </p>
 
           <div className="bg-white p-6 md:p-8 rounded-[2rem] shadow-sm border border-soft mb-8 flex flex-col gap-6">
-            <div className="flex flex-col sm:flex-row gap-6">
-              <div className="flex-1 bg-warm/50 p-6 rounded-2xl border border-soft text-center">
-                 <span className="block text-xs font-bold uppercase tracking-wider text-forest/70 mb-2">Valor da Sessão</span>
-                 <span className="text-2xl font-serif text-forest">{data.valorSessao || "A combinar"}</span>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="bg-warm/50 p-5 rounded-2xl border border-soft text-center flex flex-col justify-between">
+                 <div>
+                   <span className="block text-[11px] font-bold uppercase tracking-wider text-forest/70 mb-1.5">Valor por Sessão</span>
+                   <span className="text-xl md:text-2xl font-serif text-forest block">{data.valorSessao || "A combinar"}</span>
+                 </div>
+                 <span className="text-[10px] text-forest/60 mt-2 block font-medium">
+                   Sessão indiv. (~45 min)
+                 </span>
               </div>
-              <div className="flex-1 bg-warm/50 p-6 rounded-2xl border border-soft text-center">
-                 <span className="block text-xs font-bold uppercase tracking-wider text-forest/70 mb-2">Frequência</span>
-                 <span className="text-2xl font-serif text-forest">{data.frequenciaSessoes || "Semanal"}</span>
+
+              <div className="bg-warm/50 p-5 rounded-2xl border border-soft text-center flex flex-col justify-between">
+                 <div>
+                   <span className="block text-[11px] font-bold uppercase tracking-wider text-forest/70 mb-1.5">Frequência</span>
+                   <span className="text-xl md:text-2xl font-serif text-forest block">{data.frequenciaSessoes || "Semanal"}</span>
+                 </div>
+                 <span className="text-[10px] text-forest/60 mt-2 block font-medium">
+                   Periodicidade
+                 </span>
+              </div>
+
+              <div className="bg-emerald-50/80 p-5 rounded-2xl border border-emerald-200 text-center flex flex-col justify-between">
+                 <div>
+                   <span className="block text-[11px] font-bold uppercase tracking-wider text-emerald-800 mb-1.5">Investimento Aprox. / Mês</span>
+                   <span className="text-xl md:text-2xl font-serif text-emerald-950 block">{valorMensalInfo.valorMensalStr}</span>
+                 </div>
+                 <span className="text-[10px] text-emerald-800/80 mt-2 block font-medium">
+                   {valorMensalInfo.isCalculado
+                     ? `Aprox. ${valorMensalInfo.freqDesc}`
+                     : "A ser definido"}
+                 </span>
+              </div>
+            </div>
+
+            {/* Caixa explicativa sobre valor por sessão vs. valor mensal */}
+            <div className="p-4 bg-amber-50/80 border border-amber-200/90 rounded-2xl text-xs text-amber-950 flex items-start gap-3 shadow-xs">
+              <Info className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <strong className="font-bold block text-amber-950">Atenção sobre os Valores:</strong>
+                <p className="leading-relaxed">
+                  O valor enquadrado de <strong>{data.valorSessao || "A combinar"}</strong> refere-se a <strong>cada sessão individual</strong>.
+                  O valor mensal estimado de <strong>{valorMensalInfo.valorMensalStr}</strong> é calculado multiplicando o valor da sessão pela frequência (<strong>{data.frequenciaSessoes || "Semanal"}</strong> - aprox. {valorMensalInfo.freqDesc}), permitindo que você planeje seu orçamento com total clareza.
+                </p>
               </div>
             </div>
 
