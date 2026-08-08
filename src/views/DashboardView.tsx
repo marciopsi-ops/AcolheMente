@@ -61,6 +61,14 @@ import {
   MessageSquare,
   Calculator,
   UserX,
+  Compass,
+  ChevronDown,
+  ChevronUp,
+  Minimize2,
+  Maximize2,
+  Lock,
+  TrendingUp,
+  PlusCircle,
 } from "lucide-react";
 import { auth, db, handleFirestoreError, OperationType } from "../lib/firebase";
 import { triggerEmail, sendTrialExpiredCheckoutEmail } from "../lib/emailService";
@@ -629,8 +637,8 @@ const EditableField = ({
         : "";
 
   return (
-    <div>
-      <span className="block text-[10px] font-semibold uppercase text-forest/70/60">
+    <div className="flex flex-col gap-1 min-w-0">
+      <span className="block text-[10px] font-bold uppercase text-forest/70 tracking-wider truncate">
         {label}
       </span>
       {isEditing ? (
@@ -638,10 +646,10 @@ const EditableField = ({
           type={type}
           value={strValue}
           onChange={(val) => onChange(field, val)}
-          className="text-sm font-medium text-forest border-b border-sun-dark focus:outline-none bg-transparent w-full"
+          className="text-xs sm:text-sm font-semibold text-forest border border-emerald-500/80 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/20 bg-emerald-50/50 rounded-lg px-2.5 py-1.5 w-full focus:outline-none transition-all shadow-2xs"
         />
       ) : (
-        <span className="text-sm font-medium text-forest">
+        <span className="text-xs sm:text-sm font-semibold text-forest break-words min-h-[1.5rem] flex items-center">
           {formattedDisplay}
         </span>
       )}
@@ -674,7 +682,7 @@ export function DashboardView({
   const getDashboardBreadcrumbs = () => {
     const roleName = currentRole === "master" ? "Gestão" : currentRole === "triagem" ? "Equipe de Triagem" : (profile?.profissao ? `${profile.profissao} Parceiro(a)` : "Profissional Parceiro");
     const tabNames: Record<string, string> = {
-      estatisticas: "Estatísticas & Relatórios",
+      estatisticas: "Controle",
       kanban: "Triagem & Acolhimentos",
       pacientesAcolhidos: "Gestão de Pacientes",
       doacoes: "Apoio Solidário & Doações",
@@ -765,6 +773,64 @@ export function DashboardView({
   const [useGoogleLogin, setUseGoogleLogin] = useState(false);
   const [leadIdToConvert, setLeadIdToConvert] = useState<string | null>(null);
   const [isEditingCard, setIsEditingCard] = useState(false);
+  const [showJourneyMobileDetails, setShowJourneyMobileDetails] = useState(false);
+  const [subscriptionBannerState, setSubscriptionBannerState] = useState<"expanded" | "minimized" | "closed">("expanded");
+
+  // Frequency modal state and handler
+  const [showFreqModal, setShowFreqModal] = useState(false);
+  const [freqModalTargetCard, setFreqModalTargetCard] = useState<AcolhimentoCard | null>(null);
+  const [freqModalValue, setFreqModalValue] = useState("");
+  const [freqModalMotivo, setFreqModalMotivo] = useState("");
+
+  // Aumentar Horas Disponiveis state & handler
+  const [showAumentarHorasModal, setShowAumentarHorasModal] = useState(false);
+  const [selectedNovaHora, setSelectedNovaHora] = useState("");
+  const [customNovaHora, setCustomNovaHora] = useState("");
+
+  const handleSaveAumentarHoras = async () => {
+    const rawHora = customNovaHora.trim() ? customNovaHora.trim() : selectedNovaHora.trim();
+    if (!rawHora) {
+      showToast("Por favor, selecione ou informe a nova quantidade de horas disponíveis.", "error");
+      return;
+    }
+    const horaToSave = normalizeHorasDisponiveis(rawHora);
+
+    try {
+      await handleUpdateSelfProfile({ horasDisponiveis: horaToSave });
+      showToast("Horas disponíveis atualizadas com sucesso!", "success");
+      setShowAumentarHorasModal(false);
+      setCustomNovaHora("");
+    } catch (err) {
+      console.error("Erro ao atualizar horas disponíveis:", err);
+      showToast("Erro ao salvar atualização de horas.", "error");
+    }
+  };
+
+  const handleSaveFrequenciaModal = async () => {
+    if (!freqModalTargetCard) return;
+    if (!freqModalValue.trim()) {
+      showToast("Por favor, informe ou selecione a frequência de sessões.", "error");
+      return;
+    }
+    if (!freqModalMotivo.trim()) {
+      showToast("É obrigatório descrever o motivo/justificativa para alterar a frequência.", "error");
+      return;
+    }
+
+    try {
+      const cardRef = doc(db, "acolhimentos", freqModalTargetCard.id);
+      await updateDoc(cardRef, {
+        frequenciaSessoes: freqModalValue.trim(),
+        motivoFrequencia: freqModalMotivo.trim(),
+      });
+      showToast("Frequência e motivo de sessões atualizados com sucesso!", "success");
+      setShowFreqModal(false);
+      setFreqModalTargetCard(null);
+    } catch (err: any) {
+      console.error("Erro ao atualizar frequência:", err);
+      showToast("Erro ao salvar alteração de frequência.", "error");
+    }
+  };
 
   // Manual Lead Linkage / Recovery
   const [showVincularLeadModal, setShowVincularLeadModal] = useState(false);
@@ -1685,7 +1751,23 @@ export function DashboardView({
     value: any,
   ) => {
     try {
+      // Permission check for updating session value (Triagem and Gestão/Master only)
+      if ((property === "valorSessao" || property === "valorProposto") && currentRole !== "master" && currentRole !== "triagem") {
+        showToast("Apenas usuários de Triagem e Gestão podem alterar o valor da sessão.", "error");
+        return;
+      }
+
       const currentPaciente = acolhimentos.find((a) => a.id === id);
+
+      // Mandatory reason description check when changing frequency
+      if (property === "frequenciaSessoes") {
+        const currentFreq = currentPaciente?.frequenciaSessoes || "";
+        if (value !== currentFreq && (!currentPaciente?.motivoFrequencia || !currentPaciente.motivoFrequencia.trim())) {
+          showToast("É obrigatório descrever o motivo ao alterar a frequência de sessões.", "error");
+          return;
+        }
+      }
+
       const updates: any = { [property]: value };
       if (property === "ativo") {
         updates.statusUpdatedAt = serverTimestamp();
@@ -3269,21 +3351,56 @@ export function DashboardView({
 
   const calculateHorasMensais = (acols: Acolhimento[]) => {
     return acols.reduce((sum, a) => {
-      if (a.frequenciaSessoes === "Semanal") return sum + 4;
-      if (a.frequenciaSessoes === "Quinzenal") return sum + 2;
-      if (a.frequenciaSessoes === "Mensal") return sum + 1;
-      if (a.frequenciaSessoes === "Sob Demanda") return sum + 1;
-      return sum + 4; // Default to 4 if not set yet, considering weekly as standard
+      const freq = (a.frequenciaSessoes || "").toLowerCase();
+      if (freq.includes("quinzenal") || freq.includes("2x/mês") || freq.includes("2x por mês")) return sum + 2;
+      if (freq.includes("mensal") || freq.includes("1x/mês") || freq.includes("1x por mês")) return sum + 1;
+      if (freq.includes("demanda")) return sum + 1;
+      if (freq.includes("2x por semana") || freq.includes("2x/semana")) return sum + 8;
+      if (freq.includes("3x por semana") || freq.includes("3x/semana")) return sum + 12;
+      if (freq.includes("semanal") || freq.includes("4x/mês") || freq.includes("4x por mês")) return sum + 4;
+      return sum + 4; // Padrão semanal (4h/mês = 1 sessão/semana)
     }, 0);
+  };
+
+  const normalizeHorasDisponiveis = (horasDisp?: string): string => {
+    if (!horasDisp) return "";
+    const trimmed = horasDisp.trim();
+    if (trimmed === "1 a 3 horas/mês" || trimmed === "1 a 3") return "2 a 4 horas/mês";
+    if (trimmed === "9 a 15 horas/mês" || trimmed === "9 a 15") return "10 a 16 horas/mês";
+    if (
+      trimmed === "2 a 4 horas/mês" ||
+      trimmed === "4 a 8 horas/mês" ||
+      trimmed === "10 a 16 horas/mês" ||
+      trimmed === "16 a 20 horas/mês" ||
+      trimmed === "Mais de 20 horas/mês"
+    ) {
+      return trimmed;
+    }
+
+    // Replace odd numbers with next even number (e.g., 1->2, 3->4, 5->6, 7->8, 9->10, 15->16)
+    return trimmed.replace(/\b(\d+)\b/g, (_m, numStr) => {
+      let num = parseInt(numStr, 10);
+      if (num % 2 !== 0) {
+        num += 1;
+      }
+      return num.toString();
+    });
   };
 
   const parseMaxHorasDisponiveis = (horasDisp?: string) => {
     if (!horasDisp) return 0;
-    if (horasDisp.includes("1 a 3")) return 3;
-    if (horasDisp.includes("4 a 8")) return 8;
-    if (horasDisp.includes("9 a 15")) return 15;
-    if (horasDisp.includes("16 a 20")) return 20;
-    if (horasDisp.includes("Mais de 20")) return 24;
+    const normalized = normalizeHorasDisponiveis(horasDisp);
+    if (normalized.includes("2 a 4") || normalized.includes("1 a 3")) return 4;
+    if (normalized.includes("4 a 8")) return 8;
+    if (normalized.includes("10 a 16") || normalized.includes("9 a 15")) return 16;
+    if (normalized.includes("16 a 20")) return 20;
+    if (normalized.includes("Mais de 20")) return 24;
+    const match = normalized.match(/\d+/);
+    if (match) {
+      let val = parseInt(match[0], 10);
+      if (val % 2 !== 0) val += 1;
+      return val;
+    }
     return 0;
   };
 
@@ -3539,7 +3656,7 @@ export function DashboardView({
                 onClick={() => setActiveTab("estatisticas")}
                 className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "estatisticas" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
               >
-                Estatísticas
+                Controle
               </button>
             )}
             <button
@@ -3658,7 +3775,7 @@ export function DashboardView({
               onClick={() => setActiveTab("estatisticas")}
               className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "estatisticas" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
             >
-              Estatísticas
+              Controle
             </button>
             <button
               onClick={() => setActiveTab("pacientes")}
@@ -3710,16 +3827,18 @@ export function DashboardView({
           </div>
         )}
 
-        <div className="flex-1 w-full lg:w-auto lg:max-w-xs relative order-last lg:order-none mt-3 sm:mt-0">
-          <Search className="w-4 h-4 text-forest/70 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            placeholder="Buscar..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-4 py-1.5 sm:py-2 text-sm bg-warm/50 border border-soft rounded-full focus:outline-none focus:border-sun-dark focus:bg-white text-forest transition-colors"
-          />
-        </div>
+        {activeTab !== "estatisticas" && (
+          <div className="flex-1 w-full lg:w-auto lg:max-w-xs relative order-last lg:order-none mt-3 sm:mt-0">
+            <Search className="w-4 h-4 text-forest/70 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="Buscar..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-4 py-1.5 sm:py-2 text-sm bg-warm/50 border border-soft rounded-full focus:outline-none focus:border-sun-dark focus:bg-white text-forest transition-colors"
+            />
+          </div>
+        )}
 
         <div className="flex items-center gap-2 sm:gap-4">
           {profile?.roles && profile.roles.length > 1 && (
@@ -3763,39 +3882,158 @@ export function DashboardView({
         </div>
       </nav>
 
-      {/* Professional Trial Banner */}
-      {currentRole === "profissional" && profile?.isCortesia ? (
-        <div className="bg-gradient-to-r from-purple-500/10 via-purple-500/15 to-emerald-500/10 border-b border-purple-200/80 px-6 py-2.5 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-forest font-medium animate-in fade-in">
-          <div className="flex items-center gap-2">
-            <Gift className="w-4 h-4 text-purple-600 shrink-0" />
-            <span>
-              <strong>Status: Profissional Convidado (Isenção Cortesia):</strong> Você está cadastrado(a) na plataforma como <strong>Convidado Especial</strong> pela Gestão. Seu acesso às ferramentas e atendimentos é livre de avisos de cobrança ou mensalidades.
-            </span>
-          </div>
+      {/* Professional Subscription Status Banner (Minimizable/Closable) */}
+      {currentRole === "profissional" && subscriptionBannerState !== "closed" && (
+        profile?.isCortesia ? (
+          subscriptionBannerState === "minimized" ? (
+            <div className="bg-gradient-to-r from-purple-500/10 via-purple-500/15 to-emerald-500/10 border-b border-purple-200/80 px-3 sm:px-6 py-1.5 flex items-center justify-between gap-2 text-xs text-forest font-medium animate-in fade-in">
+              <div className="flex items-center gap-2 min-w-0">
+                <Gift className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+                <span className="truncate text-[11px] sm:text-xs">
+                  <strong>Status:</strong> Profissional Convidado (Isenção Cortesia)
+                </span>
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  onClick={() => setActiveTab("pagamentosProfissional")}
+                  className="px-2 py-0.5 bg-purple-700 text-white hover:bg-purple-800 rounded-lg text-[10px] font-bold transition-all shadow-2xs"
+                >
+                  Ver
+                </button>
+                <button
+                  onClick={() => setSubscriptionBannerState("expanded")}
+                  className="p-1 text-purple-900/70 hover:text-purple-900 hover:bg-purple-100 rounded-lg transition-colors flex items-center gap-0.5 text-[10px] font-semibold"
+                  title="Expandir aviso de status"
+                >
+                  <ChevronDown className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Expandir</span>
+                </button>
+                <button
+                  onClick={() => setSubscriptionBannerState("closed")}
+                  className="p-1 text-purple-900/70 hover:text-red-600 hover:bg-purple-100 rounded-lg transition-colors"
+                  title="Fechar aviso"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="bg-gradient-to-r from-purple-500/10 via-purple-500/15 to-emerald-500/10 border-b border-purple-200/80 px-3 sm:px-6 py-2 sm:py-2.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-3 text-xs text-forest font-medium animate-in fade-in">
+              <div className="flex items-start sm:items-center gap-2 min-w-0 flex-1">
+                <Gift className="w-4 h-4 text-purple-600 shrink-0 mt-0.5 sm:mt-0" />
+                <span className="text-[11px] sm:text-xs leading-tight sm:leading-normal">
+                  <strong>Status: Profissional Convidado (Isenção Cortesia):</strong> Você está cadastrado(a) na plataforma como <strong>Convidado Especial</strong> pela Gestão. Seu acesso é livre de avisos de cobrança ou mensalidades.
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 self-end sm:self-auto w-full sm:w-auto justify-end">
+                <button
+                  onClick={() => setActiveTab("pagamentosProfissional")}
+                  className="px-2.5 sm:px-3.5 py-1 sm:py-1.5 bg-purple-700 text-white hover:bg-purple-800 rounded-xl text-[10px] sm:text-[11px] font-bold transition-all shrink-0 flex items-center gap-1 shadow-2xs"
+                >
+                  <CreditCard className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-purple-200" />
+                  Ver Status
+                </button>
+                <button
+                  onClick={() => setSubscriptionBannerState("minimized")}
+                  className="p-1 sm:p-1.5 text-purple-900/70 hover:text-purple-900 hover:bg-purple-100 rounded-lg transition-colors flex items-center gap-0.5 text-[10px] font-semibold"
+                  title="Minimizar aviso"
+                >
+                  <ChevronUp className="w-3.5 h-3.5" />
+                  <span className="hidden md:inline">Minimizar</span>
+                </button>
+                <button
+                  onClick={() => setSubscriptionBannerState("closed")}
+                  className="p-1 sm:p-1.5 text-purple-900/70 hover:text-red-600 hover:bg-purple-100 rounded-lg transition-colors"
+                  title="Fechar aviso"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          )
+        ) : profile?.statusPagamento !== "pago" && !profile?.solicitacaoCancelamento ? (
+          subscriptionBannerState === "minimized" ? (
+            <div className="bg-gradient-to-r from-amber-500/10 via-amber-500/15 to-emerald-500/10 border-b border-amber-200/80 px-3 sm:px-6 py-1.5 flex items-center justify-between gap-2 text-xs text-forest font-medium animate-in fade-in">
+              <div className="flex items-center gap-2 min-w-0">
+                <Sparkles className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                <span className="truncate text-[11px] sm:text-xs">
+                  <strong>Prazo 1º Pagamento (7 dias):</strong> Vence em {profile?.vencimentoPagamento ? formatDateSafely(profile.vencimentoPagamento) : "7 dias após entrada"}.
+                </span>
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  onClick={() => setActiveTab("pagamentosProfissional")}
+                  className="px-2 py-0.5 bg-forest text-white hover:bg-forest/90 rounded-lg text-[10px] font-bold transition-all shadow-2xs"
+                >
+                  Pagamento
+                </button>
+                <button
+                  onClick={() => setSubscriptionBannerState("expanded")}
+                  className="p-1 text-forest/70 hover:text-forest hover:bg-amber-100/60 rounded-lg transition-colors flex items-center gap-0.5 text-[10px] font-semibold"
+                  title="Expandir aviso de pagamento"
+                >
+                  <ChevronDown className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Expandir</span>
+                </button>
+                <button
+                  onClick={() => setSubscriptionBannerState("closed")}
+                  className="p-1 text-forest/70 hover:text-red-600 hover:bg-amber-100/60 rounded-lg transition-colors"
+                  title="Fechar aviso"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="bg-gradient-to-r from-amber-500/10 via-amber-500/15 to-emerald-500/10 border-b border-amber-200/80 px-3 sm:px-6 py-2 sm:py-2.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-3 text-xs text-forest font-medium animate-in fade-in">
+              <div className="flex items-start sm:items-center gap-2 min-w-0 flex-1">
+                <Sparkles className="w-4 h-4 text-amber-600 shrink-0 mt-0.5 sm:mt-0" />
+                <span className="text-[11px] sm:text-xs leading-tight sm:leading-normal">
+                  <strong>Prazo para o 1º Pagamento (7 dias):</strong> Sua admissão foi realizada em{" "}
+                  {profile?.dataAdmissao ? formatDateSafely(profile.dataAdmissao) : "recentemente"}. O seu primeiro pagamento vence em{" "}
+                  {profile?.vencimentoPagamento ? formatDateSafely(profile.vencimentoPagamento) : "7 dias após a entrada"}.
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 self-end sm:self-auto w-full sm:w-auto justify-end">
+                <button
+                  onClick={() => setActiveTab("pagamentosProfissional")}
+                  className="px-2.5 sm:px-3.5 py-1 sm:py-1.5 bg-forest text-white hover:bg-forest/90 rounded-xl text-[10px] sm:text-[11px] font-bold transition-all shrink-0 flex items-center gap-1 shadow-2xs"
+                >
+                  <CreditCard className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-sun" />
+                  Gerenciar Pagamento
+                </button>
+                <button
+                  onClick={() => setSubscriptionBannerState("minimized")}
+                  className="p-1 sm:p-1.5 text-forest/70 hover:text-forest hover:bg-amber-100/60 rounded-lg transition-colors flex items-center gap-0.5 text-[10px] font-semibold"
+                  title="Minimizar aviso"
+                >
+                  <ChevronUp className="w-3.5 h-3.5" />
+                  <span className="hidden md:inline">Minimizar</span>
+                </button>
+                <button
+                  onClick={() => setSubscriptionBannerState("closed")}
+                  className="p-1 sm:p-1.5 text-forest/70 hover:text-red-600 hover:bg-amber-100/60 rounded-lg transition-colors"
+                  title="Fechar aviso"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          )
+        ) : null
+      )}
+
+      {/* Discreet restore button if closed */}
+      {currentRole === "profissional" && subscriptionBannerState === "closed" && (profile?.isCortesia || (profile?.statusPagamento !== "pago" && !profile?.solicitacaoCancelamento)) && (
+        <div className="px-3 sm:px-6 py-1 bg-warm/60 border-b border-soft flex justify-end">
           <button
-            onClick={() => setActiveTab("pagamentosProfissional")}
-            className="px-3.5 py-1.5 bg-purple-700 text-white hover:bg-purple-800 rounded-xl text-[11px] font-bold transition-all shrink-0 flex items-center gap-1.5 shadow-xs cursor-pointer"
+            onClick={() => setSubscriptionBannerState("minimized")}
+            className="text-[10px] font-semibold text-forest/60 hover:text-forest flex items-center gap-1 transition-colors"
+            title="Mostrar aviso de assinatura"
           >
-            <CreditCard className="w-3.5 h-3.5 text-purple-200" />
-            Ver Status
-          </button>
-        </div>
-      ) : currentRole === "profissional" && profile?.statusPagamento !== "pago" && !profile?.solicitacaoCancelamento && (
-        <div className="bg-gradient-to-r from-amber-500/10 via-amber-500/15 to-emerald-500/10 border-b border-amber-200/80 px-6 py-2.5 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-forest font-medium animate-in fade-in">
-          <div className="flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-amber-600 shrink-0" />
-            <span>
-              <strong>Prazo para o 1º Pagamento (7 dias):</strong> Sua admissão foi realizada em{" "}
-              {profile?.dataAdmissao ? formatDateSafely(profile.dataAdmissao) : "recentemente"}. O seu primeiro pagamento vence em{" "}
-              {profile?.vencimentoPagamento ? formatDateSafely(profile.vencimentoPagamento) : "7 dias após a entrada"}.
-            </span>
-          </div>
-          <button
-            onClick={() => setActiveTab("pagamentosProfissional")}
-            className="px-3.5 py-1.5 bg-forest text-white hover:bg-forest/90 rounded-xl text-[11px] font-bold transition-all shrink-0 flex items-center gap-1.5 shadow-xs"
-          >
-            <CreditCard className="w-3.5 h-3.5 text-sun" />
-            Gerenciar Meu Pagamento
+            <Sparkles className="w-3 h-3 text-amber-600" />
+            <span>Exibir Status da Assinatura</span>
+            <ChevronDown className="w-3 h-3" />
           </button>
         </div>
       )}
@@ -3807,7 +4045,7 @@ export function DashboardView({
           <div className="max-w-7xl w-full mx-auto space-y-8">
             <h2 className="font-serif text-3xl text-forest bg-white px-8 py-6 rounded-[2rem] shadow-sm border border-soft flex items-center gap-4">
               <BarChart2 className="w-8 h-8 text-forest/70" />
-              Estatísticas da Plataforma
+              Controle da Plataforma
             </h2>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -4649,8 +4887,12 @@ export function DashboardView({
                       {
                         meusPacientes.filter(
                           (a) =>
-                            a.status === "Em Atendimento" &&
-                            a.atribuicaoStatus === "Aceito",
+                            a.atribuicaoStatus === "Aceito" &&
+                            a.status !== "Alta" &&
+                            a.status !== "Rejeitado" &&
+                            a.status !== "Encerrado" &&
+                            a.status !== "Desistência" &&
+                            a.status !== "Cancelado",
                         ).length
                       }
                     </span>
@@ -4665,6 +4907,7 @@ export function DashboardView({
                         meusPacientes.filter(
                           (a) =>
                             a.status === "Alta" ||
+                            a.status === "Encerrado" ||
                             a.atribuicaoStatus === "Rejeitado",
                         ).length
                       }
@@ -4688,8 +4931,12 @@ export function DashboardView({
                   {meusPacientes
                     .filter(
                       (p) =>
-                        p.status === "Em Atendimento" &&
-                        p.atribuicaoStatus === "Aceito",
+                        p.atribuicaoStatus === "Aceito" &&
+                        p.status !== "Alta" &&
+                        p.status !== "Rejeitado" &&
+                        p.status !== "Encerrado" &&
+                        p.status !== "Desistência" &&
+                        p.status !== "Cancelado",
                     )
                     .reduce(
                       (sum, p) =>
@@ -4714,8 +4961,12 @@ export function DashboardView({
                       {(() => {
                         const actives = meusPacientes.filter(
                           (p) =>
-                            p.status === "Em Atendimento" &&
-                            p.atribuicaoStatus === "Aceito",
+                            p.atribuicaoStatus === "Aceito" &&
+                            p.status !== "Alta" &&
+                            p.status !== "Rejeitado" &&
+                            p.status !== "Encerrado" &&
+                            p.status !== "Desistência" &&
+                            p.status !== "Cancelado",
                         );
                         if (actives.length === 0) return "0,00";
                         const total = actives.reduce(
@@ -4738,33 +4989,127 @@ export function DashboardView({
               </div>
 
               {/* Impacto / Horas Stats (Profissional) */}
-              <div className="bg-white p-6 rounded-3xl border border-soft shadow-sm flex flex-col gap-4">
-                <div className="flex justify-between items-center">
-                  <h3 className="font-serif text-xl font-semibold text-forest">
-                    Horas Mensais
-                  </h3>
-                  <div className="w-10 h-10 rounded-full bg-sun/50 text-forest flex items-center justify-center">
-                    <Clock className="w-5 h-5" />
+              {(() => {
+                const pacsAtivos = meusPacientes.filter(
+                  (p) =>
+                    p.atribuicaoStatus === "Aceito" &&
+                    p.status !== "Alta" &&
+                    p.status !== "Rejeitado" &&
+                    p.status !== "Encerrado" &&
+                    p.status !== "Desistência" &&
+                    p.status !== "Cancelado",
+                );
+                const horasAtivas = calculateHorasMensais(pacsAtivos);
+                const maxHoras = parseMaxHorasDisponiveis(profile?.horasDisponiveis);
+                const cotaDeclarada = normalizeHorasDisponiveis(profile?.horasDisponiveis) || "Não informada";
+                const horasRestantes = maxHoras > 0 ? Math.max(0, maxHoras - horasAtivas) : 0;
+                const percentualUso = maxHoras > 0 ? Math.min(100, Math.round((horasAtivas / maxHoras) * 100)) : 0;
+
+                return (
+                  <div className="bg-white p-6 rounded-3xl border border-soft shadow-sm flex flex-col justify-between gap-4">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <h3 className="font-serif text-xl font-semibold text-forest">
+                          Horas Mensais
+                        </h3>
+                        <p className="text-xs text-forest/60">Ativas x Cota Declarada</p>
+                      </div>
+                      <div className="w-10 h-10 rounded-full bg-sun/50 text-forest flex items-center justify-center shrink-0">
+                        <Clock className="w-5 h-5" />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="flex items-baseline justify-between">
+                        <div className="text-3xl font-extrabold text-forest">
+                          {horasAtivas}<span className="text-lg font-bold text-forest/70">h ativas/mês</span>
+                        </div>
+                        {maxHoras > 0 && (
+                          <span className="text-xs font-bold text-forest/80 bg-warm px-2.5 py-1 rounded-lg border border-soft">
+                            Cota Máx: {maxHoras}h/mês
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Barra de Progresso da Cota */}
+                      {maxHoras > 0 && (
+                        <div className="space-y-1">
+                          <div className="w-full bg-soft/60 h-2.5 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full transition-all rounded-full ${
+                                percentualUso >= 100
+                                  ? "bg-red-500"
+                                  : percentualUso >= 80
+                                  ? "bg-amber-500"
+                                  : "bg-emerald-600"
+                              }`}
+                              style={{ width: `${percentualUso}%` }}
+                            />
+                          </div>
+                          <div className="flex justify-between text-[10px] font-medium text-forest/60">
+                            <span>{percentualUso}% da cota máx. utilizada</span>
+                            <span className="font-semibold text-forest/80">Faixa: {cotaDeclarada}</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Horas Restantes e Status */}
+                    <div className="border-t border-soft pt-3 mt-1 flex flex-col gap-1.5">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-bold text-forest/80 uppercase tracking-wider text-[10px]">
+                          Restantes para Cota
+                        </span>
+                        <span className={`font-extrabold text-xs px-2.5 py-0.5 rounded-md ${
+                          maxHoras === 0
+                            ? "bg-gray-100 text-gray-700"
+                            : horasRestantes === 0
+                            ? "bg-red-100 text-red-800"
+                            : horasRestantes <= 2
+                            ? "bg-amber-100 text-amber-800"
+                            : "bg-emerald-100 text-emerald-800"
+                        }`}>
+                          {maxHoras === 0
+                            ? "Sem Cota Definida"
+                            : horasRestantes === 0
+                            ? "Cota Atingida (0h)"
+                            : `${horasRestantes}h disponíveis`}
+                        </span>
+                      </div>
+
+                      <p className="text-[11px] text-forest/75 leading-tight">
+                        {maxHoras === 0 ? (
+                          <span>Defina sua disponibilidade de horas nas configurações do perfil para acompanhar o saldo da cota.</span>
+                        ) : horasRestantes === 0 ? (
+                          <span className="text-red-700 font-semibold">
+                            Você atingiu o limite máximo da cota declarada ({cotaDeclarada}). Todos os horários estão preenchidos.
+                          </span>
+                        ) : (
+                          <span>
+                            Com {pacsAtivos.length} paciente(s) ativo(s) ({horasAtivas}h/mês), restam <strong>{horasRestantes}h</strong> de atendimento por mês para atingir o limite da sua cota ({cotaDeclarada}).
+                          </span>
+                        )}
+                      </p>
+
+                      {/* Botão de Ação: Aumentar Horas Disponíveis */}
+                      <div className="pt-2.5 border-t border-soft/60">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedNovaHora(normalizeHorasDisponiveis(profile?.horasDisponiveis) || "4 a 8 horas/mês");
+                            setCustomNovaHora("");
+                            setShowAumentarHorasModal(true);
+                          }}
+                          className="w-full py-2.5 px-4 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer"
+                        >
+                          <TrendingUp className="w-4 h-4 text-emerald-200" />
+                          Aumentar Horas Disponíveis
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                </div>
-                <div className="text-4xl font-bold text-forest">
-                  {calculateHorasMensais(
-                    meusPacientes.filter(
-                      (p) =>
-                        p.status === "Em Atendimento" &&
-                        p.atribuicaoStatus === "Aceito",
-                    ),
-                  )}
-                  h
-                </div>
-                <div className="flex gap-4 border-t border-soft pt-4 mt-2">
-                  <div className="flex flex-col">
-                    <span className="text-[10px] uppercase font-bold text-forest/50 tracking-wider">
-                      Estimativa Mês (Média)
-                    </span>
-                  </div>
-                </div>
-              </div>
+                );
+              })()}
             </div>
           </div>
         </div>
@@ -5641,7 +5986,7 @@ export function DashboardView({
                       Horas Mensais Disponíveis para o Projeto
                     </label>
                     <select
-                      value={profile.horasDisponiveis || "1 a 3 horas/mês"}
+                      value={normalizeHorasDisponiveis(profile.horasDisponiveis) || "2 a 4 horas/mês"}
                       onChange={(e) =>
                         setProfile({
                           ...profile,
@@ -5650,9 +5995,9 @@ export function DashboardView({
                       }
                       className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark cursor-pointer text-sm text-forest"
                     >
-                      <option value="1 a 3 horas/mês">1 a 3 horas/mês</option>
+                      <option value="2 a 4 horas/mês">2 a 4 horas/mês</option>
                       <option value="4 a 8 horas/mês">4 a 8 horas/mês</option>
-                      <option value="9 a 15 horas/mês">9 a 15 horas/mês</option>
+                      <option value="10 a 16 horas/mês">10 a 16 horas/mês</option>
                       <option value="16 a 20 horas/mês">
                         16 a 20 horas/mês
                       </option>
@@ -8067,22 +8412,22 @@ export function DashboardView({
 
       {/* Card Details Modal - Ficha de Bordo do Paciente */}
       {selectedCard && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-2 sm:px-4 bg-forest/25 backdrop-blur-sm animate-in fade-in py-2 sm:py-3">
-          <div className="bg-white rounded-3xl w-full max-w-[96vw] 2xl:max-w-[1550px] h-[95vh] flex flex-col shadow-2xl border border-soft overflow-hidden animate-in zoom-in-95">
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-1 sm:px-4 bg-forest/25 backdrop-blur-sm animate-in fade-in py-1 sm:py-3">
+          <div className="bg-white rounded-2xl sm:rounded-3xl w-full max-w-[98vw] 2xl:max-w-[1550px] h-[96vh] sm:h-[95vh] flex flex-col shadow-2xl border border-soft overflow-hidden animate-in zoom-in-95">
             {/* Header */}
-            <div className="px-6 py-4 flex flex-col border-b border-soft bg-gradient-to-r from-warm/60 via-white to-warm/40 gap-3 shrink-0">
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-                <div className="flex flex-wrap items-center gap-2.5">
-                  <div className="p-2.5 bg-forest text-white rounded-xl shadow-xs">
-                    <User className="w-5 h-5" />
+            <div className="px-3 sm:px-6 py-2.5 sm:py-4 flex flex-col border-b border-soft bg-gradient-to-r from-warm/60 via-white to-warm/40 gap-2.5 shrink-0">
+              <div className="flex justify-between items-start sm:items-center gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="p-2 sm:p-2.5 bg-forest text-white rounded-xl shadow-xs shrink-0">
+                    <User className="w-4 h-4 sm:w-5 sm:h-5" />
                   </div>
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="font-serif text-2xl text-forest font-semibold">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                      <h3 className="font-serif text-lg sm:text-2xl text-forest font-semibold truncate max-w-[180px] sm:max-w-none">
                         {selectedCard.nome || (selectedCard as any).nomeCompleto || "Paciente sem nome"}
                       </h3>
                       <span
-                        className={`text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full border ${
+                        className={`text-[9px] sm:text-[10px] font-extrabold uppercase px-2 sm:px-2.5 py-0.5 rounded-full border ${
                           selectedCard.ativo === false
                             ? "bg-slate-100 text-slate-600 border-slate-200"
                             : "bg-emerald-100 text-emerald-800 border-emerald-200"
@@ -8091,12 +8436,12 @@ export function DashboardView({
                         {selectedCard.ativo === false ? "Inativo" : "Ativo"}
                       </span>
                       {selectedCard.status && (
-                        <span className="text-[10px] font-bold uppercase px-2.5 py-0.5 rounded-full bg-sun/30 text-forest border border-sun/50">
+                        <span className="text-[9px] sm:text-[10px] font-bold uppercase px-2 sm:px-2.5 py-0.5 rounded-full bg-sun/30 text-forest border border-sun/50">
                           {selectedCard.status}
                         </span>
                       )}
                     </div>
-                    <div className="flex flex-wrap items-center gap-3 text-[11px] font-semibold text-forest/60 mt-0.5">
+                    <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-[10px] sm:text-[11px] font-semibold text-forest/60 mt-0.5">
                       {selectedCard.createdAt && (
                         <span className="flex items-center gap-1">
                           <Clock className="w-3 h-3 text-forest/40" /> Entrada: {formatDate(selectedCard.createdAt)}
@@ -8111,13 +8456,27 @@ export function DashboardView({
                   </div>
                 </div>
 
-                <button
-                  onClick={() => setSelectedCard(null)}
-                  className="p-1.5 text-forest/50 hover:text-red-500 rounded-full hover:bg-red-50 transition-colors self-end sm:self-auto"
-                  title="Fechar Ficha"
-                >
-                  <XCircle className="w-6 h-6" />
-                </button>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    onClick={() => setIsEditingCard(!isEditingCard)}
+                    className={`sm:hidden flex items-center gap-1 font-bold text-[11px] px-2.5 py-1 rounded-lg border transition-all shadow-2xs ${
+                      isEditingCard
+                        ? "bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700"
+                        : "bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100"
+                    }`}
+                  >
+                    <Edit3 className="w-3 h-3" />
+                    {isEditingCard ? "Salvar" : "Editar"}
+                  </button>
+
+                  <button
+                    onClick={() => setSelectedCard(null)}
+                    className="p-1 sm:p-1.5 text-forest/50 hover:text-red-500 rounded-full hover:bg-red-50 transition-colors"
+                    title="Fechar Ficha"
+                  >
+                    <XCircle className="w-5 h-5 sm:w-6 sm:h-6" />
+                  </button>
+                </div>
               </div>
 
               {/* Patient Journey Flow Progress */}
@@ -8134,29 +8493,47 @@ export function DashboardView({
                 const flow = getPatientFlowDetails(selectedCard);
 
                 return (
-                  <div className="w-full bg-white/90 p-3 rounded-2xl border border-soft shadow-2xs">
-                    <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5 text-center text-[10px] font-bold uppercase tracking-wider mb-1.5">
-                      <div className={`p-1.5 rounded-xl border transition-colors ${flow.propostaRevisao ? "text-amber-800 bg-amber-50/90 border-amber-300 font-extrabold" : flow.activeStep >= 1 ? "text-emerald-800 bg-emerald-50/90 border-emerald-200" : "text-forest/40 bg-warm/30 border-transparent"}`}>
+                  <div className="w-full bg-white/90 p-2 sm:p-3 rounded-xl sm:rounded-2xl border border-soft shadow-2xs space-y-1.5">
+                    {/* Mobile Summary Bar */}
+                    <div className="sm:hidden flex items-center justify-between text-[11px] font-bold">
+                      <div className="flex items-center gap-1.5 text-forest">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                        <span>
+                          Jornada ({flow.activeStep}/6): {flow.propostaRevisao ? "Revisão Solicitada" : flow.propostaAceita ? "Proposta Aceita" : flow.isAtribuido ? "Atribuído" : "Triagem"}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowJourneyMobileDetails(!showJourneyMobileDetails)}
+                        className="text-[10px] text-forest/70 hover:text-forest bg-warm/80 px-2 py-0.5 rounded-md border border-soft flex items-center gap-0.5"
+                      >
+                        {showJourneyMobileDetails ? "Ocultar" : "Ver Etapas"}
+                        <ChevronDown className={`w-3 h-3 transition-transform ${showJourneyMobileDetails ? "rotate-180" : ""}`} />
+                      </button>
+                    </div>
+
+                    <div className={`${showJourneyMobileDetails ? "grid" : "hidden sm:grid"} grid-cols-2 sm:grid-cols-6 gap-1 text-center text-[9px] sm:text-[10px] font-bold uppercase tracking-wider mb-1`}>
+                      <div className={`p-1 sm:p-1.5 rounded-lg sm:rounded-xl border transition-colors ${flow.propostaRevisao ? "text-amber-800 bg-amber-50/90 border-amber-300 font-extrabold" : flow.activeStep >= 1 ? "text-emerald-800 bg-emerald-50/90 border-emerald-200" : "text-forest/40 bg-warm/30 border-transparent"}`}>
                         1. Questionário {flow.propostaRevisao ? "(Revisão)" : ""}
                       </div>
-                      <div className={`p-1.5 rounded-xl border transition-colors ${flow.propostaRevisao ? "text-amber-800 bg-amber-50/90 border-amber-200" : (flow.isPropostaEnviada || flow.propostaAceita) ? "text-emerald-800 bg-emerald-50/90 border-emerald-200" : flow.activeStep === 2 ? "text-blue-800 bg-blue-50/90 border-blue-200" : "text-forest/40 bg-warm/30 border-transparent"}`}>
+                      <div className={`p-1 sm:p-1.5 rounded-lg sm:rounded-xl border transition-colors ${flow.propostaRevisao ? "text-amber-800 bg-amber-50/90 border-amber-200" : (flow.isPropostaEnviada || flow.propostaAceita) ? "text-emerald-800 bg-emerald-50/90 border-emerald-200" : flow.activeStep === 2 ? "text-blue-800 bg-blue-50/90 border-blue-200" : "text-forest/40 bg-warm/30 border-transparent"}`}>
                         2. Proposta
                       </div>
-                      <div className={`p-1.5 rounded-xl border transition-colors ${flow.propostaAceita ? "text-emerald-800 bg-emerald-50/90 border-emerald-200" : flow.propostaRevisao ? "text-amber-800 bg-amber-50/90 border-amber-300 font-extrabold" : flow.isPropostaEnviada ? "text-blue-800 bg-blue-50/90 border-blue-200" : "text-forest/40 bg-warm/30 border-transparent"}`}>
+                      <div className={`p-1 sm:p-1.5 rounded-lg sm:rounded-xl border transition-colors ${flow.propostaAceita ? "text-emerald-800 bg-emerald-50/90 border-emerald-200" : flow.propostaRevisao ? "text-amber-800 bg-amber-50/90 border-amber-300 font-extrabold" : flow.isPropostaEnviada ? "text-blue-800 bg-blue-50/90 border-blue-200" : "text-forest/40 bg-warm/30 border-transparent"}`}>
                         3. {flow.propostaRevisao ? "Revisão Solicitada" : flow.propostaAceita ? "Aceite OK" : "Aceite / Revisão"}
                       </div>
-                      <div className={`p-1.5 rounded-xl border transition-colors ${flow.isAtribuido ? "text-emerald-800 bg-emerald-50/90 border-emerald-200" : flow.propostaAceita ? "text-amber-800 bg-amber-50/90 border-amber-300 font-bold" : "text-forest/40 bg-warm/30 border-transparent"}`}>
+                      <div className={`p-1 sm:p-1.5 rounded-lg sm:rounded-xl border transition-colors ${flow.isAtribuido ? "text-emerald-800 bg-emerald-50/90 border-emerald-200" : flow.propostaAceita ? "text-amber-800 bg-amber-50/90 border-amber-300 font-bold" : "text-forest/40 bg-warm/30 border-transparent"}`}>
                         4. Atribuir Prof. {!flow.isAtribuido && flow.propostaAceita ? "(Pendente)" : ""}
                       </div>
-                      <div className={`p-1.5 rounded-xl border transition-colors ${flow.isAtribuicaoDevolvida ? "text-rose-800 bg-rose-50/90 border-rose-200" : flow.isAtribuicaoAceita ? "text-emerald-800 bg-emerald-50/90 border-emerald-200" : flow.isAtribuido ? "text-amber-800 bg-amber-50/90 border-amber-200" : "text-forest/40 bg-warm/30 border-transparent"}`}>
+                      <div className={`p-1 sm:p-1.5 rounded-lg sm:rounded-xl border transition-colors ${flow.isAtribuicaoDevolvida ? "text-rose-800 bg-rose-50/90 border-rose-200" : flow.isAtribuicaoAceita ? "text-emerald-800 bg-emerald-50/90 border-emerald-200" : flow.isAtribuido ? "text-amber-800 bg-amber-50/90 border-amber-200" : "text-forest/40 bg-warm/30 border-transparent"}`}>
                         5. Atribuição {!flow.isAtribuicaoAceita && flow.isAtribuido && !flow.isAtribuicaoDevolvida ? "(Pendente)" : ""}
                       </div>
-                      <div className={`p-1.5 rounded-xl border transition-colors ${flow.isAtribuido && flow.isAtribuicaoAceita && (flow.isAtendimentoIniciado || selectedCard.status === "Em Atendimento") ? "text-emerald-800 bg-emerald-50/90 border-emerald-200" : "text-forest/40 bg-warm/30 border-transparent"}`}>
+                      <div className={`p-1 sm:p-1.5 rounded-lg sm:rounded-xl border transition-colors ${flow.isAtribuido && flow.isAtribuicaoAceita && (flow.isAtendimentoIniciado || selectedCard.status === "Em Atendimento") ? "text-emerald-800 bg-emerald-50/90 border-emerald-200" : "text-forest/40 bg-warm/30 border-transparent"}`}>
                         6. Atendimento
                       </div>
                     </div>
 
-                    <div className="flex gap-1.5 h-1.5 w-full">
+                    <div className="flex gap-1 h-1.5 w-full">
                       <div className={`flex-1 rounded-full transition-colors ${flow.propostaRevisao ? "bg-amber-500" : "bg-emerald-500"}`}></div>
                       <div className={`flex-1 rounded-full transition-colors ${flow.propostaRevisao ? "bg-amber-300" : (flow.isPropostaEnviada || flow.propostaAceita) ? "bg-emerald-500" : "bg-warm-dark/30"}`}></div>
                       <div className={`flex-1 rounded-full transition-colors ${flow.propostaAceita ? "bg-emerald-500" : flow.propostaRevisao ? "bg-amber-500" : flow.isPropostaEnviada ? "bg-blue-400" : "bg-warm-dark/30"}`}></div>
@@ -8170,9 +8547,9 @@ export function DashboardView({
             </div>
 
             {/* Action Bar */}
-            <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-2.5 bg-white border-b border-soft shrink-0">
+            <div className="flex items-center justify-between gap-2 px-3 sm:px-6 py-2 bg-white border-b border-soft shrink-0 overflow-x-auto custom-scrollbar">
               {/* Left Group */}
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
                 <button
                   onClick={() => {
                     const tpl =
@@ -8184,7 +8561,7 @@ export function DashboardView({
                     );
                     setShowNotificarModal(true);
                   }}
-                  className="flex items-center gap-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-bold text-xs px-3 py-1.5 rounded-xl border border-emerald-200/80 transition-colors shadow-2xs"
+                  className="flex items-center gap-1 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-bold text-[11px] sm:text-xs px-2.5 sm:px-3 py-1.5 rounded-xl border border-emerald-200/80 transition-colors shadow-2xs whitespace-nowrap"
                 >
                   <Send className="w-3.5 h-3.5" /> Notificar Paciente
                 </button>
@@ -8196,7 +8573,7 @@ export function DashboardView({
                     showToast("Link da Proposta copiado para a área de transferência!", "success");
                     handleUpdateAcolhimentoProperty(selectedCard.id, "propostaEnviada", true);
                   }}
-                  className="flex items-center gap-1.5 bg-white hover:bg-warm text-forest font-semibold text-xs px-3 py-1.5 rounded-xl border border-soft transition-colors shadow-2xs"
+                  className="flex items-center gap-1 bg-white hover:bg-warm text-forest font-semibold text-[11px] sm:text-xs px-2.5 sm:px-3 py-1.5 rounded-xl border border-soft transition-colors shadow-2xs whitespace-nowrap"
                 >
                   <Copy className="w-3.5 h-3.5 text-forest/60" /> Link Proposta
                 </button>
@@ -8207,7 +8584,7 @@ export function DashboardView({
                     navigator.clipboard.writeText(link);
                     showToast("Link do contrato copiado para a área de transferência!", "success");
                   }}
-                  className="flex items-center gap-1.5 bg-white hover:bg-warm text-forest font-semibold text-xs px-3 py-1.5 rounded-xl border border-soft transition-colors shadow-2xs"
+                  className="flex items-center gap-1 bg-white hover:bg-warm text-forest font-semibold text-[11px] sm:text-xs px-2.5 sm:px-3 py-1.5 rounded-xl border border-soft transition-colors shadow-2xs whitespace-nowrap"
                 >
                   <FileText className="w-3.5 h-3.5 text-forest/60" /> Link Contrato
                 </button>
@@ -8218,25 +8595,25 @@ export function DashboardView({
                     setContratoText(selectedCard.contratoText || defaultText);
                     setShowContratoModal(true);
                   }}
-                  className="flex items-center gap-1.5 text-xs font-medium text-forest/70 hover:text-forest px-2.5 py-1.5 rounded-lg hover:bg-warm transition-colors"
+                  className="hidden md:flex items-center gap-1 text-xs font-medium text-forest/70 hover:text-forest px-2.5 py-1.5 rounded-lg hover:bg-warm transition-colors whitespace-nowrap"
                 >
                   Modelo de Contrato
                 </button>
 
                 {/* Contrato Pill */}
-                <div className="flex items-center gap-1.5 px-3 py-1 bg-warm/50 border border-soft rounded-xl text-xs font-bold">
+                <div className="flex items-center gap-1 px-2.5 py-1 bg-warm/50 border border-soft rounded-xl text-[11px] sm:text-xs font-bold whitespace-nowrap">
                   <div className={`w-2 h-2 rounded-full ${selectedCard.contratoAssinado ? "bg-green-500 animate-pulse" : "bg-amber-500"}`}></div>
                   <span className={selectedCard.contratoAssinado ? "text-green-700" : "text-amber-700"}>
-                    {selectedCard.contratoAssinado ? "Contrato Assinado" : "Contrato Pendente"}
+                    {selectedCard.contratoAssinado ? "Assinado" : "Pendente"}
                   </span>
                 </div>
               </div>
 
               {/* Right Edit & Status Toggles */}
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
                 <button
                   onClick={() => setIsEditingCard(!isEditingCard)}
-                  className={`flex items-center gap-1.5 font-bold text-xs px-3.5 py-1.5 rounded-xl border transition-all shadow-2xs ${
+                  className={`hidden sm:flex items-center gap-1.5 font-bold text-xs px-3.5 py-1.5 rounded-xl border transition-all shadow-2xs whitespace-nowrap ${
                     isEditingCard
                       ? "bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700"
                       : "bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100"
@@ -8246,7 +8623,7 @@ export function DashboardView({
                   {isEditingCard ? "Salvar Edição" : "Editar Ficha"}
                 </button>
 
-                {/* Botão de Desligamento de Paciente (disponível também para Profissionais) */}
+                {/* Botão de Desligamento de Paciente */}
                 {(currentRole === "profissional" || currentRole === "triagem" || currentRole === "master") && (
                   <button
                     type="button"
@@ -8255,16 +8632,16 @@ export function DashboardView({
                       setDesligamentoDetalhes("");
                       setShowDesligamentoModal(true);
                     }}
-                    className="flex items-center gap-1.5 font-bold text-xs px-3 py-1.5 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 transition-colors shadow-2xs"
+                    className="flex items-center gap-1 font-bold text-[11px] sm:text-xs px-2.5 sm:px-3 py-1.5 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 transition-colors shadow-2xs whitespace-nowrap"
                     title="Iniciar fluxo de desligamento do paciente"
                   >
-                    <UserX className="w-3.5 h-3.5 text-rose-600" /> Desligar Paciente
+                    <UserX className="w-3.5 h-3.5 text-rose-600" /> Desligar
                   </button>
                 )}
 
-                {/* Multibotão de Status: Ativar / Standby / Inativar (disponível somente para Gestão e Triagem) */}
+                {/* Multibotão de Status: Ativar / Standby / Inativar */}
                 {(currentRole === "master" || currentRole === "triagem") && (
-                  <div className="flex items-center p-0.5 bg-warm/80 rounded-xl border border-soft shadow-2xs">
+                  <div className="flex items-center p-0.5 bg-warm/80 rounded-xl border border-soft shadow-2xs shrink-0">
                     <button
                       type="button"
                       onClick={() => {
@@ -8275,14 +8652,14 @@ export function DashboardView({
                         }
                         showToast("Status alterado para Ativo", "success");
                       }}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
+                      className={`px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-[10px] sm:text-xs font-bold transition-all flex items-center gap-1 ${
                         selectedCard.ativo !== false && selectedCard.statusInativacao !== "Standby" && selectedCard.statusInativacao !== "Inativo"
                           ? "bg-emerald-600 text-white shadow-2xs"
                           : "text-forest/70 hover:text-forest hover:bg-white/60"
                       }`}
                       title="Ativar paciente"
                     >
-                      <CheckCircle2 className="w-3.5 h-3.5" /> Ativar
+                      <CheckCircle2 className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> <span className="hidden sm:inline">Ativar</span>
                     </button>
 
                     <button
@@ -8292,14 +8669,14 @@ export function DashboardView({
                         handleUpdateAcolhimentoProperty(selectedCard.id, "statusInativacao", "Standby");
                         showToast("Status alterado para Standby", "info");
                       }}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
+                      className={`px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-[10px] sm:text-xs font-bold transition-all flex items-center gap-1 ${
                         selectedCard.ativo === "standby" || selectedCard.statusInativacao === "Standby"
                           ? "bg-amber-500 text-white shadow-2xs"
                           : "text-forest/70 hover:text-forest hover:bg-white/60"
                       }`}
                       title="Colocar em Standby"
                     >
-                      <Clock className="w-3.5 h-3.5" /> Standby
+                      <Clock className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> <span className="hidden sm:inline">Standby</span>
                     </button>
 
                     <button
@@ -8309,25 +8686,40 @@ export function DashboardView({
                         handleUpdateAcolhimentoProperty(selectedCard.id, "statusInativacao", "Inativo");
                         showToast("Status alterado para Inativo", "error");
                       }}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
+                      className={`px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-[10px] sm:text-xs font-bold transition-all flex items-center gap-1 ${
                         selectedCard.ativo === false || selectedCard.statusInativacao === "Inativo"
                           ? "bg-rose-600 text-white shadow-2xs"
                           : "text-forest/70 hover:text-forest hover:bg-white/60"
                       }`}
                       title="Inativar paciente"
                     >
-                      <XCircle className="w-3.5 h-3.5" /> Inativar
+                      <XCircle className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> <span className="hidden sm:inline">Inativar</span>
                     </button>
                   </div>
                 )}
               </div>
             </div>
 
-            {/* Modal Scrollable Body - Organized in 9 Distinct Ordered Sections */}
-            <div className="flex-1 overflow-y-auto p-6 lg:p-8 space-y-7 bg-warm/10">
+            {/* Modal Scrollable Body - Organized in Distinct Sections */}
+            <div className="flex-1 overflow-y-auto p-3 sm:p-6 lg:p-8 space-y-4 sm:space-y-7 bg-warm/10 custom-scrollbar">
+
+              {/* Sticky Quick Jump Bar */}
+              <div className="sticky top-0 z-20 -mx-3 sm:-mx-6 lg:-mx-8 -mt-3 sm:-mt-6 lg:-mt-8 px-3 sm:px-6 py-2 bg-white/95 backdrop-blur-md border-b border-soft flex items-center gap-1.5 overflow-x-auto custom-scrollbar shadow-2xs">
+                <span className="text-[10px] font-bold uppercase text-forest/50 shrink-0 flex items-center gap-1 pr-1">
+                  <Compass className="w-3.5 h-3.5 text-forest/60" /> Seções:
+                </span>
+                <button type="button" onClick={() => document.getElementById('sec-1-pessoais')?.scrollIntoView({ behavior: 'smooth' })} className="px-2.5 py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-warm/60 hover:bg-warm rounded-lg shrink-0 transition-colors whitespace-nowrap">1. Pessoais</button>
+                <button type="button" onClick={() => document.getElementById('sec-2-responsavel')?.scrollIntoView({ behavior: 'smooth' })} className="px-2.5 py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-warm/60 hover:bg-warm rounded-lg shrink-0 transition-colors whitespace-nowrap">2. Responsável</button>
+                <button type="button" onClick={() => document.getElementById('sec-3-contato')?.scrollIntoView({ behavior: 'smooth' })} className="px-2.5 py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-warm/60 hover:bg-warm rounded-lg shrink-0 transition-colors whitespace-nowrap">3. Contato</button>
+                <button type="button" onClick={() => document.getElementById('sec-4-socio')?.scrollIntoView({ behavior: 'smooth' })} className="px-2.5 py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-warm/60 hover:bg-warm rounded-lg shrink-0 transition-colors whitespace-nowrap">4. Socioeconômico</button>
+                <button type="button" onClick={() => document.getElementById('sec-5-clinico')?.scrollIntoView({ behavior: 'smooth' })} className="px-2.5 py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-warm/60 hover:bg-warm rounded-lg shrink-0 transition-colors whitespace-nowrap">5. Histórico</button>
+                <button type="button" onClick={() => document.getElementById('sec-6-proposta')?.scrollIntoView({ behavior: 'smooth' })} className="px-2.5 py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-warm/60 hover:bg-warm rounded-lg shrink-0 transition-colors whitespace-nowrap">6. Proposta & Atribuição</button>
+                <button type="button" onClick={() => document.getElementById('sec-7-resumo')?.scrollIntoView({ behavior: 'smooth' })} className="px-2.5 py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-warm/60 hover:bg-warm rounded-lg shrink-0 transition-colors whitespace-nowrap">7. Resumo do Caso</button>
+                <button type="button" onClick={() => document.getElementById('sec-8-registros')?.scrollIntoView({ behavior: 'smooth' })} className="px-2.5 py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-warm/60 hover:bg-warm rounded-lg shrink-0 transition-colors whitespace-nowrap">8. Registros</button>
+              </div>
 
               {/* 1. DADOS PESSOAIS */}
-              <div className="bg-white p-6 rounded-2xl border border-soft shadow-2xs space-y-4">
+              <div id="sec-1-pessoais" className="bg-white p-4 sm:p-6 rounded-2xl border border-soft shadow-2xs space-y-4">
                 <div className="flex items-center justify-between border-b border-soft pb-3">
                   <h4 className="text-xs font-bold uppercase tracking-wider text-forest/80 flex items-center gap-2">
                     <User className="w-4 h-4 text-forest" /> 1. Dados Pessoais
@@ -8384,7 +8776,7 @@ export function DashboardView({
               </div>
 
               {/* 2. DADOS DO RESPONSÁVEL SE MENOR */}
-              <div className="bg-white p-6 rounded-2xl border border-soft shadow-2xs space-y-4">
+              <div id="sec-2-responsavel" className="bg-white p-4 sm:p-6 rounded-2xl border border-soft shadow-2xs space-y-4">
                 <div className="flex items-center justify-between border-b border-soft pb-3">
                   <h4 className="text-xs font-bold uppercase tracking-wider text-forest/80 flex items-center gap-2">
                     <UserCheck className="w-4 h-4 text-forest" /> 2. Dados do Responsável (se menor ou dependente)
@@ -8433,7 +8825,7 @@ export function DashboardView({
               </div>
 
               {/* 3. DADOS DE CONTATO */}
-              <div className="bg-white p-6 rounded-2xl border border-soft shadow-2xs space-y-4">
+              <div id="sec-3-contato" className="bg-white p-4 sm:p-6 rounded-2xl border border-soft shadow-2xs space-y-4">
                 <div className="flex items-center justify-between border-b border-soft pb-3">
                   <h4 className="text-xs font-bold uppercase tracking-wider text-forest/80 flex items-center gap-2">
                     <Phone className="w-4 h-4 text-forest" /> 3. Dados de Contato
@@ -8476,7 +8868,7 @@ export function DashboardView({
               </div>
 
               {/* 4. FONTE DE ACESSO (COMO CONHECEU O PROJETO) */}
-              <div className="bg-white p-6 rounded-2xl border border-soft shadow-2xs space-y-4">
+              <div id="sec-4-socio" className="bg-white p-4 sm:p-6 rounded-2xl border border-soft shadow-2xs space-y-4">
                 <div className="flex items-center justify-between border-b border-soft pb-3">
                   <h4 className="text-xs font-bold uppercase tracking-wider text-forest/80 flex items-center gap-2">
                     <Building2 className="w-4 h-4 text-forest" /> 4. Fonte de Acesso & Perfil Socioeconômico
@@ -8584,7 +8976,7 @@ export function DashboardView({
               </div>
 
               {/* 5. HISTÓRICO CLÍNICO E MOTIVAÇÃO */}
-              <div className="bg-white p-6 rounded-2xl border border-soft shadow-2xs space-y-4">
+              <div id="sec-5-clinico" className="bg-white p-4 sm:p-6 rounded-2xl border border-soft shadow-2xs space-y-4">
                 <div className="flex items-center justify-between border-b border-soft pb-3">
                   <h4 className="text-xs font-bold uppercase tracking-wider text-forest/80 flex items-center gap-2">
                     <FileText className="w-4 h-4 text-forest" /> 5. Histórico Clínico & Motivação
@@ -8634,7 +9026,7 @@ export function DashboardView({
               </div>
 
               {/* 6. PROPOSTA E ATRIBUIÇÃO (BOTÕES PARA VALOR, FREQUENCIA E PROFISSIONAL) */}
-              <div className="bg-white p-6 rounded-2xl border border-soft shadow-2xs space-y-6">
+              <div id="sec-6-proposta" className="bg-white p-4 sm:p-6 rounded-2xl border border-soft shadow-2xs space-y-6">
                 <div className="flex flex-wrap items-center justify-between border-b border-soft pb-3 gap-2">
                   <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-900 flex items-center gap-2">
                     <Calculator className="w-4 h-4 text-emerald-700" /> 6. Proposta e Atribuição
@@ -8727,10 +9119,17 @@ export function DashboardView({
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   {/* Valor da Sessão */}
                   <div className="p-5 bg-sun/10 rounded-2xl border border-sun/30 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <label className="text-[11px] font-bold uppercase tracking-wider text-forest/80">
-                        Valor da Sessão (R$)
-                      </label>
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div className="flex items-center gap-1.5">
+                        <label className="text-[11px] font-bold uppercase tracking-wider text-forest/80">
+                          Valor da Sessão (R$)
+                        </label>
+                        {(currentRole !== "master" && currentRole !== "triagem") && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-800 bg-amber-100/80 px-2 py-0.5 rounded border border-amber-300/80" title="Apenas membros de Triagem e Gestão podem editar valores">
+                            <Lock className="w-3 h-3 text-amber-700 shrink-0" /> Restrito à Triagem/Gestão
+                          </span>
+                        )}
+                      </div>
                       <span className="text-xl font-extrabold text-forest">
                         {selectedCard.valorSessao || "Não definido"}
                       </span>
@@ -8738,22 +9137,35 @@ export function DashboardView({
 
                     {/* Botões de Seleção Rápida de Valor */}
                     <div className="space-y-1.5">
-                      <span className="text-[10px] font-bold uppercase text-forest/50 block">Atalhos para Ajuste Rápido:</span>
+                      <span className="text-[10px] font-bold uppercase text-forest/50 block">Atalhos de Valor (Área do Gestor):</span>
                       <div className="flex flex-wrap gap-1.5">
-                        {["R$ 30,00", "R$ 50,00", "R$ 80,00", "R$ 100,00", "R$ 120,00", "Gratuito", "A combinar"].map((val) => (
-                          <button
-                            key={val}
-                            type="button"
-                            onClick={() => handleUpdateAcolhimentoProperty(selectedCard.id, "valorSessao", val)}
-                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-2xs border ${
-                              selectedCard.valorSessao === val
-                                ? "bg-forest text-white border-forest shadow-xs"
-                                : "bg-white text-forest border-soft hover:bg-sun/30"
-                            }`}
-                          >
-                            {val}
-                          </button>
-                        ))}
+                        {(() => {
+                          const faixasGestor = (globalConfigs.faixasValores || []).filter((f) => f && f.trim() !== "");
+                          const baseFaixas = faixasGestor.length > 0
+                            ? faixasGestor
+                            : ["R$ 30,00", "R$ 50,00", "R$ 80,00", "R$ 100,00", "R$ 120,00"];
+                          
+                          const options = [...baseFaixas, "Gratuito", "A combinar"];
+                          if (selectedCard.valorSessao && !options.includes(selectedCard.valorSessao)) {
+                            options.unshift(selectedCard.valorSessao);
+                          }
+
+                          return options.map((val) => (
+                            <button
+                              key={val}
+                              type="button"
+                              disabled={currentRole !== "master" && currentRole !== "triagem"}
+                              onClick={() => handleUpdateAcolhimentoProperty(selectedCard.id, "valorSessao", val)}
+                              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-2xs border ${
+                                selectedCard.valorSessao === val
+                                  ? "bg-forest text-white border-forest shadow-xs"
+                                  : "bg-white text-forest border-soft hover:bg-sun/30"
+                              } ${(currentRole !== "master" && currentRole !== "triagem") ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+                            >
+                              {val}
+                            </button>
+                          ));
+                        })()}
                       </div>
                     </div>
 
@@ -8761,14 +9173,21 @@ export function DashboardView({
                     {isEditingCard && (
                       <div className="pt-2 border-t border-sun/20">
                         <select
+                          disabled={currentRole !== "master" && currentRole !== "triagem"}
                           value={selectedCard.valorSessao || ""}
                           onChange={(e) => handleUpdateAcolhimentoProperty(selectedCard.id, "valorSessao", e.target.value)}
-                          className="w-full bg-white text-sm font-bold text-forest border border-soft rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-sun-dark shadow-2xs"
+                          className="w-full bg-white text-sm font-bold text-forest border border-soft rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-sun-dark shadow-2xs disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                         >
                           <option value="">Outro / Personalizado...</option>
-                          {globalConfigs.faixasValores?.map((faixa: string, idx: number) =>
-                            faixa ? <option key={idx} value={faixa}>{faixa}</option> : null
-                          )}
+                          {(() => {
+                            const faixasGestor = (globalConfigs.faixasValores || []).filter((f) => f && f.trim() !== "");
+                            const baseFaixas = faixasGestor.length > 0
+                              ? faixasGestor
+                              : ["R$ 30,00", "R$ 50,00", "R$ 80,00", "R$ 100,00", "R$ 120,00"];
+                            return baseFaixas.map((faixa: string, idx: number) => (
+                              <option key={idx} value={faixa}>{faixa}</option>
+                            ));
+                          })()}
                           <option value="Gratuito">Gratuito</option>
                           <option value="A combinar">A combinar</option>
                         </select>
@@ -8779,35 +9198,50 @@ export function DashboardView({
                   {/* Frequência de Sessões */}
                   <div className="p-5 bg-emerald-50/80 rounded-2xl border border-emerald-200/90 space-y-3">
                     <div className="flex items-center justify-between">
-                      <label className="text-[11px] font-bold uppercase tracking-wider text-emerald-900">
-                        Frequência de Sessões
-                      </label>
+                      <div>
+                        <label className="text-[11px] font-bold uppercase tracking-wider text-emerald-900 block">
+                          Frequência de Sessões
+                        </label>
+                        <span className="text-[10px] text-emerald-800/80 font-medium">Alteração liberada • Motivo obrigatório</span>
+                      </div>
                       <span className="text-xl font-extrabold text-forest">
                         {selectedCard.frequenciaSessoes || "Não definida"}
                       </span>
                     </div>
 
-                    {/* Input Fluido para Frequência de Sessões */}
-                    <div className="space-y-1.5">
-                      <span className="text-[10px] font-bold uppercase text-emerald-800/60 block">Digitação Livre / Customizada:</span>
-                      <DebouncedInput
-                        placeholder="Ex: Semanal, Quinzenal, 2x por semana..."
-                        value={selectedCard.frequenciaSessoes || ""}
-                        onChange={(val) => handleUpdateAcolhimentoProperty(selectedCard.id, "frequenciaSessoes", val)}
-                        className="w-full bg-white text-xs font-bold text-forest border border-emerald-200 rounded-xl p-2.5 focus:outline-none focus:ring-1 focus:ring-emerald-500 placeholder:text-forest/40 shadow-2xs"
-                      />
-                    </div>
+                    {/* Exibição do Motivo Atual Registrado */}
+                    {selectedCard.motivoFrequencia ? (
+                      <div className="p-2.5 bg-white/90 rounded-xl border border-emerald-200/70 text-xs text-forest/90 space-y-0.5">
+                        <span className="text-[10px] font-bold uppercase text-emerald-800 block">Motivo / Justificativa Registrado:</span>
+                        <p className="italic font-medium">{selectedCard.motivoFrequencia}</p>
+                      </div>
+                    ) : (
+                      <div className="p-2 bg-amber-50/90 rounded-xl border border-amber-200 text-[11px] text-amber-900 font-medium flex items-center justify-between">
+                        <span>Nenhum motivo registrado ainda.</span>
+                        <span className="text-[10px] font-bold text-amber-800 uppercase">* Motivo obrigatório ao alterar</span>
+                      </div>
+                    )}
 
                     {/* Botões de Seleção Rápida de Frequência */}
                     <div className="space-y-1.5 pt-1">
-                      <span className="text-[10px] font-bold uppercase text-emerald-800/60 block">Atalhos Rápidos:</span>
+                      <span className="text-[10px] font-bold uppercase text-emerald-800/70 block">Atalhos Rápidos de Frequência:</span>
                       <div className="flex flex-wrap gap-1.5">
                         {["Semanal", "Quinzenal", "Mensal", "Sob Demanda"].map((freq) => (
                           <button
                             key={freq}
                             type="button"
-                            onClick={() => handleUpdateAcolhimentoProperty(selectedCard.id, "frequenciaSessoes", freq)}
-                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-2xs border ${
+                            onClick={async () => {
+                              if (selectedCard.frequenciaSessoes === freq) return;
+                              if (selectedCard.motivoFrequencia && selectedCard.motivoFrequencia.trim()) {
+                                await handleUpdateAcolhimentoProperty(selectedCard.id, "frequenciaSessoes", freq);
+                              } else {
+                                setFreqModalTargetCard(selectedCard);
+                                setFreqModalValue(freq);
+                                setFreqModalMotivo(selectedCard.motivoFrequencia || "");
+                                setShowFreqModal(true);
+                              }
+                            }}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-2xs border cursor-pointer ${
                               selectedCard.frequenciaSessoes === freq
                                 ? "bg-emerald-700 text-white border-emerald-800 shadow-xs"
                                 : "bg-white text-emerald-900 border-emerald-200 hover:bg-emerald-100"
@@ -8819,14 +9253,21 @@ export function DashboardView({
                       </div>
                     </div>
 
-                    {/* Input de Motivo da Frequência */}
-                    <div className="pt-2 border-t border-emerald-200/60">
-                      <DebouncedInput
-                        placeholder="Motivo / Observação sobre a Frequência..."
-                        value={selectedCard.motivoFrequencia || ""}
-                        onChange={(val) => handleUpdateAcolhimentoProperty(selectedCard.id, "motivoFrequencia", val)}
-                        className="w-full bg-white text-xs text-forest border border-emerald-200 rounded-xl p-2.5 focus:outline-none focus:ring-1 focus:ring-emerald-500 placeholder:text-forest/40"
-                      />
+                    {/* Edição do Motivo ou Abrir Modal */}
+                    <div className="pt-2 border-t border-emerald-200/60 flex flex-col sm:flex-row items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFreqModalTargetCard(selectedCard);
+                          setFreqModalValue(selectedCard.frequenciaSessoes || "Semanal");
+                          setFreqModalMotivo(selectedCard.motivoFrequencia || "");
+                          setShowFreqModal(true);
+                        }}
+                        className="w-full py-2.5 px-4 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl transition-all shadow-2xs flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5 text-emerald-200" />
+                        {selectedCard.frequenciaSessoes ? "Alterar Frequência e Motivo" : "Definir Frequência com Motivo"}
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -9035,7 +9476,7 @@ export function DashboardView({
               </div>
 
               {/* 7. NOTIFICAÇÃO E RESUMO DO CASO */}
-              <div className="bg-white p-6 rounded-2xl border border-emerald-200/90 shadow-2xs space-y-4">
+              <div id="sec-7-resumo" className="bg-white p-4 sm:p-6 rounded-2xl border border-emerald-200/90 shadow-2xs space-y-4">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-soft pb-3">
                   <div className="flex items-center gap-2.5">
                     <div className="p-2.5 bg-emerald-700 text-white rounded-xl shadow-2xs">
@@ -9179,7 +9620,7 @@ export function DashboardView({
               </div>
 
               {/* 8. EVOLUÇÃO E REGISTROS CLÍNICOS COMPARTILHADOS */}
-              <div className="bg-white p-6 rounded-2xl border border-soft shadow-2xs space-y-3">
+              <div id="sec-8-registros" className="bg-white p-4 sm:p-6 rounded-2xl border border-soft shadow-2xs space-y-3">
                 <div className="flex items-center justify-between border-b border-soft pb-3">
                   <h4 className="text-xs font-bold uppercase tracking-wider text-forest/80 flex items-center gap-2">
                     <Clock className="w-4 h-4 text-forest" /> 8. Evolução e Registros Clínicos Compartilhados
@@ -9200,7 +9641,7 @@ export function DashboardView({
               </div>
 
               {/* 9. ALERTAS ADM E MOVIMENTAÇÕES */}
-              <div className="bg-white p-6 rounded-2xl border border-soft shadow-2xs space-y-6">
+              <div id="sec-9-alertas" className="bg-white p-4 sm:p-6 rounded-2xl border border-soft shadow-2xs space-y-6">
                 <div className="flex items-center justify-between border-b border-soft pb-3">
                   <h4 className="text-xs font-bold uppercase tracking-wider text-red-800 flex items-center gap-2">
                     <AlertTriangle className="w-4 h-4 text-red-600" /> 9. Alertas Administrativos e Movimentações
@@ -11206,6 +11647,216 @@ export function DashboardView({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Aumentar Horas Disponíveis */}
+      {showAumentarHorasModal && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center px-4 bg-forest/30 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl border border-soft overflow-hidden animate-in zoom-in-95">
+            <div className="px-6 py-4 flex justify-between items-center border-b border-emerald-100 bg-emerald-50/80">
+              <div className="flex items-center gap-2">
+                <Clock className="w-5 h-5 text-emerald-700 shrink-0" />
+                <h3 className="font-serif text-lg font-bold text-emerald-950">
+                  Aumentar Horas Disponíveis
+                </h3>
+              </div>
+              <button
+                onClick={() => {
+                  setShowAumentarHorasModal(false);
+                  setCustomNovaHora("");
+                }}
+                className="p-1.5 text-forest/60 hover:text-red-600 rounded-full hover:bg-white transition-colors cursor-pointer"
+                type="button"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="p-3 bg-emerald-50/70 rounded-xl border border-emerald-200/80 text-xs text-forest/90 space-y-1">
+                <div className="flex justify-between font-bold text-forest">
+                  <span>Cota Atual Declarada:</span>
+                  <span className="text-emerald-800">{normalizeHorasDisponiveis(profile?.horasDisponiveis) || "Não definida"}</span>
+                </div>
+                <div className="text-[11px] text-forest/70">
+                  Selecione uma nova faixa de horas de atendimento mensal ou digite um valor personalizado (valores ímpares serão arredondados para números pares).
+                </div>
+              </div>
+
+              {/* Opções de Faixa de Horas */}
+              <div className="space-y-2">
+                <label className="text-xs font-bold uppercase tracking-wider text-forest/80 block">
+                  Selecione a Nova Faixa de Horas *
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {[
+                    "2 a 4 horas/mês",
+                    "4 a 8 horas/mês",
+                    "10 a 16 horas/mês",
+                    "16 a 20 horas/mês",
+                    "Mais de 20 horas/mês",
+                  ].map((option) => (
+                    <button
+                      key={option}
+                      type="button"
+                      onClick={() => {
+                        setSelectedNovaHora(option);
+                        setCustomNovaHora("");
+                      }}
+                      className={`px-3 py-2.5 rounded-xl text-xs font-bold transition-all border text-left cursor-pointer flex items-center justify-between ${
+                        selectedNovaHora === option && !customNovaHora
+                          ? "bg-emerald-700 text-white border-emerald-800 shadow-xs"
+                          : "bg-white text-emerald-900 border-emerald-200 hover:bg-emerald-50"
+                      }`}
+                    >
+                      <span>{option}</span>
+                      {selectedNovaHora === option && !customNovaHora && (
+                        <CheckSquare className="w-3.5 h-3.5 text-emerald-200" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Ou Valor Personalizado */}
+              <div className="space-y-1.5 pt-1">
+                <label className="text-[11px] font-bold uppercase tracking-wider text-forest/70 block">
+                  Ou Digite um Valor Personalizado
+                </label>
+                <input
+                  type="text"
+                  value={customNovaHora}
+                  onChange={(e) => {
+                    setCustomNovaHora(e.target.value);
+                  }}
+                  className="w-full text-xs font-bold bg-white border border-emerald-200 px-3.5 py-2.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-600 text-forest shadow-2xs"
+                  placeholder="Ex: 25 horas/mês, 30 horas/mês..."
+                />
+              </div>
+
+              <div className="pt-3 flex justify-end gap-2 border-t border-soft">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAumentarHorasModal(false);
+                    setCustomNovaHora("");
+                  }}
+                  className="px-4 py-2 bg-warm text-forest hover:bg-soft/50 font-bold text-xs rounded-xl transition-all cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveAumentarHoras}
+                  className="px-5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  <TrendingUp className="w-4 h-4 text-emerald-200" />
+                  Salvar Nova Disponibilidade
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Alteração de Frequência de Sessões */}
+      {showFreqModal && freqModalTargetCard && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center px-4 bg-forest/30 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl border border-soft overflow-hidden animate-in zoom-in-95">
+            <div className="px-6 py-4 flex justify-between items-center border-b border-emerald-100 bg-emerald-50/80">
+              <div className="flex items-center gap-2">
+                <RefreshCw className="w-5 h-5 text-emerald-700 shrink-0" />
+                <h3 className="font-serif text-lg font-bold text-emerald-950">
+                  Alterar Frequência de Sessões
+                </h3>
+              </div>
+              <button
+                onClick={() => {
+                  setShowFreqModal(false);
+                  setFreqModalTargetCard(null);
+                }}
+                className="p-1.5 text-forest/60 hover:text-red-600 rounded-full hover:bg-white transition-colors"
+                type="button"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="p-3 bg-warm/60 rounded-xl border border-soft text-xs text-forest/90">
+                <strong className="text-forest">Acolhido / Paciente:</strong> {freqModalTargetCard.nomePaciente || freqModalTargetCard.nomeAcolhido || "Não identificado"}
+              </div>
+
+              {/* Seleção de Frequência */}
+              <div className="space-y-2">
+                <label className="text-xs font-bold uppercase tracking-wider text-forest/80 block">
+                  1. Selecione ou Digite a Nova Frequência *
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  {["Semanal", "Quinzenal", "Mensal", "Sob Demanda"].map((freqOption) => (
+                    <button
+                      key={freqOption}
+                      type="button"
+                      onClick={() => setFreqModalValue(freqOption)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
+                        freqModalValue === freqOption
+                          ? "bg-emerald-700 text-white border-emerald-800 shadow-xs"
+                          : "bg-white text-emerald-900 border-emerald-200 hover:bg-emerald-50"
+                      }`}
+                    >
+                      {freqOption}
+                    </button>
+                  ))}
+                </div>
+                <input
+                  type="text"
+                  required
+                  value={freqModalValue}
+                  onChange={(e) => setFreqModalValue(e.target.value)}
+                  className="w-full text-xs font-bold bg-white border border-emerald-200 px-3.5 py-2.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-600 text-forest shadow-2xs"
+                  placeholder="Ex: Semanal, Quinzenal, 2x por semana..."
+                />
+              </div>
+
+              {/* Motivo Obrigatório */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-emerald-900">
+                  <span>2. Motivo da Alteração *</span>
+                  <span className="text-[10px] text-amber-800 bg-amber-100 px-2 py-0.5 rounded border border-amber-300 font-bold">Obrigatório</span>
+                </div>
+                <textarea
+                  required
+                  rows={3}
+                  value={freqModalMotivo}
+                  onChange={(e) => setFreqModalMotivo(e.target.value)}
+                  className="w-full text-xs bg-white border border-emerald-200 p-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-600 text-forest placeholder:text-forest/40 shadow-2xs"
+                  placeholder="Descreva o motivo ou justificativa para a alteração da frequência de sessões..."
+                />
+              </div>
+
+              <div className="pt-3 flex justify-end gap-2 border-t border-soft">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowFreqModal(false);
+                    setFreqModalTargetCard(null);
+                  }}
+                  className="px-4 py-2 bg-warm text-forest hover:bg-soft/50 font-bold text-xs rounded-xl transition-all cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveFrequenciaModal}
+                  className="px-5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  <CheckSquare className="w-4 h-4 text-emerald-200" />
+                  Salvar Frequência
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

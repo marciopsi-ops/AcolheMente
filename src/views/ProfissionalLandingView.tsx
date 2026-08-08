@@ -41,7 +41,7 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
     uf: '',
     genero: '',
     deficiencia: '',
-    horasDisponiveis: '1 a 3 horas/mês',
+    horasDisponiveis: '2 a 4 horas/mês',
     publicosExperiencia: [] as string[],
     publicosGosto: [] as string[],
     outrosPublicosExperiencia: '',
@@ -474,7 +474,7 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
                   </div>
                 )}
 
-                <form onSubmit={handleSubmit} className="flex flex-col gap-6">
+                <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-6">
                 
                   {step === 1 && (
                     <div className="flex flex-col gap-6 animate-in fade-in duration-500">
@@ -736,9 +736,9 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
                               onChange={handleChange}
                               className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest appearance-none" 
                             >
-                              <option value="1 a 3 horas/mês">1 a 3 horas/mês</option>
+                              <option value="2 a 4 horas/mês">2 a 4 horas/mês</option>
                               <option value="4 a 8 horas/mês">4 a 8 horas/mês</option>
-                              <option value="9 a 15 horas/mês">9 a 15 horas/mês</option>
+                              <option value="10 a 16 horas/mês">10 a 16 horas/mês</option>
                               <option value="16 a 20 horas/mês">16 a 20 horas/mês</option>
                               <option value="Mais de 20 horas/mês">Mais de 20 horas/mês</option>
                             </select>

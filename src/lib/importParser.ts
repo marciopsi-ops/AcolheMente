@@ -128,7 +128,7 @@ export function mapImportedRow(row: Record<string, any>): ImportedProfissional {
   const especialidade = findValue(["especialidade", "specialty", "area", "especialidades"]) || "";
   const abordagem = findValue(["abordagem", "approach", "linha teorica"]) || "";
   const anoFormacao = findValue(["anoFormacao", "ano de formacao", "ano de formação", "formacao", "graduation"]) || "";
-  const horasDisponiveis = findValue(["horasDisponiveis", "horas", "disponibilidade", "horas disponiveis", "horas disponíveis"]) || "1 a 3 horas/mês";
+  const horasDisponiveis = findValue(["horasDisponiveis", "horas", "disponibilidade", "horas disponiveis", "horas disponíveis"]) || "2 a 4 horas/mês";
   const motivacao = findValue(["motivacao", "motivo", "motivation", "por que"]) || "";
 
   // Helper to parse array

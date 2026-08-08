@@ -50,56 +50,206 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
   const [motivo, setMotivo] = useState("");
   const [complaint, setComplaint] = useState("");
   const [melhoresPeriodos, setMelhoresPeriodos] = useState<string[]>([]);
+  const [lgpdAceite, setLgpdAceite] = useState<boolean>(false);
+  const [errorMsg, setErrorMsg] = useState<string>("");
 
   const totalSteps = accessType === "Particular" ? 4 : 2; // Corporativo goes 1 -> 4 basically (mapped as 2)
   const currentVisualStep = accessType === "Particular" ? step : (step === 4 ? 2 : step);
 
+  const scrollToForm = () => {
+    const elem = document.getElementById("acolhimento-form-card");
+    if (elem) {
+      elem.scrollIntoView({ behavior: "smooth", block: "start" });
+    } else {
+      window.scrollTo({ top: 350, behavior: "smooth" });
+    }
+  };
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    setErrorMsg("");
+
     if (step === 1) {
-      if (!tratamentoPara) return;
-      if (tratamentoPara === "Outra pessoa" && !idadeTratamento) return;
-      if (!name || !email || !telefone || !cpf || !dataNascimento || !accessType || !comoConheceu || !genero || !deficiencia) return;
-      if (tratamentoPara === "Outra pessoa" && (!responsavelNome || !responsavelCpf)) return;
-      if (accessType === "Corporativo" && !companyCode) return;
-      setStep(accessType === "Particular" ? 2 : 4);
-    } else if (step === 2) {
-      if (!fonteRenda || !faixaSalarial || !dependentes || !planoSaude) return;
-      setStep(3);
-    } else if (step === 3) {
-      if (!escolaridade || !moradia || !comodos || !internet || !dispositivo) return;
-      setStep(4);
-    } else if (step === 4) {
-      if (!motivo || !complaint || !terapiaAnterior || melhoresPeriodos.length === 0) {
-        alert("Por favor, preencha todos os campos e selecione pelo menos um período de disponibilidade.");
+      if (!tratamentoPara) {
+        setErrorMsg("Por favor, informe para quem é o tratamento (Para mim ou Para outra pessoa).");
+        scrollToForm();
         return;
       }
+      if (tratamentoPara === "Outra pessoa" && !idadeTratamento) {
+        setErrorMsg("Por favor, informe se o paciente é menor de idade ou adulto.");
+        scrollToForm();
+        return;
+      }
+      if (!name.trim()) {
+        setErrorMsg("Por favor, preencha o nome completo.");
+        scrollToForm();
+        return;
+      }
+      if (!dataNascimento) {
+        setErrorMsg("Por favor, informe a data de nascimento.");
+        scrollToForm();
+        return;
+      }
+      if (idadeTratamento !== "Menor" && !cpf.trim()) {
+        setErrorMsg("Por favor, informe o CPF.");
+        scrollToForm();
+        return;
+      }
+      if (tratamentoPara === "Outra pessoa" && (!responsavelNome.trim() || !responsavelCpf.trim())) {
+        setErrorMsg("Por favor, preencha o nome e CPF do responsável legal.");
+        scrollToForm();
+        return;
+      }
+      if (!email.trim() || !email.includes("@")) {
+        setErrorMsg("Por favor, informe um e-mail válido para contato.");
+        scrollToForm();
+        return;
+      }
+      if (!telefone.trim()) {
+        setErrorMsg("Por favor, informe um telefone de contato / WhatsApp.");
+        scrollToForm();
+        return;
+      }
+      if (!genero) {
+        setErrorMsg("Por favor, selecione o gênero.");
+        scrollToForm();
+        return;
+      }
+      if (!deficiencia) {
+        setErrorMsg("Por favor, selecione uma opção no campo 'Deficiência ou Necessidade Especial'.");
+        scrollToForm();
+        return;
+      }
+      if (!comoConheceu) {
+        setErrorMsg("Por favor, informe como nos conheceu.");
+        scrollToForm();
+        return;
+      }
+      if (!accessType) {
+        setErrorMsg("Por favor, selecione a Via de Acesso (Particular ou Corporativo).");
+        scrollToForm();
+        return;
+      }
+      if (accessType === "Corporativo" && !companyCode.trim()) {
+        setErrorMsg("Por favor, informe o Código da Empresa Parceira.");
+        scrollToForm();
+        return;
+      }
+
+      setErrorMsg("");
+      setStep(accessType === "Particular" ? 2 : 4);
+      scrollToForm();
+    } else if (step === 2) {
+      if (!fonteRenda) {
+        setErrorMsg("Por favor, selecione a Fonte de Renda Principal.");
+        scrollToForm();
+        return;
+      }
+      if (!faixaSalarial) {
+        setErrorMsg("Por favor, selecione a Renda Familiar Mensal.");
+        scrollToForm();
+        return;
+      }
+      if (!dependentes) {
+        setErrorMsg("Por favor, selecione a quantidade de dependentes.");
+        scrollToForm();
+        return;
+      }
+      if (!planoSaude) {
+        setErrorMsg("Por favor, selecione a situação do Plano de Saúde.");
+        scrollToForm();
+        return;
+      }
+
+      setErrorMsg("");
+      setStep(3);
+      scrollToForm();
+    } else if (step === 3) {
+      if (!escolaridade) {
+        setErrorMsg("Por favor, selecione o nível de escolaridade.");
+        scrollToForm();
+        return;
+      }
+      if (!moradia) {
+        setErrorMsg("Por favor, selecione a situação da moradia.");
+        scrollToForm();
+        return;
+      }
+      if (!comodos) {
+        setErrorMsg("Por favor, selecione o número de cômodos do imóvel.");
+        scrollToForm();
+        return;
+      }
+      if (!internet) {
+        setErrorMsg("Por favor, selecione o tipo de acesso à internet.");
+        scrollToForm();
+        return;
+      }
+      if (!dispositivo) {
+        setErrorMsg("Por favor, informe o aparelho utilizado para as sessões.");
+        scrollToForm();
+        return;
+      }
+
+      setErrorMsg("");
+      setStep(4);
+      scrollToForm();
+    } else if (step === 4) {
+      if (!terapiaAnterior) {
+        setErrorMsg("Por favor, selecione o histórico de psicoterapia.");
+        scrollToForm();
+        return;
+      }
+      if (!motivo) {
+        setErrorMsg("Por favor, selecione o motivo principal do atendimento.");
+        scrollToForm();
+        return;
+      }
+      if (!complaint.trim()) {
+        setErrorMsg("Por favor, descreva brevemente o motivo do atendimento.");
+        scrollToForm();
+        return;
+      }
+      if (melhoresPeriodos.length === 0) {
+        setErrorMsg("Por favor, selecione pelo menos um período de disponibilidade para as sessões.");
+        scrollToForm();
+        return;
+      }
+      if (!lgpdAceite) {
+        setErrorMsg("Por favor, aceite a declaração de Privacidade e LGPD para finalizar.");
+        scrollToForm();
+        return;
+      }
+
       setIsSubmitting(true);
+      setErrorMsg("");
       
       try {
-        const q = query(collection(db, "acolhimentos"), where("email", "==", email));
+        const cleanEmail = email.trim().toLowerCase();
+        const q = query(collection(db, "acolhimentos"), where("email", "==", cleanEmail));
         const querySnapshot = await getDocs(q);
         if (!querySnapshot.empty) {
-          alert("Este email já aparece em nossa triagem ou em nosso banco de dados.");
+          setErrorMsg("Este e-mail já aparece em nossa triagem ou em nosso banco de dados.");
           setIsSubmitting(false);
+          scrollToForm();
           return;
         }
 
         await addDoc(collection(db, "acolhimentos"), {
-          nome: name,
-          email,
-          telefone,
-          cpf,
+          nome: name.trim(),
+          email: cleanEmail,
+          telefone: telefone.trim(),
+          cpf: cpf.trim(),
           dataNascimento,
           genero,
           deficiencia,
           tratamentoPara,
           idadeTratamento,
-          responsavelNome,
-          responsavelCpf,
+          responsavelNome: responsavelNome.trim(),
+          responsavelCpf: responsavelCpf.trim(),
           comoConheceu,
           viaAcesso: accessType,
-          empresa: companyCode,
+          empresa: companyCode.trim(),
           fonteRenda,
           faixaSalarial,
           dependentes,
@@ -111,14 +261,14 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
           dispositivo,
           terapiaAnterior,
           melhoresPeriodos,
-          motivo: `${motivo} - Detalhes: ${complaint}`,
+          motivo: `${motivo} - Detalhes: ${complaint.trim()}`,
           status: "Aguardando Avaliação",
           notificacao: "Novo cadastro de paciente recebido no sistema. Por favor, analise a ficha.",
           createdAt: serverTimestamp()
         });
 
         try {
-          await sendPatientRegistrationEmail(name, email);
+          await sendPatientRegistrationEmail(name.trim(), cleanEmail);
         } catch (emailErr) {
           console.error("Failed to send automatic welcome email:", emailErr);
         }
@@ -127,18 +277,22 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
         setStep(5); // Success step
       } catch (error) {
         setIsSubmitting(false);
-        handleFirestoreError(error, OperationType.CREATE, "acolhimentos");
+        console.error("Erro ao cadastrar acolhimento:", error);
+        setErrorMsg("Ocorreu um erro ao enviar seu formulário. Por favor, tente novamente.");
+        scrollToForm();
       }
     }
   };
 
   const handleBack = () => {
+    setErrorMsg("");
     if (step === 2) setStep(1);
     if (step === 3) setStep(2);
     if (step === 4) {
       if (accessType === "Corporativo") setStep(1);
       else setStep(3);
     }
+    scrollToForm();
   };
 
   return (
@@ -233,7 +387,7 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
 
         {/* Form Section */}
         <section className="w-full px-6 md:px-12 py-16 flex justify-center relative -mt-10">
-          <div className="max-w-2xl w-full bg-white rounded-3xl shadow-xl shadow-forest/5 p-8 md:p-12 border border-soft relative z-10">
+          <div id="acolhimento-form-card" className="max-w-2xl w-full bg-white rounded-3xl shadow-xl shadow-forest/5 p-8 md:p-12 border border-soft relative z-10">
             
             {step === 5 ? (
               <div className="flex flex-col items-center text-center animate-in fade-in slide-in-from-bottom-4 duration-700">
@@ -277,7 +431,14 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
                   </div>
                 </div>
 
-                <form onSubmit={handleSubmit} className="flex flex-col gap-6">
+                <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-6">
+
+                {errorMsg && (
+                  <div className="p-4 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-2xl font-medium flex items-center gap-3 animate-in fade-in">
+                    <div className="w-2.5 h-2.5 rounded-full bg-rose-500 shrink-0" />
+                    <span className="flex-1">{errorMsg}</span>
+                  </div>
+                )}
                 
                 {step === 1 && (
                   <div className="flex flex-col gap-5 animate-in fade-in duration-500">
@@ -693,13 +854,21 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
                   <label className="flex items-start gap-3 mt-4 cursor-pointer group">
                     <input 
                       type="checkbox" 
-                      required 
+                      checked={lgpdAceite}
+                      onChange={(e) => setLgpdAceite(e.target.checked)}
                       className="mt-1 w-5 h-5 rounded border-soft text-sun-dark focus:ring-sun-dark/20 accent-sun-dark cursor-pointer"
                     />
                     <span className="text-xs text-forest/70 leading-relaxed">
                       <strong>Privacidade e LGPD:</strong> Estou ciente e concordo que os dados pessoais e dados de saúde fornecidos serão tratados de forma sigilosa e segura para fins terapêuticos e de triagem, conforme a Lei Geral de Proteção de Dados (LGPD).
                     </span>
                   </label>
+                )}
+
+                {errorMsg && (
+                  <div className="p-4 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-2xl font-medium flex items-center gap-3 animate-in fade-in">
+                    <div className="w-2.5 h-2.5 rounded-full bg-rose-500 shrink-0" />
+                    <span className="flex-1">{errorMsg}</span>
+                  </div>
                 )}
 
                 <div className="mt-4 flex gap-4">
