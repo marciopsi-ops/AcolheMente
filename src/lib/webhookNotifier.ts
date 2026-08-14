@@ -5,6 +5,7 @@ export interface WebhookEventPayload {
   event: 
     | "novo_profissional"
     | "novo_acolhimento"
+    | "novo_paciente_manual"
     | "nova_empresa"
     | "inscricao_evento_servico"
     | "pagamento_profissional"
@@ -25,16 +26,41 @@ export interface WebhookEventPayload {
  * Dispatches automated transactional notification payloads to external webhooks
  * (such as Brevo, Make, N8n, Zapier, Resend or custom HTTP endpoints).
  */
-export async function sendWebhookNotification(payload: WebhookEventPayload) {
+export async function sendWebhookNotification(
+  payload: WebhookEventPayload,
+  overrideConfig?: {
+    webhookEmailEnabled?: boolean;
+    webhookEmailUrl?: string;
+    webhookEmailSecret?: string;
+    webhookEmailSender?: string;
+    emailSuporte?: string;
+  }
+) {
   try {
-    const snap = await getDoc(doc(db, "configuracoes", "master"));
-    if (!snap.exists()) return;
-    const config = snap.data();
+    let dbConfig: any = {};
+    try {
+      const snap = await getDoc(doc(db, "configuracoes", "master"));
+      if (snap.exists()) {
+        dbConfig = snap.data();
+      }
+    } catch (dbErr) {
+      console.warn("[WebhookNotifier] Could not fetch configuracoes/master doc, proceeding with overrideConfig if provided.", dbErr);
+    }
+
+    const config = { ...dbConfig, ...overrideConfig };
+
+    // For test events or when URL is provided directly, allow sending
+    if (payload.event === "teste_webhook") {
+      config.webhookEmailEnabled = true;
+    }
 
     // Check if webhook integrations are active and configured
     if (!config.webhookEmailEnabled || !config.webhookEmailUrl) {
       console.log(`[WebhookNotifier] Webhook is disabled or URL is missing for event "${payload.event}".`);
-      return;
+      return {
+        success: false,
+        error: "Integração desativada ou URL de destino não informada."
+      };
     }
 
     // Check if specific event is enabled (if configured in options array)
@@ -52,20 +78,14 @@ export async function sendWebhookNotification(payload: WebhookEventPayload) {
 
     const isBrevoApi = config.webhookEmailUrl.includes("api.brevo.com");
 
-    if (config.webhookEmailSecret) {
-      headers["X-Webhook-Secret"] = config.webhookEmailSecret;
-      headers["Authorization"] = `Bearer ${config.webhookEmailSecret}`;
-      headers["api-key"] = config.webhookEmailSecret; // Direct Brevo API Key header
-    }
+    const senderEmail = config.webhookEmailSender || config.emailSuporte || "contato@proacolhemente.com.br";
+    const senderName = "Projeto AcolheMente Saúde";
+    const recipientEmail = payload.recipientEmail || senderEmail;
+    const recipientName = payload.recipientName || recipientEmail;
 
     let requestBody: any;
 
     if (isBrevoApi) {
-      const senderEmail = config.emailSuporte || "adm@acolhemente.com";
-      const senderName = "Projeto AcolheMente Saúde";
-      const recipientEmail = payload.recipientEmail || senderEmail;
-      const recipientName = payload.recipientName || recipientEmail;
-
       const htmlBody = payload.data?.htmlContent || `
         <div style="font-family: Arial, sans-serif; padding: 20px; color: #1e352f;">
           <h2 style="color: #1e352f;">${payload.title || "AcolheMente Saúde"}</h2>
@@ -88,29 +108,97 @@ export async function sendWebhookNotification(payload: WebhookEventPayload) {
         ...payload,
         timestamp: new Date().toISOString(),
         platform: "Projeto AcolheMente Saúde",
-        environment: process.env.NODE_ENV || "production",
+        environment: "production",
       };
     }
 
-    console.log(`[WebhookNotifier] Dispatching ${isBrevoApi ? 'Brevo Direct Email' : 'Webhook payload'} for "${payload.event}" to ${config.webhookEmailUrl}`);
+    console.log(`[WebhookNotifier] Dispatching ${isBrevoApi ? 'Brevo Direct Email' : 'Webhook payload'} for "${payload.event}" to ${config.webhookEmailUrl} (Sender: ${senderEmail}, Recipient: ${recipientEmail})`);
 
-    // Non-blocking fetch dispatch
-    fetch(config.webhookEmailUrl, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(requestBody),
-    })
-      .then(async (res) => {
-        if (!res.ok) {
-          console.warn(`[WebhookNotifier] Webhook returned status ${res.status} ${res.statusText}`);
-        } else {
-          console.log(`[WebhookNotifier] Webhook delivered successfully (${res.status})`);
-        }
-      })
-      .catch((err) => {
-        console.error("[WebhookNotifier] Network error sending webhook:", err);
+    // First try the server-side proxy endpoint (/api/send-email) to bypass browser CORS
+    try {
+      const proxyRes = await fetch("/api/send-email", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          apiKey: config.webhookEmailSecret,
+          url: config.webhookEmailUrl,
+          payload: requestBody,
+        }),
       });
-  } catch (error) {
+
+      let resData: any = null;
+      try {
+        resData = await proxyRes.json();
+      } catch (e) {
+        resData = await proxyRes.text().catch(() => null);
+      }
+
+      if (!proxyRes.ok || (resData && resData.success === false)) {
+        const errorMsg = resData?.error || resData?.message || `HTTP ${proxyRes.status}`;
+        console.warn(`[WebhookNotifier] Server email proxy returned status ${proxyRes.status}:`, errorMsg);
+        return {
+          success: false,
+          status: proxyRes.status,
+          error: errorMsg,
+          data: resData
+        };
+      }
+
+      console.log(`[WebhookNotifier] Email proxy delivered successfully (${proxyRes.status}):`, resData);
+      return {
+        success: true,
+        status: proxyRes.status,
+        data: resData
+      };
+    } catch (proxyErr: any) {
+      console.warn("[WebhookNotifier] Server proxy fetch error, attempting direct client fetch as fallback...", proxyErr);
+
+      // Direct client fallback
+      try {
+        const res = await fetch(config.webhookEmailUrl, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(requestBody),
+        });
+
+        let resData: any = null;
+        try {
+          resData = await res.json();
+        } catch (e) {
+          resData = await res.text().catch(() => null);
+        }
+
+        if (!res.ok) {
+          console.warn(`[WebhookNotifier] Webhook returned status ${res.status} ${res.statusText}`, resData);
+          return {
+            success: false,
+            status: res.status,
+            error: resData?.message || resData?.error || `HTTP ${res.status} ${res.statusText}`,
+            data: resData
+          };
+        } else {
+          console.log(`[WebhookNotifier] Webhook delivered successfully (${res.status})`, resData);
+          return {
+            success: true,
+            status: res.status,
+            data: resData
+          };
+        }
+      } catch (err: any) {
+        console.error("[WebhookNotifier] Network error sending webhook directly:", err);
+        return {
+          success: false,
+          error: err?.message || "Erro de rede ao disparar e-mail diretamente."
+        };
+      }
+    }
+  } catch (error: any) {
     console.error("[WebhookNotifier] Error loading webhook configurations:", error);
+    return {
+      success: false,
+      error: error?.message || "Erro ao carregar configurações de e-mail."
+    };
   }
 }

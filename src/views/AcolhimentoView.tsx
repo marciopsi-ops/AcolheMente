@@ -31,6 +31,10 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
   const [comoConheceu, setComoConheceu] = useState("");
   const [genero, setGenero] = useState("");
   const [deficiencia, setDeficiencia] = useState("");
+  const [estadoCivil, setEstadoCivil] = useState("");
+  const [temFilhos, setTemFilhos] = useState("");
+  const [faixaEtariaFilhos, setFaixaEtariaFilhos] = useState("");
+  const [filhosMoramJunto, setFilhosMoramJunto] = useState("");
 
   // Step 2: Finanças (Particular)
   const [fonteRenda, setFonteRenda] = useState("");
@@ -119,6 +123,28 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
         setErrorMsg("Por favor, selecione uma opção no campo 'Deficiência ou Necessidade Especial'.");
         scrollToForm();
         return;
+      }
+      if (!estadoCivil) {
+        setErrorMsg("Por favor, selecione seu Estado Civil.");
+        scrollToForm();
+        return;
+      }
+      if (!temFilhos) {
+        setErrorMsg("Por favor, informe se possui filhos.");
+        scrollToForm();
+        return;
+      }
+      if (temFilhos !== "Não possui filhos") {
+        if (!faixaEtariaFilhos) {
+          setErrorMsg("Por favor, selecione a faixa etária dos filhos.");
+          scrollToForm();
+          return;
+        }
+        if (!filhosMoramJunto) {
+          setErrorMsg("Por favor, informe se os filhos moram com você.");
+          scrollToForm();
+          return;
+        }
       }
       if (!comoConheceu) {
         setErrorMsg("Por favor, informe como nos conheceu.");
@@ -243,6 +269,10 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
           dataNascimento,
           genero,
           deficiencia,
+          estadoCivil,
+          temFilhos,
+          faixaEtariaFilhos: temFilhos === "Não possui filhos" ? "Não se aplica (sem filhos)" : faixaEtariaFilhos,
+          filhosMoramJunto: temFilhos === "Não possui filhos" ? "Não se aplica (sem filhos)" : filhosMoramJunto,
           tratamentoPara,
           idadeTratamento,
           responsavelNome: responsavelNome.trim(),
@@ -500,7 +530,7 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-5 animate-in fade-in slide-in-from-top-2">
                           <div>
                             <label className="block text-sm font-semibold uppercase tracking-wider text-forest/70 mb-2">
-                              Data de Nascimento {tratamentoPara === 'Outra pessoa' ? 'do Paciente' : ''}
+                              Data de Nascimento {tratamentoPara === 'Outra pessoa' ? 'do Paciente' : ''} (Dia - Mês - Ano)
                             </label>
                             <input 
                               required
@@ -509,6 +539,7 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
                               onChange={(e) => setDataNascimento(e.target.value)}
                               className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark focus:ring-1 focus:ring-sun-dark transition-all text-forest"
                             />
+                            <span className="text-[11px] text-forest/60 mt-1 block">Formato: dia - mês - ano (DD/MM/AAAA)</span>
                           </div>
                           <div>
                             <label className="block text-sm font-semibold uppercase tracking-wider text-forest/70 mb-2">
@@ -615,6 +646,86 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
                           </div>
                         </div>
 
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 animate-in fade-in slide-in-from-top-2">
+                          <div>
+                            <label className="block text-sm font-semibold uppercase tracking-wider text-forest/70 mb-2">Estado Civil</label>
+                            <select 
+                              required
+                              value={estadoCivil}
+                              onChange={(e) => setEstadoCivil(e.target.value)}
+                              className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark focus:ring-1 focus:ring-sun-dark transition-all text-forest"
+                            >
+                              <option value="">Selecione...</option>
+                              <option value="Solteiro(a)">Solteiro(a)</option>
+                              <option value="Casado(a) / União Estável">Casado(a) / União Estável</option>
+                              <option value="Divorciado(a) / Separado(a)">Divorciado(a) / Separado(a)</option>
+                              <option value="Viúvo(a)">Viúvo(a)</option>
+                              <option value="Outro">Outro</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-sm font-semibold uppercase tracking-wider text-forest/70 mb-2">Possui Filhos?</label>
+                            <select 
+                              required
+                              value={temFilhos}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setTemFilhos(val);
+                                if (val === "Não possui filhos") {
+                                  setFaixaEtariaFilhos("Não se aplica (sem filhos)");
+                                  setFilhosMoramJunto("Não se aplica (sem filhos)");
+                                } else if (faixaEtariaFilhos === "Não se aplica (sem filhos)") {
+                                  setFaixaEtariaFilhos("");
+                                  setFilhosMoramJunto("");
+                                }
+                              }}
+                              className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark focus:ring-1 focus:ring-sun-dark transition-all text-forest"
+                            >
+                              <option value="">Selecione...</option>
+                              <option value="Não possui filhos">Não possui filhos</option>
+                              <option value="Sim (1 filho)">Sim (1 filho)</option>
+                              <option value="Sim (2 filhos)">Sim (2 filhos)</option>
+                              <option value="Sim (3 ou mais filhos)">Sim (3 ou mais filhos)</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        {temFilhos !== "" && temFilhos !== "Não possui filhos" && (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 animate-in fade-in slide-in-from-top-2 p-4 bg-warm/50 border border-soft rounded-2xl">
+                            <div>
+                              <label className="block text-sm font-semibold uppercase tracking-wider text-forest/70 mb-2">Faixa Etária dos Filhos</label>
+                              <select 
+                                required
+                                value={faixaEtariaFilhos}
+                                onChange={(e) => setFaixaEtariaFilhos(e.target.value)}
+                                className="w-full px-4 py-3 bg-white border border-soft rounded-xl focus:outline-none focus:border-sun-dark focus:ring-1 focus:ring-sun-dark transition-all text-forest"
+                              >
+                                <option value="">Selecione a faixa etária...</option>
+                                <option value="Bebê / Primeira Infância (0 a 5 anos)">Bebê / Primeira Infância (0 a 5 anos)</option>
+                                <option value="Crianças (6 a 11 anos)">Crianças (6 a 11 anos)</option>
+                                <option value="Adolescentes (12 a 17 anos)">Adolescentes (12 a 17 anos)</option>
+                                <option value="Adultos (18+ anos)">Adultos (18+ anos)</option>
+                                <option value="Crianças e Adolescentes (faixas variadas)">Crianças e Adolescentes (faixas variadas)</option>
+                                <option value="Outra / Diversas idades">Outra / Diversas idades</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-sm font-semibold uppercase tracking-wider text-forest/70 mb-2">Os filhos moram com você?</label>
+                              <select 
+                                required
+                                value={filhosMoramJunto}
+                                onChange={(e) => setFilhosMoramJunto(e.target.value)}
+                                className="w-full px-4 py-3 bg-white border border-soft rounded-xl focus:outline-none focus:border-sun-dark focus:ring-1 focus:ring-sun-dark transition-all text-forest"
+                              >
+                                <option value="">Selecione...</option>
+                                <option value="Sim, moram na mesma residência">Sim, moram na mesma residência</option>
+                                <option value="Não, moram em outra residência">Não, moram em outra residência</option>
+                                <option value="Alguns moram na mesma residência">Alguns moram na mesma residência</option>
+                              </select>
+                            </div>
+                          </div>
+                        )}
+
                         <div className="animate-in fade-in slide-in-from-top-2">
                           <label className="block text-sm font-semibold uppercase tracking-wider text-forest/70 mb-2">De onde você nos conheceu?</label>
                           <select 
@@ -701,11 +812,11 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
                       <label className="block text-sm font-semibold uppercase tracking-wider text-forest/70 mb-2">Renda Familiar Mensal (Bruta)</label>
                       <select required value={faixaSalarial} onChange={(e) => setFaixaSalarial(e.target.value)} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark focus:ring-1 focus:ring-sun-dark transition-all text-forest appearance-none">
                         <option value="" disabled>Selecione a faixa...</option>
-                        <option value="Até 1 Salário Mínimo">Até 1 Salário Mínimo (SM)</option>
-                        <option value="De 1 a 2 Salários Mínimos">De 1 a 2 Salários Mínimos</option>
-                        <option value="De 2 a 3 Salários Mínimos">De 2 a 3 Salários Mínimos</option>
-                        <option value="De 3 a 5 Salários Mínimos">De 3 a 5 Salários Mínimos</option>
-                        <option value="Acima de 5 Salários Mínimos">Acima de 5 Salários Mínimos</option>
+                        <option value="Até 1 Salário Mínimo (até R$ 1.518,00)">Até 1 Salário Mínimo (até R$ 1.518,00)</option>
+                        <option value="De 1 a 2 Salários Mínimos (R$ 1.518,01 a R$ 3.036,00)">De 1 a 2 Salários Mínimos (R$ 1.518,01 a R$ 3.036,00)</option>
+                        <option value="De 2 a 3 Salários Mínimos (R$ 3.036,01 a R$ 4.554,00)">De 2 a 3 Salários Mínimos (R$ 3.036,01 a R$ 4.554,00)</option>
+                        <option value="De 3 a 5 Salários Mínimos (R$ 4.554,01 a R$ 7.590,00)">De 3 a 5 Salários Mínimos (R$ 4.554,01 a R$ 7.590,00)</option>
+                        <option value="Acima de 5 Salários Mínimos (acima de R$ 7.590,00)">Acima de 5 Salários Mínimos (acima de R$ 7.590,00)</option>
                       </select>
                     </div>
                     <div>

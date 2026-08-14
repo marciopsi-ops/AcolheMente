@@ -4,136 +4,113 @@ service cloud.firestore {
     match /{document=**} {
       allow read, write: if false;
     }
-    
-    function isValidAcolhimento(data) {
-      return data.keys().hasAll(['nome', 'email', 'viaAcesso', 'motivo', 'createdAt', 'status'])
-        && data.nome is string && data.nome.size() <= 200
-        && data.email is string && data.email.size() <= 200
-        && data.viaAcesso is string && data.viaAcesso.size() <= 50
-        && data.motivo is string && data.motivo.size() <= 1000
-        && data.status == 'Aguardando Avaliação'
-        && data.createdAt is timestamp;
+
+    function isSignedIn() {
+      return request.auth != null;
     }
 
-    function isValidEmpresaLead(data) {
-      return data.keys().hasAll(['nomeEmpresa', 'cnpj', 'ramoAtividade', 'local', 'colaboradores', 'email', 'telefone', 'createdAt'])
-        && data.nomeEmpresa is string
-        && data.cnpj is string
-        && data.ramoAtividade is string
-        && data.email is string
-        && data.createdAt is timestamp;
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
-    function isValidDoacao(data) {
-      return data.keys().hasAll(['nome', 'email', 'valor', 'status', 'createdAt'])
-        && data.nome is string
-        && data.email is string
-        && data.valor is number
-        && data.status is string
-        && data.createdAt is timestamp;
-    }
-
-    function isValidSolicitacaoDoacao(data) {
-      return data.keys().hasAll(['nome', 'email', 'telefone', 'motivo', 'status', 'createdAt'])
-        && data.nome is string
-        && data.email is string
-        && data.telefone is string
-        && data.motivo is string
-        && data.status is string
-        && data.createdAt is timestamp;
-    }
-
-    function isValidProfissionalLead(data) {
-      return data.keys().hasAll(['nome', 'crp', 'email', 'telefone', 'horasDisponiveis', 'motivacao', 'status', 'createdAt'])
-        && data.nome is string
-        && data.crp is string
-        && data.email is string
-        && data.telefone is string
-        && (data.horasDisponiveis is string || data.horasDisponiveis is number)
-        && data.motivacao is string
-        && data.status is string
-        && data.createdAt is timestamp;
-    }
-
-    function isValidInscricao(data) {
-      return data.keys().hasAll(['itemId', 'itemTitulo', 'itemTipo', 'nomeCompleto', 'whatsapp', 'email', 'profissao', 'createdAt'])
-        && data.itemId is string
-        && data.itemTitulo is string
-        && (data.itemTipo == 'evento' || data.itemTipo == 'servico')
-        && (data.criadorId == null || data.criadorId is string)
-        && data.nomeCompleto is string && data.nomeCompleto.size() <= 200
-        && data.whatsapp is string && data.whatsapp.size() <= 50
-        && data.email is string && data.email.size() <= 200
-        && data.profissao is string && data.profissao.size() <= 200
-        && (data.mensagem == null || (data.mensagem is string && data.mensagem.size() <= 1000))
-        && data.createdAt is timestamp;
+    function isUserDoc(userId) {
+      return isSignedIn() && request.auth.uid == userId;
     }
 
     function isMaster() {
-      return exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'master';
+      return isSignedIn() &&
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+             (
+               getUserData().role == 'master' ||
+               ('roles' in getUserData() && getUserData().roles.hasAny(['master']))
+             );
     }
 
     function isTriagem() {
-      return exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'triagem';
+      return isSignedIn() &&
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+             (
+               getUserData().role == 'triagem' ||
+               ('roles' in getUserData() && getUserData().roles.hasAny(['triagem']))
+             );
     }
 
+    function isProfissional() {
+      return isSignedIn() &&
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+             (
+               getUserData().role == 'profissional' ||
+               ('roles' in getUserData() && getUserData().roles.hasAny(['profissional']))
+             );
+    }
+
+    // Acolhimentos / Pacientes da Triagem
+    match /acolhimentos/{acolhimentoId} {
+      allow create, read, update: if true;
+      allow delete: if isSignedIn() && (isMaster() || isTriagem());
+    }
+
+    // Usuários e Perfis da Plataforma
     match /users/{userId} {
       allow read: if true;
-      allow write: if request.auth != null && (request.auth.uid == userId || isMaster() || isTriagem());
+      allow write: if isSignedIn() && (isUserDoc(userId) || isMaster() || isTriagem());
     }
 
-    match /acolhimentos/{acolhimentoId} {
-      allow create: if isValidAcolhimento(request.resource.data);
-      allow read, update, delete: if true;
-    }
-
-    match /empresa_leads/{leadId} {
-      allow create: if isValidEmpresaLead(request.resource.data);
-      allow read, update, delete: if true;
-    }
-
-    match /doacoes/{doacaoId} {
-      allow create: if isValidDoacao(request.resource.data);
-      allow read, update, delete: if true;
-    }
-    
-    match /solicitacoes_doacao/{solId} {
-      allow create: if isValidSolicitacaoDoacao(request.resource.data);
-      allow read, update, delete: if true;
-    }
-    
+    // Leads Profissionais
     match /profissionais_leads/{proId} {
-      allow create: if isValidProfissionalLead(request.resource.data);
-      allow read, update, delete: if true;
+      allow create, read, update, delete: if true;
     }
+
+    // Leads Empresas
+    match /empresa_leads/{leadId} {
+      allow create, read, update, delete: if true;
+    }
+
+    // Doações
+    match /doacoes/{doacaoId} {
+      allow create, read, update, delete: if true;
+    }
+
+    // Solicitações de Doação
+    match /solicitacoes_doacao/{solId} {
+      allow create, read, update, delete: if true;
+    }
+
+    // Configurações Globais da Plataforma
     match /configuracoes/{configId} {
       allow read: if true;
-      allow write: if request.auth != null && isMaster();
+      allow write: if isSignedIn() && (isMaster() || isTriagem());
     }
+
+    // Eventos
     match /eventos/{eventoId} {
       allow read, write: if true;
     }
+
+    // Serviços
     match /servicos/{servicoId} {
       allow read, write: if true;
     }
+
+    // Serviços Oferecidos por Profissionais
     match /servicos_profissionais/{servicoId} {
       allow read, write: if true;
     }
+
+    // Inscrições
     match /inscricoes/{inscricaoId} {
-      allow read: if true;
-      allow create: if isValidInscricao(request.resource.data);
+      allow create, read, update, delete: if true;
     }
+
+    // Compliance / Ouvidoria
     match /compliance/{complianceId} {
-      allow create: if true;
-      allow read, update, delete: if true;
+      allow create, read, update, delete: if true;
     }
+
+    // Fila de E-mails do Sistema
     match /mail/{mailId} {
-      allow create: if request.resource.data.keys().hasAll(['to', 'message', 'createdAt'])
-                    && request.resource.data.to is string
-                    && request.resource.data.message is map;
-      allow read, update, delete: if false;
+      allow create: if true;
+      allow read, update, delete: if isSignedIn() && (isMaster() || isTriagem());
     }
   }
 }

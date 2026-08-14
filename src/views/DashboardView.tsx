@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from "react";
 import { sendWebhookNotification } from "../lib/webhookNotifier";
+import { sendPatientRegistrationEmail } from "../lib/emailService";
 import { StripeCheckoutModal } from "../components/StripeCheckoutModal";
 import { AnimatePresence, motion } from "motion/react";
 import { EventosServicosView } from "./EventosServicosView";
@@ -10,6 +11,8 @@ import {
   LayoutGrid,
   LogOut,
   CheckCircle2,
+  CheckCircle,
+  Check,
   Circle,
   Clock,
   Grip,
@@ -57,6 +60,7 @@ import {
   UserCheck,
   RotateCcw,
   AlertTriangle,
+  Loader2,
   ClipboardList,
   MessageSquare,
   Calculator,
@@ -161,6 +165,15 @@ export function parseDateSafely(val: any): Date {
     return new Date(val > 1e11 ? val : val * 1000);
   }
   if (typeof val === "string") {
+    const trimmed = val.trim();
+    if (/^\d{2}[\/\-]\d{2}[\/\-]\d{4}$/.test(trimmed)) {
+      const parts = trimmed.split(/[\/\-]/);
+      return new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0]));
+    }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+      const [y, m, d] = trimmed.split("-");
+      return new Date(Number(y), Number(m) - 1, Number(d));
+    }
     const parsed = new Date(val);
     if (!isNaN(parsed.getTime())) return parsed;
   }
@@ -170,9 +183,28 @@ export function parseDateSafely(val: any): Date {
 export function formatDateSafely(val: any, fallback = "-"): string {
   if (!val) return fallback;
   try {
+    if (typeof val === "string") {
+      const trimmed = val.trim();
+      if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+        const [y, m, d] = trimmed.split("-");
+        return `${d}/${m}/${y}`;
+      }
+      if (/^\d{2}[\/\-]\d{2}[\/\-]\d{4}$/.test(trimmed)) {
+        return trimmed.replace(/-/g, "/");
+      }
+      if (trimmed.includes("T")) {
+        const parts = trimmed.split("T")[0].split("-");
+        if (parts.length === 3) {
+          return `${parts[2]}/${parts[1]}/${parts[0]}`;
+        }
+      }
+    }
     const d = parseDateSafely(val);
     if (isNaN(d.getTime())) return fallback;
-    return d.toLocaleDateString("pt-BR");
+    const day = String(d.getDate()).padStart(2, "0");
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const year = d.getFullYear();
+    return `${day}/${month}/${year}`;
   } catch (e) {
     return fallback;
   }
@@ -183,11 +215,16 @@ export function formatDateTimeSafely(val: any, fallback = "-"): string {
   try {
     const d = parseDateSafely(val);
     if (isNaN(d.getTime())) return fallback;
-    return (
-      d.toLocaleDateString("pt-BR") +
-      " " +
-      d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
-    );
+    const dateStr = formatDateSafely(val, fallback);
+    const hours = String(d.getHours()).padStart(2, "0");
+    const minutes = String(d.getMinutes()).padStart(2, "0");
+    if (
+      (hours === "00" && minutes === "00") ||
+      (typeof val === "string" && !val.includes("T") && !val.includes(":"))
+    ) {
+      return dateStr;
+    }
+    return `${dateStr} às ${hours}:${minutes}`;
   } catch (e) {
     return fallback;
   }
@@ -362,12 +399,16 @@ export function buildCaseSummaryText(card: any) {
 
   const valor = card.valorSessao || card.valorProposto || "A combinar";
   const frequencia = card.frequenciaSessoes || card.frequenciaProposta || "Semanal";
+  const estadoCivilStr = card.estadoCivil ? `\n• Estado Civil: ${card.estadoCivil}` : "";
+  const filhosStr = (card.temFilhos || card.filhos)
+    ? `\n• Filhos: ${card.temFilhos || card.filhos}${card.faixaEtariaFilhos && card.faixaEtariaFilhos !== "Não se aplica (sem filhos)" ? ` (${card.faixaEtariaFilhos})` : ""}${card.filhosMoramJunto && card.filhosMoramJunto !== "Não se aplica (sem filhos)" ? ` - Residência: ${card.filhosMoramJunto}` : ""}`
+    : "";
 
   return `📋 RESUMO DO CASO PARA ATENDIMENTO - PROJETO ACOLHEMENTE
 
 • Paciente: ${nome}
 • Gênero: ${genero}
-• Idade: ${idadeStr}
+• Idade: ${idadeStr}${estadoCivilStr}${filhosStr}
 • Queixa / Motivo: ${queixa}
 • Melhores Períodos (Online): ${periodosStr}
 • Valor Proposto: ${valor}
@@ -625,7 +666,14 @@ const EditableField = ({
   type?: string;
 }) => {
   let formattedDisplay = value || "-";
-  if (type === "date" && value) {
+  if (
+    (type === "date" ||
+      field.toLowerCase().includes("data") ||
+      field.toLowerCase().includes("nascimento") ||
+      label.toLowerCase().includes("data") ||
+      label.toLowerCase().includes("nascimento")) &&
+    value
+  ) {
     formattedDisplay = formatDateSafely(value, "-");
   }
 
@@ -677,6 +725,7 @@ export function DashboardView({
   const [loadingObj, setLoadingObj] = useState(true);
 
   const currentRole = activeRoleView || profile?.role || "profissional";
+  const isMasterOrTriagem = currentRole === "master" || currentRole === "triagem";
   const modifiedProfile = profile ? { ...profile, role: currentRole } : null;
 
   const getDashboardBreadcrumbs = () => {
@@ -778,7 +827,7 @@ export function DashboardView({
 
   // Frequency modal state and handler
   const [showFreqModal, setShowFreqModal] = useState(false);
-  const [freqModalTargetCard, setFreqModalTargetCard] = useState<AcolhimentoCard | null>(null);
+  const [freqModalTargetCard, setFreqModalTargetCard] = useState<Acolhimento | null>(null);
   const [freqModalValue, setFreqModalValue] = useState("");
   const [freqModalMotivo, setFreqModalMotivo] = useState("");
 
@@ -812,23 +861,225 @@ export function DashboardView({
       showToast("Por favor, informe ou selecione a frequência de sessões.", "error");
       return;
     }
-    if (!freqModalMotivo.trim()) {
-      showToast("É obrigatório descrever o motivo/justificativa para alterar a frequência.", "error");
+    const isFirstTime =
+      !freqModalTargetCard.frequenciaSessoes ||
+      !freqModalTargetCard.frequenciaSessoes.trim();
+    if (!isFirstTime && !freqModalMotivo.trim()) {
+      showToast(
+        "É obrigatório descrever o motivo/justificativa para alterar a frequência.",
+        "error"
+      );
       return;
     }
 
     try {
       const cardRef = doc(db, "acolhimentos", freqModalTargetCard.id);
-      await updateDoc(cardRef, {
+      const updates: any = {
         frequenciaSessoes: freqModalValue.trim(),
         motivoFrequencia: freqModalMotivo.trim(),
-      });
-      showToast("Frequência e motivo de sessões atualizados com sucesso!", "success");
+        updatedAt: serverTimestamp(),
+      };
+      await updateDoc(cardRef, updates);
+      showToast("Frequência de sessões registrada com sucesso!", "success");
+      if (selectedCard && selectedCard.id === freqModalTargetCard.id) {
+        setSelectedCard({ ...selectedCard, ...updates });
+      }
+      setAcolhimentos((prev) =>
+        prev.map((a) => (a.id === freqModalTargetCard.id ? { ...a, ...updates } : a))
+      );
       setShowFreqModal(false);
       setFreqModalTargetCard(null);
     } catch (err: any) {
       console.error("Erro ao atualizar frequência:", err);
       showToast("Erro ao salvar alteração de frequência.", "error");
+    }
+  };
+
+  // Novo Paciente (Cadastro Manual na Triagem) State & Handlers
+  const [showNovoPacienteModal, setShowNovoPacienteModal] = useState(false);
+  const [isSubmittingNovoPaciente, setIsSubmittingNovoPaciente] = useState(false);
+  const [novoPacienteTab, setNovoPacienteTab] = useState<"pessoais" | "financeiros" | "demografia" | "saude" | "triagem">("pessoais");
+  const [novoPacienteForm, setNovoPacienteForm] = useState({
+    nome: "",
+    email: "",
+    telefone: "",
+    cpf: "",
+    dataNascimento: "",
+    genero: "Feminino",
+    deficiencia: "Não possuo",
+    estadoCivil: "Solteiro(a)",
+    temFilhos: "Não possui filhos",
+    faixaEtariaFilhos: "Não se aplica (sem filhos)",
+    filhosMoramJunto: "Não se aplica (sem filhos)",
+    tratamentoPara: "Mim",
+    idadeTratamento: "Adulto",
+    responsavelNome: "",
+    responsavelCpf: "",
+    comoConheceu: "Indicação de profissional",
+    viaAcesso: "Particular",
+    empresa: "",
+    fonteRenda: "Emprego formal (CLT/servidor público)",
+    faixaSalarial: "Até 1 Salário Mínimo (até R$ 1.518,00)",
+    dependentes: "1 pessoa (mora sozinho)",
+    planoSaude: "Não, utilizo apenas o SUS",
+    escolaridade: "Médio Completo",
+    moradia: "Próprio e quitado",
+    comodos: "1 a 3 cômodos",
+    internet: "Acesso fixo residencial",
+    dispositivo: "Sim (Celular/PC c/ câmera)",
+    terapiaAnterior: "Não",
+    motivo: "Ansiedade ou estresse excessivo",
+    queixaDetalhes: "",
+    melhoresPeriodos: ["Manhã", "Tarde"] as string[],
+    observacoesTriagem: "",
+  });
+
+  const handleResetNovoPacienteForm = () => {
+    setNovoPacienteForm({
+      nome: "",
+      email: "",
+      telefone: "",
+      cpf: "",
+      dataNascimento: "",
+      genero: "Feminino",
+      deficiencia: "Não possuo",
+      estadoCivil: "Solteiro(a)",
+      temFilhos: "Não possui filhos",
+      faixaEtariaFilhos: "Não se aplica (sem filhos)",
+      filhosMoramJunto: "Não se aplica (sem filhos)",
+      tratamentoPara: "Mim",
+      idadeTratamento: "Adulto",
+      responsavelNome: "",
+      responsavelCpf: "",
+      comoConheceu: "Indicação de profissional",
+      viaAcesso: "Particular",
+      empresa: "",
+      fonteRenda: "Emprego formal (CLT/servidor público)",
+      faixaSalarial: "Até 1 Salário Mínimo (até R$ 1.518,00)",
+      dependentes: "1 pessoa (mora sozinho)",
+      planoSaude: "Não, utilizo apenas o SUS",
+      escolaridade: "Médio Completo",
+      moradia: "Próprio e quitado",
+      comodos: "1 a 3 cômodos",
+      internet: "Acesso fixo residencial",
+      dispositivo: "Sim (Celular/PC c/ câmera)",
+      terapiaAnterior: "Não",
+      motivo: "Ansiedade ou estresse excessivo",
+      queixaDetalhes: "",
+      melhoresPeriodos: ["Manhã", "Tarde"],
+      observacoesTriagem: "",
+    });
+    setNovoPacienteTab("pessoais");
+  };
+
+  const handleSaveNovoPaciente = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!novoPacienteForm.nome.trim()) {
+      showToast("Por favor, preencha o Nome Completo do paciente.", "error");
+      setNovoPacienteTab("pessoais");
+      return;
+    }
+    if (!novoPacienteForm.email.trim() || !novoPacienteForm.email.includes("@")) {
+      showToast("Por favor, informe um E-mail válido de contato.", "error");
+      setNovoPacienteTab("pessoais");
+      return;
+    }
+    if (!novoPacienteForm.telefone.trim()) {
+      showToast("Por favor, informe o Telefone / WhatsApp do paciente.", "error");
+      setNovoPacienteTab("pessoais");
+      return;
+    }
+
+    setIsSubmittingNovoPaciente(true);
+
+    try {
+      const cleanEmail = novoPacienteForm.email.trim().toLowerCase();
+      const q = query(collection(db, "acolhimentos"), where("email", "==", cleanEmail));
+      const querySnapshot = await getDocs(q);
+      if (!querySnapshot.empty) {
+        showToast("Atenção: Este e-mail já possui cadastro na triagem.", "error");
+        setIsSubmittingNovoPaciente(false);
+        return;
+      }
+
+      const fullMotivo = novoPacienteForm.queixaDetalhes.trim()
+        ? `${novoPacienteForm.motivo} - Detalhes: ${novoPacienteForm.queixaDetalhes.trim()}`
+        : novoPacienteForm.motivo;
+
+      const notifMsg = novoPacienteForm.observacoesTriagem.trim()
+        ? `[Cadastro Manual Triagem]: ${novoPacienteForm.observacoesTriagem.trim()}`
+        : `Novo paciente cadastrado manualmente pela Equipe de Triagem (${profile?.name || "Triagem"}).`;
+
+      await addDoc(collection(db, "acolhimentos"), {
+        nome: novoPacienteForm.nome.trim(),
+        email: cleanEmail,
+        telefone: novoPacienteForm.telefone.trim(),
+        cpf: novoPacienteForm.cpf.trim(),
+        dataNascimento: novoPacienteForm.dataNascimento,
+        genero: novoPacienteForm.genero,
+        deficiencia: novoPacienteForm.deficiencia,
+        estadoCivil: novoPacienteForm.estadoCivil,
+        temFilhos: novoPacienteForm.temFilhos,
+        faixaEtariaFilhos: novoPacienteForm.temFilhos === "Não possui filhos" ? "Não se aplica (sem filhos)" : novoPacienteForm.faixaEtariaFilhos,
+        filhosMoramJunto: novoPacienteForm.temFilhos === "Não possui filhos" ? "Não se aplica (sem filhos)" : novoPacienteForm.filhosMoramJunto,
+        tratamentoPara: novoPacienteForm.tratamentoPara,
+        idadeTratamento: novoPacienteForm.idadeTratamento,
+        responsavelNome: novoPacienteForm.responsavelNome.trim(),
+        responsavelCpf: novoPacienteForm.responsavelCpf.trim(),
+        comoConheceu: novoPacienteForm.comoConheceu,
+        viaAcesso: novoPacienteForm.viaAcesso,
+        empresa: novoPacienteForm.empresa.trim(),
+        fonteRenda: novoPacienteForm.fonteRenda,
+        faixaSalarial: novoPacienteForm.faixaSalarial,
+        dependentes: novoPacienteForm.dependentes,
+        planoSaude: novoPacienteForm.planoSaude,
+        escolaridade: novoPacienteForm.escolaridade,
+        moradia: novoPacienteForm.moradia,
+        comodos: novoPacienteForm.comodos,
+        internet: novoPacienteForm.internet,
+        dispositivo: novoPacienteForm.dispositivo,
+        terapiaAnterior: novoPacienteForm.terapiaAnterior,
+        melhoresPeriodos: novoPacienteForm.melhoresPeriodos,
+        motivo: fullMotivo,
+        status: "Aguardando Avaliação",
+        notificacao: notifMsg,
+        createdAt: serverTimestamp(),
+      });
+
+      // Email welcome trigger
+      try {
+        await sendPatientRegistrationEmail(novoPacienteForm.nome.trim(), cleanEmail);
+      } catch (emailErr) {
+        console.warn("Falha ao enviar e-mail automático de boas-vindas:", emailErr);
+      }
+
+      // Webhook trigger
+      try {
+        await sendWebhookNotification({
+          event: "novo_paciente_manual",
+          recipientEmail: cleanEmail,
+          recipientName: novoPacienteForm.nome.trim(),
+          title: "Novo Paciente Cadastrado na Triagem",
+          message: `O paciente ${novoPacienteForm.nome.trim()} foi cadastrado manualmente na Triagem.`,
+          data: {
+            nome: novoPacienteForm.nome.trim(),
+            email: cleanEmail,
+            telefone: novoPacienteForm.telefone.trim(),
+            cadastradoPor: profile?.name || "Triagem",
+          },
+        });
+      } catch (whErr) {
+        console.warn("Erro ao notificar webhook:", whErr);
+      }
+
+      showToast("Paciente cadastrado com sucesso na Triagem!", "success");
+      setShowNovoPacienteModal(false);
+      handleResetNovoPacienteForm();
+    } catch (err: any) {
+      console.error("Erro ao cadastrar paciente:", err);
+      showToast("Erro ao cadastrar paciente: " + (err?.message || String(err)), "error");
+    } finally {
+      setIsSubmittingNovoPaciente(false);
     }
   };
 
@@ -956,10 +1207,23 @@ export function DashboardView({
     webhookEmailEnabled: true,
     webhookEmailUrl: "",
     webhookEmailSecret: "",
+    webhookEmailSender: "",
   });
 
   // Psychologist State
   const [meusPacientes, setMeusPacientes] = useState<Acolhimento[]>([]);
+
+  // Email Testing State
+  const [testEmailRecipient, setTestEmailRecipient] = useState("");
+  const [isTestingEmail, setIsTestingEmail] = useState(false);
+  const [testEmailResult, setTestEmailResult] = useState<{
+    success: boolean;
+    message: string;
+    status?: number;
+    data?: any;
+    senderUsed?: string;
+    recipientUsed?: string;
+  } | null>(null);
 
   // Services registered by the currently selected professional (Admin / Triagem view)
   const [selectedProfServicos, setSelectedProfServicos] = useState<any[]>([]);
@@ -1745,6 +2009,40 @@ export function DashboardView({
     e.preventDefault();
   };
 
+  const handleOpenPatientWhatsApp = (card: Acolhimento) => {
+    const rawFirstName = (
+      profile?.name ||
+      profile?.nome ||
+      user?.displayName ||
+      "Profissional"
+    )
+      .trim()
+      .split(" ")[0];
+    const profFirstName = rawFirstName
+      ? rawFirstName.charAt(0).toUpperCase() + rawFirstName.slice(1)
+      : "Profissional";
+    const defaultMsg = `Olá, sou o ${profFirstName}, faço parte do Projeto Acolhemente.`;
+    const rawPhone =
+      card.telefone ||
+      card.whatsapp ||
+      (card as any).celular ||
+      (card as any).telefoneContato ||
+      "";
+    const cleanPhone = rawPhone.replace(/\D/g, "");
+    if (!cleanPhone) {
+      showToast("O paciente não possui telefone/WhatsApp cadastrado.", "error");
+      return;
+    }
+    const phoneWithCountry =
+      cleanPhone.length >= 10 && !cleanPhone.startsWith("55")
+        ? `55${cleanPhone}`
+        : cleanPhone;
+    window.open(
+      `https://wa.me/${phoneWithCountry}?text=${encodeURIComponent(defaultMsg)}`,
+      "_blank"
+    );
+  };
+
   const handleUpdateAcolhimentoProperty = async (
     id: string,
     property: string,
@@ -1759,11 +2057,19 @@ export function DashboardView({
 
       const currentPaciente = acolhimentos.find((a) => a.id === id);
 
-      // Mandatory reason description check when changing frequency
+      // Mandatory reason description check when changing frequency (only required on alterations, not initial setting)
       if (property === "frequenciaSessoes") {
         const currentFreq = currentPaciente?.frequenciaSessoes || "";
-        if (value !== currentFreq && (!currentPaciente?.motivoFrequencia || !currentPaciente.motivoFrequencia.trim())) {
-          showToast("É obrigatório descrever o motivo ao alterar a frequência de sessões.", "error");
+        const isFirstTime = !currentFreq || !currentFreq.trim();
+        if (
+          !isFirstTime &&
+          value !== currentFreq &&
+          (!currentPaciente?.motivoFrequencia || !currentPaciente.motivoFrequencia.trim())
+        ) {
+          showToast(
+            "É obrigatório descrever o motivo ao alterar a frequência de sessões.",
+            "error"
+          );
           return;
         }
       }
@@ -1828,9 +2134,15 @@ export function DashboardView({
 
       updates.updatedAt = serverTimestamp();
       await updateDoc(doc(db, "acolhimentos", id), updates);
+      if (property === "frequenciaSessoes") {
+        showToast("Frequência de sessões salva com sucesso!", "success");
+      }
       if (selectedCard && selectedCard.id === id) {
         setSelectedCard({ ...selectedCard, ...updates });
       }
+      setAcolhimentos((prev) =>
+        prev.map((a) => (a.id === id ? { ...a, ...updates } : a))
+      );
     } catch (error) {
       console.error(error);
       alert("Erro ao salvar.");
@@ -2474,12 +2786,7 @@ export function DashboardView({
 
   const formatDate = (timestamp: any) => {
     if (!timestamp) return "";
-    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
-    if (isNaN(date.getTime())) return "";
-    return new Intl.DateTimeFormat("pt-BR", {
-      dateStyle: "short",
-      timeStyle: "short",
-    }).format(date);
+    return formatDateTimeSafely(timestamp, "");
   };
 
   const lowerQuery = searchQuery.toLowerCase();
@@ -4586,10 +4893,10 @@ export function DashboardView({
                       </button>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div className="flex flex-col gap-1">
                         <label className="text-[10px] font-semibold uppercase text-forest/70 ml-2">
-                          URL Endpoint do Brevo ou Webhook (HTTP POST) *
+                          URL Endpoint do Brevo / Webhook *
                         </label>
                         <input
                           type="url"
@@ -4607,7 +4914,7 @@ export function DashboardView({
 
                       <div className="flex flex-col gap-1">
                         <label className="text-[10px] font-semibold uppercase text-forest/70 ml-2">
-                          Chave API do Brevo (xkeysib-...) / Token Secret
+                          Chave API do Brevo (xkeysib-...) *
                         </label>
                         <input
                           type="password"
@@ -4622,38 +4929,204 @@ export function DashboardView({
                           }
                         />
                       </div>
+
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-semibold uppercase text-forest/70 ml-2">
+                          Remetente Cadastrado no Brevo *
+                        </label>
+                        <input
+                          type="email"
+                          className="text-sm font-mono bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
+                          placeholder="contato@proacolhemente.com.br"
+                          value={globalConfigs.webhookEmailSender || ""}
+                          onChange={(e) =>
+                            handleUpdateConfiguracoesProperty(
+                              "webhookEmailSender",
+                              e.target.value,
+                            )
+                          }
+                        />
+                      </div>
                     </div>
 
-                    <div className="pt-2 flex justify-between items-center">
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          try {
-                            if (!globalConfigs.webhookEmailUrl) {
-                              alert("Por favor, informe a URL Endpoint do Brevo ou Webhook antes de testar.");
+                    {/* Área de Teste Prático de Disparo */}
+                    <div className="mt-4 pt-4 border-t border-soft/60 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-bold uppercase tracking-wider text-forest flex items-center gap-1.5">
+                          <Send className="w-3.5 h-3.5 text-sun-dark" />
+                          Testar Disparo em Tempo Real
+                        </label>
+                        <span className="text-[11px] text-forest/60">
+                          (Envia um e-mail de teste instantâneo para verificar suas credenciais)
+                        </span>
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <input
+                          type="email"
+                          className="flex-1 text-sm bg-white border border-soft px-4 py-2.5 rounded-xl focus:outline-none focus:border-sun-dark transition-colors font-mono"
+                          placeholder="Digite seu e-mail de destino (ex: marciopsi@elosolucoeshumanas.com)"
+                          value={testEmailRecipient || profile?.email || globalConfigs.emailSuporte || "marciopsi@elosolucoeshumanas.com"}
+                          onChange={(e) => setTestEmailRecipient(e.target.value)}
+                        />
+                        <button
+                          type="button"
+                          disabled={isTestingEmail}
+                          onClick={async () => {
+                            setTestEmailResult(null);
+
+                            const targetUrl = globalConfigs.webhookEmailUrl || "https://api.brevo.com/v3/smtp/email";
+                            const targetSecret = globalConfigs.webhookEmailSecret;
+                            const targetSender = globalConfigs.webhookEmailSender || globalConfigs.emailSuporte || "contato@proacolhemente.com.br";
+                            const recipient = testEmailRecipient || profile?.email || globalConfigs.emailSuporte || "marciopsi@elosolucoeshumanas.com";
+
+                            if (!targetUrl) {
+                              setTestEmailResult({
+                                success: false,
+                                message: "URL Endpoint do Brevo não preenchida. Informe a URL ou clique em 'Usar API Direta do Brevo'.",
+                              });
                               return;
                             }
-                            await sendWebhookNotification({
-                              event: "teste_webhook",
-                              recipientEmail: globalConfigs.emailSuporte || "adm@acolhemente.com",
-                              recipientName: "Gestão AcolheMente",
-                              title: "Teste de E-mail Brevo / Webhook - Projeto AcolheMente",
-                              message: "Sua integração com o Brevo e e-mails automáticos transacionais foi configurada e disparada com sucesso!",
-                              data: {
-                                testMessage: "Disparo de teste realizado pelo Painel de Gestão.",
-                                timestamp: new Date().toISOString(),
-                              },
-                            });
-                            alert(`Disparo de teste acionado para ${globalConfigs.emailSuporte || 'adm@acolhemente.com'}! Verifique a caixa de entrada (ou logs do Brevo/Webhook).`);
-                          } catch (err) {
-                            alert("Erro ao disparar teste: " + err);
-                          }
-                        }}
-                        className="px-4 py-2 bg-forest/10 text-forest hover:bg-forest hover:text-white rounded-xl font-bold text-xs transition-all uppercase tracking-wider flex items-center gap-2"
-                      >
-                        <Send className="w-3.5 h-3.5" />
-                        Testar Disparo de E-mail / Webhook
-                      </button>
+
+                            if (!targetSecret) {
+                              setTestEmailResult({
+                                success: false,
+                                message: "Chave API do Brevo (xkeysib-...) não informada. Preencha a chave API no campo acima.",
+                              });
+                              return;
+                            }
+
+                            setIsTestingEmail(true);
+
+                            try {
+                              const res = await sendWebhookNotification(
+                                {
+                                  event: "teste_webhook",
+                                  recipientEmail: recipient.trim(),
+                                  recipientName: "Gestor AcolheMente",
+                                  title: "Teste de Integração Brevo - AcolheMente Saúde",
+                                  message: `Parabéns! Sua integração com o Brevo foi testada e configurada com sucesso.\n\nRemetente: ${targetSender}\nDestinatário: ${recipient}`,
+                                  data: {
+                                    testMessage: "Disparo de teste realizado em tempo real via Painel de Gestão.",
+                                    timestamp: new Date().toISOString(),
+                                  },
+                                },
+                                {
+                                  webhookEmailEnabled: true,
+                                  webhookEmailUrl: targetUrl,
+                                  webhookEmailSecret: targetSecret,
+                                  webhookEmailSender: targetSender,
+                                  emailSuporte: globalConfigs.emailSuporte,
+                                }
+                              );
+
+                              if (res && res.success) {
+                                setTestEmailResult({
+                                  success: true,
+                                  message: `E-mail de teste enviado com SUCESSO!`,
+                                  senderUsed: targetSender,
+                                  recipientUsed: recipient.trim(),
+                                  data: res.data,
+                                });
+                              } else {
+                                setTestEmailResult({
+                                  success: false,
+                                  message: res?.error || "Falha ao enviar e-mail via Brevo.",
+                                  status: res?.status,
+                                  senderUsed: targetSender,
+                                  recipientUsed: recipient.trim(),
+                                  data: res?.data,
+                                });
+                              }
+                            } catch (err: any) {
+                              setTestEmailResult({
+                                success: false,
+                                message: err?.message || "Erro inesperado ao disparar e-mail de teste.",
+                              });
+                            } finally {
+                              setIsTestingEmail(false);
+                            }
+                          }}
+                          className="px-5 py-2.5 bg-forest text-white hover:bg-forest/90 disabled:opacity-50 rounded-xl font-bold text-xs uppercase tracking-wider transition-all shadow-sm flex items-center justify-center gap-2 whitespace-nowrap"
+                        >
+                          {isTestingEmail ? (
+                            <>
+                              <Loader2 className="w-4 h-4 animate-spin text-sun" />
+                              <span>Enviando...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Send className="w-4 h-4 text-sun" />
+                              <span>Enviar Teste Agora</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+
+                      {/* Caixa de Resultado do Teste */}
+                      {testEmailResult && (
+                        <div
+                          className={`p-4 rounded-xl border text-xs space-y-2 transition-all ${
+                            testEmailResult.success
+                              ? "bg-emerald-50 border-emerald-200 text-emerald-900"
+                              : "bg-amber-50 border-amber-300 text-amber-900"
+                          }`}
+                        >
+                          <div className="flex items-start justify-between">
+                            <div className="flex items-center gap-2 font-bold text-sm">
+                              {testEmailResult.success ? (
+                                <>
+                                  <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                                  <span className="text-emerald-800">✅ E-mail de Teste Enviado com Sucesso!</span>
+                                </>
+                              ) : (
+                                <>
+                                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                                  <span className="text-amber-900">⚠️ Resposta do Brevo / Servidor</span>
+                                </>
+                              )}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setTestEmailResult(null)}
+                              className="text-xs text-forest/40 hover:text-forest font-bold px-1"
+                            >
+                              ✕
+                            </button>
+                          </div>
+
+                          <p className="leading-relaxed font-medium">
+                            {testEmailResult.message}
+                          </p>
+
+                          {testEmailResult.senderUsed && (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 pt-1 font-mono text-[11px] opacity-90">
+                              <div><strong>Remetente:</strong> {testEmailResult.senderUsed}</div>
+                              <div><strong>Destinatário:</strong> {testEmailResult.recipientUsed}</div>
+                            </div>
+                          )}
+
+                          {testEmailResult.success && (
+                            <p className="text-[11px] text-emerald-700 bg-emerald-100/60 p-2 rounded-lg mt-1">
+                              📬 Verifique a caixa de entrada (e também a pasta de <strong>Spam / Lixo Eletrônico</strong>) do e-mail <strong>{testEmailResult.recipientUsed}</strong>.
+                            </p>
+                          )}
+
+                          {!testEmailResult.success && (
+                            <div className="bg-white/80 p-3 rounded-lg border border-amber-200 text-[11px] space-y-1.5 mt-2">
+                              <p className="font-bold text-amber-950 uppercase tracking-wider">Dicas para resolver:</p>
+                              <ul className="list-disc pl-4 space-y-1 text-amber-900">
+                                <li>
+                                  <strong>Remetente não autorizado:</strong> Verifique se o e-mail <code>{testEmailResult.senderUsed}</code> está cadastrado e verificado no seu painel do Brevo em <em>Senders & IP</em>.
+                                </li>
+                                <li>
+                                  <strong>Chave API inválida:</strong> A chave deve ter o formato <code>xkeysib-...</code> e ser uma chave v3 válida criada no Brevo em <em>SMTP & API Keys</em>.
+                                </li>
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -6666,10 +7139,23 @@ export function DashboardView({
         </div>
       ) : activeTab === "kanban" || activeTab === "pacientesAcolhidos" ? (
         <div className="flex-1 flex flex-col h-full bg-warm overflow-hidden">
-          <div className="flex justify-between items-center px-6 pt-6 pb-2 shrink-0">
-            <h2 className="font-serif text-2xl text-forest flex items-center gap-2">
-              {activeTab === "kanban" ? "Triagem" : "Pacientes"}
-            </h2>
+          <div className="flex flex-wrap justify-between items-center gap-3 px-6 pt-6 pb-2 shrink-0">
+            <div className="flex items-center gap-3">
+              <h2 className="font-serif text-2xl text-forest flex items-center gap-2">
+                {activeTab === "kanban" ? "Triagem" : "Pacientes"}
+              </h2>
+              {isMasterOrTriagem && (
+                <button
+                  type="button"
+                  onClick={() => setShowNovoPacienteModal(true)}
+                  className="px-3.5 py-2 bg-forest text-white hover:bg-forest/90 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center gap-2 transition-all shadow-sm hover:scale-[1.02] active:scale-[0.98]"
+                  title="Cadastrar paciente manualmente na triagem"
+                >
+                  <UserPlus className="w-4 h-4 text-sun" />
+                  <span>Incluir Paciente (Manual)</span>
+                </button>
+              )}
+            </div>
             <div className="bg-white border border-soft rounded-full p-1 flex">
               <button
                 onClick={() => setTriagemViewMode("kanban")}
@@ -8458,6 +8944,16 @@ export function DashboardView({
 
                 <div className="flex items-center gap-1.5 shrink-0">
                   <button
+                    type="button"
+                    onClick={() => handleOpenPatientWhatsApp(selectedCard)}
+                    className="flex items-center gap-1.5 font-bold text-[11px] sm:text-xs px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-xl bg-[#25D366] hover:bg-[#20b858] text-white shadow-2xs transition-all hover:scale-105 shrink-0 cursor-pointer"
+                    title="Enviar WhatsApp para o paciente"
+                  >
+                    <Phone className="w-3.5 h-3.5 text-white" />
+                    <span>WhatsApp</span>
+                  </button>
+
+                  <button
                     onClick={() => setIsEditingCard(!isEditingCard)}
                     className={`sm:hidden flex items-center gap-1 font-bold text-[11px] px-2.5 py-1 rounded-lg border transition-all shadow-2xs ${
                       isEditingCard
@@ -8769,6 +9265,27 @@ export function DashboardView({
                     label="Deficiência / Necessidade Especial"
                     value={selectedCard.deficiencia}
                     field="deficiencia"
+                    onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
+                    isEditing={isEditingCard}
+                  />
+                  <EditableField
+                    label="Possui Filhos?"
+                    value={selectedCard.temFilhos || selectedCard.filhos}
+                    field="temFilhos"
+                    onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
+                    isEditing={isEditingCard}
+                  />
+                  <EditableField
+                    label="Faixa Etária dos Filhos"
+                    value={selectedCard.faixaEtariaFilhos}
+                    field="faixaEtariaFilhos"
+                    onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
+                    isEditing={isEditingCard}
+                  />
+                  <EditableField
+                    label="Moram com o Paciente?"
+                    value={selectedCard.filhosMoramJunto}
+                    field="filhosMoramJunto"
                     onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
                     isEditing={isEditingCard}
                   />
@@ -9202,7 +9719,11 @@ export function DashboardView({
                         <label className="text-[11px] font-bold uppercase tracking-wider text-emerald-900 block">
                           Frequência de Sessões
                         </label>
-                        <span className="text-[10px] text-emerald-800/80 font-medium">Alteração liberada • Motivo obrigatório</span>
+                        <span className="text-[10px] text-emerald-800/80 font-medium">
+                          {!selectedCard.frequenciaSessoes
+                            ? "Definição inicial • Motivo opcional"
+                            : "Alteração • Motivo obrigatório"}
+                        </span>
                       </div>
                       <span className="text-xl font-extrabold text-forest">
                         {selectedCard.frequenciaSessoes || "Não definida"}
@@ -9217,8 +9738,10 @@ export function DashboardView({
                       </div>
                     ) : (
                       <div className="p-2 bg-amber-50/90 rounded-xl border border-amber-200 text-[11px] text-amber-900 font-medium flex items-center justify-between">
-                        <span>Nenhum motivo registrado ainda.</span>
-                        <span className="text-[10px] font-bold text-amber-800 uppercase">* Motivo obrigatório ao alterar</span>
+                        <span>{!selectedCard.frequenciaSessoes ? "Frequência ainda não definida." : "Nenhum motivo registrado ainda."}</span>
+                        <span className="text-[10px] font-bold text-amber-800 uppercase">
+                          {!selectedCard.frequenciaSessoes ? "* Selecione abaixo" : "* Motivo obrigatório ao alterar"}
+                        </span>
                       </div>
                     )}
 
@@ -9232,7 +9755,8 @@ export function DashboardView({
                             type="button"
                             onClick={async () => {
                               if (selectedCard.frequenciaSessoes === freq) return;
-                              if (selectedCard.motivoFrequencia && selectedCard.motivoFrequencia.trim()) {
+                              const isFirstTime = !selectedCard.frequenciaSessoes || !selectedCard.frequenciaSessoes.trim();
+                              if (isFirstTime || (selectedCard.motivoFrequencia && selectedCard.motivoFrequencia.trim())) {
                                 await handleUpdateAcolhimentoProperty(selectedCard.id, "frequenciaSessoes", freq);
                               } else {
                                 setFreqModalTargetCard(selectedCard);
@@ -9266,7 +9790,7 @@ export function DashboardView({
                         className="w-full py-2.5 px-4 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl transition-all shadow-2xs flex items-center justify-center gap-2 cursor-pointer"
                       >
                         <RefreshCw className="w-3.5 h-3.5 text-emerald-200" />
-                        {selectedCard.frequenciaSessoes ? "Alterar Frequência e Motivo" : "Definir Frequência com Motivo"}
+                        {selectedCard.frequenciaSessoes ? "Alterar Frequência e Motivo" : "Definir Frequência de Sessões"}
                       </button>
                     </div>
                   </div>
@@ -11520,6 +12044,969 @@ export function DashboardView({
         </div>
       )}
 
+      {/* Modal de Inclusão Manual de Paciente (Triagem) */}
+      {showNovoPacienteModal && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center p-3 sm:p-6 bg-forest/40 backdrop-blur-sm animate-in fade-in overflow-y-auto">
+          <div className="bg-white rounded-3xl w-full max-w-4xl shadow-2xl border border-soft overflow-hidden my-auto max-h-[92vh] flex flex-col animate-in zoom-in-95">
+            {/* Modal Header */}
+            <div className="px-6 py-4 flex justify-between items-center border-b border-soft bg-warm/60 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-forest text-sun flex items-center justify-center shadow-sm">
+                  <UserPlus className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-serif text-xl font-medium text-forest">
+                    Cadastro Manual de Paciente
+                  </h3>
+                  <p className="text-xs text-forest/70">
+                    Preencha a ficha de acolhimento para inserção direta na fila de Triagem.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowNovoPacienteModal(false);
+                  handleResetNovoPacienteForm();
+                }}
+                className="p-2 text-forest/60 hover:text-red-500 rounded-full hover:bg-white transition-colors"
+                type="button"
+              >
+                <XCircle className="w-6 h-6" />
+              </button>
+            </div>
+
+            {/* Modal Navigation Tabs */}
+            <div className="px-6 py-2 border-b border-soft bg-white shrink-0 flex gap-1.5 overflow-x-auto text-xs font-semibold no-scrollbar">
+              <button
+                type="button"
+                onClick={() => setNovoPacienteTab("pessoais")}
+                className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap flex items-center gap-1.5 ${
+                  novoPacienteTab === "pessoais"
+                    ? "bg-forest text-sun font-bold shadow-xs"
+                    : "text-forest/70 hover:bg-warm"
+                }`}
+              >
+                <User className="w-3.5 h-3.5" />
+                1. Dados Pessoais & Contato
+              </button>
+              <button
+                type="button"
+                onClick={() => setNovoPacienteTab("financeiros")}
+                className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap flex items-center gap-1.5 ${
+                  novoPacienteTab === "financeiros"
+                    ? "bg-forest text-sun font-bold shadow-xs"
+                    : "text-forest/70 hover:bg-warm"
+                }`}
+              >
+                <DollarSign className="w-3.5 h-3.5" />
+                2. Financeiro & Renda
+              </button>
+              <button
+                type="button"
+                onClick={() => setNovoPacienteTab("demografia")}
+                className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap flex items-center gap-1.5 ${
+                  novoPacienteTab === "demografia"
+                    ? "bg-forest text-sun font-bold shadow-xs"
+                    : "text-forest/70 hover:bg-warm"
+                }`}
+              >
+                <Building2 className="w-3.5 h-3.5" />
+                3. Moradia & Tecnologia
+              </button>
+              <button
+                type="button"
+                onClick={() => setNovoPacienteTab("saude")}
+                className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap flex items-center gap-1.5 ${
+                  novoPacienteTab === "saude"
+                    ? "bg-forest text-sun font-bold shadow-xs"
+                    : "text-forest/70 hover:bg-warm"
+                }`}
+              >
+                <Heart className="w-3.5 h-3.5" />
+                4. Saúde Mental & Demanda
+              </button>
+              <button
+                type="button"
+                onClick={() => setNovoPacienteTab("triagem")}
+                className={`px-3.5 py-2 rounded-xl transition-all whitespace-nowrap flex items-center gap-1.5 ${
+                  novoPacienteTab === "triagem"
+                    ? "bg-forest text-sun font-bold shadow-xs"
+                    : "text-forest/70 hover:bg-warm"
+                }`}
+              >
+                <FileText className="w-3.5 h-3.5" />
+                5. Anotações de Triagem
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <form onSubmit={handleSaveNovoPaciente} className="flex-1 overflow-y-auto p-6 space-y-6">
+              {/* TAB 1: DADOS PESSOAIS & CONTATO */}
+              {novoPacienteTab === "pessoais" && (
+                <div className="space-y-4 animate-in fade-in duration-200">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-xs font-bold uppercase tracking-wider text-forest/80 mb-1.5 block">
+                        Tratamento Para *
+                      </label>
+                      <select
+                        value={novoPacienteForm.tratamentoPara}
+                        onChange={(e) =>
+                          setNovoPacienteForm((prev) => ({
+                            ...prev,
+                            tratamentoPara: e.target.value,
+                          }))
+                        }
+                        className="w-full text-sm bg-warm/40 border border-soft px-3.5 py-2.5 rounded-xl focus:outline-none focus:border-sun-dark text-forest font-medium"
+                      >
+                        <option value="Mim">Para mim mesmo(a)</option>
+                        <option value="Outra pessoa">Para outra pessoa</option>
+                      </select>
+                    </div>
+
+                    {novoPacienteForm.tratamentoPara === "Outra pessoa" && (
+                      <div>
+                        <label className="text-xs font-bold uppercase tracking-wider text-forest/80 mb-1.5 block">
+                          Faixa Etária do Paciente *
+                        </label>
+                        <select
+                          value={novoPacienteForm.idadeTratamento}
+                          onChange={(e) =>
+                            setNovoPacienteForm((prev) => ({
+                              ...prev,
+                              idadeTratamento: e.target.value,
+                            }))
+                          }
+                          className="w-full text-sm bg-warm/40 border border-soft px-3.5 py-2.5 rounded-xl focus:outline-none focus:border-sun-dark text-forest font-medium"
+                        >
+                          <option value="Adulto">Adulto (maior de idade)</option>
+                          <option value="Menor">Criança ou adolescente (menor de idade)</option>
+                        </select>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-xs font-bold uppercase tracking-wider text-forest/80 mb-1.5 block">
+                        Nome Completo do Paciente *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="ex: Maria das Dores Silva"
+                        value={novoPacienteForm.nome}
+                        onChange={(e) =>
+                          setNovoPacienteForm((prev) => ({
+                            ...prev,
+                            nome: e.target.value,
+                          }))
+                        }
+                        className="w-full text-sm bg-warm/40 border border-soft px-3.5 py-2.5 rounded-xl focus:outline-none focus:border-sun-dark text-forest"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-bold uppercase tracking-wider text-forest/80 mb-1.5 block">
+                        Data de Nascimento (Dia - Mês - Ano) *
+                      </label>
+                      <input
+                        type="date"
+                        required
+                        value={novoPacienteForm.dataNascimento}
+                        onChange={(e) =>
+                          setNovoPacienteForm((prev) => ({
+                            ...prev,
+                            dataNascimento: e.target.value,
+                          }))
+                        }
+                        className="w-full text-sm bg-warm/40 border border-soft px-3.5 py-2.5 rounded-xl focus:outline-none focus:border-sun-dark text-forest"
+                      />
+                      <span className="text-[11px] text-forest/60 mt-1 block">Formato: dia - mês - ano (DD/MM/AAAA)</span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-xs font-bold uppercase tracking-wider text-forest/80 mb-1.5 block">
+                        CPF do Paciente
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="000.000.000-00"
+                        value={novoPacienteForm.cpf}
+                        onChange={(e) =>
+                          setNovoPacienteForm((prev) => ({
+                            ...prev,
+                            cpf: e.target.value,
+                          }))
+                        }
+                        className="w-full text-sm bg-warm/40 border border-soft px-3.5 py-2.5 rounded-xl focus:outline-none focus:border-sun-dark text-forest font-mono"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-bold uppercase tracking-wider text-forest/80 mb-1.5 block">
+                        Gênero
+                      </label>
+                      <select
+                        value={novoPacienteForm.genero}
+                        onChange={(e) =>
+                          setNovoPacienteForm((prev) => ({
+                            ...prev,
+                            genero: e.target.value,
+                          }))
+                        }
+                        className="w-full text-sm bg-warm/40 border border-soft px-3.5 py-2.5 rounded-xl focus:outline-none focus:border-sun-dark text-forest"
+                      >
+                        <option value="Feminino">Feminino</option>
+                        <option value="Masculino">Masculino</option>
+                        <option value="Não-binário">Não-binário</option>
+                        <option value="Prefiro não informar">Prefiro não informar</option>
+                        <option value="Outro">Outro</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-xs font-bold uppercase tracking-wider text-forest/80 mb-1.5 block">
+                        Estado Civil
+                      </label>
+                      <select
+                        value={novoPacienteForm.estadoCivil}
+                        onChange={(e) =>
+                          setNovoPacienteForm((prev) => ({
+                            ...prev,
+                            estadoCivil: e.target.value,
+                          }))
+                        }
+                        className="w-full text-sm bg-warm/40 border border-soft px-3.5 py-2.5 rounded-xl focus:outline-none focus:border-sun-dark text-forest"
+                      >
+                        <option value="Solteiro(a)">Solteiro(a)</option>
+                        <option value="Casado(a) / União Estável">Casado(a) / União Estável</option>
+                        <option value="Divorciado(a) / Separado(a)">Divorciado(a) / Separado(a)</option>
+                        <option value="Viúvo(a)">Viúvo(a)</option>
+                        <option value="Outro">Outro</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-bold uppercase tracking-wider text-forest/80 mb-1.5 block">
+                        Possui Filhos?
+                      </label>
+                      <select
+                        value={novoPacienteForm.temFilhos}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setNovoPacienteForm((prev) => ({
+                            ...prev,
+                            temFilhos: val,
+                            faixaEtariaFilhos: val === "Não possui filhos" ? "Não se aplica (sem filhos)" : prev.faixaEtariaFilhos,
+                            filhosMoramJunto: val === "Não possui filhos" ? "Não se aplica (sem filhos)" : prev.filhosMoramJunto,
+                          }));
+                        }}
+                        className="w-full text-sm bg-warm/40 border border-soft px-3.5 py-2.5 rounded-xl focus:outline-none focus:border-sun-dark text-forest"
+                      >
+                        <option value="Não possui filhos">Não possui filhos</option>
+                        <option value="Sim (1 filho)">Sim (1 filho)</option>
+                        <option value="Sim (2 filhos)">Sim (2 filhos)</option>
+                        <option value="Sim (3 ou mais filhos)">Sim (3 ou mais filhos)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {novoPacienteForm.temFilhos !== "Não possui filhos" && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-3 bg-warm/50 border border-soft rounded-2xl">
+                      <div>
+                        <label className="text-xs font-bold uppercase tracking-wider text-forest/80 mb-1.5 block">
+                          Faixa Etária dos Filhos
+                        </label>
+                        <select
+                          value={novoPacienteForm.faixaEtariaFilhos}
+                          onChange={(e) =>
+                            setNovoPacienteForm((prev) => ({
+                              ...prev,
+                              faixaEtariaFilhos: e.target.value,
+                            }))
+                          }
+                          className="w-full text-sm bg-white border border-soft px-3.5 py-2.5 rounded-xl focus:outline-none focus:border-sun-dark text-forest"
+                        >
+                          <option value="Não se aplica (sem filhos)">Não se aplica (sem filhos)</option>
+                          <option value="Bebê / Primeira Infância (0 a 5 anos)">Bebê / Primeira Infância (0 a 5 anos)</option>
+                          <option value="Crianças (6 a 11 anos)">Crianças (6 a 11 anos)</option>
+                          <option value="Adolescentes (12 a 17 anos)">Adolescentes (12 a 17 anos)</option>
+                          <option value="Adultos (18+ anos)">Adultos (18+ anos)</option>
+                          <option value="Crianças e Adolescentes (faixas variadas)">Crianças e Adolescentes (faixas variadas)</option>
+                          <option value="Outra / Diversas idades">Outra / Diversas idades</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="text-xs font-bold uppercase tracking-wider text-forest/80 mb-1.5 block">
+                          Moram com o Paciente?
+                        </label>
+                        <select
+                          value={novoPacienteForm.filhosMoramJunto}
+                          onChange={(e) =>
+                            setNovoPacienteForm((prev) => ({
+                              ...prev,
+                              filhosMoramJunto: e.target.value,
+                            }))
+                          }
+                          className="w-full text-sm bg-white border border-soft px-3.5 py-2.5 rounded-xl focus:outline-none focus:border-sun-dark text-forest"
+                        >
+                          <option value="Não se aplica (sem filhos)">Não se aplica (sem filhos)</option>
+                          <option value="Sim, moram na mesma residência">Sim, moram na mesma residência</option>
+                          <option value="Não, moram em outra residência">Não, moram em outra residência</option>
+                          <option value="Alguns moram na mesma residência">Alguns moram na mesma residência</option>
+                        </select>
+                      </div>
+                    </div>
+                  )}
+
+                  {(novoPacienteForm.tratamentoPara === "Outra pessoa" ||
+                    novoPacienteForm.idadeTratamento === "Menor") && (
+                    <div className="p-4 bg-amber-50/60 border border-amber-200/80 rounded-2xl space-y-3">
+                      <p className="text-xs font-bold text-amber-900 uppercase tracking-wider flex items-center gap-1.5">
+                        <ShieldAlert className="w-4 h-4 text-amber-700" />
+                        Dados do Responsável Legal (Para Menor / Terceiro)
+                      </p>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-[11px] font-bold text-amber-950 block mb-1">
+                            Nome do Responsável
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="Nome completo do responsável"
+                            value={novoPacienteForm.responsavelNome}
+                            onChange={(e) =>
+                              setNovoPacienteForm((prev) => ({
+                                ...prev,
+                                responsavelNome: e.target.value,
+                              }))
+                            }
+                            className="w-full text-xs bg-white border border-amber-200 px-3 py-2 rounded-xl focus:outline-none focus:border-amber-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[11px] font-bold text-amber-950 block mb-1">
+                            CPF do Responsável
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="000.000.000-00"
+                            value={novoPacienteForm.responsavelCpf}
+                            onChange={(e) =>
+                              setNovoPacienteForm((prev) => ({
+                                ...prev,
+                                responsavelCpf: e.target.value,
+                              }))
+                            }
+                            className="w-full text-xs bg-white border border-amber-200 px-3 py-2 rounded-xl focus:outline-none focus:border-amber-500 font-mono"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-xs font-bold uppercase tracking-wider text-forest/80 mb-1.5 block">
+                        E-mail de Contato *
+                      </label>
+                      <input
+                        type="email"
+                        required
+                        placeholder="paciente@email.com"
+                        value={novoPacienteForm.email}
+                        onChange={(e) =>
+                          setNovoPacienteForm((prev) => ({
+                            ...prev,
+                            email: e.target.value,
+                          }))
+                        }
+                        className="w-full text-sm bg-warm/40 border border-soft px-3.5 py-2.5 rounded-xl focus:outline-none focus:border-sun-dark text-forest font-mono"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-bold uppercase tracking-wider text-forest/80 mb-1.5 block">
+                        Telefone / WhatsApp *
+                      </label>
+                      <input
+                        type="tel"
+                        required
+                        placeholder="(11) 99999-9999"
+                        value={novoPacienteForm.telefone}
+                        onChange={(e) =>
+                          setNovoPacienteForm((prev) => ({
+                            ...prev,
+                            telefone: e.target.value,
+                          }))
+                        }
+                        className="w-full text-sm bg-warm/40 border border-soft px-3.5 py-2.5 rounded-xl focus:outline-none focus:border-sun-dark text-forest font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="text-xs font-bold uppercase tracking-wider text-forest/80 mb-1.5 block">
+                        Necessidade Especial / Deficiência
+                      </label>
+                      <select
+                        value={novoPacienteForm.deficiencia}
+                        onChange={(e) =>
+                          setNovoPacienteForm((prev) => ({
+                            ...prev,
+                            deficiencia: e.target.value,
+                          }))
+                        }
+                        className="w-full text-sm bg-warm/40 border border-soft px-3.5 py-2.5 rounded-xl focus:outline-none focus:border-sun-dark text-forest"
+                      >
+                        <option value="Não possuo">Não possuo</option>
+                        <option value="Deficiência física">Deficiência física (motora)</option>
+                        <option value="Deficiência visual">Deficiência visual</option>
+                        <option value="Deficiência auditiva">Deficiência auditiva</option>
+                        <option value="Deficiência intelectual/cognitiva">Deficiência intelectual/cognitiva</option>
+                        <option value="Transtorno do Espectro Autista (TEA)">Transtorno do Espectro Autista (TEA)</option>
+                        <option value="Múltiplas deficiências">Múltiplas deficiências</option>
+                        <option value="Outra necessidade especial">Outra necessidade especial</option>
+                        <option value="Prefiro não responder">Prefiro não responder</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-bold uppercase tracking-wider text-forest/80 mb-1.5 block">
+                        Como Conheceu
+                      </label>
+                      <select
+                        value={novoPacienteForm.comoConheceu}
+                        onChange={(e) =>
+                          setNovoPacienteForm((prev) => ({
+                            ...prev,
+                            comoConheceu: e.target.value,
+                          }))
+                        }
+                        className="w-full text-sm bg-warm/40 border border-soft px-3.5 py-2.5 rounded-xl focus:outline-none focus:border-sun-dark text-forest"
+                      >
+                        <option value="Indicação de profissional">Indicação de profissional</option>
+                        <option value="Projetos">Projetos</option>
+                        <option value="Plataformas">Plataformas</option>
+                        <option value="Instituição/ Igreja">Instituição/ Igreja</option>
+                        <option value="Amigos/ conhecidos">Amigos/ conhecidos</option>
+                        <option value="Google/ Site">Google/ Site</option>
+                        <option value="Pacientes">Pacientes</option>
+                        <option value="Outros">Outros</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-bold uppercase tracking-wider text-forest/80 mb-1.5 block">
+                        Via de Acesso
+                      </label>
+                      <select
+                        value={novoPacienteForm.viaAcesso}
+                        onChange={(e) =>
+                          setNovoPacienteForm((prev) => ({
+                            ...prev,
+                            viaAcesso: e.target.value,
+                          }))
+                        }
+                        className="w-full text-sm bg-warm/40 border border-soft px-3.5 py-2.5 rounded-xl focus:outline-none focus:border-sun-dark text-forest font-semibold"
+                      >
+                        <option value="Particular">Particular / Social</option>
+                        <option value="Corporativo">Corporativo / Empresa Parceira</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {novoPacienteForm.viaAcesso === "Corporativo" && (
+                    <div>
+                      <label className="text-xs font-bold uppercase tracking-wider text-forest/80 mb-1.5 block">
+                        Código ou Nome da Empresa Parceira
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="ex: EMPRESA-XYZ"
+                        value={novoPacienteForm.empresa}
+                        onChange={(e) =>
+                          setNovoPacienteForm((prev) => ({
+                            ...prev,
+                            empresa: e.target.value,
+                          }))
+                        }
+                        className="w-full text-sm bg-warm/40 border border-soft px-3.5 py-2.5 rounded-xl focus:outline-none focus:border-sun-dark text-forest font-mono uppercase"
+                      />
+                    </div>
+                  )}
+
+                  <div className="pt-3 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setNovoPacienteTab("financeiros")}
+                      className="px-5 py-2.5 bg-forest text-sun rounded-xl text-xs font-bold uppercase tracking-wider hover:bg-forest/90 transition-all flex items-center gap-2"
+                    >
+                      <span>Próximo: Financeiro & Renda</span>
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 2: FINANCEIRO & RENDA */}
+              {novoPacienteTab === "financeiros" && (
+                <div className="space-y-4 animate-in fade-in duration-200">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-xs font-bold uppercase tracking-wider text-forest/80 mb-1.5 block">
+                        Fonte de Renda Principal
+                      </label>
+                      <select
+                        value={novoPacienteForm.fonteRenda}
+                        onChange={(e) =>
+                          setNovoPacienteForm((prev) => ({
+                            ...prev,
+                            fonteRenda: e.target.value,
+                          }))
+                        }
+                        className="w-full text-sm bg-warm/40 border border-soft px-3.5 py-2.5 rounded-xl focus:outline-none focus:border-sun-dark text-forest"
+                      >
+                        <option value="Emprego formal (CLT/servidor público)">Emprego formal (CLT/servidor público)</option>
+                        <option value="Emprego informal ou autônomo">Emprego informal ou autônomo</option>
+                        <option value="MEI ou Empresário">MEI ou Empresário</option>
+                        <option value="Aposentadoria, pensão ou benefício">Aposentadoria, pensão ou benefício</option>
+                        <option value="Bolsista/Estudante">Bolsista/Estudante</option>
+                        <option value="Outra">Outra fonte</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-bold uppercase tracking-wider text-forest/80 mb-1.5 block">
+                        Renda Familiar Mensal (Faixa)
+                      </label>
+                      <select
+                        value={novoPacienteForm.faixaSalarial}
+                        onChange={(e) =>
+                          setNovoPacienteForm((prev) => ({
+                            ...prev,
+                            faixaSalarial: e.target.value,
+                          }))
+                        }
+                        className="w-full text-sm bg-warm/40 border border-soft px-3.5 py-2.5 rounded-xl focus:outline-none focus:border-sun-dark text-forest font-medium"
+                      >
+                        <option value="Até 1 Salário Mínimo (até R$ 1.518,00)">Até 1 Salário Mínimo (até R$ 1.518,00)</option>
+                        <option value="De 1 a 2 Salários Mínimos (R$ 1.518,01 a R$ 3.036,00)">De 1 a 2 Salários Mínimos (R$ 1.518,01 a R$ 3.036,00)</option>
+                        <option value="De 2 a 3 Salários Mínimos (R$ 3.036,01 a R$ 4.554,00)">De 2 a 3 Salários Mínimos (R$ 3.036,01 a R$ 4.554,00)</option>
+                        <option value="De 3 a 5 Salários Mínimos (R$ 4.554,01 a R$ 7.590,00)">De 3 a 5 Salários Mínimos (R$ 4.554,01 a R$ 7.590,00)</option>
+                        <option value="Acima de 5 Salários Mínimos (acima de R$ 7.590,00)">Acima de 5 Salários Mínimos (acima de R$ 7.590,00)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-xs font-bold uppercase tracking-wider text-forest/80 mb-1.5 block">
+                        Quantidade de Dependentes
+                      </label>
+                      <select
+                        value={novoPacienteForm.dependentes}
+                        onChange={(e) =>
+                          setNovoPacienteForm((prev) => ({
+                            ...prev,
+                            dependentes: e.target.value,
+                          }))
+                        }
+                        className="w-full text-sm bg-warm/40 border border-soft px-3.5 py-2.5 rounded-xl focus:outline-none focus:border-sun-dark text-forest"
+                      >
+                        <option value="1 pessoa (mora sozinho)">1 pessoa (mora sozinho)</option>
+                        <option value="2 a 3 pessoas">2 a 3 pessoas</option>
+                        <option value="4 a 5 pessoas">4 a 5 pessoas</option>
+                        <option value="Mais de 5 pessoas">Mais de 5 pessoas</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-bold uppercase tracking-wider text-forest/80 mb-1.5 block">
+                        Plano de Saúde
+                      </label>
+                      <select
+                        value={novoPacienteForm.planoSaude}
+                        onChange={(e) =>
+                          setNovoPacienteForm((prev) => ({
+                            ...prev,
+                            planoSaude: e.target.value,
+                          }))
+                        }
+                        className="w-full text-sm bg-warm/40 border border-soft px-3.5 py-2.5 rounded-xl focus:outline-none focus:border-sun-dark text-forest"
+                      >
+                        <option value="Sim, com cobertura para psicoterapia">Sim, com cobertura para psicoterapia</option>
+                        <option value="Sim, mas NÃO cobre psicoterapia">Sim, mas NÃO cobre psicoterapia</option>
+                        <option value="Não, utilizo apenas o SUS">Não, utilizo apenas o SUS</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="pt-3 flex justify-between">
+                    <button
+                      type="button"
+                      onClick={() => setNovoPacienteTab("pessoais")}
+                      className="px-4 py-2 bg-warm border border-soft text-forest rounded-xl text-xs font-bold uppercase tracking-wider hover:bg-white transition-all"
+                    >
+                      Voltar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setNovoPacienteTab("demografia")}
+                      className="px-5 py-2.5 bg-forest text-sun rounded-xl text-xs font-bold uppercase tracking-wider hover:bg-forest/90 transition-all flex items-center gap-2"
+                    >
+                      <span>Próximo: Moradia & Tecnologia</span>
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 3: DEMOGRAFIA & TECNOLOGIA */}
+              {novoPacienteTab === "demografia" && (
+                <div className="space-y-4 animate-in fade-in duration-200">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-xs font-bold uppercase tracking-wider text-forest/80 mb-1.5 block">
+                        Escolaridade
+                      </label>
+                      <select
+                        value={novoPacienteForm.escolaridade}
+                        onChange={(e) =>
+                          setNovoPacienteForm((prev) => ({
+                            ...prev,
+                            escolaridade: e.target.value,
+                          }))
+                        }
+                        className="w-full text-sm bg-warm/40 border border-soft px-3.5 py-2.5 rounded-xl focus:outline-none focus:border-sun-dark text-forest"
+                      >
+                        <option value="Analfabeto/Fundamental Incompleto">Analfabeto/Fundamental Incompleto</option>
+                        <option value="Fundamental Completo">Fundamental Completo</option>
+                        <option value="Médio Incompleto">Médio Incompleto</option>
+                        <option value="Médio Completo">Médio Completo</option>
+                        <option value="Superior Incompleto">Superior Incompleto</option>
+                        <option value="Superior Completo">Superior Completo</option>
+                        <option value="Pós-Graduação">Pós-Graduação</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-bold uppercase tracking-wider text-forest/80 mb-1.5 block">
+                        Situação da Moradia
+                      </label>
+                      <select
+                        value={novoPacienteForm.moradia}
+                        onChange={(e) =>
+                          setNovoPacienteForm((prev) => ({
+                            ...prev,
+                            moradia: e.target.value,
+                          }))
+                        }
+                        className="w-full text-sm bg-warm/40 border border-soft px-3.5 py-2.5 rounded-xl focus:outline-none focus:border-sun-dark text-forest"
+                      >
+                        <option value="Próprio e quitado">Próprio e quitado</option>
+                        <option value="Próprio, financiado">Próprio, financiado</option>
+                        <option value="Alugado/arrendado">Alugado/arrendado</option>
+                        <option value="Cedido">Cedido</option>
+                        <option value="Ocupação irregular ou outra">Ocupação irregular ou outra</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="text-xs font-bold uppercase tracking-wider text-forest/80 mb-1.5 block">
+                        Cômodos no Imóvel
+                      </label>
+                      <select
+                        value={novoPacienteForm.comodos}
+                        onChange={(e) =>
+                          setNovoPacienteForm((prev) => ({
+                            ...prev,
+                            comodos: e.target.value,
+                          }))
+                        }
+                        className="w-full text-sm bg-warm/40 border border-soft px-3.5 py-2.5 rounded-xl focus:outline-none focus:border-sun-dark text-forest"
+                      >
+                        <option value="1 a 3 cômodos">1 a 3 cômodos</option>
+                        <option value="4 a 5 cômodos">4 a 5 cômodos</option>
+                        <option value="6 ou mais cômodos">6 ou mais cômodos</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-bold uppercase tracking-wider text-forest/80 mb-1.5 block">
+                        Acesso à Internet
+                      </label>
+                      <select
+                        value={novoPacienteForm.internet}
+                        onChange={(e) =>
+                          setNovoPacienteForm((prev) => ({
+                            ...prev,
+                            internet: e.target.value,
+                          }))
+                        }
+                        className="w-full text-sm bg-warm/40 border border-soft px-3.5 py-2.5 rounded-xl focus:outline-none focus:border-sun-dark text-forest"
+                      >
+                        <option value="Acesso fixo residencial">Acesso fixo residencial</option>
+                        <option value="Apenas pelo celular (dados móveis)">Apenas pelo celular (dados móveis)</option>
+                        <option value="Acesso em locais públicos">Acesso em locais públicos</option>
+                        <option value="Não tenho acesso à internet">Não tenho acesso à internet</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-bold uppercase tracking-wider text-forest/80 mb-1.5 block">
+                        Aparelho para Sessões
+                      </label>
+                      <select
+                        value={novoPacienteForm.dispositivo}
+                        onChange={(e) =>
+                          setNovoPacienteForm((prev) => ({
+                            ...prev,
+                            dispositivo: e.target.value,
+                          }))
+                        }
+                        className="w-full text-sm bg-warm/40 border border-soft px-3.5 py-2.5 rounded-xl focus:outline-none focus:border-sun-dark text-forest"
+                      >
+                        <option value="Sim (Celular/PC c/ câmera)">Sim (Celular/PC c/ câmera)</option>
+                        <option value="Apenas Celular s/ dados">Apenas Celular s/ dados</option>
+                        <option value="Não">Não</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="pt-3 flex justify-between">
+                    <button
+                      type="button"
+                      onClick={() => setNovoPacienteTab("financeiros")}
+                      className="px-4 py-2 bg-warm border border-soft text-forest rounded-xl text-xs font-bold uppercase tracking-wider hover:bg-white transition-all"
+                    >
+                      Voltar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setNovoPacienteTab("saude")}
+                      className="px-5 py-2.5 bg-forest text-sun rounded-xl text-xs font-bold uppercase tracking-wider hover:bg-forest/90 transition-all flex items-center gap-2"
+                    >
+                      <span>Próximo: Saúde Mental & Demanda</span>
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 4: SAÚDE MENTAL & DEMANDA */}
+              {novoPacienteTab === "saude" && (
+                <div className="space-y-4 animate-in fade-in duration-200">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-xs font-bold uppercase tracking-wider text-forest/80 mb-1.5 block">
+                        Já fez psicoterapia antes?
+                      </label>
+                      <select
+                        value={novoPacienteForm.terapiaAnterior}
+                        onChange={(e) =>
+                          setNovoPacienteForm((prev) => ({
+                            ...prev,
+                            terapiaAnterior: e.target.value,
+                          }))
+                        }
+                        className="w-full text-sm bg-warm/40 border border-soft px-3.5 py-2.5 rounded-xl focus:outline-none focus:border-sun-dark text-forest"
+                      >
+                        <option value="Sim, em tratamento">Sim, em tratamento</option>
+                        <option value="Sim, interrompi (+ 6 meses)">Sim, interrompi (+ 6 meses)</option>
+                        <option value="Não">Não</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-bold uppercase tracking-wider text-forest/80 mb-1.5 block">
+                        Motivo Principal do Atendimento
+                      </label>
+                      <select
+                        value={novoPacienteForm.motivo}
+                        onChange={(e) =>
+                          setNovoPacienteForm((prev) => ({
+                            ...prev,
+                            motivo: e.target.value,
+                          }))
+                        }
+                        className="w-full text-sm bg-warm/40 border border-soft px-3.5 py-2.5 rounded-xl focus:outline-none focus:border-sun-dark text-forest font-medium"
+                      >
+                        <option value="Enfrentamento de luto ou trauma">Enfrentamento de luto ou trauma</option>
+                        <option value="Ansiedade ou estresse excessivo">Ansiedade ou estresse excessivo</option>
+                        <option value="Depressão ou tristeza profunda">Depressão ou tristeza profunda</option>
+                        <option value="Problemas de relacionamento">Problemas de relacionamento</option>
+                        <option value="Desenvolvimento pessoal">Desenvolvimento pessoal</option>
+                        <option value="Outro">Outro</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-bold uppercase tracking-wider text-forest/80 mb-1.5 block">
+                      Descrição / Detalhes da Queixa Inicial
+                    </label>
+                    <textarea
+                      rows={3}
+                      placeholder="Descreva resumidamente os sintomas, demandas ou histórico relatado pelo paciente..."
+                      value={novoPacienteForm.queixaDetalhes}
+                      onChange={(e) =>
+                        setNovoPacienteForm((prev) => ({
+                          ...prev,
+                          queixaDetalhes: e.target.value,
+                        }))
+                      }
+                      className="w-full text-sm bg-warm/40 border border-soft p-3 rounded-xl focus:outline-none focus:border-sun-dark text-forest resize-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-bold uppercase tracking-wider text-forest/80 mb-2 block">
+                      Melhores Períodos para Sessões (Disponibilidade)
+                    </label>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      {["Manhã", "Tarde", "Noite", "Aos sábados", "Total disponibilidade"].map((periodo) => {
+                        const checked = novoPacienteForm.melhoresPeriodos.includes(periodo);
+                        return (
+                          <button
+                            key={periodo}
+                            type="button"
+                            onClick={() => {
+                              setNovoPacienteForm((prev) => {
+                                const exists = prev.melhoresPeriodos.includes(periodo);
+                                return {
+                                  ...prev,
+                                  melhoresPeriodos: exists
+                                    ? prev.melhoresPeriodos.filter((p) => p !== periodo)
+                                    : [...prev.melhoresPeriodos, periodo],
+                                };
+                              });
+                            }}
+                            className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all text-center flex items-center justify-center gap-1.5 ${
+                              checked
+                                ? "bg-forest text-sun border-forest shadow-xs"
+                                : "bg-warm/30 border-soft text-forest/70 hover:bg-warm"
+                            }`}
+                          >
+                            <Check className={`w-3.5 h-3.5 ${checked ? "opacity-100" : "opacity-0"}`} />
+                            <span>{periodo}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="pt-3 flex justify-between">
+                    <button
+                      type="button"
+                      onClick={() => setNovoPacienteTab("demografia")}
+                      className="px-4 py-2 bg-warm border border-soft text-forest rounded-xl text-xs font-bold uppercase tracking-wider hover:bg-white transition-all"
+                    >
+                      Voltar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setNovoPacienteTab("triagem")}
+                      className="px-5 py-2.5 bg-forest text-sun rounded-xl text-xs font-bold uppercase tracking-wider hover:bg-forest/90 transition-all flex items-center gap-2"
+                    >
+                      <span>Próximo: Anotações de Triagem</span>
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 5: ANOTAÇÕES DE TRIAGEM & SUBMISSÃO */}
+              {novoPacienteTab === "triagem" && (
+                <div className="space-y-4 animate-in fade-in duration-200">
+                  <div className="p-4 bg-forest/5 border border-forest/10 rounded-2xl space-y-2">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-forest flex items-center gap-1.5">
+                      <FileText className="w-4 h-4 text-sun-dark" />
+                      Observações Internas da Triagem
+                    </h4>
+                    <p className="text-xs text-forest/70">
+                      Utilize este espaço para incluir anotações observadas no atendimento inicial, orientações específicas ou histórico de contato telefônico/WhatsApp.
+                    </p>
+                    <textarea
+                      rows={4}
+                      placeholder="Ex: Paciente encaminhado via projeto parceiro. Prioridade de agendamento no período matutino..."
+                      value={novoPacienteForm.observacoesTriagem}
+                      onChange={(e) =>
+                        setNovoPacienteForm((prev) => ({
+                          ...prev,
+                          observacoesTriagem: e.target.value,
+                        }))
+                      }
+                      className="w-full text-sm bg-white border border-soft p-3 rounded-xl focus:outline-none focus:border-forest text-forest resize-none"
+                    />
+                  </div>
+
+                  <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-start gap-3">
+                    <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                    <div className="text-xs text-emerald-950 space-y-1">
+                      <p className="font-bold">Confirmação de Inclusão na Fila de Triagem</p>
+                      <p>
+                        Ao finalizar o cadastro, o paciente <strong>{novoPacienteForm.nome || "Novo Paciente"}</strong> será inserido imediatamente na primeira coluna da Triagem (<em>Aguardando Avaliação</em>).
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="pt-3 flex justify-between items-center">
+                    <button
+                      type="button"
+                      onClick={() => setNovoPacienteTab("saude")}
+                      className="px-4 py-2 bg-warm border border-soft text-forest rounded-xl text-xs font-bold uppercase tracking-wider hover:bg-white transition-all"
+                    >
+                      Voltar
+                    </button>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowNovoPacienteModal(false);
+                          handleResetNovoPacienteForm();
+                        }}
+                        className="px-4 py-2.5 text-xs font-bold text-forest/70 hover:text-forest transition-colors"
+                      >
+                        Cancelar
+                      </button>
+
+                      <button
+                        type="submit"
+                        disabled={isSubmittingNovoPaciente}
+                        className="px-6 py-2.5 bg-forest text-white hover:bg-forest/90 disabled:opacity-50 rounded-xl font-bold text-xs uppercase tracking-wider transition-all shadow-md flex items-center gap-2"
+                      >
+                        {isSubmittingNovoPaciente ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin text-sun" />
+                            <span>Cadastrando...</span>
+                          </>
+                        ) : (
+                          <>
+                            <UserPlus className="w-4 h-4 text-sun" />
+                            <span>Concluir Cadastro</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Novo Profissional Modal */}
       {showNewProfissionalModal && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center px-4 bg-forest/20 backdrop-blur-sm animate-in fade-in">
@@ -11820,19 +13307,32 @@ export function DashboardView({
                 />
               </div>
 
-              {/* Motivo Obrigatório */}
+              {/* Motivo (Opcional na 1ª vez, Obrigatório nas alterações) */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-emerald-900">
-                  <span>2. Motivo da Alteração *</span>
-                  <span className="text-[10px] text-amber-800 bg-amber-100 px-2 py-0.5 rounded border border-amber-300 font-bold">Obrigatório</span>
+                  <span>
+                    2. Motivo {!freqModalTargetCard.frequenciaSessoes ? "(Opcional)" : "da Alteração *"}
+                  </span>
+                  {!freqModalTargetCard.frequenciaSessoes ? (
+                    <span className="text-[10px] text-forest/70 bg-warm px-2 py-0.5 rounded border border-soft font-bold">
+                      Opcional (1ª vez)
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-amber-800 bg-amber-100 px-2 py-0.5 rounded border border-amber-300 font-bold">
+                      Obrigatório
+                    </span>
+                  )}
                 </div>
                 <textarea
-                  required
                   rows={3}
                   value={freqModalMotivo}
                   onChange={(e) => setFreqModalMotivo(e.target.value)}
                   className="w-full text-xs bg-white border border-emerald-200 p-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-600 text-forest placeholder:text-forest/40 shadow-2xs"
-                  placeholder="Descreva o motivo ou justificativa para a alteração da frequência de sessões..."
+                  placeholder={
+                    !freqModalTargetCard.frequenciaSessoes
+                      ? "Descreva o motivo caso desejar (opcional na primeira definição)..."
+                      : "Descreva o motivo ou justificativa para a alteração da frequência de sessões..."
+                  }
                 />
               </div>
 
