@@ -2,5 +2,7 @@
   "name": "AcolheMente Plataforma",
   "description": "Plataforma de Cuidado Acessível - Acolhimento, Doações e Corporativo",
   "requestFramePermissions": [],
-  "majorCapabilities": []
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

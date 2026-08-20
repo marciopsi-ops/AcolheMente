@@ -23,12 +23,14 @@ import {
   ChevronDown,
   ChevronUp,
   Menu,
+  BookOpen,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { motion } from "motion/react";
 import { onAuthStateChanged } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, collection, query, where, orderBy, onSnapshot } from "firebase/firestore";
 import { auth, db } from "./lib/firebase";
+import { ArtigoBlog } from "./types/blog";
 import { AcolhimentoView } from "./views/AcolhimentoView";
 import { PublicProfProfileView } from "./views/PublicProfProfileView";
 import { PublicServiceView } from "./views/PublicServiceView";
@@ -38,6 +40,7 @@ import { DoacaoView } from "./views/DoacaoView";
 import { ProfissionalLandingView } from "./views/ProfissionalLandingView";
 import { ContratoLandingView } from "./views/ContratoLandingView";
 import { PropostaLandingView } from "./views/PropostaLandingView";
+import { BlogView } from "./views/BlogView";
 
 import { Footer } from "./components/Footer";
 import { ProfissionaisCarousel } from "./components/ProfissionaisCarousel";
@@ -179,13 +182,24 @@ function FAQSection() {
 }
 
 export default function App() {
-  const params = new URLSearchParams(window.location.search);
-  const publicProfUid = params.get("prof");
-  const publicServiceId = params.get("servico");
-  const publicEventoId = params.get("evento");
-  const publicContratoId = params.get("contrato");
-  const publicPropostaId = params.get("proposta");
-  const viewParam = params.get("view") as any;
+  const [publicProfUid, setPublicProfUid] = useState<string | null>(() => {
+    return new URLSearchParams(window.location.search).get("prof");
+  });
+  const [publicServiceId, setPublicServiceId] = useState<string | null>(() => {
+    return new URLSearchParams(window.location.search).get("servico");
+  });
+  const [publicEventoId, setPublicEventoId] = useState<string | null>(() => {
+    return new URLSearchParams(window.location.search).get("evento");
+  });
+  const [publicContratoId, setPublicContratoId] = useState<string | null>(() => {
+    return new URLSearchParams(window.location.search).get("contrato");
+  });
+  const [publicPropostaId, setPublicPropostaId] = useState<string | null>(() => {
+    return new URLSearchParams(window.location.search).get("proposta");
+  });
+  const [publicArtigoId, setPublicArtigoId] = useState<string | null>(() => {
+    return new URLSearchParams(window.location.search).get("artigo");
+  });
 
   const [currentView, setCurrentView] = useState<
     | "landing"
@@ -195,8 +209,12 @@ export default function App() {
     | "empresa"
     | "doacao"
     | "profissional"
-  >(
-    viewParam &&
+    | "blog"
+  >(() => {
+    const params = new URLSearchParams(window.location.search);
+    const viewParam = params.get("view") as any;
+    if (
+      viewParam &&
       [
         "landing",
         "acolhimento",
@@ -205,15 +223,47 @@ export default function App() {
         "empresa",
         "doacao",
         "profissional",
+        "blog",
       ].includes(viewParam)
-      ? viewParam
-      : auth.currentUser
-        ? "dashboard"
-        : "landing",
-  );
+    ) {
+      return viewParam;
+    }
+    return auth.currentUser ? "dashboard" : "landing";
+  });
 
   const [user, setUser] = useState<any>(null);
   const [doacoesAtivas, setDoacoesAtivas] = useState(true);
+
+  // Synchronize browser history / popstate
+  useEffect(() => {
+    const handlePopState = () => {
+      const p = new URLSearchParams(window.location.search);
+      setPublicProfUid(p.get("prof"));
+      setPublicServiceId(p.get("servico"));
+      setPublicEventoId(p.get("evento"));
+      setPublicContratoId(p.get("contrato"));
+      setPublicPropostaId(p.get("proposta"));
+      setPublicArtigoId(p.get("artigo"));
+      const v = p.get("view");
+      if (
+        v &&
+        [
+          "landing",
+          "acolhimento",
+          "dashboard",
+          "profile",
+          "empresa",
+          "doacao",
+          "profissional",
+          "blog",
+        ].includes(v)
+      ) {
+        setCurrentView(v as any);
+      }
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
 
   useEffect(() => {
     const fetchConfigs = async () => {
@@ -236,7 +286,7 @@ export default function App() {
     const unsubscribe = onAuthStateChanged(auth, (u) => {
       setUser(u);
       if (u) {
-        // Redireciona para o painel se estiver logado e na landing page
+        // Redireciona para o painel se estiver logado e na landing page sem parâmetro explícito
         setCurrentView((prev) => (prev === "landing" ? "dashboard" : prev));
       }
     });
@@ -257,21 +307,50 @@ export default function App() {
     }
   };
 
-  const handleBackFromPublicProfile = () => {
-    // Clear URL parameters elegantly and route back
-    window.history.pushState({}, "", window.location.origin);
-    if (auth.currentUser) {
-      setCurrentView("dashboard");
-    } else {
-      setCurrentView("landing");
+  const handleGoToLanding = () => {
+    try {
+      const cleanUrl = window.location.origin + window.location.pathname;
+      window.history.pushState({}, "", cleanUrl);
+    } catch (e) {
+      console.error(e);
     }
+    setPublicProfUid(null);
+    setPublicServiceId(null);
+    setPublicEventoId(null);
+    setPublicContratoId(null);
+    setPublicPropostaId(null);
+    setPublicArtigoId(null);
+    setCurrentView("landing");
   };
+
+  const handleBackFromPublicProfile = () => {
+    handleGoToLanding();
+  };
+
+  if (publicArtigoId || currentView === "blog") {
+    return (
+      <BlogView
+        initialArtigoId={publicArtigoId}
+        onNavigate={handleNavigate}
+        onGoHome={handleGoToLanding}
+        onSelectProf={(uid) => {
+          setPublicProfUid(uid);
+        }}
+      />
+    );
+  }
 
   if (publicProfUid) {
     return (
       <PublicProfProfileView
         profUid={publicProfUid}
         onBack={handleBackFromPublicProfile}
+        onGoHome={handleGoToLanding}
+        onReadArtigo={(artigoId) => {
+          setPublicProfUid(null);
+          setPublicArtigoId(artigoId);
+          setCurrentView("blog");
+        }}
       />
     );
   }
@@ -282,6 +361,7 @@ export default function App() {
         serviceId={publicServiceId}
         eventId={publicEventoId}
         onBack={handleBackFromPublicProfile}
+        onGoHome={handleGoToLanding}
       />
     );
   }
@@ -291,6 +371,7 @@ export default function App() {
       <ContratoLandingView
         contratoId={publicContratoId}
         onBack={handleBackFromPublicProfile}
+        onGoHome={handleGoToLanding}
       />
     );
   }
@@ -300,6 +381,7 @@ export default function App() {
       <PropostaLandingView
         propostaId={publicPropostaId}
         onBack={handleBackFromPublicProfile}
+        onGoHome={handleGoToLanding}
       />
     );
   }
@@ -307,7 +389,16 @@ export default function App() {
   let content;
 
   if (currentView === "landing") {
-    content = <LandingPage onNavigate={handleNavigate} doacoesAtivas={doacoesAtivas} />;
+    content = (
+      <LandingPage
+        onNavigate={handleNavigate}
+        onSelectArtigo={(artigoId) => {
+          setPublicArtigoId(artigoId);
+          setCurrentView("blog");
+        }}
+        doacoesAtivas={doacoesAtivas}
+      />
+    );
   } else if (currentView === "acolhimento") {
     content = <AcolhimentoView onNavigate={handleNavigate} />;
   } else if (currentView === "dashboard") {
@@ -427,6 +518,7 @@ export default function App() {
 
 function LandingPage({
   onNavigate,
+  onSelectArtigo,
   doacoesAtivas = true,
 }: {
   onNavigate: (
@@ -437,11 +529,40 @@ function LandingPage({
       | "profile"
       | "empresa"
       | "doacao"
-      | "profissional",
+      | "profissional"
+      | "blog",
   ) => void;
+  onSelectArtigo?: (artigoId: string) => void;
   doacoesAtivas?: boolean;
 }) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [artigosPublicados, setArtigosPublicados] = useState<ArtigoBlog[]>([]);
+  const [loadingArtigos, setLoadingArtigos] = useState(true);
+
+  useEffect(() => {
+    const q = query(
+      collection(db, "artigos_blog"),
+      where("status", "==", "publicado"),
+      orderBy("createdAt", "desc")
+    );
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const list: ArtigoBlog[] = [];
+        snapshot.forEach((docSnap) => {
+          list.push({ id: docSnap.id, ...(docSnap.data() as any) });
+        });
+        setArtigosPublicados(list);
+        setLoadingArtigos(false);
+      },
+      (err) => {
+        console.warn("Erro ao carregar artigos publicados na Home:", err);
+        setArtigosPublicados([]);
+        setLoadingArtigos(false);
+      }
+    );
+    return () => unsubscribe();
+  }, []);
 
   return (
     <div className="min-h-screen flex flex-col relative overflow-x-hidden bg-warm">
@@ -461,71 +582,116 @@ function LandingPage({
         </div>
 
         {/* Minimalist 3-line classic menu dropdown */}
-        <div className="relative">
+        <div className="relative flex items-center">
           <button
             onClick={() => setIsMenuOpen(!isMenuOpen)}
-            className="p-2.5 text-forest hover:bg-forest/5 rounded-full transition-all duration-200 focus:outline-none flex items-center justify-center border border-soft/80"
-            aria-label="Menu"
+            className="p-2.5 text-forest hover:bg-forest/5 rounded-full transition-all duration-200 focus:outline-none flex items-center justify-center border border-soft/80 cursor-pointer shadow-2xs"
+            aria-label={isMenuOpen ? "Fechar menu" : "Abrir menu"}
             id="nav-menu-button"
           >
             {isMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
 
           {isMenuOpen && (
-            <motion.div
-              initial={{ opacity: 0, y: 12, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              transition={{ duration: 0.2, ease: "easeOut" }}
-              className="absolute right-0 mt-3 w-72 bg-white border border-soft rounded-[2rem] shadow-2xl py-6 px-6 flex flex-col gap-4 z-50"
-            >
-              <div className="flex flex-col gap-2.5">
-                <span className="text-[10px] uppercase tracking-wider text-forest/40 font-bold px-3">Navegação</span>
-                <a 
-                  href="#projeto" 
-                  onClick={() => setIsMenuOpen(false)}
-                  className="font-sans text-sm text-forest/85 hover:text-forest hover:bg-warm/40 px-3 py-2.5 rounded-xl transition-all font-medium"
-                >
-                  O Projeto
-                </a>
-                <a 
-                  href="#jornada" 
-                  onClick={() => setIsMenuOpen(false)}
-                  className="font-sans text-sm text-forest/85 hover:text-forest hover:bg-warm/40 px-3 py-2.5 rounded-xl transition-all font-medium"
-                >
-                  Como Funciona
-                </a>
-                <button 
-                  onClick={() => { setIsMenuOpen(false); onNavigate("empresa"); }}
-                  className="text-left font-sans text-sm text-forest/85 hover:text-forest hover:bg-warm/40 px-3 py-2.5 rounded-xl transition-all font-medium"
-                >
-                  Seja uma Empresa Parceira
-                </button>
-                <button 
-                  onClick={() => { setIsMenuOpen(false); onNavigate("profissional"); }}
-                  className="text-left font-sans text-sm text-forest/85 hover:text-forest hover:bg-warm/40 px-3 py-2.5 rounded-xl transition-all font-medium"
-                >
-                  Seja Profissional Associado
-                </button>
-                {doacoesAtivas && (
-                  <button 
-                    onClick={() => { setIsMenuOpen(false); onNavigate("doacao"); }}
-                    className="text-left font-sans text-sm text-forest/85 hover:text-forest hover:bg-warm/40 px-3 py-2.5 rounded-xl transition-all font-medium"
+            <>
+              {/* Backdrop to close when clicking outside */}
+              <div
+                className="fixed inset-0 bg-forest/20 backdrop-blur-[2px] z-40"
+                onClick={() => setIsMenuOpen(false)}
+              />
+
+              <motion.div
+                initial={{ opacity: 0, y: 12, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                transition={{ duration: 0.2, ease: "easeOut" }}
+                className="absolute right-0 top-full mt-3 w-80 max-w-[calc(100vw-2rem)] bg-white border border-soft rounded-[2rem] shadow-2xl py-5 px-6 flex flex-col gap-4 z-50"
+              >
+                {/* Header do Menu com Botão de Fechar */}
+                <div className="flex items-center justify-between pb-3 border-b border-soft">
+                  <div className="flex items-center gap-2">
+                    <span className="font-serif text-base font-bold text-forest">Menu</span>
+                    <span className="text-[10px] uppercase tracking-wider text-forest/40 font-bold bg-warm px-2 py-0.5 rounded-full">Navegação</span>
+                  </div>
+                  <button
+                    onClick={() => setIsMenuOpen(false)}
+                    className="p-1.5 text-forest/60 hover:text-forest hover:bg-warm rounded-full transition-colors flex items-center justify-center cursor-pointer"
+                    title="Fechar menu"
+                    aria-label="Fechar menu"
                   >
-                    Doe uma sessão de terapia
+                    <X className="w-4 h-4" />
                   </button>
-                )}
-              </div>
-              
-              <div className="border-t border-soft pt-4 flex flex-col gap-2.5">
-                <span className="text-[10px] uppercase tracking-wider text-forest/40 font-bold px-3">Restrito</span>
-                <button
-                  onClick={() => { setIsMenuOpen(false); onNavigate("dashboard"); }}
-                  className="w-full py-3 px-4 bg-sun hover:bg-sun-dark text-forest font-bold text-xs uppercase tracking-wider rounded-full transition-colors shadow-sm text-center"
-                >
-                  Área do Profissional
-                </button>
-              </div>
-            </motion.div>
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <a 
+                    href="#projeto" 
+                    onClick={(e) => {
+                      setIsMenuOpen(false);
+                      const el = document.getElementById("projeto");
+                      if (el) {
+                        e.preventDefault();
+                        el.scrollIntoView({ behavior: "smooth" });
+                      }
+                    }}
+                    className="font-sans text-sm text-forest/85 hover:text-forest hover:bg-warm/60 px-3.5 py-2.5 rounded-xl transition-all font-medium flex items-center justify-between"
+                  >
+                    <span>O Projeto</span>
+                  </a>
+                  <a 
+                    href="#jornada" 
+                    onClick={(e) => {
+                      setIsMenuOpen(false);
+                      const el = document.getElementById("jornada");
+                      if (el) {
+                        e.preventDefault();
+                        el.scrollIntoView({ behavior: "smooth" });
+                      }
+                    }}
+                    className="font-sans text-sm text-forest/85 hover:text-forest hover:bg-warm/60 px-3.5 py-2.5 rounded-xl transition-all font-semibold flex items-center justify-between"
+                  >
+                    <span>Como Funciona</span>
+                  </a>
+                  <button 
+                    onClick={() => { setIsMenuOpen(false); onNavigate("blog"); }}
+                    className="text-left font-sans text-sm text-forest/85 hover:text-forest hover:bg-warm/60 px-3.5 py-2.5 rounded-xl transition-all font-semibold flex items-center justify-between cursor-pointer"
+                  >
+                    <span>Blog & Artigos Abertos</span>
+                    <span className="text-[10px] bg-sun text-forest font-bold px-2 py-0.5 rounded-full">Novo</span>
+                  </button>
+                  <button 
+                    onClick={() => { setIsMenuOpen(false); onNavigate("empresa"); }}
+                    className="text-left font-sans text-sm text-forest/85 hover:text-forest hover:bg-warm/60 px-3.5 py-2.5 rounded-xl transition-all font-medium cursor-pointer"
+                  >
+                    Seja uma Empresa Parceira
+                  </button>
+                  <button 
+                    onClick={() => { setIsMenuOpen(false); onNavigate("profissional"); }}
+                    className="text-left font-sans text-sm text-forest/85 hover:text-forest hover:bg-warm/60 px-3.5 py-2.5 rounded-xl transition-all font-medium cursor-pointer"
+                  >
+                    Seja Profissional Associado
+                  </button>
+                  {doacoesAtivas && (
+                    <button 
+                      onClick={() => { setIsMenuOpen(false); onNavigate("doacao"); }}
+                      className="text-left font-sans text-sm text-forest/85 hover:text-forest hover:bg-warm/60 px-3.5 py-2.5 rounded-xl transition-all font-medium cursor-pointer"
+                    >
+                      Doe uma sessão de terapia
+                    </button>
+                  )}
+                </div>
+                
+                <div className="border-t border-soft pt-3.5 flex flex-col gap-2.5">
+                  <span className="text-[10px] uppercase tracking-wider text-forest/40 font-bold px-3">Acesso Restrito</span>
+                  <button
+                    onClick={() => { setIsMenuOpen(false); onNavigate("dashboard"); }}
+                    className="w-full py-3 px-4 bg-sun hover:bg-sun-dark text-forest font-bold text-xs uppercase tracking-wider rounded-full transition-colors shadow-sm text-center cursor-pointer"
+                  >
+                    Área do Profissional
+                  </button>
+                </div>
+              </motion.div>
+            </>
           )}
         </div>
       </nav>
@@ -534,7 +700,7 @@ function LandingPage({
       <main className="flex-1 flex flex-col items-center">
         <section
           id="projeto"
-          className="flex flex-col lg:flex-row gap-6 md:gap-8 px-6 md:px-12 py-8 lg:py-12 max-w-[1440px] w-full justify-between items-center"
+          className="flex flex-col lg:flex-row gap-6 md:gap-8 px-6 md:px-12 py-8 lg:py-12 max-w-[1440px] w-full justify-between items-center scroll-mt-24"
         >
           <div className="max-w-xl flex flex-col items-center lg:items-start text-center lg:text-left mb-6 lg:mb-0">
             <div className="mb-4 px-3 py-1 bg-sun-light text-forest text-[10px] font-bold uppercase tracking-[0.2em] w-fit rounded">
@@ -564,7 +730,7 @@ function LandingPage({
         </section>
 
         {/* Jornada Section integrata aqui */}
-        <section className="w-full px-6 md:px-12 flex flex-col items-center">
+        <section id="jornada" className="w-full px-6 md:px-12 flex flex-col items-center scroll-mt-24">
           <motion.div 
             initial={{ opacity: 0, y: 30 }}
             whileInView={{ opacity: 1, y: 0 }}
@@ -801,6 +967,88 @@ function LandingPage({
         
         {/* FAQ Section */}
         <FAQSection />
+
+        {/* Blog & Conhecimento Aberto Section */}
+        <section className="w-full bg-[#FAF8F2] py-16 px-6 md:px-12 flex flex-col items-center border-t border-soft">
+          <div className="w-full max-w-[1200px] flex flex-col md:flex-row items-center justify-between gap-8 bg-white p-8 md:p-12 rounded-[40px] border border-soft shadow-xs">
+            <div className="flex flex-col gap-4 max-w-xl w-full">
+              <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                <span className="inline-flex items-center px-3 py-1 bg-sun/40 text-forest text-xs font-bold uppercase tracking-wider rounded-full whitespace-nowrap">
+                  Espaço Aberto de Leitura
+                </span>
+                <span className="text-xs text-forest/50 font-medium">Acesso Livre</span>
+              </div>
+              <h2 className="font-serif text-2xl sm:text-3xl md:text-4xl text-forest font-semibold leading-tight tracking-tight">
+                Blog AcolheMente: Artigos & Conhecimento
+              </h2>
+              <p className="text-forest/75 text-sm md:text-base leading-relaxed">
+                Textos, reflexões e orientações elaborados por psicólogos e especialistas sobre saúde mental, relações, manejo da ansiedade e bem-estar no trabalho.
+              </p>
+              <div className="flex items-center gap-3 pt-2 flex-wrap">
+                <button
+                  onClick={() => onNavigate("blog")}
+                  className="px-6 py-3 bg-forest hover:bg-forest/90 text-white rounded-full font-bold text-xs uppercase tracking-wider shadow-md hover:shadow-lg transition-all flex items-center gap-2 cursor-pointer"
+                >
+                  Explorar Todos os Artigos
+                  <ArrowRight className="w-4 h-4 text-sun" />
+                </button>
+              </div>
+            </div>
+
+            <div className="w-full md:w-auto flex flex-col gap-3 min-w-[280px] max-w-md">
+              {artigosPublicados.length > 0 ? (
+                artigosPublicados.slice(0, 2).map((artigo) => (
+                  <div
+                    key={artigo.id}
+                    onClick={() => {
+                      if (onSelectArtigo && artigo.id) {
+                        onSelectArtigo(artigo.id);
+                      } else {
+                        try {
+                          const url = new URL(window.location.href);
+                          url.searchParams.set("artigo", artigo.id || "");
+                          window.history.pushState({}, "", url.toString());
+                        } catch (e) {}
+                        onNavigate("blog");
+                      }
+                    }}
+                    className="bg-warm/40 hover:bg-warm/70 p-4 rounded-2xl border border-soft transition-all cursor-pointer flex flex-col gap-1.5 group"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[10px] font-bold uppercase text-sun-dark">
+                        {artigo.categoria || "Saúde Mental"}
+                      </span>
+                      <span className="text-[10px] text-forest/50">
+                        {artigo.tempoLeitura || "3 min de leitura"}
+                      </span>
+                    </div>
+                    <h4 className="font-serif font-bold text-sm text-forest group-hover:text-forest/80 transition-colors line-clamp-2">
+                      {artigo.titulo}
+                    </h4>
+                    <span className="text-[11px] text-forest/60">
+                      {artigo.autorNome}
+                      {artigo.autorProfissao ? ` • ${artigo.autorProfissao}` : ""}
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <div className="bg-warm/30 p-6 rounded-2xl border border-soft text-center flex flex-col items-center justify-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center shadow-xs text-forest/60">
+                    <BookOpen className="w-5 h-5" />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <h4 className="font-serif font-bold text-sm text-forest">
+                      Novos artigos em breve
+                    </h4>
+                    <p className="text-xs text-forest/60 max-w-[240px] leading-relaxed">
+                      Nossos psicólogos e terapeutas parceiros estão elaborando artigos sobre saúde mental e autocuidado.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
 
         {/* Professionals Showcase Carousel */}
         <ProfissionaisCarousel />

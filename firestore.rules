@@ -102,6 +102,13 @@ service cloud.firestore {
       allow create, read, update, delete: if true;
     }
 
+    // Artigos do Blog (Abertos para leitura pública, submissão por profissionais e gestão por master/triagem)
+    match /artigos_blog/{artigoId} {
+      allow read: if true;
+      allow create: if isSignedIn() && (isProfissional() || isMaster() || isTriagem());
+      allow update, delete: if isSignedIn() && (isMaster() || isTriagem() || (resource.data.autorUid == request.auth.uid));
+    }
+
     // Compliance / Ouvidoria
     match /compliance/{complianceId} {
       allow create, read, update, delete: if true;

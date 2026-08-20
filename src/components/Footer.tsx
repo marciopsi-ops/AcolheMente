@@ -66,11 +66,26 @@ export function Footer({ onNavigate }: { onNavigate?: (view: any) => void }) {
         <div className="flex flex-col gap-4 lg:pl-12" id="footer-col-nav">
           <h4 className="font-serif text-lg font-medium text-forest mb-2">Navegação</h4>
           <ul className="flex flex-col gap-3 text-sm text-forest/70 font-medium tracking-wide">
-            <li><button onClick={() => handleNav('landing')} className="hover:text-forest transition-colors">Início</button></li>
-            <li><button onClick={() => handleNav('empresa')} className="hover:text-forest transition-colors">Saúde Corporativa</button></li>
-            <li><button onClick={() => handleNav('profissional')} className="hover:text-forest transition-colors">Para Profissionais</button></li>
-            <li><button onClick={() => handleNav('doacao')} className="hover:text-forest transition-colors">Doe uma Sessão</button></li>
-            <li><button onClick={() => handleNav('dashboard')} className="hover:text-forest transition-colors">Área do Profissional</button></li>
+            <li><button onClick={() => handleNav('landing')} className="hover:text-forest transition-colors cursor-pointer">Início</button></li>
+            <li>
+              <button
+                onClick={() => {
+                  handleNav('landing');
+                  setTimeout(() => {
+                    const el = document.getElementById("jornada");
+                    if (el) el.scrollIntoView({ behavior: "smooth" });
+                  }, 100);
+                }}
+                className="hover:text-forest transition-colors cursor-pointer"
+              >
+                Como Funciona
+              </button>
+            </li>
+            <li><button onClick={() => handleNav('blog')} className="hover:text-forest transition-colors cursor-pointer font-semibold text-forest/90">Blog & Artigos</button></li>
+            <li><button onClick={() => handleNav('empresa')} className="hover:text-forest transition-colors cursor-pointer">Saúde Corporativa</button></li>
+            <li><button onClick={() => handleNav('profissional')} className="hover:text-forest transition-colors cursor-pointer">Para Profissionais</button></li>
+            <li><button onClick={() => handleNav('doacao')} className="hover:text-forest transition-colors cursor-pointer">Doe uma Sessão</button></li>
+            <li><button onClick={() => handleNav('dashboard')} className="hover:text-forest transition-colors cursor-pointer">Área do Profissional</button></li>
           </ul>
         </div>
 
@@ -186,13 +201,15 @@ export function Footer({ onNavigate }: { onNavigate?: (view: any) => void }) {
       <div className="w-full max-w-[1440px] border-t border-soft pt-8 mb-8 flex flex-col md:flex-row justify-between gap-6 text-xs text-forest/60" id="footer-regulatory-info">
         <div className="max-w-3xl leading-relaxed flex flex-col gap-3">
           <p>
-            <strong>Nota Ética:</strong> Os profissionais cadastrados atuam em conformidade com o Código de Ética Profissional do Psicólogo (Resolução CFP nº 010/2005) e demais resoluções do Conselho Federal de Psicologia (CFP). Todos os psicólogos e terapeutas possuem registro ativo em seus respectivos Conselhos Regionais de Psicologia (CRP) ou associação de classe.
+            <strong className="block text-forest/80 font-bold mb-1">Nota Ética:</strong>
+            Os profissionais cadastrados atuam em conformidade com o Código de Ética Profissional do Psicólogo (Resolução CFP nº 010/2005) e demais resoluções do Conselho Federal de Psicologia (CFP). Todos os psicólogos e terapeutas possuem registro ativo em seus respectivos Conselhos Regionais de Psicologia (CRP) ou associação de classe.
           </p>
           <p>
-            <strong>Privacidade e LGPD:</strong> Em conformidade com a Lei Geral de Proteção de Dados (Lei nº 13.709/2018), garantimos o sigilo absoluto, a segurança e a transparência no tratamento de dados sensíveis de pacientes e profissionais. O compartilhamento das informações ocorre estritamente para os fins terapêuticos e administrativos informados.
+            <strong className="block text-forest/80 font-bold mb-1">Privacidade e LGPD:</strong>
+            Em conformidade com a Lei Geral de Proteção de Dados (Lei nº 13.709/2018), garantimos o sigilo absoluto, a segurança e a transparência no tratamento de dados sensíveis de pacientes e profissionais. O compartilhamento das informações ocorre estritamente para os fins terapêuticos e administrativos informados.
           </p>
         </div>
-        <div className="flex md:flex-col items-center md:items-end justify-center gap-1.5 md:gap-1">
+        <div className="flex flex-col items-start md:items-end justify-center gap-1">
           <span className="font-semibold text-forest/80 uppercase tracking-[0.25em] text-[10px]">Uma iniciativa de</span>
           <span className="font-bold text-forest tracking-wide">ELO Soluções Humanas</span>
         </div>

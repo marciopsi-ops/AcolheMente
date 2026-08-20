@@ -5,8 +5,10 @@ import { StripeCheckoutModal } from "../components/StripeCheckoutModal";
 import { AnimatePresence, motion } from "motion/react";
 import { EventosServicosView } from "./EventosServicosView";
 import { ComplianceModal } from "../components/ComplianceModal";
+import { BackupManager } from "../components/BackupManager";
 import {
   ArrowLeft,
+  ArrowUpDown,
   User,
   LayoutGrid,
   LogOut,
@@ -73,6 +75,8 @@ import {
   Lock,
   TrendingUp,
   PlusCircle,
+  BookOpen,
+  Database,
 } from "lucide-react";
 import { auth, db, handleFirestoreError, OperationType } from "../lib/firebase";
 import { triggerEmail, sendTrialExpiredCheckoutEmail } from "../lib/emailService";
@@ -107,6 +111,10 @@ import firebaseConfig from "../../firebase-applet-config.json";
 import logoImage from "../assets/images/logo_acolhe.jpeg";
 import { parseCSV, parseAndValidateData, ParseResult, ImportedProfissional } from "../lib/importParser";
 import { Breadcrumbs } from "../components/Breadcrumbs";
+import { GestaoEsteiraTarefas } from "../components/GestaoEsteiraTarefas";
+import { ProfissionalEsteiraTarefas } from "../components/ProfissionalEsteiraTarefas";
+import { GestaoBlogView } from "../components/GestaoBlogView";
+import { ProfissionalBlogView } from "../components/ProfissionalBlogView";
 
 const safeLocalStorage = {
   getItem: (key: string): string | null => {
@@ -228,6 +236,41 @@ export function formatDateTimeSafely(val: any, fallback = "-"): string {
   } catch (e) {
     return fallback;
   }
+}
+
+export function getTimestampMillis(val: any): number {
+  if (!val) return 0;
+  if (typeof val?.toMillis === "function") {
+    try {
+      const ms = val.toMillis();
+      if (typeof ms === "number" && !isNaN(ms)) return ms;
+    } catch (e) {}
+  }
+  if (typeof val?.toDate === "function") {
+    try {
+      const d = val.toDate();
+      if (d instanceof Date && !isNaN(d.getTime())) return d.getTime();
+    } catch (e) {}
+  }
+  if (val instanceof Date) {
+    return isNaN(val.getTime()) ? 0 : val.getTime();
+  }
+  if (typeof val === "object") {
+    if (typeof val.seconds === "number" && !isNaN(val.seconds)) {
+      return val.seconds * 1000 + (typeof val.nanoseconds === "number" ? Math.floor(val.nanoseconds / 1000000) : 0);
+    }
+    if (typeof val._seconds === "number" && !isNaN(val._seconds)) {
+      return val._seconds * 1000;
+    }
+  }
+  if (typeof val === "number" && !isNaN(val)) {
+    return val > 1e11 ? val : val * 1000;
+  }
+  if (typeof val === "string") {
+    const d = parseDateSafely(val);
+    return isNaN(d.getTime()) ? 0 : d.getTime();
+  }
+  return 0;
 }
 
 type Role = "master" | "triagem" | "profissional";
@@ -716,7 +759,8 @@ export function DashboardView({
       | "profile"
       | "empresa"
       | "doacao"
-      | "profissional",
+      | "profissional"
+      | "blog",
   ) => void;
 }) {
   const [user, setUser] = useState<FirebaseUser | null>(null);
@@ -741,7 +785,10 @@ export function DashboardView({
       acessos: "Níveis de Acesso",
       eventos: "Gestão de Eventos",
       servicos: "Parcerias de Serviços",
+      gestaoArtigos: "Artigos & Blog",
+      artigosProfissional: "Meus Artigos",
       compliance: "Compliance Legal & Termos",
+      backup: "Backup & Restauração",
       pacientes: "Meus Pacientes Clínicos",
       tarefasProfissional: "Minhas Pendências",
       perfil: "Configurações de Perfil",
@@ -772,13 +819,13 @@ export function DashboardView({
     | "servicos"
     | "meusServicos"
     | "compliance"
+    | "backup"
+    | "gestaoArtigos"
+    | "artigosProfissional"
   >("kanban");
 
   // Search
   const [searchQuery, setSearchQuery] = useState("");
-  const [triagemViewMode, setTriagemViewMode] = useState<"kanban" | "table">(
-    "table",
-  );
   const [msgFilterTab, setMsgFilterTab] = useState<
     "all" | "assignment" | "alert" | "system" | "contract"
   >("all");
@@ -1183,6 +1230,84 @@ export function DashboardView({
     }, 4000);
   };
 
+  // Gestao Treated Items State (Persisted in safeLocalStorage)
+  const [treatedItemIds, setTreatedItemIds] = useState<Set<string>>(() => {
+    try {
+      const saved = safeLocalStorage.getItem("acolhe_treated_gestao_tasks");
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    } catch (e) {
+      return new Set();
+    }
+  });
+
+  const handleToggleTreatedItem = (id: string) => {
+    setTreatedItemIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      safeLocalStorage.setItem(
+        "acolhe_treated_gestao_tasks",
+        JSON.stringify(Array.from(next)),
+      );
+      return next;
+    });
+  };
+
+  const handleMarkAllEntityTreated = (itemIds: string[]) => {
+    setTreatedItemIds((prev) => {
+      const next = new Set(prev);
+      itemIds.forEach((id) => next.add(id));
+      safeLocalStorage.setItem(
+        "acolhe_treated_gestao_tasks",
+        JSON.stringify(Array.from(next)),
+      );
+      return next;
+    });
+    showToast("Demandas marcadas como tratadas com sucesso!", "success");
+  };
+
+  // Profissional Treated Items State (Persisted in safeLocalStorage)
+  const [profTreatedItemIds, setProfTreatedItemIds] = useState<Set<string>>(() => {
+    try {
+      const saved = safeLocalStorage.getItem("acolhe_treated_prof_tasks");
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    } catch (e) {
+      return new Set();
+    }
+  });
+
+  const handleToggleProfTreatedItem = (id: string) => {
+    setProfTreatedItemIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      safeLocalStorage.setItem(
+        "acolhe_treated_prof_tasks",
+        JSON.stringify(Array.from(next)),
+      );
+      return next;
+    });
+  };
+
+  const handleMarkAllProfEntityTreated = (itemIds: string[]) => {
+    setProfTreatedItemIds((prev) => {
+      const next = new Set(prev);
+      itemIds.forEach((id) => next.add(id));
+      safeLocalStorage.setItem(
+        "acolhe_treated_prof_tasks",
+        JSON.stringify(Array.from(next)),
+      );
+      return next;
+    });
+    showToast("Demandas marcadas como tratadas com sucesso!", "success");
+  };
+
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
   const [globalConfigs, setGlobalConfigs] = useState({
     telefoneSuporte: "",
@@ -1212,6 +1337,11 @@ export function DashboardView({
 
   // Psychologist State
   const [meusPacientes, setMeusPacientes] = useState<Acolhimento[]>([]);
+  const [patientSortOrder, setPatientSortOrder] = useState<"fifo" | "recent">("fifo");
+
+  // Kanban Drag & Drop Visual State
+  const [draggingCardId, setDraggingCardId] = useState<string | null>(null);
+  const [dragOverColId, setDragOverColId] = useState<string | null>(null);
 
   // Email Testing State
   const [testEmailRecipient, setTestEmailRecipient] = useState("");
@@ -1227,6 +1357,25 @@ export function DashboardView({
 
   // Services registered by the currently selected professional (Admin / Triagem view)
   const [selectedProfServicos, setSelectedProfServicos] = useState<any[]>([]);
+
+  const [pendingArtigosCount, setPendingArtigosCount] = useState(0);
+
+  useEffect(() => {
+    const q = query(
+      collection(db, "artigos_blog"),
+      where("status", "==", "pendente")
+    );
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        setPendingArtigosCount(snapshot.docs.length);
+      },
+      (err) => {
+        console.error("Erro ao carregar contagem de artigos pendentes:", err);
+      }
+    );
+    return () => unsubscribe();
+  }, []);
 
   useEffect(() => {
     if (!selectedProfissional) {
@@ -1542,7 +1691,7 @@ export function DashboardView({
               );
               cards.sort(
                 (a, b) =>
-                  b.createdAt?.toMillis?.() - a.createdAt?.toMillis?.() || 0,
+                  getTimestampMillis(a.createdAt) - getTimestampMillis(b.createdAt) || 0,
               );
               setAcolhimentos(cards);
             },
@@ -1574,7 +1723,7 @@ export function DashboardView({
               });
               list.sort(
                 (a, b) =>
-                  b.createdAt?.toMillis?.() - a.createdAt?.toMillis?.() || 0,
+                  getTimestampMillis(a.createdAt) - getTimestampMillis(b.createdAt) || 0,
               );
               setMeusPacientes(list);
             },
@@ -2087,8 +2236,8 @@ export function DashboardView({
           ? currentPaciente.notificacao + "\n\n"
           : "";
         if (value) {
-          // Atribuído a alguém
-          updates.status = "Em Atendimento";
+          // Atribuído a alguém - permanece na Fila de Espera até aceite ou início de atendimento
+          updates.status = currentPaciente?.status === "Em Atendimento" || currentPaciente?.status === "Alta" ? currentPaciente.status : "Aprovado";
           updates.atribuicaoStatus = "Pendente";
           const profObj =
             allUsers.find((u) => u.uid === value || u.id === value) ||
@@ -2791,24 +2940,42 @@ export function DashboardView({
 
   const lowerQuery = searchQuery.toLowerCase();
 
-  const filteredAcolhimentos = acolhimentos.filter(
-    (a) =>
-      a.ativo !== false &&
-      (!searchQuery ||
-        a.nomeCivil?.toLowerCase().includes(lowerQuery) ||
-        a.nome?.toLowerCase().includes(lowerQuery) ||
-        a.nomeDesejado?.toLowerCase().includes(lowerQuery) ||
-        a.motivo?.toLowerCase().includes(lowerQuery) ||
-        a.telefone?.toLowerCase().includes(lowerQuery)),
-  );
+  const filteredAcolhimentos = acolhimentos
+    .filter(
+      (a) =>
+        a.ativo !== false &&
+        (!searchQuery ||
+          a.nomeCivil?.toLowerCase().includes(lowerQuery) ||
+          a.nome?.toLowerCase().includes(lowerQuery) ||
+          a.nomeDesejado?.toLowerCase().includes(lowerQuery) ||
+          a.motivo?.toLowerCase().includes(lowerQuery) ||
+          a.telefone?.toLowerCase().includes(lowerQuery)),
+    )
+    .sort((a, b) => {
+      const timeA = getTimestampMillis(a.createdAt);
+      const timeB = getTimestampMillis(b.createdAt);
+      if (patientSortOrder === "recent") {
+        return timeB - timeA;
+      }
+      return timeA - timeB;
+    });
 
-  const filteredMeusPacientes = meusPacientes.filter(
-    (p) =>
-      !searchQuery ||
-      p.nomeCivil?.toLowerCase().includes(lowerQuery) ||
-      p.nomeDesejado?.toLowerCase().includes(lowerQuery) ||
-      p.telefone?.toLowerCase().includes(lowerQuery),
-  );
+  const filteredMeusPacientes = meusPacientes
+    .filter(
+      (p) =>
+        !searchQuery ||
+        p.nomeCivil?.toLowerCase().includes(lowerQuery) ||
+        p.nomeDesejado?.toLowerCase().includes(lowerQuery) ||
+        p.telefone?.toLowerCase().includes(lowerQuery),
+    )
+    .sort((a, b) => {
+      const timeA = getTimestampMillis(a.createdAt);
+      const timeB = getTimestampMillis(b.createdAt);
+      if (patientSortOrder === "recent") {
+        return timeB - timeA;
+      }
+      return timeA - timeB;
+    });
 
   const getProfissionalNotifications = () => {
     if (!profile || currentRole !== "profissional") return [];
@@ -3101,9 +3268,50 @@ export function DashboardView({
   };
 
   const profNotifications = getProfissionalNotifications();
-  const pendingProfNotificationsCount = profNotifications.filter(
-    (n) => n.type === "assignment" || n.type === "contract" || n.isProfileAlert,
-  ).length;
+
+  const calculateUntreatedProfCount = () => {
+    let count = 0;
+    meusPacientes.forEach((p) => {
+      const isPending = !p.atribuicaoStatus || p.atribuicaoStatus === "Pendente";
+      if (isPending && !profTreatedItemIds.has(`prof-assignment-${p.id}`)) count++;
+      if (!p.contratoAssinado && !profTreatedItemIds.has(`prof-contract-${p.id}`)) count++;
+      if (
+        (p.statusInativacao === "Solicitado" || p.statusInativacao === "Em Análise") &&
+        !profTreatedItemIds.has(`prof-inactivation-${p.id}`)
+      ) {
+        count++;
+      }
+      if (p.notificacao && p.notificacao.trim()) {
+        const blocks = p.notificacao.split(/\n+/).filter(Boolean);
+        blocks.forEach((_b, idx) => {
+          if (!profTreatedItemIds.has(`prof-notif-${p.id}-${idx}`)) count++;
+        });
+      }
+    });
+
+    if (profile) {
+      if (!profile.photoUrl && !profTreatedItemIds.has("prof-profile-photo")) count++;
+      if ((!profile.telefone || !profile.telefone.trim()) && !profTreatedItemIds.has("prof-profile-phone")) count++;
+      if ((!profile.crp || !profile.crp.trim()) && !profTreatedItemIds.has("prof-profile-crp")) count++;
+      if ((!profile.cpf || !profile.cpf.trim()) && !profTreatedItemIds.has("prof-profile-summary")) count++;
+    }
+
+    return count;
+  };
+
+  const pendingProfNotificationsCount = calculateUntreatedProfCount();
+
+  const handleProfAcceptPaciente = async (paciente: Acolhimento) => {
+    const notifAnterior = paciente.notificacao ? paciente.notificacao + "\n\n" : "";
+    const nowStr = new Date().toLocaleString("pt-BR");
+    const authName = profile?.name || "Parceiro";
+    const updates = {
+      atribuicaoStatus: "Aceito",
+      notificacao: `${notifAnterior}[${nowStr}] Encaminhamento ACEITO pelo profissional ${authName} via esteira de alertas e pendências.`,
+    };
+    await updateDoc(doc(db, "acolhimentos", paciente.id), updates);
+    showToast(`Encaminhamento de ${paciente.nomeDesejado || paciente.nomeCivil || paciente.nome || "paciente"} aceito com sucesso!`, "success");
+  };
 
   const filteredDoacoes = doacoes.filter(
     (d) =>
@@ -3180,10 +3388,20 @@ export function DashboardView({
     const canNotify =
       "Notification" in window && Notification.permission === "granted";
 
-    const safeNotify = (title: string, options: NotificationOptions) => {
+    const safeNotify = (
+      title: string,
+      options: NotificationOptions,
+      onClick?: () => void,
+    ) => {
       if (!canNotify) return;
       try {
-        new window.Notification(title, options);
+        const notif = new window.Notification(title, options);
+        if (onClick) {
+          notif.onclick = () => {
+            window.focus();
+            onClick();
+          };
+        }
       } catch (e) {
         console.warn("Native Notification error:", e);
         try {
@@ -3203,45 +3421,99 @@ export function DashboardView({
       acolhimentos.length > prev.acolhimentos &&
       isMasterOrTriagem
     ) {
-      safeNotify("Novo Acolhimento", {
-        body: "Um novo paciente solicitou acolhimento na plataforma.",
-      });
+      const latestAcol = acolhimentos[acolhimentos.length - 1];
+      const pName = latestAcol?.nomeDesejado || latestAcol?.nomeCivil || latestAcol?.nome || "Novo Paciente";
+      safeNotify(
+        "Novo Acolhimento na Triagem",
+        {
+          body: `${pName} solicitou acolhimento na plataforma (${latestAcol?.viaAcesso || "Particular"}). Clique para abrir a esteira de tarefas.`,
+          tag: "acolhimento-novo",
+        },
+        () => {
+          setActiveTab("tarefas");
+          if (latestAcol) {
+            setSelectedCard(latestAcol);
+          }
+        }
+      );
     }
     if (
       prev.solicitacoes !== -1 &&
       solicitacoes.length > prev.solicitacoes &&
       isMasterOrTriagem
     ) {
-      safeNotify("Apoio Solidário", {
-        body: "Uma nova pessoa solicitou apoio solidário.",
-      });
+      const latestSol = solicitacoes[solicitacoes.length - 1];
+      safeNotify(
+        "Apoio Solidário Solicitado",
+        {
+          body: `${latestSol?.nome || "Uma pessoa"} solicitou apoio solidário. Clique para visualizar.`,
+          tag: "apoio-novo",
+        },
+        () => {
+          setActiveTab("tarefas");
+        }
+      );
     }
     if (
       prev.profissionaisLeads !== -1 &&
       profissionaisLeads.length > prev.profissionaisLeads &&
       isMaster
     ) {
-      safeNotify("Novo Profissional Parceiro", {
-        body: "Um profissional se cadastrou na plataforma.",
-      });
+      const latestProf = profissionaisLeads[profissionaisLeads.length - 1];
+      safeNotify(
+        "Novo Profissional Parceiro",
+        {
+          body: `${latestProf?.nome || "Um profissional"} se cadastrou e aguarda validação. Clique para abrir ficha.`,
+          tag: "prof-lead-novo",
+        },
+        () => {
+          setActiveTab("tarefas");
+          if (latestProf) {
+            setSelectedProfissional(latestProf);
+          }
+        }
+      );
     }
     if (
       prev.empresasLeads !== -1 &&
       empresasLeads.length > prev.empresasLeads &&
       isMaster
     ) {
-      safeNotify("Nova Empresa Parceira", {
-        body: "Uma nova empresa se cadastrou na plataforma.",
-      });
+      const latestEmp = empresasLeads[empresasLeads.length - 1];
+      safeNotify(
+        "Nova Empresa Parceira",
+        {
+          body: `A empresa ${latestEmp?.nomeEmpresa || latestEmp?.nome || "Nova Empresa"} cadastrou interesse. Clique para conferir.`,
+          tag: "emp-lead-novo",
+        },
+        () => {
+          setActiveTab("tarefas");
+          if (latestEmp) {
+            setSelectedEmpresa(latestEmp);
+          }
+        }
+      );
     }
     if (
       prev.meusPacientes !== -1 &&
       meusPacientes.length > prev.meusPacientes &&
       isProf
     ) {
-      safeNotify("Novo Paciente Atribuído", {
-        body: "Você recebeu um novo encaminhamento de paciente para atendimento.",
-      });
+      const latestPatient = meusPacientes[meusPacientes.length - 1];
+      const patName = latestPatient?.nomeDesejado || latestPatient?.nomeCivil || latestPatient?.nome || "Novo Paciente";
+      safeNotify(
+        "Novo Paciente Atribuído",
+        {
+          body: `Você recebeu o encaminhamento de ${patName} para atendimento. Clique para revisar ficha.`,
+          tag: "prof-paciente-novo",
+        },
+        () => {
+          setActiveTab("tarefasProfissional");
+          if (latestPatient) {
+            setSelectedCard(latestPatient);
+          }
+        }
+      );
     }
 
     prevDataLengths.current = {
@@ -3640,10 +3912,15 @@ export function DashboardView({
   };
 
   const pendingTriagemCount = acolhimentos.filter(
-    (a) => a.notificacao && (!a.status || a.status === "Aguardando Avaliação"),
+    (a) =>
+      a.notificacao &&
+      a.status !== "Em Atendimento" &&
+      a.status !== "Alta",
   ).length;
   const pendingPacientesCount = acolhimentos.filter(
-    (a) => a.notificacao && a.status && a.status !== "Aguardando Avaliação",
+    (a) =>
+      a.notificacao &&
+      (a.status === "Em Atendimento" || a.status === "Alta"),
   ).length;
   const pendingApoioSolidarioCount = solicitacoes.filter(
     (s) => s.status === "Aguardando" || s.notificacao,
@@ -3723,6 +4000,97 @@ export function DashboardView({
     return max > 0 && used >= max;
   });
 
+  const calculateUntreatedGestaoCount = () => {
+    let count = 0;
+    // 1. Pacientes / Acolhimentos
+    acolhimentos.forEach((a) => {
+      if (!a.status || a.status === "Aguardando Avaliação") {
+        if (!treatedItemIds.has(`acolhimento-novo-${a.id}`)) count++;
+      }
+      if (a.propostaStatus === "Paciente solicita revisão da proposta") {
+        if (!treatedItemIds.has(`acolhimento-revisao-proposta-${a.id}`)) count++;
+      }
+      if (
+        (a.propostaStatus === "Proposta aceita pelo paciente" || a.status === "Aprovado") &&
+        !a.profissionalId
+      ) {
+        if (!treatedItemIds.has(`acolhimento-sem-profissional-${a.id}`)) count++;
+      }
+      if (
+        a.atribuicaoStatus === "Devolvido" ||
+        a.atribuicaoStatus === "Rejeitado" ||
+        a.atribuicaoStatus === "Recusado"
+      ) {
+        if (!treatedItemIds.has(`acolhimento-devolvido-${a.id}`)) count++;
+      }
+      if (
+        a.statusInativacao === "Solicitado" ||
+        a.statusInativacao === "Em Análise"
+      ) {
+        if (!treatedItemIds.has(`acolhimento-inativacao-${a.id}`)) count++;
+      }
+      if (a.notificacao && a.notificacao.trim()) {
+        const blocks = a.notificacao.split(/\n+/).filter(Boolean);
+        blocks.forEach((_b: string, idx: number) => {
+          if (!treatedItemIds.has(`acolhimento-notif-${a.id}-${idx}`)) count++;
+        });
+      }
+    });
+
+    // 2. Profissionais
+    profissionaisLeads.forEach((p) => {
+      if (!p.status || p.status === "Aguardando Entrevista" || p.status === "Pendente") {
+        if (!treatedItemIds.has(`prof-lead-novo-${p.id}`)) count++;
+      }
+      if (p.notificacao && p.notificacao.trim()) {
+        if (!treatedItemIds.has(`prof-lead-notif-${p.id}`)) count++;
+      }
+    });
+
+    profissionaisAtivos.forEach((p) => {
+      const isAtCap = profissionaisAtCapacity.some(
+        (c) => c.id === p.id || c.uid === p.uid || c.id === p.uid,
+      );
+      if (isAtCap && !treatedItemIds.has(`prof-cap-max-${p.id || p.uid}`)) count++;
+      if (p.notificacao && p.notificacao.trim()) {
+        if (!treatedItemIds.has(`prof-ativo-notif-${p.id || p.uid}`)) count++;
+      }
+    });
+
+    // 3. Empresas, Apoio e Compliance (Master)
+    if (currentRole === "master") {
+      empresasLeads.forEach((e) => {
+        if (
+          !e.status ||
+          e.status === "Aguardando" ||
+          e.status === "Pendente" ||
+          e.status === "Aguardando Contato"
+        ) {
+          if (!treatedItemIds.has(`emp-lead-novo-${e.id}`)) count++;
+        }
+        if (e.notificacao && e.notificacao.trim()) {
+          if (!treatedItemIds.has(`emp-lead-notif-${e.id}`)) count++;
+        }
+      });
+
+      solicitacoes.forEach((s) => {
+        if (!s.status || s.status === "Aguardando" || s.status === "Pendente") {
+          if (!treatedItemIds.has(`apoio-sol-${s.id}`)) count++;
+        }
+      });
+
+      complianceMessages.forEach((m) => {
+        if (!m.status || m.status === "Pendente") {
+          if (!treatedItemIds.has(`compliance-msg-${m.id}`)) count++;
+        }
+      });
+    }
+
+    return count;
+  };
+
+  const untreatedGestaoCount = calculateUntreatedGestaoCount();
+
   const getProfStats = (uid: string) => {
     const profAcolhimentos = acolhimentos.filter(
       (a) =>
@@ -3750,7 +4118,7 @@ export function DashboardView({
   };
 
   const notificarTarget =
-    activeTab === "kanban" && selectedCard
+    (activeTab === "kanban" || activeTab === "pacientesAcolhidos") && selectedCard
       ? selectedCard
       : activeTab === "profissionais" && selectedProfissional
         ? selectedProfissional
@@ -3760,7 +4128,7 @@ export function DashboardView({
 
   const processNotificationTemplate = (msg: string, target: any) => {
     let processedMsg = msg;
-    if (target && (activeTab === "kanban" || target.viaAcesso)) {
+    if (target && (activeTab === "kanban" || activeTab === "pacientesAcolhidos" || target.viaAcesso)) {
       // If target is a patient
       const prof = profissionaisAtivos.find(
         (p) => p.uid === target.profissionalId,
@@ -3958,6 +4326,17 @@ export function DashboardView({
 
         {(currentRole === "master" || currentRole === "triagem") && (
           <div className="flex order-last w-full lg:w-auto lg:order-none items-center gap-1 sm:gap-2 bg-warm rounded-full p-1 border border-soft overflow-x-auto no-scrollbar">
+            <button
+              onClick={() => setActiveTab("tarefas")}
+              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "tarefas" ? "bg-white shadow-sm text-forest" : "text-forest/70 hover:text-forest"}`}
+            >
+              Alertas e Pendências
+              {untreatedGestaoCount > 0 && (
+                <span className="bg-red-500 text-white text-[10px] min-w-[18px] h-4.5 px-1 flex items-center justify-center rounded-full font-bold">
+                  {untreatedGestaoCount}
+                </span>
+              )}
+            </button>
             {currentRole === "master" && (
               <button
                 onClick={() => setActiveTab("estatisticas")}
@@ -4059,6 +4438,13 @@ export function DashboardView({
                 >
                   Acessos
                 </button>
+                <button
+                  onClick={() => setActiveTab("backup")}
+                  className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "backup" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
+                >
+                  <Database className="w-3.5 h-3.5 text-forest/70" />
+                  <span>Backup & Dados</span>
+                </button>
               </>
             )}
             <button
@@ -4072,6 +4458,18 @@ export function DashboardView({
               className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "servicos" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
             >
               Serviços da Rede
+            </button>
+            <button
+              onClick={() => setActiveTab("gestaoArtigos")}
+              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "gestaoArtigos" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
+            >
+              <BookOpen className="w-3.5 h-3.5 text-forest/70" />
+              <span>Artigos & Blog</span>
+              {pendingArtigosCount > 0 && (
+                <span className="bg-amber-500 text-white text-[10px] w-4.5 h-4.5 flex items-center justify-center rounded-full font-bold ml-1">
+                  {pendingArtigosCount}
+                </span>
+              )}
             </button>
           </div>
         )}
@@ -4101,6 +4499,13 @@ export function DashboardView({
               className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "servicos" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
             >
               Serviços da Rede
+            </button>
+            <button
+              onClick={() => setActiveTab("artigosProfissional")}
+              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "artigosProfissional" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
+            >
+              <BookOpen className="w-3.5 h-3.5 text-forest/70" />
+              <span>Meus Artigos</span>
             </button>
             <button
               onClick={() => setActiveTab("tarefasProfissional")}
@@ -4176,6 +4581,14 @@ export function DashboardView({
               ))}
             </div>
           )}
+          <button
+            onClick={() => onNavigate("blog")}
+            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-warm hover:bg-warm/80 text-forest text-xs font-semibold rounded-full border border-soft transition-all cursor-pointer"
+            title="Acessar Blog & Artigos"
+          >
+            <BookOpen className="w-3.5 h-3.5 text-forest/70" />
+            <span>Blog Público</span>
+          </button>
           <div className="flex items-center gap-2 text-xs sm:text-sm text-forest font-medium bg-warm px-3 py-1.5 rounded-full border border-soft max-w-[120px] sm:max-w-none truncate">
             <User className="w-4 h-4 text-forest/70 shrink-0" />
             <span className="truncate">{profile.name}</span>
@@ -4369,31 +4782,62 @@ export function DashboardView({
                 <div className="text-4xl font-bold text-forest">
                   {acolhimentos.length}
                 </div>
-                <div className="flex gap-4 border-t border-soft pt-4 mt-2">
-                  <div className="flex flex-col">
-                    <span className="text-[10px] uppercase font-bold text-emerald-600 tracking-wider">
-                      Ativos/Acolhidos
-                    </span>
-                    <span className="text-lg font-semibold text-forest">
-                      {
-                        acolhimentos.filter((a) => a.status === "Acolhido")
-                          .length
-                      }
-                    </span>
-                  </div>
-                  <div className="w-px bg-soft h-full"></div>
-                  <div className="flex flex-col">
-                    <span className="text-[10px] uppercase font-bold text-forest/50 tracking-wider">
-                      Outros/Inativos
-                    </span>
-                    <span className="text-lg font-semibold text-forest">
-                      {
-                        acolhimentos.filter((a) => a.status !== "Acolhido")
-                          .length
-                      }
-                    </span>
-                  </div>
-                </div>
+                {(() => {
+                  const isPacienteAtivo = (a: any) => {
+                    if (a.ativo === false) return false;
+                    if (a.status === "Alta") return false;
+                    const flow = getPatientFlowDetails(a);
+                    return (
+                      (a.status === "Em Atendimento" && a.atribuicaoStatus === "Aceito") ||
+                      a.atribuicaoStatus === "Aceito" ||
+                      (flow.activeStep === 6 && a.status === "Em Atendimento")
+                    );
+                  };
+
+                  const isPacienteTriagem = (a: any) => {
+                    if (a.ativo === false) return false;
+                    if (a.status === "Alta") return false;
+                    if (isPacienteAtivo(a)) return false;
+                    const flow = getPatientFlowDetails(a);
+                    return flow.activeStep < 6 && a.status !== "Em Atendimento";
+                  };
+
+                  const ativosCount = acolhimentos.filter(isPacienteAtivo).length;
+                  const triagemCount = acolhimentos.filter(isPacienteTriagem).length;
+                  const outrosInativosCount = Math.max(
+                    0,
+                    acolhimentos.length - ativosCount - triagemCount,
+                  );
+
+                  return (
+                    <div className="grid grid-cols-3 gap-2 border-t border-soft pt-4 mt-2">
+                      <div className="flex flex-col">
+                        <span className="text-[9px] uppercase font-bold text-emerald-600 tracking-wider">
+                          Ativos
+                        </span>
+                        <span className="text-lg font-semibold text-forest">
+                          {ativosCount}
+                        </span>
+                      </div>
+                      <div className="flex flex-col border-l border-soft pl-2">
+                        <span className="text-[9px] uppercase font-bold text-amber-600 tracking-wider">
+                          Triagem
+                        </span>
+                        <span className="text-lg font-semibold text-forest">
+                          {triagemCount}
+                        </span>
+                      </div>
+                      <div className="flex flex-col border-l border-soft pl-2">
+                        <span className="text-[9px] uppercase font-bold text-forest/50 tracking-wider">
+                          Outros/Inativos
+                        </span>
+                        <span className="text-lg font-semibold text-forest">
+                          {outrosInativosCount}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Profissionais Stats */}
@@ -5600,9 +6044,9 @@ export function DashboardView({
                   Nenhum paciente encaminhado no momento.
                 </div>
               ) : (
-                filteredMeusPacientes.map((p) => {
+                filteredMeusPacientes.map((p, pIdx) => {
                   const entryDate = p.createdAt
-                    ? formatDateSafely(p.createdAt, "Desconhecida")
+                    ? formatDateTimeSafely(p.createdAt, "Desconhecida")
                     : "Desconhecida";
 
                   return (
@@ -5613,9 +6057,14 @@ export function DashboardView({
                       {/* Header Row */}
                       <div>
                         <div className="flex items-center justify-between gap-2 mb-2">
-                          <span className="text-[10px] font-bold text-forest/70 bg-warm px-2.5 py-1 rounded-full uppercase tracking-wider">
-                            Paciente
-                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-bold text-forest/70 bg-warm px-2 py-0.5 rounded-full border border-soft">
+                              #{pIdx + 1}
+                            </span>
+                            <span className="text-[10px] font-bold text-forest/70 bg-warm px-2.5 py-1 rounded-full uppercase tracking-wider">
+                              Paciente
+                            </span>
+                          </div>
                           <span
                             className={`px-2 py-1 rounded font-bold text-[9px] uppercase tracking-wide leading-none ${
                               p.atribuicaoStatus === "Aceito"
@@ -5745,396 +6194,32 @@ export function DashboardView({
         </div>
       ) : currentRole === "profissional" &&
         activeTab === "tarefasProfissional" ? (
-        <div className="flex-1 overflow-auto p-6 md:p-8 flex flex-col gap-8 slide-up">
-          <div className="max-w-7xl w-full mx-auto flex flex-col gap-8">
-            {/* Header section with totalizers */}
-            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-              <div>
-                <h2 className="font-serif text-3xl font-medium text-forest">
-                  Alertas e Pendências
-                </h2>
-                <p className="text-xs text-forest/70 mt-1">
-                  Planilha de monitoramento de vínculos, pendências de
-                  contratos, pareceres de triagem e comunicações da coordenação.
-                </p>
-              </div>
-
-              {/* Minimal metrics cells */}
-              <div className="flex items-center gap-3 bg-white p-3 rounded-2xl border border-soft shadow-xs shrink-0 text-xs">
-                <div className="px-3 py-1 bg-amber-50 text-amber-700 border border-amber-100 rounded-lg text-center">
-                  <span className="block font-bold text-sm">
-                    {
-                      profNotifications.filter((n) => n.type === "assignment")
-                        .length
-                    }
-                  </span>
-                  <span>Novos Recebidos</span>
-                </div>
-                <div className="h-8 w-px bg-soft"></div>
-                <div className="px-3 py-1 bg-red-50 text-red-700 border border-red-100 rounded-lg text-center">
-                  <span className="block font-bold text-sm">
-                    {profNotifications.filter((n) => n.type === "alert").length}
-                  </span>
-                  <span>Alertas Clínicos</span>
-                </div>
-                <div className="h-8 w-px bg-soft"></div>
-                <div className="px-3 py-1 bg-blue-50 text-blue-700 border border-blue-100 rounded-lg text-center">
-                  <span className="block font-bold text-sm">
-                    {
-                      profNotifications.filter((n) => n.type === "contract")
-                        .length
-                    }
-                  </span>
-                  <span>Faltam Contratos</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Main Spreadsheet Control Engine */}
-            <div className="bg-white border border-soft rounded-[2rem] shadow-sm overflow-hidden flex flex-col">
-              {/* Filter controls table bar */}
-              <div className="p-5 border-b border-soft bg-warm/30 flex flex-col lg:flex-row items-center justify-between gap-4">
-                {/* Spreadsheet category pills */}
-                <div className="flex flex-wrap items-center gap-1.5 self-start lg:self-center">
-                  {[
-                    { id: "all", name: "Todos" },
-                    { id: "assignment", name: "Novos Pacientes" },
-                    { id: "alert", name: "Alertas da Gestão" },
-                    { id: "system", name: "Movimentações" },
-                    { id: "contract", name: "Contratos" },
-                  ].map((tab) => {
-                    const count =
-                      tab.id === "all"
-                        ? profNotifications.length
-                        : profNotifications.filter((n) => n.type === tab.id)
-                            .length;
-                    const isActive = msgFilterTab === tab.id;
-                    return (
-                      <button
-                        key={tab.id}
-                        onClick={() => setMsgFilterTab(tab.id as any)}
-                        className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all flex items-center gap-1.5 ${
-                          isActive
-                            ? "bg-forest text-white shadow-xs"
-                            : "bg-white text-forest/70 hover:text-forest hover:bg-white/80 border border-soft"
-                        }`}
-                      >
-                        {tab.name}
-                        {count > 0 && (
-                          <span
-                            className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
-                              isActive
-                                ? "bg-red-500 text-white shadow-xs"
-                                : "bg-red-100 text-red-700 border border-red-200"
-                            }`}
-                          >
-                            {count}
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Search query inside the table */}
-                <div className="w-full lg:w-72 relative self-end lg:self-center">
-                  <Search className="w-4 h-4 text-forest/40 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    value={msgSearchQuery}
-                    onChange={(e) => setMsgSearchQuery(e.target.value)}
-                    placeholder="Filtrar planilha..."
-                    className="w-full pl-9 pr-4 py-2 bg-white text-xs text-forest placeholder:text-forest/30 border border-soft rounded-full focus:outline-none focus:border-forest/40 focus:ring-1 focus:ring-forest/40 transition-colors"
-                  />
-                  {msgSearchQuery && (
-                    <button
-                      onClick={() => setMsgSearchQuery("")}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 hover:bg-soft rounded-full"
-                    >
-                      <X className="w-3.5 h-3.5 text-forest/40" />
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* Spreadsheet Body */}
-              <div className="overflow-x-auto">
-                {(() => {
-                  const filteredMsgList = profNotifications.filter((notif) => {
-                    if (msgFilterTab !== "all" && notif.type !== msgFilterTab)
-                      return false;
-                    if (msgSearchQuery.trim()) {
-                      const q = msgSearchQuery.toLowerCase();
-                      return (
-                        notif.patientName.toLowerCase().includes(q) ||
-                        notif.title.toLowerCase().includes(q) ||
-                        notif.desc.toLowerCase().includes(q) ||
-                        notif.date.toLowerCase().includes(q)
-                      );
-                    }
-                    return true;
-                  });
-
-                  if (filteredMsgList.length === 0) {
-                    return (
-                      <div className="text-center py-20 px-4 bg-white text-forest/60">
-                        <span className="block text-3xl mb-3">📂</span>
-                        <p className="text-sm font-semibold">
-                          Nenhum registro encontrado na planilha
-                        </p>
-                        <p className="text-xs text-forest/40 mt-1">
-                          Tente ajustar a busca ou os filtros de categoria.
-                        </p>
-                      </div>
-                    );
-                  }
-
-                  return (
-                    <table className="w-full text-left border-collapse min-w-[800px]">
-                      <thead>
-                        <tr className="bg-warm/10 border-b border-soft text-[10px] md:text-xs uppercase tracking-wider text-forest/50 font-semibold select-none">
-                          <th className="py-4 px-6 font-medium">
-                            Data / Registro
-                          </th>
-                          <th className="py-4 px-6 font-medium">
-                            Paciente Relacionado
-                          </th>
-                          <th className="py-4 px-6 font-medium">Categoria</th>
-                          <th className="py-4 px-6 font-medium">
-                            Histórico / Movimentação
-                          </th>
-                          <th className="py-4 px-6 font-medium text-right">
-                            Ações
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-soft text-xs">
-                        {filteredMsgList.map((notif) => {
-                          const isPendingAssignment =
-                            notif.type === "assignment" &&
-                            (!notif.patientObj.atribuicaoStatus ||
-                              notif.patientObj.atribuicaoStatus === "Pendente");
-
-                          return (
-                            <tr
-                              key={notif.id}
-                              className={`hover:bg-[#FDFBF7] transition-colors ${
-                                isPendingAssignment ? "bg-amber-50/20" : ""
-                              }`}
-                            >
-                              {/* Date column */}
-                              <td className="py-4 px-6 whitespace-nowrap text-[11px] text-forest/65 font-mono">
-                                {notif.date}
-                              </td>
-
-                              {/* Patient column with avatar badge */}
-                              <td className="py-4 px-6 whitespace-nowrap">
-                                <div className="flex items-center gap-2.5">
-                                  {notif.isProfileAlert ? (
-                                    <div className="w-7 h-7 rounded-full bg-forest text-white flex items-center justify-center font-bold text-[10px] uppercase shrink-0 shadow-xs">
-                                      <User className="w-3.5 h-3.5" />
-                                    </div>
-                                  ) : (
-                                    <div className="w-7 h-7 rounded-full bg-forest/5 border border-forest/10 flex items-center justify-center text-forest font-bold text-[10px] uppercase shrink-0">
-                                      {notif.patientName.slice(0, 2)}
-                                    </div>
-                                  )}
-                                  <button
-                                    onClick={() => {
-                                      if (notif.isProfileAlert) {
-                                        setActiveTab("perfil");
-                                      } else {
-                                        setSelectedCard(notif.patientObj);
-                                        setActiveTab("pacientes");
-                                      }
-                                    }}
-                                    className="font-semibold text-forest hover:underline text-left truncate max-w-[180px]"
-                                    title={
-                                      notif.isProfileAlert
-                                        ? "Completar no meu perfil"
-                                        : "Ver ficha clínica completa"
-                                    }
-                                  >
-                                    {notif.patientName}
-                                  </button>
-                                </div>
-                              </td>
-
-                              {/* Category column */}
-                              <td className="py-4 px-6 whitespace-nowrap">
-                                <span
-                                  className={`text-[9px] uppercase font-bold px-2.5 py-1 rounded-full ${
-                                    notif.isProfileAlert
-                                      ? "bg-red-50 text-red-700 border border-red-200 animate-pulse"
-                                      : notif.type === "assignment"
-                                        ? "bg-amber-50 text-amber-700 border border-amber-200"
-                                        : notif.type === "alert"
-                                          ? "bg-red-50 text-red-700 border border-red-200"
-                                          : notif.type === "contract"
-                                            ? "bg-blue-50 text-blue-700 border border-blue-200"
-                                            : "bg-slate-50 text-slate-700 border border-slate-200"
-                                  }`}
-                                >
-                                  {notif.isProfileAlert
-                                    ? "Ficha Cadastral"
-                                    : notif.type === "assignment"
-                                      ? "Novo Paciente"
-                                      : notif.type === "alert"
-                                        ? "Alerta da Coordenação"
-                                        : notif.type === "contract"
-                                          ? "Pendência de Contrato"
-                                          : "Movimentação"}
-                                </span>
-                              </td>
-
-                              {/* Description movement text */}
-                              <td className="py-4 px-6 max-w-sm">
-                                <p className="text-forest/80 line-clamp-2 hover:line-clamp-none transition-all duration-300 select-all font-sans leading-relaxed text-xs">
-                                  {notif.desc}
-                                </p>
-                              </td>
-
-                              {/* Spreadsheet actions */}
-                              <td className="py-4 px-6 whitespace-nowrap text-right">
-                                {notif.isProfileAlert ? (
-                                  <button
-                                    onClick={() => {
-                                      setActiveTab("perfil");
-                                    }}
-                                    className="px-3 py-1 bg-sun-dark hover:bg-sun-dark/85 text-forest text-[11px] font-bold rounded-lg border border-soft transition-colors inline-flex items-center gap-1 shadow-xs"
-                                  >
-                                    <User className="w-3.5 h-3.5 text-forest/70" />{" "}
-                                    Completar Cadastro
-                                  </button>
-                                ) : isPendingAssignment ? (
-                                  <div className="flex items-center justify-end gap-1.5">
-                                    <button
-                                      onClick={async () => {
-                                        const notifAnterior = notif.patientObj
-                                          .notificacao
-                                          ? notif.patientObj.notificacao +
-                                            "\n\n"
-                                          : "";
-                                        const nowStr =
-                                          new Date().toLocaleString("pt-BR");
-                                        const authName =
-                                          profile?.name || "Parceiro";
-                                        const updates = {
-                                          atribuicaoStatus: "Aceito",
-                                          notificacao: `${notifAnterior}[${nowStr}] Encaminhamento ACEITO pelo profissional ${authName} via planilha de tarefas.`,
-                                        };
-                                        await updateDoc(
-                                          doc(
-                                            db,
-                                            "acolhimentos",
-                                            notif.patientObj.id,
-                                          ),
-                                          updates,
-                                        );
-                                      }}
-                                      className="px-2.5 py-1 bg-[#34A853] hover:bg-[#2e9449] text-white rounded-lg text-[10px] font-bold uppercase transition-colors flex items-center gap-1 shadow-xs"
-                                      title="Aceitar paciente imediatamente"
-                                    >
-                                      <CheckCircle2 className="w-3.5 h-3.5" />{" "}
-                                      Aceitar
-                                    </button>
-                                    <button
-                                      onClick={() => {
-                                        setDevolverModalConfig({
-                                          isOpen: true,
-                                          pacienteId: notif.patientObj.id,
-                                          pacienteName: notif.patientName,
-                                        });
-                                      }}
-                                      className="px-2.5 py-1 bg-white hover:bg-red-50 text-red-600 border border-red-200 rounded-lg text-[10px] font-bold uppercase transition-colors"
-                                      title="Devolver atendimento para triagem"
-                                    >
-                                      Devolver
-                                    </button>
-                                  </div>
-                                ) : (
-                                  <button
-                                    onClick={() => {
-                                      setSelectedCard(notif.patientObj);
-                                      setActiveTab("pacientes");
-                                    }}
-                                    className="px-3 py-1 bg-warm hover:bg-soft text-forest text-[11px] font-bold rounded-lg border border-soft transition-colors inline-flex items-center gap-1"
-                                  >
-                                    <FileText className="w-3.5 h-3.5 text-forest/70" />{" "}
-                                    Ver Paciente
-                                  </button>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  );
-                })()}
-              </div>
-            </div>
-
-            {/* Suporte Técnico CTA */}
-            <div className="bg-forest text-white rounded-[2rem] p-8 flex flex-col md:flex-row items-center gap-6 justify-between shadow-md">
-              <div className="flex items-center gap-4">
-                <div className="w-16 h-16 rounded-full bg-white/10 flex items-center justify-center shrink-0">
-                  <HelpCircle className="w-8 h-8 text-white" />
-                </div>
-                <div>
-                  <h3 className="font-serif text-2xl font-medium mb-1">
-                    Central de Suporte
-                  </h3>
-                  <p className="text-sm text-white/80 max-w-sm">
-                    Precisa de ajuda com a plataforma, dúvidas contratuais ou
-                    suporte clínico? Estamos aqui para apoiar você.
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-3 w-full md:w-auto mt-4 md:mt-0">
-                {globalConfigs?.telefoneSuporte ? (
-                  <button
-                    onClick={() => {
-                      const msg =
-                        globalConfigs?.fraseSuporte ||
-                        "Olá! Gostaria de acionar o Suporte Técnico da plataforma.";
-                      window.open(
-                        `https://wa.me/${globalConfigs.telefoneSuporte.replace(/\D/g, "")}?text=${encodeURIComponent(msg)}`,
-                        "_blank",
-                      );
-                    }}
-                    className="w-full md:w-auto px-4 md:px-6 py-2.5 md:py-3 bg-[#34A853] hover:bg-[#2e9449] text-white rounded-full text-[10px] md:text-xs font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-2 shadow-sm"
-                  >
-                    <Phone className="w-4 h-4 shrink-0" /> Falar com Suporte
-                  </button>
-                ) : (
-                  <button
-                    disabled
-                    className="w-full md:w-auto px-4 md:px-6 py-2.5 md:py-3 bg-white/10 text-white/50 rounded-full text-[10px] md:text-xs font-bold uppercase tracking-wider cursor-not-allowed"
-                  >
-                    WhatsApp Indisponível
-                  </button>
-                )}
-                {globalConfigs?.emailSuporte && (
-                  <a
-                    href={`mailto:${globalConfigs.emailSuporte}`}
-                    className="w-full md:w-auto px-3 py-2.5 bg-white/10 hover:bg-white/20 text-white rounded-full text-[10px] md:text-xs font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-2 text-center"
-                  >
-                    <Mail className="w-4 h-4 shrink-0" />{" "}
-                    {globalConfigs.emailSuporte}
-                  </a>
-                )}
-                <button
-                  onClick={() => setShowComplianceModal(true)}
-                  className="w-full md:w-auto px-3 py-2.5 bg-white text-forest hover:bg-sun-dark rounded-full text-[10px] md:text-xs font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-2 text-center shadow-sm"
-                >
-                  <ShieldAlert className="w-4 h-4 shrink-0" /> Ouvidoria
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <ProfissionalEsteiraTarefas
+          meusPacientes={meusPacientes}
+          profile={profile!}
+          treatedItemIds={profTreatedItemIds}
+          onToggleTreatedItem={handleToggleProfTreatedItem}
+          onMarkAllEntityTreated={handleMarkAllProfEntityTreated}
+          onSelectPaciente={(paciente) => {
+            setSelectedCard(paciente as any);
+            setActiveTab("pacientes");
+          }}
+          onNavigateToTab={(tab) => setActiveTab(tab)}
+          onAcceptPaciente={handleProfAcceptPaciente}
+          onDevolverPaciente={(paciente) => {
+            setDevolverModalConfig({
+              isOpen: true,
+              pacienteId: paciente.id,
+              pacienteName:
+                paciente.nomeDesejado ||
+                paciente.nomeCivil ||
+                paciente.nome ||
+                "Paciente",
+            });
+          }}
+          formatDateSafely={formatDateSafely}
+          formatDateTimeSafely={formatDateTimeSafely}
+        />
       ) : currentRole === "profissional" && activeTab === "perfil" ? (
         <div className="flex-1 overflow-auto p-6 md:p-8 flex flex-col gap-8 slide-up font-sans">
           <div className="max-w-4xl w-full mx-auto">
@@ -7137,6 +7222,36 @@ export function DashboardView({
             })()}
           </div>
         </div>
+      ) : isMasterOrTriagem && activeTab === "tarefas" ? (
+        <GestaoEsteiraTarefas
+          acolhimentos={acolhimentos}
+          profissionaisLeads={profissionaisLeads}
+          profissionaisAtivos={profissionaisAtivos}
+          empresasLeads={empresasLeads}
+          solicitacoes={solicitacoes}
+          doacoes={doacoes}
+          complianceMessages={complianceMessages}
+          profissionaisAtCapacity={profissionaisAtCapacity}
+          currentRole={currentRole}
+          treatedItemIds={treatedItemIds}
+          onToggleTreatedItem={handleToggleTreatedItem}
+          onMarkAllEntityTreated={handleMarkAllEntityTreated}
+          onSelectAcolhimento={(card) => {
+            setSelectedCard(card);
+            setIsEditingCard(false);
+          }}
+          onSelectProfissional={(prof) => {
+            setSelectedProfissional(prof);
+          }}
+          onSelectEmpresa={(emp) => {
+            setSelectedEmpresa(emp);
+          }}
+          onNavigateToTab={(tab) => {
+            setActiveTab(tab);
+          }}
+          formatDateSafely={formatDateSafely}
+          formatDateTimeSafely={formatDateTimeSafely}
+        />
       ) : activeTab === "kanban" || activeTab === "pacientesAcolhidos" ? (
         <div className="flex-1 flex flex-col h-full bg-warm overflow-hidden">
           <div className="flex flex-wrap justify-between items-center gap-3 px-6 pt-6 pb-2 shrink-0">
@@ -7156,383 +7271,365 @@ export function DashboardView({
                 </button>
               )}
             </div>
-            <div className="bg-white border border-soft rounded-full p-1 flex">
-              <button
-                onClick={() => setTriagemViewMode("kanban")}
-                className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-all ${
-                  triagemViewMode === "kanban"
-                    ? "bg-sun text-forest shadow-sm"
-                    : "text-forest/60 hover:text-forest"
-                }`}
-              >
-                Kanban
-              </button>
-              <button
-                onClick={() => setTriagemViewMode("table")}
-                className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-all ${
-                  triagemViewMode === "table"
-                    ? "bg-sun text-forest shadow-sm"
-                    : "text-forest/60 hover:text-forest"
-                }`}
-              >
-                Planilha
-              </button>
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Seletor de Ordenação por Entrada / Cadastro */}
+              <div className="bg-white border border-soft rounded-full p-1 flex items-center shadow-xs">
+                <button
+                  type="button"
+                  onClick={() => setPatientSortOrder("fifo")}
+                  className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                    patientSortOrder === "fifo"
+                      ? "bg-sun text-forest shadow-xs font-bold"
+                      : "text-forest/60 hover:text-forest"
+                  }`}
+                  title="Organizar por Ordem de Cadastro / Entrada na Plataforma (Mais antigos no topo)"
+                >
+                  <Clock className="w-3.5 h-3.5 text-amber-700" />
+                  <span>Ordem de Entrada (FIFO)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPatientSortOrder("recent")}
+                  className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                    patientSortOrder === "recent"
+                      ? "bg-sun text-forest shadow-xs font-bold"
+                      : "text-forest/60 hover:text-forest"
+                  }`}
+                  title="Organizar por Mais Recentes primeiro"
+                >
+                  <ArrowUpDown className="w-3.5 h-3.5" />
+                  <span>Mais Recentes</span>
+                </button>
+              </div>
             </div>
           </div>
 
-          {triagemViewMode === "table" ? (
-            <div className="flex-1 overflow-auto p-6">
-              <div className="bg-white border border-soft rounded-2xl shadow-sm overflow-hidden">
-                <table className="w-full text-left text-sm">
-                  <thead className="bg-warm/50 border-b border-soft">
-                    <tr>
-                      <th className="px-4 py-3 font-semibold text-forest/70">
-                        Nome
-                      </th>
-                      <th className="px-4 py-3 font-semibold text-forest/70">
-                        Contato
-                      </th>
-                      <th className="px-4 py-3 font-semibold text-forest/70">
-                        Idade
-                      </th>
-                      <th className="px-4 py-3 font-semibold text-forest/70">
-                        Status
-                      </th>
-                      <th className="px-4 py-3 font-semibold text-forest/70">
-                        Data de Cadastro
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {[...filteredAcolhimentos]
-                      .filter((a) => {
-                        const flow = getPatientFlowDetails(a);
-                        if (activeTab === "kanban") {
+          {/* Kanban Board */}
+          <div className="flex-1 overflow-x-auto overflow-y-hidden p-6">
+            <div className="flex h-full gap-6 shrink-0 w-max items-start">
+              {visibleColumns.map((col) => {
+                  const colCards = filteredAcolhimentos
+                    .filter((a) => {
+                      const cardStatus = a.status || "Aguardando Avaliação";
+                      const flow = getPatientFlowDetails(a);
+                      if (activeTab === "kanban") {
+                        return (
+                          cardStatus === col.id &&
+                          cardStatus !== "Em Atendimento" &&
+                          cardStatus !== "Alta" &&
+                          flow.activeStep < 6
+                        );
+                      } else {
+                        if (col.id === "Em Atendimento") {
                           return (
-                            flow.activeStep < 6 &&
-                            visibleColumns.some(
-                              (c) =>
-                                c.id === (a.status || "Aguardando Avaliação"),
-                            )
-                          );
-                        } else {
-                          return (
-                            flow.activeStep === 6 ||
-                            a.status === "Em Atendimento" ||
-                            a.status === "Alta"
+                            cardStatus === "Em Atendimento" ||
+                            (flow.activeStep === 6 && cardStatus !== "Alta")
                           );
                         }
-                      })
-                      .sort((a, b) => {
-                        const nomeA =
-                          a.nomeDesejado || a.nomeCivil || a.nome || "";
-                        const nomeB =
-                          b.nomeDesejado || b.nomeCivil || b.nome || "";
-                        return nomeA.localeCompare(nomeB);
-                      })
-                      .map((p) => {
-                        const rawStatus = p.status || "Aguardando Avaliação";
-                        const displayStatus = p.atribuicaoStatus
-                          ? `${rawStatus} (${p.atribuicaoStatus})`
-                          : rawStatus;
-                        return (
-                          <tr
-                            key={p.id}
-                            onClick={() => setSelectedCard(p)}
-                            className="border-b border-soft last:border-0 hover:bg-warm/30 cursor-pointer transition-colors"
-                          >
-                            <td className="px-4 py-3">
-                              <div className="font-semibold text-forest capitalize">
-                                {(
-                                  p.nomeDesejado ||
-                                  p.nomeCivil ||
-                                  p.nome
-                                )?.toLowerCase()}
-                              </div>
-                              {p.nomeDesejado && (
-                                <div className="text-[10px] text-forest/60 truncate max-w-[150px] capitalize">
-                                  Nome Civil:{" "}
-                                  {(p.nomeCivil || p.nome)?.toLowerCase()}
-                                </div>
-                              )}
-                            </td>
-                            <td className="px-4 py-3 text-forest/80">
-                              <div className="flex items-center gap-1.5 shrink-0">
-                                <Mail className="w-3.5 h-3.5 text-forest/40" />
-                                <span className="truncate max-w-[120px]">
-                                  {p.email}
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-1.5 shrink-0 mt-1">
-                                <Phone className="w-3.5 h-3.5 text-forest/40" />
-                                <span className="truncate max-w-[120px]">
-                                  {p.telefone}
-                                </span>
-                              </div>
-                            </td>
-                            <td className="px-4 py-3 text-forest/80">
-                              {p.idadeTratamento || "-"}
-                            </td>
-                            <td className="px-4 py-3">
-                              <span
-                                className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                                  rawStatus === "Aguardando Avaliação"
-                                    ? "bg-sun/30 text-sun-dark-dark"
-                                    : rawStatus === "Em Triagem"
-                                      ? "bg-blue-100 text-blue-800"
-                                      : rawStatus === "Em Atendimento"
-                                        ? "bg-green-100 text-green-800"
-                                        : rawStatus === "Alta"
-                                          ? "bg-forest/10 text-forest"
-                                          : rawStatus === "Aprovado"
-                                            ? "bg-purple-100 text-purple-800"
-                                            : "bg-gray-100 text-gray-800"
-                                }`}
-                              >
-                                {displayStatus}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3 text-forest/60">
-                              {formatDate(p.createdAt)}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          ) : (
-            <div className="flex-1 overflow-x-auto overflow-y-hidden p-6">
-              <div className="flex h-full gap-6 shrink-0 w-max items-start">
-                {visibleColumns.map((col) => {
-                  const colCards = filteredAcolhimentos.filter((a) => {
-                    const cardStatus = a.status || "Aguardando Avaliação";
-                    const flow = getPatientFlowDetails(a);
-                    if (activeTab === "kanban") {
-                      return cardStatus === col.id && flow.activeStep < 6;
-                    } else {
-                      if (col.id === "Em Atendimento") {
-                        return (
-                          cardStatus === "Em Atendimento" ||
-                          (flow.activeStep === 6 && cardStatus !== "Alta")
-                        );
+                        return cardStatus === col.id;
                       }
-                      return cardStatus === col.id;
-                    }
-                  });
+                    })
+                    .sort((a, b) => {
+                      const timeA = getTimestampMillis(a.createdAt);
+                      const timeB = getTimestampMillis(b.createdAt);
+                      if (patientSortOrder === "recent") {
+                        return timeB - timeA;
+                      }
+                      return timeA - timeB;
+                    });
+
+                  const isColOver = dragOverColId === col.id;
+
                   return (
-                    <div
+                    <motion.div
+                      layout
                       key={col.id}
-                      className="w-[320px] shrink-0 h-full flex flex-col bg-white/50 border border-soft rounded-2xl overflow-hidden"
-                      onDrop={(e) => handleDrop(e, col.id)}
-                      onDragOver={handleDragOver}
+                      className={`w-[320px] shrink-0 h-full flex flex-col rounded-2xl overflow-hidden transition-colors duration-200 ${
+                        isColOver
+                          ? "bg-sun/15 border-2 border-sun shadow-md"
+                          : "bg-white/50 border border-soft shadow-xs"
+                      }`}
+                      onDrop={(e) => {
+                        setDragOverColId(null);
+                        setDraggingCardId(null);
+                        handleDrop(e, col.id);
+                      }}
+                      onDragOver={(e) => {
+                        handleDragOver(e);
+                        if (dragOverColId !== col.id) {
+                          setDragOverColId(col.id);
+                        }
+                      }}
+                      onDragLeave={(e) => {
+                        if (e.currentTarget === e.target) {
+                          setDragOverColId((prev) => (prev === col.id ? null : prev));
+                        }
+                      }}
                     >
                       {/* Column Header */}
                       <div className="p-4 bg-white border-b border-soft flex justify-between items-center shadow-sm z-10">
-                        <h3 className="font-semibold text-forest text-sm">
-                          {col.label}
-                        </h3>
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-semibold text-forest text-sm">
+                            {col.label}
+                          </h3>
+                        </div>
                         <span className="bg-warm text-forest/70 px-2 py-0.5 rounded-full text-xs font-bold border border-soft">
                           {colCards.length}
                         </span>
                       </div>
 
-                      {/* Cards List */}
-                      <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
-                        {colCards.map((card) => (
-                          <div
-                            key={card.id}
-                            draggable
-                            onDragStart={(e) => handleDragStart(e, card.id)}
-                            onClick={() => setSelectedCard(card)}
-                            className="bg-white p-4 rounded-xl shadow-sm border border-soft shadow-sun-dark/5 hover:shadow-md cursor-grab active:cursor-grabbing hover:border-sun-dark/30 transition-all group"
-                          >
-                            <div className="flex justify-between items-start mb-2">
-                              <span
-                                className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${
-                                  card.viaAcesso === "Particular"
-                                    ? "bg-sun-dark-light text-forest/70-dark"
-                                    : "bg-[#E5EDF4] text-[#3B668D]"
-                                }`}
+                      {/* Cards List with Motion Layout */}
+                      <motion.div
+                        layout
+                        className="flex-1 overflow-y-auto p-4 flex flex-col gap-3 custom-scrollbar"
+                      >
+                        <AnimatePresence mode="popLayout" initial={false}>
+                          {colCards.map((card, cardIdx) => {
+                            const isCardDragging = draggingCardId === card.id;
+
+                            return (
+                              <motion.div
+                                layout
+                                layoutId={`kanban-card-${card.id}`}
+                                key={card.id}
+                                initial={{ opacity: 0, y: 15, scale: 0.96 }}
+                                animate={{
+                                  opacity: isCardDragging ? 0.45 : 1,
+                                  y: 0,
+                                  scale: isCardDragging ? 0.98 : 1,
+                                }}
+                                exit={{ opacity: 0, scale: 0.92, y: -10 }}
+                                transition={{
+                                  layout: {
+                                    type: "spring",
+                                    stiffness: 350,
+                                    damping: 28,
+                                    mass: 0.8,
+                                  },
+                                  opacity: { duration: 0.2 },
+                                  scale: { duration: 0.2 },
+                                }}
+                                draggable
+                                onDragStart={(e: any) => {
+                                  setDraggingCardId(card.id);
+                                  handleDragStart(e, card.id);
+                                }}
+                                onDragEnd={() => {
+                                  setDraggingCardId(null);
+                                  setDragOverColId(null);
+                                }}
+                                onClick={() => setSelectedCard(card)}
+                                className={`bg-white p-4 rounded-xl shadow-sm border select-none ${
+                                  isCardDragging
+                                    ? "border-sun ring-2 ring-sun/40 opacity-50 cursor-grabbing shadow-none"
+                                    : "border-soft shadow-sun-dark/5 hover:shadow-md cursor-grab active:cursor-grabbing hover:border-sun-dark/30"
+                                } transition-all group`}
                               >
-                                {card.viaAcesso}
-                              </span>
-                              <Grip className="w-4 h-4 text-forest/70/30 opacity-0 group-hover:opacity-100 transition-opacity" />
-                            </div>
-                            <h4 className="font-semibold text-forest text-sm line-clamp-1 break-words pb-1">
-                              {card.nomeDesejado ||
-                                card.nomeCivil ||
-                                card.nome ||
-                                "Paciente sem nome"}
-                            </h4>
-
-                            <div className="flex flex-wrap gap-1.5 text-[9px] text-forest/70 font-semibold uppercase tracking-wider mb-2">
-                              {card.idade && (
-                                <span className="bg-warm px-1.5 py-0.5 rounded border border-soft flex items-center gap-1">
-                                  <User className="w-3 h-3" />
-                                  {card.idade}
-                                </span>
-                              )}
-                              {card.identidadeGenero && (
-                                <span className="bg-warm px-1.5 py-0.5 rounded border border-soft flex items-center gap-1">
-                                  <Circle className="w-3 h-3" />
-                                  {card.identidadeGenero}
-                                </span>
-                              )}
-                            </div>
-
-                            <div className="text-[10px] text-forest/80 max-h-24 overflow-y-auto mt-2 bg-warm/30 p-2 rounded-lg border border-soft leading-tight custom-scrollbar">
-                              <span className="font-bold block mb-[2px] text-forest/60">
-                                Motivo/Queixa:
-                              </span>
-                              {card.motivo
-                                ? card.motivo.split(" - ")[0]
-                                : "Não informado"}
-                            </div>
-
-                            {(card.valorSessao || card.frequenciaSessoes) && (
-                              <div className="mt-2 text-[10px] text-emerald-700 bg-emerald-50 px-2 py-1.5 rounded border border-emerald-100/50 flex flex-col gap-1 w-full">
-                                {card.valorSessao && (
-                                  <div className="flex justify-between items-center font-bold">
-                                    <span>Valor Acertado:</span>{" "}
-                                    <span>R$ {card.valorSessao}</span>
-                                  </div>
-                                )}
-                                {card.frequenciaSessoes && (
-                                  <div className="flex justify-between items-center">
-                                    <span className="font-medium opacity-80">
-                                      Frequência:
-                                    </span>{" "}
-                                    <span className="font-semibold">
-                                      {card.frequenciaSessoes}
-                                    </span>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-
-                            <div className="flex items-center gap-1.5 mt-3 pt-2 text-[9px] uppercase tracking-wider text-forest/70 font-bold border-t border-soft/50">
-                              <Clock className="w-3 h-3" />
-                              <span>
-                                Acolhido em:{" "}
-                                {card.createdAt
-                                  ? formatDateSafely(card.createdAt, "Desconhecida")
-                                  : "Desconhecida"}
-                              </span>
-                            </div>
-
-                            {(() => {
-                              const status =
-                                card.status || "Aguardando Avaliação";
-                              if (
-                                status === "Alta" ||
-                                status === "Inativo" ||
-                                status === "Encaminhamento Externo" ||
-                                status === "Desistência"
-                              )
-                                return null;
-
-                              const flow = getPatientFlowDetails(card);
-
-                              return (
-                                <div className="mt-3 pt-3 border-t border-soft/50 flex flex-col gap-1.5 w-full">
-                                  {/* Selos de Status do Fluxo */}
-                                  <div className="flex flex-wrap gap-1 mb-1">
-                                    {flow.propostaAceita ? (
-                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                                        <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" /> Proposta Aceita
-                                      </span>
-                                    ) : flow.propostaRevisao ? (
-                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
-                                        <HelpCircle className="w-2.5 h-2.5 text-amber-600" /> Revisão Solicitada
-                                      </span>
-                                    ) : flow.isPropostaEnviada ? (
-                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-blue-100 text-blue-800 border border-blue-200">
-                                        <Send className="w-2.5 h-2.5 text-blue-600" /> Proposta Enviada
-                                      </span>
-                                    ) : null}
-
-                                    {flow.isAtribuicaoAceita ? (
-                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                                        <UserCheck className="w-2.5 h-2.5 text-emerald-600" /> Atribuição Aceita
-                                      </span>
-                                    ) : flow.isAtribuicaoDevolvida ? (
-                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
-                                        <RotateCcw className="w-2.5 h-2.5 text-rose-600" /> Atribuição Devolvida
-                                      </span>
-                                    ) : flow.isAtribuido ? (
-                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
-                                        <Clock className="w-2.5 h-2.5 text-amber-600" /> Aceite Pendente
-                                      </span>
-                                    ) : null}
-
-                                    {flow.isAtendimentoIniciado && (
-                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-600 text-white">
-                                        <Sparkles className="w-2.5 h-2.5 text-emerald-200" /> Atendimento Iniciado
-                                      </span>
-                                    )}
-                                  </div>
-
-                                  {/* Progress bar de 6 etapas */}
-                                  <div className="flex gap-1 h-1.5 w-full">
-                                    <div className={`flex-1 rounded-full transition-colors ${flow.propostaRevisao ? "bg-amber-500" : "bg-emerald-500"}`} />
-                                    <div className={`flex-1 rounded-full transition-colors ${flow.propostaRevisao ? "bg-amber-300" : (flow.isPropostaEnviada || flow.propostaAceita) ? "bg-emerald-500" : "bg-warm-dark/40"}`} />
-                                    <div className={`flex-1 rounded-full transition-colors ${flow.propostaAceita ? "bg-emerald-500" : flow.propostaRevisao ? "bg-amber-500" : flow.isPropostaEnviada ? "bg-blue-400" : "bg-warm-dark/40"}`} />
-                                    <div className={`flex-1 rounded-full transition-colors ${flow.isAtribuido ? "bg-emerald-500" : flow.propostaAceita ? "bg-amber-400" : "bg-warm-dark/40"}`} />
-                                    <div className={`flex-1 rounded-full transition-colors ${flow.isAtribuido && flow.isAtribuicaoDevolvida ? "bg-rose-500" : flow.isAtribuido && flow.isAtribuicaoAceita ? "bg-emerald-500" : flow.isAtribuido ? "bg-amber-400" : "bg-warm-dark/40"}`} />
-                                    <div className={`flex-1 rounded-full transition-colors ${flow.isAtribuido && flow.isAtribuicaoAceita && flow.isAtendimentoIniciado ? "bg-emerald-500" : "bg-warm-dark/40"}`} />
-                                  </div>
-                                </div>
-                              );
-                            })()}
-
-                            {card.profissionalId &&
-                              (() => {
-                                const assignedProf = allUsers.find(
-                                  (u) =>
-                                    u.uid === card.profissionalId ||
-                                    u.id === card.profissionalId,
-                                );
-                                const displayStatus =
-                                  card.atribuicaoStatus || "Pendente";
-                                return (
-                                  <div className="mt-2.5 pt-2 border-t border-soft/50 flex flex-wrap justify-between items-center text-[10px] gap-1 shrink-0">
-                                    <span className="text-forest/70 font-medium truncate max-w-[130px] flex items-center gap-1">
-                                      👤{" "}
-                                      {assignedProf
-                                        ? assignedProf.name
-                                        : "Indefinido"}
+                                <div className="flex justify-between items-start mb-2">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-[10px] font-bold text-forest/70 bg-warm px-1.5 py-0.5 rounded border border-soft">
+                                      #{cardIdx + 1}
                                     </span>
                                     <span
-                                      className={`px-1.5 py-0.5 rounded font-bold text-[9px] uppercase ${
-                                        displayStatus === "Aceito"
-                                          ? "bg-[#34A853]/10 text-[#34A853]"
-                                          : displayStatus === "Rejeitado"
-                                            ? "bg-red-500/10 text-red-500"
-                                            : "bg-amber-500/10 text-amber-500"
+                                      className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${
+                                        card.viaAcesso === "Particular"
+                                          ? "bg-sun-dark-light text-forest/70-dark"
+                                          : "bg-[#E5EDF4] text-[#3B668D]"
                                       }`}
                                     >
-                                      {displayStatus}
+                                      {card.viaAcesso}
                                     </span>
                                   </div>
-                                );
-                              })()}
-                          </div>
-                        ))}
+                                  <Grip className="w-4 h-4 text-forest/70/30 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                </div>
+                                <h4 className="font-semibold text-forest text-sm line-clamp-1 break-words pb-1">
+                                  {card.nomeDesejado ||
+                                    card.nomeCivil ||
+                                    card.nome ||
+                                    "Paciente sem nome"}
+                                </h4>
+
+                                <div className="flex flex-wrap gap-1.5 text-[9px] text-forest/70 font-semibold uppercase tracking-wider mb-2">
+                                  {card.idade && (
+                                    <span className="bg-warm px-1.5 py-0.5 rounded border border-soft flex items-center gap-1">
+                                      <User className="w-3 h-3" />
+                                      {card.idade}
+                                    </span>
+                                  )}
+                                  {card.identidadeGenero && (
+                                    <span className="bg-warm px-1.5 py-0.5 rounded border border-soft flex items-center gap-1">
+                                      <Circle className="w-3 h-3" />
+                                      {card.identidadeGenero}
+                                    </span>
+                                  )}
+                                </div>
+
+                                <div className="text-[10px] text-forest/80 max-h-24 overflow-y-auto mt-2 bg-warm/30 p-2 rounded-lg border border-soft leading-tight custom-scrollbar">
+                                  <span className="font-bold block mb-[2px] text-forest/60">
+                                    Motivo/Queixa:
+                                  </span>
+                                  {card.motivo
+                                    ? card.motivo.split(" - ")[0]
+                                    : "Não informado"}
+                                </div>
+
+                                {(card.valorSessao || card.frequenciaSessoes) && (
+                                  <div className="mt-2 text-[10px] text-emerald-700 bg-emerald-50 px-2 py-1.5 rounded border border-emerald-100/50 flex flex-col gap-1 w-full">
+                                    {card.valorSessao && (
+                                      <div className="flex justify-between items-center font-bold">
+                                        <span>Valor Acertado:</span>{" "}
+                                        <span>R$ {card.valorSessao}</span>
+                                      </div>
+                                    )}
+                                    {card.frequenciaSessoes && (
+                                      <div className="flex justify-between items-center">
+                                        <span className="font-medium opacity-80">
+                                          Frequência:
+                                        </span>{" "}
+                                        <span className="font-semibold">
+                                          {card.frequenciaSessoes}
+                                        </span>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+
+                                <div className="flex items-center gap-1.5 mt-3 pt-2 text-[9px] uppercase tracking-wider text-forest/70 font-bold border-t border-soft/50">
+                                  <Clock className="w-3 h-3 text-amber-600" />
+                                  <span>
+                                    Entrada:{" "}
+                                    {card.createdAt
+                                      ? formatDateTimeSafely(card.createdAt, "Desconhecida")
+                                      : "Desconhecida"}
+                                  </span>
+                                </div>
+
+                                {(() => {
+                                  const status =
+                                    card.status || "Aguardando Avaliação";
+                                  if (
+                                    status === "Alta" ||
+                                    status === "Inativo" ||
+                                    status === "Encaminhamento Externo" ||
+                                    status === "Desistência"
+                                  )
+                                    return null;
+
+                                  const flow = getPatientFlowDetails(card);
+
+                                  return (
+                                    <div className="mt-3 pt-3 border-t border-soft/50 flex flex-col gap-1.5 w-full">
+                                      {/* Selos de Status do Fluxo */}
+                                      <div className="flex flex-wrap gap-1 mb-1">
+                                        {flow.propostaAceita ? (
+                                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                            <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" /> Proposta Aceita
+                                          </span>
+                                        ) : flow.propostaRevisao ? (
+                                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
+                                            <HelpCircle className="w-2.5 h-2.5 text-amber-600" /> Revisão Solicitada
+                                          </span>
+                                        ) : flow.isPropostaEnviada ? (
+                                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-blue-100 text-blue-800 border border-blue-200">
+                                            <Send className="w-2.5 h-2.5 text-blue-600" /> Proposta Enviada
+                                          </span>
+                                        ) : null}
+
+                                        {flow.isAtribuicaoAceita ? (
+                                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                            <UserCheck className="w-2.5 h-2.5 text-emerald-600" /> Atribuição Aceita
+                                          </span>
+                                        ) : flow.isAtribuicaoDevolvida ? (
+                                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
+                                            <RotateCcw className="w-2.5 h-2.5 text-rose-600" /> Atribuição Devolvida
+                                          </span>
+                                        ) : flow.isAtribuido ? (
+                                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                                            <Clock className="w-2.5 h-2.5 text-amber-600" /> Aceite Pendente
+                                          </span>
+                                        ) : null}
+
+                                        {flow.isAtendimentoIniciado && (
+                                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-600 text-white">
+                                            <Sparkles className="w-2.5 h-2.5 text-emerald-200" /> Atendimento Iniciado
+                                          </span>
+                                        )}
+                                      </div>
+
+                                      {/* Progress bar de 6 etapas */}
+                                      <div className="flex gap-1 h-1.5 w-full">
+                                        <div className={`flex-1 rounded-full transition-colors ${flow.propostaRevisao ? "bg-amber-500" : "bg-emerald-500"}`} />
+                                        <div className={`flex-1 rounded-full transition-colors ${flow.propostaRevisao ? "bg-amber-300" : (flow.isPropostaEnviada || flow.propostaAceita) ? "bg-emerald-500" : "bg-warm-dark/40"}`} />
+                                        <div className={`flex-1 rounded-full transition-colors ${flow.propostaAceita ? "bg-emerald-500" : flow.propostaRevisao ? "bg-amber-500" : flow.isPropostaEnviada ? "bg-blue-400" : "bg-warm-dark/40"}`} />
+                                        <div className={`flex-1 rounded-full transition-colors ${flow.isAtribuido ? "bg-emerald-500" : flow.propostaAceita ? "bg-amber-400" : "bg-warm-dark/40"}`} />
+                                        <div className={`flex-1 rounded-full transition-colors ${flow.isAtribuido && flow.isAtribuicaoDevolvida ? "bg-rose-500" : flow.isAtribuido && flow.isAtribuicaoAceita ? "bg-emerald-500" : flow.isAtribuido ? "bg-amber-400" : "bg-warm-dark/40"}`} />
+                                        <div className={`flex-1 rounded-full transition-colors ${flow.isAtribuido && flow.isAtribuicaoAceita && flow.isAtendimentoIniciado ? "bg-emerald-500" : "bg-warm-dark/40"}`} />
+                                      </div>
+                                    </div>
+                                  );
+                                })()}
+
+                                {card.profissionalId &&
+                                  (() => {
+                                    const assignedProf = allUsers.find(
+                                      (u) =>
+                                        u.uid === card.profissionalId ||
+                                        u.id === card.profissionalId,
+                                    );
+                                    const displayStatus =
+                                      card.atribuicaoStatus || "Pendente";
+                                    return (
+                                      <div className="mt-2.5 pt-2 border-t border-soft/50 flex flex-wrap justify-between items-center text-[10px] gap-1 shrink-0">
+                                        <span className="text-forest/70 font-medium truncate max-w-[130px] flex items-center gap-1">
+                                          👤{" "}
+                                          {assignedProf
+                                            ? assignedProf.name
+                                            : "Indefinido"}
+                                        </span>
+                                        <span
+                                          className={`px-1.5 py-0.5 rounded font-bold text-[9px] uppercase ${
+                                            displayStatus === "Aceito"
+                                              ? "bg-[#34A853]/10 text-[#34A853]"
+                                              : displayStatus === "Rejeitado"
+                                                ? "bg-red-500/10 text-red-500"
+                                                : "bg-amber-500/10 text-amber-500"
+                                          }`}
+                                        >
+                                          {displayStatus}
+                                        </span>
+                                      </div>
+                                    );
+                                  })()}
+                              </motion.div>
+                            );
+                          })}
+                        </AnimatePresence>
 
                         {colCards.length === 0 && (
-                          <div className="h-24 border-2 border-dashed border-soft rounded-xl flex items-center justify-center text-forest/70/40 text-sm font-medium">
-                            Solte cards aqui
-                          </div>
+                          <motion.div
+                            initial={{ opacity: 0, scale: 0.95 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.95 }}
+                            className={`h-24 border-2 border-dashed rounded-xl flex flex-col items-center justify-center text-xs font-medium transition-colors ${
+                              isColOver
+                                ? "border-sun bg-sun/10 text-forest font-bold"
+                                : "border-soft text-forest/70/40"
+                            }`}
+                          >
+                            <span>Solte cards aqui</span>
+                            {isColOver && (
+                              <span className="text-[10px] text-amber-700 mt-0.5">
+                                Mover para {col.label}
+                              </span>
+                            )}
+                          </motion.div>
                         )}
-                      </div>
-                    </div>
+                      </motion.div>
+                    </motion.div>
                   );
                 })}
               </div>
             </div>
-          )}
         </div>
       ) : activeTab === "doacoes" ? (
         <div className="flex-1 overflow-auto p-6 md:p-8 flex items-start flex-col lg:flex-row gap-8 slide-up">
@@ -8892,6 +8989,43 @@ export function DashboardView({
             )}
           </div>
         </div>
+      ) : activeTab === "backup" ? (
+        <div className="flex-1 overflow-auto p-6 md:p-8 flex items-start flex-col gap-8 slide-up">
+          <BackupManager
+            userEmail={profile?.email || auth.currentUser?.email || undefined}
+            userRole={currentRole}
+          />
+        </div>
+      ) : activeTab === "gestaoArtigos" ? (
+        <GestaoBlogView
+          profile={profile}
+          onNavigateToPublicBlog={() => onNavigate("blog")}
+          onViewArticle={(artigoId) => {
+            try {
+              const url = new URL(window.location.href);
+              url.searchParams.set("artigo", artigoId);
+              window.history.pushState({}, "", url.toString());
+            } catch (e) {
+              console.error(e);
+            }
+            onNavigate("blog");
+          }}
+        />
+      ) : activeTab === "artigosProfissional" ? (
+        <ProfissionalBlogView
+          profile={profile}
+          onNavigateToPublicBlog={() => onNavigate("blog")}
+          onViewArticle={(artigoId) => {
+            try {
+              const url = new URL(window.location.href);
+              url.searchParams.set("artigo", artigoId);
+              window.history.pushState({}, "", url.toString());
+            } catch (e) {
+              console.error(e);
+            }
+            onNavigate("blog");
+          }}
+        />
       ) : activeTab === "eventos" || activeTab === "servicos" ? (
         <EventosServicosView activeSection={activeTab} profile={profile} />
       ) : null}
@@ -9917,9 +10051,10 @@ export function DashboardView({
                           const notifAnterior = selectedCard.notificacao ? selectedCard.notificacao + "\n\n" : "";
                           const nowStr = new Date().toLocaleString("pt-BR");
                           const authName = profile?.name || "Parceiro";
-                          const updates = {
+                          const updates: any = {
                             atribuicaoStatus: "Aceito",
-                            notificacao: `${notifAnterior}[${nowStr}] Encaminhamento ACEITO pelo profissional ${authName}.`,
+                            status: "Em Atendimento",
+                            notificacao: `${notifAnterior}[${nowStr}] Encaminhamento ACEITO pelo profissional ${authName}. Paciente saiu da Fila de Espera e passou para a aba Pacientes (Em Atendimento).`,
                           };
                           await updateDoc(doc(db, "acolhimentos", selectedCard.id), updates);
                           setSelectedCard({ ...selectedCard, ...updates });

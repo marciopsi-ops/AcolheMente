@@ -7,11 +7,23 @@ import { Breadcrumbs } from "../components/Breadcrumbs";
 export function ContratoLandingView({
   contratoId,
   onBack,
+  onGoHome,
 }: {
   contratoId: string;
   onBack: () => void;
+  onGoHome?: () => void;
 }) {
   const [loading, setLoading] = useState(true);
+
+  const handleGoHome = () => {
+    if (onGoHome) {
+      onGoHome();
+    } else if (onBack) {
+      onBack();
+    } else {
+      window.location.href = window.location.origin;
+    }
+  };
   const [data, setData] = useState<any>(null);
   const [signed, setSigned] = useState(false);
 

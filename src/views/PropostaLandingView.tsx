@@ -12,11 +12,23 @@ import { Breadcrumbs } from "../components/Breadcrumbs";
 export function PropostaLandingView({
   propostaId,
   onBack,
+  onGoHome,
 }: {
   propostaId: string;
   onBack: () => void;
+  onGoHome?: () => void;
 }) {
   const [loading, setLoading] = useState(true);
+
+  const handleGoHome = () => {
+    if (onGoHome) {
+      onGoHome();
+    } else if (onBack) {
+      onBack();
+    } else {
+      window.location.href = window.location.origin;
+    }
+  };
   const [data, setData] = useState<any>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);

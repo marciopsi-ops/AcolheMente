@@ -9,10 +9,21 @@ interface PublicServiceViewProps {
   serviceId?: string | null;
   eventId?: string | null;
   onBack: () => void;
+  onGoHome?: () => void;
 }
 
-export function PublicServiceView({ serviceId, eventId, onBack }: PublicServiceViewProps) {
+export function PublicServiceView({ serviceId, eventId, onBack, onGoHome }: PublicServiceViewProps) {
   const [loading, setLoading] = useState(true);
+
+  const handleGoHome = () => {
+    if (onGoHome) {
+      onGoHome();
+    } else if (onBack) {
+      onBack();
+    } else {
+      window.location.href = window.location.origin;
+    }
+  };
   const [item, setItem] = useState<any>(null);
   const [isEvent, setIsEvent] = useState(false);
   const [showInscribeForm, setShowInscribeForm] = useState(true);
@@ -152,10 +163,10 @@ export function PublicServiceView({ serviceId, eventId, onBack }: PublicServiceV
           <h2 className="font-serif text-2xl font-medium text-forest mb-2">Publicação não encontrada</h2>
           <p className="text-forest/70 text-sm mb-6">Este serviço ou evento não está disponível ou já foi encerrado.</p>
           <button 
-            onClick={onBack}
-            className="w-full py-3 bg-forest text-white rounded-full font-semibold hover:bg-forest/90 transition-all flex items-center justify-center gap-2"
+            onClick={handleGoHome}
+            className="w-full py-3 bg-forest text-white rounded-full font-semibold hover:bg-forest/90 transition-all flex items-center justify-center gap-2 cursor-pointer"
           >
-            <ArrowLeft className="w-4 h-4" /> Voltar para Home
+            <ArrowLeft className="w-4 h-4" /> Voltar para Home / Início
           </button>
         </div>
       </div>
@@ -165,23 +176,30 @@ export function PublicServiceView({ serviceId, eventId, onBack }: PublicServiceV
   return (
     <div className="min-h-screen bg-[#FCFBF7] text-forest p-4 sm:p-6 md:p-8 flex flex-col items-center">
       {/* Absolute top navbar */}
-      <header className="w-full max-w-4xl flex items-center justify-between mb-8 sm:mb-12">
+      <header className="w-full max-w-4xl flex items-center justify-between mb-8 sm:mb-12 gap-3 flex-wrap">
         <button 
-          onClick={onBack}
-          className="flex items-center gap-2 text-forest/70 hover:text-forest font-medium text-xs sm:text-sm transition-colors py-2 px-3 hover:bg-forest/5 rounded-full"
+          onClick={handleGoHome}
+          className="flex items-center gap-2 text-forest/70 hover:text-forest font-medium text-xs sm:text-sm transition-colors py-2 px-3.5 hover:bg-forest/5 rounded-full border border-forest/10 cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" /> Voltar para Home
         </button>
-        <div className="flex items-center gap-3">
+        <button 
+          onClick={handleGoHome}
+          className="flex items-center gap-3 hover:opacity-90 transition-all p-1.5 rounded-2xl hover:bg-forest/5 cursor-pointer text-left"
+          title="Ir para a página principal do AcolheMente"
+        >
           <div className="w-10 h-10 bg-sun rounded-full flex items-center justify-center text-forest overflow-hidden shrink-0 shadow-sm">
              <img src={logoImage} alt="AcolheMente Logo" className="w-full h-full object-cover" />
           </div>
-          <span className="font-serif font-semibold text-sm sm:text-base tracking-tight text-forest">AcolheMente</span>
-          <span className="text-[10px] sm:text-xs text-forest/60 px-2 py-0.5 rounded-full bg-forest/5 font-semibold">Parceiro</span>
-        </div>
+          <div>
+            <span className="font-serif font-semibold text-sm sm:text-base tracking-tight text-forest block">AcolheMente</span>
+            <span className="text-[10px] text-forest/60 block -mt-0.5">Saúde & Acolhimento</span>
+          </div>
+          <span className="text-[10px] sm:text-xs text-forest/60 px-2 py-0.5 rounded-full bg-forest/5 font-semibold border border-forest/10 ml-1">Parceiro</span>
+        </button>
       </header>
 
-      <Breadcrumbs items={[{ label: "Início", onClick: onBack }, { label: item ? item.titulo : (isEvent ? "Evento" : "Serviço"), active: true }]} className="max-w-2xl px-0 mb-6" />
+      <Breadcrumbs items={[{ label: "Início", onClick: handleGoHome }, { label: item ? item.titulo : (isEvent ? "Evento" : "Serviço"), active: true }]} className="max-w-2xl px-0 mb-6" />
 
       {/* Main Single-View Content Wrapper */}
       <main className="w-full max-w-2xl bg-white rounded-[2.5rem] border border-soft shadow-xl overflow-hidden flex flex-col slide-up">

@@ -57,6 +57,31 @@
         "createdAt": { "type": "timestamp" }
       },
       "required": ["itemId", "itemTitulo", "itemTipo", "nomeCompleto", "whatsapp", "email", "profissao", "createdAt"]
+    },
+    "ArtigoBlog": {
+      "title": "ArtigoBlog",
+      "description": "Artigos e publicações informativas submetidos por profissionais e abertos para leitura pública.",
+      "type": "object",
+      "properties": {
+        "titulo": { "type": "string" },
+        "resumo": { "type": "string" },
+        "conteudo": { "type": "string" },
+        "conteudoHtml": { "type": "string" },
+        "autorNome": { "type": "string" },
+        "autorUid": { "type": "string" },
+        "autorProfissao": { "type": "string" },
+        "autorFoto": { "type": "string" },
+        "palavrasChave": { "type": "array", "items": { "type": "string" } },
+        "categoria": { "type": "string" },
+        "capaUrl": { "type": "string" },
+        "tempoLeitura": { "type": "string" },
+        "status": { "type": "string", "enum": ["publicado", "rascunho"] },
+        "visualizacoes": { "type": "number" },
+        "curtidas": { "type": "number" },
+        "createdAt": { "type": "timestamp" },
+        "updatedAt": { "type": "timestamp" }
+      },
+      "required": ["titulo", "conteudo", "autorNome", "palavrasChave", "createdAt"]
     }
   },
   "firestore": {
@@ -71,6 +96,10 @@
     "inscricoes": {
       "schema": { "$ref": "#/entities/Inscricao" },
       "description": "Inscrições enviadas por visitantes para eventos ou serviços."
+    },
+    "artigos_blog": {
+      "schema": { "$ref": "#/entities/ArtigoBlog" },
+      "description": "Artigos públicos submetidos por profissionais de saúde e psicologia."
     }
   }
 }

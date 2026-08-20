@@ -1,14 +1,44 @@
 import React, { useEffect, useState } from "react";
-import { ArrowLeft, User, Phone, MapPin, Calendar, Award, Heart, CheckCircle2, Instagram, Linkedin, Globe, Share2 } from "lucide-react";
+import { ArrowLeft, User, Phone, MapPin, Calendar, Award, Heart, CheckCircle2, Instagram, Linkedin, Globe, Share2, BookOpen, Sparkles } from "lucide-react";
 import { doc, getDoc, collection, query, where, onSnapshot } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import logoImage from '../assets/images/logo_acolhe.jpeg';
 import { Breadcrumbs } from "../components/Breadcrumbs";
+import { ArtigoBlog } from "../types/blog";
+import { BlogCard } from "../components/BlogCard";
 
-export function PublicProfProfileView({ profUid, onBack }: { profUid: string; onBack: () => void }) {
+export function PublicProfProfileView({ 
+  profUid, 
+  onBack,
+  onGoHome,
+  onReadArtigo,
+}: { 
+  profUid: string; 
+  onBack: () => void;
+  onGoHome?: () => void;
+  onReadArtigo?: (artigoId: string) => void;
+}) {
   const [prof, setProf] = useState<any>(null);
   const [servicos, setServicos] = useState<any[]>([]);
+  const [artigosProfissional, setArtigosProfissional] = useState<ArtigoBlog[]>([]);
   const [loading, setLoading] = useState(true);
+  const [copySuccess, setCopySuccess] = useState(false);
+
+  const handleGoHome = () => {
+    try {
+      const cleanUrl = window.location.origin + window.location.pathname;
+      window.history.pushState({}, "", cleanUrl);
+    } catch (e) {
+      console.error(e);
+    }
+    if (onGoHome) {
+      onGoHome();
+    } else if (onBack) {
+      onBack();
+    } else {
+      window.location.href = window.location.origin;
+    }
+  };
 
   useEffect(() => {
     async function fetchProfile() {
@@ -93,6 +123,35 @@ export function PublicProfProfileView({ profUid, onBack }: { profUid: string; on
     return () => unsubscribe();
   }, [profUid]);
 
+  // Carregar artigos publicados deste profissional
+  useEffect(() => {
+    if (!profUid) return;
+    const qArtigos = query(
+      collection(db, "artigos_blog"),
+      where("autorUid", "==", profUid)
+    );
+    const unsubscribe = onSnapshot(
+      qArtigos,
+      (snapshot) => {
+        const list: ArtigoBlog[] = [];
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data() as any;
+          if (data.status === "publicado") {
+            list.push({
+              id: docSnap.id,
+              ...data,
+            });
+          }
+        });
+        setArtigosProfissional(list);
+      },
+      (err) => {
+        console.error("Erro ao carregar artigos do profissional:", err);
+      }
+    );
+    return () => unsubscribe();
+  }, [profUid]);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#FCFBF7] flex items-center justify-center p-6">
@@ -111,12 +170,20 @@ export function PublicProfProfileView({ profUid, onBack }: { profUid: string; on
           <Heart className="w-12 h-12 text-forest/40 mx-auto mb-4" />
           <h2 className="font-serif text-2xl font-medium text-forest mb-2">Perfil Indisponível</h2>
           <p className="text-forest/70 text-sm mb-6">Este profissional não está disponível ou o link está incorreto.</p>
-          <button 
-            onClick={onBack}
-            className="w-full py-3 bg-forest text-white rounded-full font-semibold hover:bg-forest/90 transition-all flex items-center justify-center gap-2"
-          >
-            <ArrowLeft className="w-4 h-4" /> Voltar para Home
-          </button>
+          <div className="flex flex-col gap-3">
+            <button 
+              onClick={handleGoHome}
+              className="w-full py-3 bg-forest text-white rounded-full font-semibold hover:bg-forest/90 transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm"
+            >
+              <ArrowLeft className="w-4 h-4" /> Voltar para Home / Tela Inicial
+            </button>
+            <button
+              onClick={handleGoHome}
+              className="w-full py-2.5 text-xs text-forest/70 hover:text-forest font-semibold uppercase tracking-wider transition-colors cursor-pointer"
+            >
+              Conhecer o AcolheMente
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -131,23 +198,47 @@ export function PublicProfProfileView({ profUid, onBack }: { profUid: string; on
   return (
     <div className="min-h-screen bg-[#FCFBF7] text-forest p-4 sm:p-6 md:p-8 flex flex-col items-center">
       {/* Header Banner */}
-      <header className="w-full max-w-4xl flex items-center justify-between mb-8 sm:mb-12">
+      <header className="w-full max-w-4xl flex items-center justify-between mb-8 sm:mb-12 gap-3 flex-wrap">
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={handleGoHome}
+            className="flex items-center gap-2 text-forest/70 hover:text-forest font-medium text-xs sm:text-sm transition-colors py-2 px-3.5 hover:bg-forest/5 rounded-full border border-forest/10 hover:border-forest/20 cursor-pointer"
+            title="Voltar para a página inicial"
+          >
+            <ArrowLeft className="w-4 h-4" /> Voltar para Home
+          </button>
+          <button 
+            onClick={handleGoHome}
+            className="hidden sm:inline-flex text-xs text-forest/60 hover:text-forest font-medium py-2 px-3 rounded-full hover:bg-forest/5 transition-colors cursor-pointer"
+          >
+            Tela Inicial
+          </button>
+        </div>
+
         <button 
-          onClick={onBack}
-          className="flex items-center gap-2 text-forest/70 hover:text-forest font-medium text-xs sm:text-sm transition-colors py-2 px-3 hover:bg-forest/5 rounded-full"
+          onClick={handleGoHome}
+          className="flex items-center gap-3 hover:opacity-90 transition-all p-1.5 rounded-2xl hover:bg-forest/5 cursor-pointer text-left"
+          title="Ir para a página principal do AcolheMente"
         >
-          <ArrowLeft className="w-4 h-4" /> Voltar para Home
-        </button>
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-sun rounded-full flex items-center justify-center text-forest overflow-hidden shrink-0 shadow-sm">
+          <div className="w-10 h-10 bg-sun rounded-full flex items-center justify-center text-forest overflow-hidden shrink-0 shadow-sm border border-forest/10">
              <img src={logoImage} alt="AcolheMente Logo" className="w-full h-full object-cover" />
           </div>
-          <span className="font-serif font-semibold text-sm sm:text-base tracking-tight text-forest">AcolheMente</span>
-          <span className="text-[10px] sm:text-xs text-forest/60 px-2 py-0.5 rounded-full bg-forest/5 font-semibold">Parceiro</span>
-        </div>
+          <div>
+            <span className="font-serif font-semibold text-sm sm:text-base tracking-tight text-forest block">AcolheMente</span>
+            <span className="text-[10px] text-forest/60 block -mt-0.5">Saúde & Acolhimento</span>
+          </div>
+          <span className="text-[10px] sm:text-xs text-forest/70 px-2 py-0.5 rounded-full bg-forest/5 font-semibold border border-forest/10 ml-1">Parceiro</span>
+        </button>
       </header>
       
-      <Breadcrumbs items={[{ label: "Início", onClick: onBack }, { label: prof ? `${prof.profissao || "Profissional"} ${prof.name}` : "Perfil do Profissional", active: true }]} className="max-w-4xl px-0 mb-6" />
+      <Breadcrumbs 
+        items={[
+          { label: "Início", onClick: handleGoHome }, 
+          { label: "Profissionais", onClick: handleGoHome },
+          { label: prof ? `${prof.profissao || "Profissional"} ${prof.name}` : "Perfil do Profissional", active: true }
+        ]} 
+        className="max-w-4xl px-0 mb-6 w-full" 
+      />
 
       {/* Main Showcase Layout */}
       <main className="w-full max-w-4xl grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -162,7 +253,7 @@ export function PublicProfProfileView({ profUid, onBack }: { profUid: string; on
             )}
           </div>
           
-          <div className="flex flex-col gap-1 items-center">
+          <div className="flex flex-col gap-1 items-center w-full">
             <h1 className="font-serif text-2xl font-semibold leading-tight">{prof.name}</h1>
             <span className="text-xs uppercase tracking-wider font-bold text-sun-dark mt-1">
               {prof.profissao || "Profissional de Saúde"}
@@ -203,14 +294,20 @@ export function PublicProfProfileView({ profUid, onBack }: { profUid: string; on
                     }).catch(() => {});
                   } else {
                     navigator.clipboard.writeText(url).then(() => {
-                      alert(`Link do perfil de ${prof.name} (${profissaoOuTitulo}) copiado com sucesso!`);
+                      setCopySuccess(true);
+                      setTimeout(() => setCopySuccess(false), 3000);
                     }).catch(e => console.error(e));
                   }
                 }}
-                className="p-2 bg-warm rounded-full text-forest/70 hover:text-forest hover:bg-soft transition-colors shadow-sm cursor-pointer" 
+                className="p-2 bg-warm rounded-full text-forest/70 hover:text-forest hover:bg-soft transition-colors shadow-sm cursor-pointer relative" 
                 title="Compartilhar Perfil"
               >
                 <Share2 className="w-4 h-4" />
+                {copySuccess && (
+                  <span className="absolute -bottom-8 left-1/2 -translate-x-1/2 bg-forest text-white text-[10px] px-2 py-0.5 rounded shadow whitespace-nowrap z-20 animate-fade-in">
+                    Link copiado!
+                  </span>
+                )}
               </button>
             </div>
 
@@ -253,15 +350,25 @@ export function PublicProfProfileView({ profUid, onBack }: { profUid: string; on
             )}
           </div>
 
-          {whatsAppUrl && (
+          {whatsAppUrl ? (
             <a 
               href={whatsAppUrl}
               target="_blank"
-              rel="noopener referrer"
-              className="w-full py-4 px-2 bg-[#34A853] text-white rounded-xl font-bold uppercase tracking-wider text-[11px] shadow-md hover:bg-[#2e9449] hover:shadow-lg transition-all flex items-center justify-center gap-2 mt-4 text-center leading-tight"
+              rel="noopener noreferrer"
+              className="w-full py-4 px-2 bg-[#34A853] text-white rounded-xl font-bold uppercase tracking-wider text-[11px] shadow-md hover:bg-[#2e9449] hover:shadow-lg transition-all flex items-center justify-center gap-2 mt-4 text-center leading-tight cursor-pointer"
             >
               <Phone className="w-5 h-5 shrink-0" /> Entre em contato e agende sua primeira sessão
             </a>
+          ) : (
+            <button
+              onClick={() => {
+                alert("Para agendar com este profissional ou iniciar o acolhimento, conheça o fluxo principal do projeto.");
+                handleGoHome();
+              }}
+              className="w-full py-3.5 px-2 bg-forest text-white rounded-xl font-bold uppercase tracking-wider text-[11px] shadow-md hover:bg-forest/90 transition-all flex items-center justify-center gap-2 mt-4 text-center leading-tight cursor-pointer"
+            >
+              <Phone className="w-4 h-4 shrink-0" /> Iniciar Acolhimento pelo Projeto
+            </button>
           )}
         </div>
 
@@ -344,17 +451,59 @@ export function PublicProfProfileView({ profUid, onBack }: { profUid: string; on
             )}
           </div>
 
+          {/* Seção Artigos & Publicações do Profissional */}
+          {artigosProfissional.length > 0 && (
+            <div className="bg-white p-6 sm:p-10 rounded-[2rem] border border-soft shadow-sm flex flex-col gap-6">
+              <div className="flex items-center justify-between border-b border-soft/60 pb-4 flex-wrap gap-2">
+                <div className="flex items-center gap-3">
+                  <BookOpen className="w-6 h-6 text-sun-dark shrink-0" />
+                  <div>
+                    <h2 className="font-serif text-xl sm:text-2xl font-semibold">Artigos & Publicações</h2>
+                    <p className="text-xs text-forest/60">Textos informativos e reflexões escritas por este profissional</p>
+                  </div>
+                </div>
+                <span className="text-xs font-bold px-3 py-1 bg-warm rounded-full text-forest/70 border border-soft">
+                  {artigosProfissional.length} {artigosProfissional.length === 1 ? "artigo publicado" : "artigos publicados"}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {artigosProfissional.map((artigo) => (
+                  <BlogCard
+                    key={artigo.id || artigo.titulo}
+                    artigo={artigo}
+                    onRead={(art) => {
+                      try {
+                        const url = new URL(window.location.href);
+                        url.searchParams.set("artigo", art.id || "");
+                        url.searchParams.delete("prof");
+                        window.history.pushState({}, "", url.toString());
+                      } catch (e) {
+                        console.error(e);
+                      }
+                      if (onReadArtigo && art.id) {
+                        onReadArtigo(art.id);
+                      } else {
+                        window.location.href = `${window.location.origin}?artigo=${art.id}`;
+                      }
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Call-to-Action Footer for Platform */}
           <div className="bg-forest text-white p-6 sm:p-8 rounded-[2rem] shadow-sm flex flex-col sm:flex-row items-center justify-between gap-6">
             <div>
-              <h3 className="font-serif text-lg sm:text-xl font-semibold mb-1">Dúvidas sobre o tratamento?</h3>
-              <p className="text-xs text-white/80 max-w-md">Nossa equipe interdisciplinar está em plantão constante para dirimir dúvidas administrativas ou técnicas.</p>
+              <h3 className="font-serif text-lg sm:text-xl font-semibold mb-1">Dúvidas sobre o acolhimento?</h3>
+              <p className="text-xs text-white/80 max-w-md">O Projeto AcolheMente conecta você a profissionais dedicados com escuta qualificada e valores sociais acessíveis.</p>
             </div>
             <button 
-              onClick={onBack}
-              className="py-3 px-6 bg-white text-forest font-bold uppercase tracking-wider text-xs rounded-xl hover:bg-white/95 hover:scale-[1.02] transition-all whitespace-nowrap"
+              onClick={handleGoHome}
+              className="py-3.5 px-6 bg-white text-forest font-bold uppercase tracking-wider text-xs rounded-xl hover:bg-sun hover:text-forest hover:scale-[1.02] active:scale-[0.98] transition-all whitespace-nowrap cursor-pointer shadow-md"
             >
-              Conhecer a AcolheMente
+              Conhecer o AcolheMente
             </button>
           </div>
           
@@ -363,8 +512,14 @@ export function PublicProfProfileView({ profUid, onBack }: { profUid: string; on
       </main>
       
       {/* Mini Branding Footer */}
-      <footer className="w-full max-w-4xl text-center py-12 text-forest/40 text-xs">
+      <footer className="w-full max-w-4xl text-center py-12 text-forest/60 text-xs flex flex-col items-center gap-2">
         <p>© {new Date().getFullYear()} Projeto AcolheMente Saúde - Uma iniciativa de Elo Soluções Humanas. Todos os direitos reservados.</p>
+        <button 
+          onClick={handleGoHome}
+          className="text-xs text-forest/75 hover:text-forest font-medium underline underline-offset-4 cursor-pointer transition-colors"
+        >
+          Voltar para a página inicial do projeto
+        </button>
       </footer>
     </div>
   );
