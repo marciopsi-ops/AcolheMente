@@ -6,6 +6,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { EventosServicosView } from "./EventosServicosView";
 import { ComplianceModal } from "../components/ComplianceModal";
 import { BackupManager } from "../components/BackupManager";
+import { EmpresaBeneficioManager } from "../components/EmpresaBeneficioManager";
 import {
   ArrowLeft,
   ArrowUpDown,
@@ -1314,6 +1315,7 @@ export function DashboardView({
     emailSuporte: "",
     fraseSuporte: "",
     faixasValores: ["", "", "", "", ""],
+    faixasValoresCorporativo: ["", "", ""],
     cidadesRodape: "",
     footerEmail: "",
     footerTelefone: "",
@@ -4964,12 +4966,17 @@ export function DashboardView({
                 Links de Cadastros e Formulários
               </h2>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
                 {[
                   {
                     title: "Formulário de Acolhimento",
-                    desc: "Link para o paciente iniciar nova triagem.",
+                    desc: "Link para o paciente iniciar nova triagem (fluxo padrão).",
                     path: "?view=acolhimento",
+                  },
+                  {
+                    title: "Acolhimento Corporativo",
+                    desc: "Link direto para acolhimento de colaboradores parceiros (sem seletor de vias).",
+                    path: "?view=acolhimento&via=corporativo",
                   },
                   {
                     title: "Formulário para Psicólogos",
@@ -5028,18 +5035,18 @@ export function DashboardView({
                 <div className="space-y-6 max-w-3xl">
                   <div className="bg-warm/30 p-6 rounded-2xl border border-soft space-y-4">
                     <h4 className="text-sm font-bold uppercase tracking-wider text-forest/70 border-b border-soft pb-2 mb-4">
-                      Faixas de Valor de Sessão
+                      Faixas de Valor de Sessão (Público Particular)
                     </h4>
                     <p className="text-xs text-forest/70 mb-4">
                       Defina até 5 opções de valores de sessão que a triagem
                       poderá selecionar ao apresentar uma proposta para o
-                      paciente.
+                      paciente particular.
                     </p>
                     <div className="flex flex-col gap-3">
                       {[0, 1, 2, 3, 4].map((index) => (
                         <div key={index} className="flex flex-col gap-1">
                           <label className="text-[10px] font-semibold uppercase text-forest/70/60 ml-2">
-                            Faixa {index + 1}
+                            Faixa Particular {index + 1}
                           </label>
                           <DebouncedInput
                             className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
@@ -5058,6 +5065,46 @@ export function DashboardView({
                               newFaixas[index] = val;
                               handleUpdateConfiguracoesProperty(
                                 "faixasValores",
+                                newFaixas,
+                              );
+                            }}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="bg-warm/30 p-6 rounded-2xl border border-soft space-y-4">
+                    <div className="flex items-center gap-2 border-b border-soft pb-2 mb-4">
+                      <Building2 className="w-4 h-4 text-forest/70" />
+                      <h4 className="text-sm font-bold uppercase tracking-wider text-forest/70">
+                        Faixas de Valor de Sessão (Público Corporativo)
+                      </h4>
+                    </div>
+                    <p className="text-xs text-forest/70 mb-4">
+                      Defina até 3 opções de faixas de valores para atendimentos corporativos. Estas 3 faixas aparecerão como atalhos dedicados nas fichas de bordo dos pacientes que ingressarem via Corporativo.
+                    </p>
+                    <div className="flex flex-col gap-3">
+                      {[0, 1, 2].map((index) => (
+                        <div key={index} className="flex flex-col gap-1">
+                          <label className="text-[10px] font-semibold uppercase text-forest/70/60 ml-2">
+                            Faixa Corporativa {index + 1}
+                          </label>
+                          <DebouncedInput
+                            className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
+                            placeholder={`Ex: R$ ${(index + 1) * 30 + 30},00`}
+                            value={globalConfigs.faixasValoresCorporativo?.[index] || ""}
+                            onChange={(val) => {
+                              const newFaixas = [
+                                ...(globalConfigs.faixasValoresCorporativo || [
+                                  "",
+                                  "",
+                                  "",
+                                ]),
+                              ];
+                              newFaixas[index] = val;
+                              handleUpdateConfiguracoesProperty(
+                                "faixasValoresCorporativo",
                                 newFaixas,
                               );
                             }}
@@ -6273,9 +6320,9 @@ export function DashboardView({
                       onChange={(e) => {
                         const file = e.target.files?.[0];
                         if (file) {
-                          if (file.size > 800000) {
+                          if (file.size > 1000 * 1024) {
                             alert(
-                              "A imagem é muito grande. Escolha uma imagem de até 800KB.",
+                              "A imagem é muito grande. Escolha uma imagem de até 1000KB.",
                             );
                             return;
                           }
@@ -9788,13 +9835,30 @@ export function DashboardView({
 
                     {/* Botões de Seleção Rápida de Valor */}
                     <div className="space-y-1.5">
-                      <span className="text-[10px] font-bold uppercase text-forest/50 block">Atalhos de Valor (Área do Gestor):</span>
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold uppercase text-forest/50 block">
+                          {selectedCard.viaAcesso === "Corporativo" || Boolean(selectedCard.empresa)
+                            ? "Atalhos de Valor (3 Faixas Corporativas):"
+                            : "Atalhos de Valor (Área do Gestor):"}
+                        </span>
+                        {(selectedCard.viaAcesso === "Corporativo" || Boolean(selectedCard.empresa)) && (
+                          <span className="text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 border border-blue-200">
+                            Via Corporativa
+                          </span>
+                        )}
+                      </div>
                       <div className="flex flex-wrap gap-1.5">
                         {(() => {
-                          const faixasGestor = (globalConfigs.faixasValores || []).filter((f) => f && f.trim() !== "");
+                          const isCorp = selectedCard.viaAcesso === "Corporativo" || Boolean(selectedCard.empresa);
+                          const faixasGestor = isCorp
+                            ? (globalConfigs.faixasValoresCorporativo || []).filter((f) => f && f.trim() !== "")
+                            : (globalConfigs.faixasValores || []).filter((f) => f && f.trim() !== "");
+                          
                           const baseFaixas = faixasGestor.length > 0
                             ? faixasGestor
-                            : ["R$ 30,00", "R$ 50,00", "R$ 80,00", "R$ 100,00", "R$ 120,00"];
+                            : isCorp
+                              ? ["R$ 60,00", "R$ 90,00", "R$ 120,00"]
+                              : ["R$ 30,00", "R$ 50,00", "R$ 80,00", "R$ 100,00", "R$ 120,00"];
                           
                           const options = [...baseFaixas, "Gratuito", "A combinar"];
                           if (selectedCard.valorSessao && !options.includes(selectedCard.valorSessao)) {
@@ -9831,10 +9895,15 @@ export function DashboardView({
                         >
                           <option value="">Outro / Personalizado...</option>
                           {(() => {
-                            const faixasGestor = (globalConfigs.faixasValores || []).filter((f) => f && f.trim() !== "");
+                            const isCorp = selectedCard.viaAcesso === "Corporativo" || Boolean(selectedCard.empresa);
+                            const faixasGestor = isCorp
+                              ? (globalConfigs.faixasValoresCorporativo || []).filter((f) => f && f.trim() !== "")
+                              : (globalConfigs.faixasValores || []).filter((f) => f && f.trim() !== "");
                             const baseFaixas = faixasGestor.length > 0
                               ? faixasGestor
-                              : ["R$ 30,00", "R$ 50,00", "R$ 80,00", "R$ 100,00", "R$ 120,00"];
+                              : isCorp
+                                ? ["R$ 60,00", "R$ 90,00", "R$ 120,00"]
+                                : ["R$ 30,00", "R$ 50,00", "R$ 80,00", "R$ 100,00", "R$ 120,00"];
                             return baseFaixas.map((faixa: string, idx: number) => (
                               <option key={idx} value={faixa}>{faixa}</option>
                             ));
@@ -11093,6 +11162,16 @@ export function DashboardView({
                       val,
                     )
                   }
+                />
+              </section>
+
+              {/* Benefício Corporativo & Código de Acesso */}
+              <section className="bg-white p-2 rounded-2xl border border-soft shadow-xs">
+                <EmpresaBeneficioManager
+                  empresa={selectedEmpresa}
+                  onUpdateSuccess={(data) => {
+                    setSelectedEmpresa((prev) => (prev ? { ...prev, ...data } : null));
+                  }}
                 />
               </section>
 
