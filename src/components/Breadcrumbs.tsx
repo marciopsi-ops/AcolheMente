@@ -28,6 +28,7 @@ export function Breadcrumbs({ items, className = "" }: BreadcrumbsProps) {
         <li className="flex items-center">
           <button
             onClick={() => {
+              window.scrollTo({ top: 0, left: 0, behavior: "instant" });
               const homeItem = items.find((i) => i.label.toLowerCase() === "início" || i.label.toLowerCase() === "home");
               if (homeItem?.onClick) {
                 homeItem.onClick();
@@ -35,7 +36,7 @@ export function Breadcrumbs({ items, className = "" }: BreadcrumbsProps) {
                 items[0].onClick();
               }
             }}
-            className="flex items-center gap-1 hover:text-sun-dark transition-colors"
+            className="flex items-center gap-1 hover:text-sun-dark transition-colors cursor-pointer"
             title="Início"
           >
             <Home className="w-3.5 h-3.5" />
@@ -68,8 +69,11 @@ export function Breadcrumbs({ items, className = "" }: BreadcrumbsProps) {
                   </span>
                 ) : (
                   <button
-                    onClick={item.onClick}
-                    className="hover:text-sun-dark transition-colors focus:outline-none"
+                    onClick={() => {
+                      window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+                      item.onClick?.();
+                    }}
+                    className="hover:text-sun-dark transition-colors focus:outline-none cursor-pointer"
                   >
                     {item.label}
                   </button>

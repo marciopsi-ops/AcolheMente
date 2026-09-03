@@ -21,6 +21,7 @@ export function PropostaLandingView({
   const [loading, setLoading] = useState(true);
 
   const handleGoHome = () => {
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
     if (onGoHome) {
       onGoHome();
     } else if (onBack) {
@@ -29,6 +30,10 @@ export function PropostaLandingView({
       window.location.href = window.location.origin;
     }
   };
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+  }, []);
   const [data, setData] = useState<any>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);

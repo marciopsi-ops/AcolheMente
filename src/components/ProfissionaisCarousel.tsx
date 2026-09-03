@@ -344,18 +344,10 @@ export function ProfissionaisCarousel() {
               </p>
             </div>
 
-            <div className="flex items-center gap-3 mt-6 flex-wrap justify-center">
-              {!selectedProfModal.id.startsWith("f") && (
-                <a
-                  href={`?prof=${selectedProfModal.id}`}
-                  className="px-5 py-2.5 bg-sun text-forest text-xs sm:text-sm font-bold rounded-xl hover:bg-sun-dark transition-colors shadow-xs cursor-pointer flex items-center gap-1.5"
-                >
-                  Ver Perfil Completo
-                </a>
-              )}
+            <div className="flex items-center justify-center mt-6 w-full">
               <button
                 onClick={() => setSelectedProfModal(null)}
-                className="px-6 py-2.5 bg-forest text-white text-xs sm:text-sm font-semibold rounded-xl hover:bg-forest/90 transition-colors shadow-xs cursor-pointer"
+                className="w-full sm:w-auto px-8 py-2.5 bg-forest text-white text-xs sm:text-sm font-semibold rounded-xl hover:bg-forest/90 transition-colors shadow-xs cursor-pointer"
               >
                 Fechar
               </button>

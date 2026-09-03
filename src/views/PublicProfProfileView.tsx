@@ -25,6 +25,7 @@ export function PublicProfProfileView({
   const [copySuccess, setCopySuccess] = useState(false);
 
   const handleGoHome = () => {
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
     try {
       const cleanUrl = window.location.origin + window.location.pathname;
       window.history.pushState({}, "", cleanUrl);
@@ -39,6 +40,10 @@ export function PublicProfProfileView({
       window.location.href = window.location.origin;
     }
   };
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+  }, []);
 
   useEffect(() => {
     async function fetchProfile() {

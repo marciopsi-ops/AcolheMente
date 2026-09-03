@@ -63,6 +63,7 @@ export function BlogView({
   const [liked, setLiked] = useState(false);
 
   const handleGoHome = () => {
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
     if (onGoHome) {
       onGoHome();
     } else if (onNavigate) {
@@ -71,6 +72,10 @@ export function BlogView({
       window.location.href = window.location.origin;
     }
   };
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+  }, []);
 
   // Carregar artigos publicados do Firestore em tempo real
   useEffect(() => {
@@ -137,6 +142,7 @@ export function BlogView({
   };
 
   const handleBackToList = () => {
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
     setSelectedArtigo(null);
     try {
       const url = new URL(window.location.href);

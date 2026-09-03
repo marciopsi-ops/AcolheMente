@@ -1,6 +1,6 @@
 import { Footer } from '../components/Footer';
 import { ArrowLeft, CheckCircle2, HeartHandshake, QrCode, ClipboardList, HandHeart } from "lucide-react";
-import { FormEvent, useState } from "react";
+import { FormEvent, useState, useEffect } from "react";
 import { collection, addDoc, serverTimestamp, getDocs, query, where } from "firebase/firestore";
 import { db, handleFirestoreError, OperationType } from "../lib/firebase";
 import { Breadcrumbs } from "../components/Breadcrumbs";
@@ -22,6 +22,10 @@ export function DoacaoView({ onNavigate }: { onNavigate: (view: 'landing' | 'aco
   const [isSolSubmitting, setIsSolSubmitting] = useState(false);
   const [solStep, setSolStep] = useState<'form' | 'success'>('form');
   const [solError, setSolError] = useState('');
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+  }, []);
 
   const handleDoacaoSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -77,7 +81,13 @@ export function DoacaoView({ onNavigate }: { onNavigate: (view: 'landing' | 'aco
     <div className="min-h-screen bg-warm overflow-y-auto">
       <nav className="h-20 bg-white/50 backdrop-blur-md border-b border-soft px-6 md:px-12 flex justify-between items-center sticky top-0 z-50">
         <div className="flex items-center gap-4">
-          <button onClick={() => onNavigate('landing')} className="text-forest/70 hover:text-forest transition-colors p-2 -ml-2 rounded-full hover:bg-forest/5">
+          <button 
+            onClick={() => {
+              window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+              onNavigate('landing');
+            }} 
+            className="text-forest/70 hover:text-forest transition-colors p-2 -ml-2 rounded-full hover:bg-forest/5 cursor-pointer"
+          >
             <ArrowLeft className="w-6 h-6" />
           </button>
           <div className="flex items-center gap-3">
@@ -391,8 +401,11 @@ export function DoacaoView({ onNavigate }: { onNavigate: (view: 'landing' | 'aco
                     Nossa equipe avaliará seu pedido com muito carinho e entrará em contato assim que tivermos um profissional disponível através do fundo solidário.
                   </p>
                   <button 
-                    onClick={() => onNavigate('landing')}
-                    className="mt-4 px-8 py-4 bg-forest text-white rounded-full font-semibold shadow-md hover:bg-forest/90 transition-all"
+                    onClick={() => {
+                      window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+                      onNavigate('landing');
+                    }}
+                    className="mt-4 px-8 py-4 bg-forest text-white rounded-full font-semibold shadow-md hover:bg-forest/90 transition-all cursor-pointer"
                   >
                     Voltar ao Início
                   </button>

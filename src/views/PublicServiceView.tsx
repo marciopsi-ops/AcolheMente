@@ -16,6 +16,7 @@ export function PublicServiceView({ serviceId, eventId, onBack, onGoHome }: Publ
   const [loading, setLoading] = useState(true);
 
   const handleGoHome = () => {
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
     if (onGoHome) {
       onGoHome();
     } else if (onBack) {
@@ -24,6 +25,10 @@ export function PublicServiceView({ serviceId, eventId, onBack, onGoHome }: Publ
       window.location.href = window.location.origin;
     }
   };
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+  }, []);
   const [item, setItem] = useState<any>(null);
   const [isEvent, setIsEvent] = useState(false);
   const [showInscribeForm, setShowInscribeForm] = useState(true);

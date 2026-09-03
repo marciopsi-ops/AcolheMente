@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { 
   Building2, 
   CheckCircle2, 
@@ -45,6 +45,10 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
   const [step, setStep] = useState<number>(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+  }, []);
 
   // Step 1: Dados do Colaborador
   const [tratamentoPara, setTratamentoPara] = useState("Mim");
@@ -406,8 +410,11 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
                 </p>
               </div>
               <button 
-                onClick={() => onNavigate('landing')}
-                className="px-8 py-3 bg-sun text-forest rounded-full font-semibold shadow-lg shadow-sun/20 transition-all hover:bg-sun-dark"
+                onClick={() => {
+                  window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+                  onNavigate('landing');
+                }}
+                className="px-8 py-3 bg-sun text-forest rounded-full font-semibold shadow-lg shadow-sun/20 transition-all hover:bg-sun-dark cursor-pointer"
               >
                 Retornar ao Início
               </button>

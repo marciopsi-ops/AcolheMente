@@ -16,6 +16,7 @@ export function ContratoLandingView({
   const [loading, setLoading] = useState(true);
 
   const handleGoHome = () => {
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
     if (onGoHome) {
       onGoHome();
     } else if (onBack) {
@@ -24,6 +25,10 @@ export function ContratoLandingView({
       window.location.href = window.location.origin;
     }
   };
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+  }, []);
   const [data, setData] = useState<any>(null);
   const [signed, setSigned] = useState(false);
 

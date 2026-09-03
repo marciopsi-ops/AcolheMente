@@ -2,6 +2,8 @@ import React, { useEffect, useState, useRef } from "react";
 import { sendWebhookNotification } from "../lib/webhookNotifier";
 import { sendPatientRegistrationEmail } from "../lib/emailService";
 import { StripeCheckoutModal } from "../components/StripeCheckoutModal";
+import { PhotoCropModal } from "../components/PhotoCropModal";
+import { autoCropProfileImage, readFileAsDataURL } from "../lib/imageAutoFaceCrop";
 import { AnimatePresence, motion } from "motion/react";
 import { EventosServicosView } from "./EventosServicosView";
 import { ComplianceModal } from "../components/ComplianceModal";
@@ -9,6 +11,7 @@ import { BackupManager } from "../components/BackupManager";
 import { EmpresaBeneficioManager } from "../components/EmpresaBeneficioManager";
 import {
   ArrowLeft,
+  ArrowRight,
   ArrowUpDown,
   User,
   LayoutGrid,
@@ -58,6 +61,7 @@ import {
   Eye,
   CreditCard,
   Sparkles,
+  Sliders,
   Wallet,
   Gift,
   UserCheck,
@@ -555,13 +559,13 @@ const COLUMNS = [
   {
     id: "Em Atendimento",
     label: "Em Acompanhamento",
-    role: ["master", "profissional"],
+    role: ["master", "triagem", "profissional"],
     tab: "pacientes",
   },
   {
     id: "Alta",
     label: "Alta / Finalizado",
-    role: ["master", "profissional"],
+    role: ["master", "triagem", "profissional"],
     tab: "pacientes",
   },
 ];
@@ -878,6 +882,48 @@ export function DashboardView({
   const [freqModalTargetCard, setFreqModalTargetCard] = useState<Acolhimento | null>(null);
   const [freqModalValue, setFreqModalValue] = useState("");
   const [freqModalMotivo, setFreqModalMotivo] = useState("");
+
+  // Photo Crop Modal State & Handlers
+  const [photoCropModalOpen, setPhotoCropModalOpen] = useState(false);
+  const [rawPhotoToCrop, setRawPhotoToCrop] = useState<string>("");
+  const [isAutoCroppingPhoto, setIsAutoCroppingPhoto] = useState(false);
+
+  const handlePhotoFileSelected = async (file: File) => {
+    if (!file) return;
+    setIsAutoCroppingPhoto(true);
+    try {
+      const rawDataUrl = await readFileAsDataURL(file);
+      setRawPhotoToCrop(rawDataUrl);
+      setPhotoCropModalOpen(true);
+    } catch (err) {
+      console.error("Erro ao carregar arquivo de foto:", err);
+      showToast("Erro ao processar a imagem selecionada.", "error");
+    } finally {
+      setIsAutoCroppingPhoto(false);
+    }
+  };
+
+  const handleAutoCenterCurrentPhoto = async () => {
+    if (!profile?.photoUrl) return;
+    setIsAutoCroppingPhoto(true);
+    try {
+      const { dataUrl, detected } = await autoCropProfileImage(profile.photoUrl);
+      setProfile((prev: any) => ({ ...prev, photoUrl: dataUrl }));
+      showToast(
+        detected
+          ? "Rosto detectado e perfeitamente centralizado no círculo com sucesso!"
+          : "Foto centralizada e otimizada no círculo com sucesso!",
+        "success"
+      );
+    } catch (err) {
+      console.error("Erro ao auto-centralizar foto atual:", err);
+      // Abre o modal interativo como fallback
+      setRawPhotoToCrop(profile.photoUrl);
+      setPhotoCropModalOpen(true);
+    } finally {
+      setIsAutoCroppingPhoto(false);
+    }
+  };
 
   // Aumentar Horas Disponiveis state & handler
   const [showAumentarHorasModal, setShowAumentarHorasModal] = useState(false);
@@ -2070,6 +2116,19 @@ export function DashboardView({
       const authName = profile?.name || "Parceiro";
 
       const updates: any = { status: newStatus };
+      if (newStatus === "Alta") {
+        updates.ativo = false;
+        updates.statusInativacao = "Desligado";
+      } else if (
+        newStatus === "Aguardando Avaliação" ||
+        newStatus === "Em Triagem" ||
+        newStatus === "Aprovado" ||
+        newStatus === "Em Atendimento"
+      ) {
+        updates.ativo = true;
+        updates.statusInativacao = "Ativo";
+      }
+
       if (newStatus === "Em Atendimento" && currentRole === "profissional") {
         updates.profissionalId = user.uid;
       }
@@ -2161,6 +2220,14 @@ export function DashboardView({
   };
 
   const handleOpenPatientWhatsApp = (card: Acolhimento) => {
+    if (currentRole === "profissional" && card.atribuicaoStatus !== "Aceito") {
+      showToast(
+        "Os dados de contato do paciente e o canal de WhatsApp só são liberados após o aceite formal do caso.",
+        "error"
+      );
+      return;
+    }
+
     const rawFirstName = (
       profile?.name ||
       profile?.nome ||
@@ -2945,13 +3012,12 @@ export function DashboardView({
   const filteredAcolhimentos = acolhimentos
     .filter(
       (a) =>
-        a.ativo !== false &&
-        (!searchQuery ||
-          a.nomeCivil?.toLowerCase().includes(lowerQuery) ||
-          a.nome?.toLowerCase().includes(lowerQuery) ||
-          a.nomeDesejado?.toLowerCase().includes(lowerQuery) ||
-          a.motivo?.toLowerCase().includes(lowerQuery) ||
-          a.telefone?.toLowerCase().includes(lowerQuery)),
+        !searchQuery ||
+        a.nomeCivil?.toLowerCase().includes(lowerQuery) ||
+        a.nome?.toLowerCase().includes(lowerQuery) ||
+        a.nomeDesejado?.toLowerCase().includes(lowerQuery) ||
+        a.motivo?.toLowerCase().includes(lowerQuery) ||
+        a.telefone?.toLowerCase().includes(lowerQuery),
     )
     .sort((a, b) => {
       const timeA = getTimestampMillis(a.createdAt);
@@ -3630,67 +3696,7 @@ export function DashboardView({
             </svg>
             Entrar com Google
           </button>
-
-          <div className="mt-2 text-center text-sm text-forest/70">
-            Primeiro acesso?{" "}
-            <button
-              onClick={() => setShowRegisterChoice(true)}
-              className="font-semibold underline underline-offset-4"
-            >
-              Cadastre-se
-            </button>
-          </div>
         </div>
-
-        {showRegisterChoice && (
-          <div className="fixed inset-0 z-[100] bg-forest/80 flex items-center justify-center p-4">
-            <div className="bg-white rounded-[32px] w-full max-w-sm p-8 shadow-2xl relative flex flex-col gap-4">
-              <button
-                onClick={() => setShowRegisterChoice(false)}
-                className="absolute top-6 right-6 text-forest/50 hover:text-forest"
-              >
-                <X className="w-5 h-5" />
-              </button>
-              <h3 className="font-serif text-2xl text-forest mb-2">
-                Quem é você?
-              </h3>
-
-              <button
-                onClick={() => onNavigate("profissional")}
-                className="w-full p-4 border border-soft rounded-xl text-left hover:bg-warm hover:border-sun transition-colors flex items-center gap-3"
-              >
-                <div className="w-10 h-10 rounded-full bg-sun/30 flex items-center justify-center text-forest">
-                  <UserPlus className="w-5 h-5" />
-                </div>
-                <div>
-                  <div className="font-semibold text-forest">
-                    Sou psicólogo/ Terapeuta
-                  </div>
-                  <div className="text-xs text-forest/70">
-                    Quero atender na plataforma
-                  </div>
-                </div>
-              </button>
-
-              <button
-                onClick={() => onNavigate("acolhimento")}
-                className="w-full p-4 border border-soft rounded-xl text-left hover:bg-warm hover:border-sun transition-colors flex items-center gap-3"
-              >
-                <div className="w-10 h-10 rounded-full bg-sun/30 flex items-center justify-center text-forest">
-                  <Heart className="w-5 h-5" />
-                </div>
-                <div>
-                  <div className="font-semibold text-forest">
-                    Sou paciente e quero iniciar meu acolhimento
-                  </div>
-                  <div className="text-xs text-forest/70">
-                    Buscar um profissional
-                  </div>
-                </div>
-              </button>
-            </div>
-          </div>
-        )}
       </div>
     );
   }
@@ -6171,7 +6177,14 @@ export function DashboardView({
                               Telefone:
                             </span>
                             <span className="font-semibold text-forest/90">
-                              {p.telefone}
+                              {p.atribuicaoStatus === "Aceito" ? (
+                                p.telefone
+                              ) : (
+                                <span className="text-amber-800 text-[11px] bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200 flex items-center gap-1 font-medium">
+                                  <Lock className="w-3 h-3 text-amber-600" />
+                                  Oculto até o aceite
+                                </span>
+                              )}
                             </span>
                           </div>
                         )}
@@ -6289,9 +6302,18 @@ export function DashboardView({
             </div>
 
             <div className="bg-white p-8 sm:p-10 rounded-[2rem] shadow-sm border border-soft flex flex-col gap-10">
-              {/* Profile Photo upload component */}
+              {/* Profile Photo upload component with Auto-Face Centering */}
               <div className="flex flex-col sm:flex-row items-center gap-6 pb-6 border-b border-soft">
-                <div className="w-28 h-28 rounded-full overflow-hidden bg-forest/10 border-4 border-sun flex-shrink-0 flex items-center justify-center relative">
+                <div 
+                  className="w-28 h-28 rounded-full overflow-hidden bg-forest/10 border-4 border-sun flex-shrink-0 flex items-center justify-center relative group shadow-sm cursor-pointer"
+                  onClick={() => {
+                    if (profile.photoUrl) {
+                      setRawPhotoToCrop(profile.photoUrl);
+                      setPhotoCropModalOpen(true);
+                    }
+                  }}
+                  title={profile.photoUrl ? "Clique para ajustar o enquadramento" : "Foto de Perfil"}
+                >
                   {profile.photoUrl ? (
                     <img
                       src={profile.photoUrl}
@@ -6301,43 +6323,82 @@ export function DashboardView({
                   ) : (
                     <User className="w-14 h-14 text-forest/70" />
                   )}
+
+                  {profile.photoUrl && (
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white text-[10px] font-bold gap-1 text-center p-1">
+                      <Sparkles className="w-4 h-4 text-sun" />
+                      <span>Ajustar Rosto</span>
+                    </div>
+                  )}
+
+                  {isAutoCroppingPhoto && (
+                    <div className="absolute inset-0 bg-forest/80 flex items-center justify-center text-white">
+                      <Loader2 className="w-6 h-6 animate-spin text-sun" />
+                    </div>
+                  )}
                 </div>
-                <div className="flex flex-col gap-2 items-center sm:items-start">
-                  <h4 className="font-serif text-xl font-medium text-forest">
-                    Foto de Perfil & Divulgação
-                  </h4>
-                  <p className="text-xs text-forest/60 max-w-sm text-center sm:text-left">
-                    Escolha uma foto quadrada, profissional e bem iluminada para
-                    que os pacientes o visualizem.
+
+                <div className="flex flex-col gap-2.5 items-center sm:items-start flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h4 className="font-serif text-xl font-medium text-forest">
+                      Foto de Perfil & Divulgação
+                    </h4>
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-bold uppercase rounded-full">
+                      <Sparkles className="w-3 h-3 text-emerald-600" />
+                      Auto-Centralização Facial
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-forest/60 max-w-lg text-center sm:text-left">
+                    Selecione sua foto. Nosso sistema detecta e centraliza o rosto no círculo automaticamente para que seu perfil fique sempre perfeito e profissional.
                   </p>
 
-                  <label className="mt-1 px-4 py-2 bg-warm hover:bg-soft text-forest text-xs font-bold uppercase tracking-wider rounded-xl cursor-pointer transition-colors border border-soft">
-                    Fazer Upload de Foto
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) {
-                          if (file.size > 1000 * 1024) {
-                            alert(
-                              "A imagem é muito grande. Escolha uma imagem de até 1000KB.",
-                            );
-                            return;
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    <label className="px-4 py-2 bg-forest hover:bg-forest/90 text-white text-xs font-bold uppercase tracking-wider rounded-xl cursor-pointer transition-all shadow-xs hover:shadow flex items-center gap-2">
+                      <Upload className="w-3.5 h-3.5" />
+                      {profile.photoUrl ? "Trocar Foto" : "Fazer Upload de Foto"}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            handlePhotoFileSelected(file);
+                            e.target.value = "";
                           }
-                          const reader = new FileReader();
-                          reader.onloadend = () => {
-                            setProfile((prev: any) => ({
-                              ...prev,
-                              photoUrl: reader.result as string,
-                            }));
-                          };
-                          reader.readAsDataURL(file);
-                        }
-                      }}
-                    />
-                  </label>
+                        }}
+                      />
+                    </label>
+
+                    {profile.photoUrl && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setRawPhotoToCrop(profile.photoUrl);
+                            setPhotoCropModalOpen(true);
+                          }}
+                          className="px-3.5 py-2 bg-warm hover:bg-soft text-forest text-xs font-bold rounded-xl transition-colors border border-soft flex items-center gap-1.5"
+                          title="Ajustar zoom, rotação e posição manual do círculo"
+                        >
+                          <Sliders className="w-3.5 h-3.5 text-forest/70" />
+                          Ajustar Enquadramento
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={handleAutoCenterCurrentPhoto}
+                          disabled={isAutoCroppingPhoto}
+                          className="px-3.5 py-2 bg-sun/20 hover:bg-sun/30 text-forest text-xs font-bold rounded-xl transition-colors border border-sun-dark/20 flex items-center gap-1.5"
+                          title="Recalcular centralização automática do rosto com IA"
+                        >
+                          <Sparkles className="w-3.5 h-3.5 text-sun-dark" />
+                          Auto-Centralizar com IA
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -7358,22 +7419,38 @@ export function DashboardView({
                   const colCards = filteredAcolhimentos
                     .filter((a) => {
                       const cardStatus = a.status || "Aguardando Avaliação";
+                      const isInactiveOrAlta =
+                        cardStatus === "Alta" ||
+                        cardStatus === "Inativo" ||
+                        cardStatus === "Desligado" ||
+                        a.ativo === false ||
+                        a.desligado === true ||
+                        a.statusInativacao === "Inativo" ||
+                        a.statusInativacao === "Desligado";
                       const flow = getPatientFlowDetails(a);
+
                       if (activeTab === "kanban") {
+                        // Triagem tab: shows active leads undergoing triage
                         return (
+                          !isInactiveOrAlta &&
                           cardStatus === col.id &&
                           cardStatus !== "Em Atendimento" &&
-                          cardStatus !== "Alta" &&
                           flow.activeStep < 6
                         );
                       } else {
+                        // Pacientes tab (activeTab === "pacientesAcolhidos" or for profissional)
+                        if (col.id === "Alta") {
+                          // All inactive, desligado, or alta patients go to the Alta / Finalizado column
+                          return isInactiveOrAlta;
+                        }
                         if (col.id === "Em Atendimento") {
+                          // Active patients in accompaniment
                           return (
-                            cardStatus === "Em Atendimento" ||
-                            (flow.activeStep === 6 && cardStatus !== "Alta")
+                            !isInactiveOrAlta &&
+                            (cardStatus === "Em Atendimento" || flow.activeStep === 6)
                           );
                         }
-                        return cardStatus === col.id;
+                        return !isInactiveOrAlta && cardStatus === col.id;
                       }
                     })
                     .sort((a, b) => {
@@ -7473,7 +7550,7 @@ export function DashboardView({
                                 } transition-all group`}
                               >
                                 <div className="flex justify-between items-start mb-2">
-                                  <div className="flex items-center gap-1.5">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
                                     <span className="text-[10px] font-bold text-forest/70 bg-warm px-1.5 py-0.5 rounded border border-soft">
                                       #{cardIdx + 1}
                                     </span>
@@ -7486,6 +7563,12 @@ export function DashboardView({
                                     >
                                       {card.viaAcesso}
                                     </span>
+                                    {(card.status === "Alta" || card.ativo === false || card.desligado || card.statusInativacao === "Inativo" || card.statusInativacao === "Desligado") && (
+                                      <span className="text-[9px] font-bold text-rose-800 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-200 flex items-center gap-0.5">
+                                        <XCircle className="w-2.5 h-2.5 text-rose-600" />
+                                        {card.desligamentoMotivo || (card.statusInativacao === "Inativo" ? "Inativo" : "Alta")}
+                                      </span>
+                                    )}
                                   </div>
                                   <Grip className="w-4 h-4 text-forest/70/30 opacity-0 group-hover:opacity-100 transition-opacity" />
                                 </div>
@@ -9124,15 +9207,25 @@ export function DashboardView({
                 </div>
 
                 <div className="flex items-center gap-1.5 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => handleOpenPatientWhatsApp(selectedCard)}
-                    className="flex items-center gap-1.5 font-bold text-[11px] sm:text-xs px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-xl bg-[#25D366] hover:bg-[#20b858] text-white shadow-2xs transition-all hover:scale-105 shrink-0 cursor-pointer"
-                    title="Enviar WhatsApp para o paciente"
-                  >
-                    <Phone className="w-3.5 h-3.5 text-white" />
-                    <span>WhatsApp</span>
-                  </button>
+                  {currentRole === "profissional" && selectedCard.atribuicaoStatus !== "Aceito" ? (
+                    <div
+                      className="flex items-center gap-1.5 font-bold text-[11px] sm:text-xs px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-xl bg-amber-100/90 text-amber-900 border border-amber-300 shadow-2xs shrink-0 cursor-not-allowed"
+                      title="O WhatsApp do paciente fica oculto e será liberado automaticamente após o aceite do caso na seção 6."
+                    >
+                      <Lock className="w-3.5 h-3.5 text-amber-700" />
+                      <span className="hidden sm:inline">WhatsApp Oculto</span>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenPatientWhatsApp(selectedCard)}
+                      className="flex items-center gap-1.5 font-bold text-[11px] sm:text-xs px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-xl bg-[#25D366] hover:bg-[#20b858] text-white shadow-2xs transition-all hover:scale-105 shrink-0 cursor-pointer"
+                      title="Enviar WhatsApp para o paciente"
+                    >
+                      <Phone className="w-3.5 h-3.5 text-white" />
+                      <span>WhatsApp</span>
+                    </button>
+                  )}
 
                   <button
                     onClick={() => setIsEditingCard(!isEditingCard)}
@@ -9324,13 +9417,13 @@ export function DashboardView({
                       onClick={() => {
                         handleUpdateAcolhimentoProperty(selectedCard.id, "ativo", true);
                         handleUpdateAcolhimentoProperty(selectedCard.id, "statusInativacao", "Ativo");
-                        if (selectedCard.status === "Inativo" || selectedCard.status === "Standby") {
+                        if (selectedCard.status === "Inativo" || selectedCard.status === "Standby" || selectedCard.status === "Alta") {
                           handleUpdateAcolhimentoProperty(selectedCard.id, "status", "Aguardando Avaliação");
                         }
                         showToast("Status alterado para Ativo", "success");
                       }}
                       className={`px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-[10px] sm:text-xs font-bold transition-all flex items-center gap-1 ${
-                        selectedCard.ativo !== false && selectedCard.statusInativacao !== "Standby" && selectedCard.statusInativacao !== "Inativo"
+                        selectedCard.ativo !== false && selectedCard.statusInativacao !== "Standby" && selectedCard.statusInativacao !== "Inativo" && selectedCard.status !== "Alta"
                           ? "bg-emerald-600 text-white shadow-2xs"
                           : "text-forest/70 hover:text-forest hover:bg-white/60"
                       }`}
@@ -9360,15 +9453,16 @@ export function DashboardView({
                       type="button"
                       onClick={() => {
                         handleUpdateAcolhimentoProperty(selectedCard.id, "ativo", false);
+                        handleUpdateAcolhimentoProperty(selectedCard.id, "status", "Alta");
                         handleUpdateAcolhimentoProperty(selectedCard.id, "statusInativacao", "Inativo");
-                        showToast("Status alterado para Inativo", "error");
+                        showToast("Paciente inativado e direcionado para Alta / Finalizado", "info");
                       }}
                       className={`px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-[10px] sm:text-xs font-bold transition-all flex items-center gap-1 ${
-                        selectedCard.ativo === false || selectedCard.statusInativacao === "Inativo"
+                        selectedCard.ativo === false || selectedCard.statusInativacao === "Inativo" || selectedCard.status === "Alta"
                           ? "bg-rose-600 text-white shadow-2xs"
                           : "text-forest/70 hover:text-forest hover:bg-white/60"
                       }`}
-                      title="Inativar paciente"
+                      title="Inativar paciente (direcionar para Alta / Finalizado)"
                     >
                       <XCircle className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> <span className="hidden sm:inline">Inativar</span>
                     </button>
@@ -9528,41 +9622,105 @@ export function DashboardView({
                   <h4 className="text-xs font-bold uppercase tracking-wider text-forest/80 flex items-center gap-2">
                     <Phone className="w-4 h-4 text-forest" /> 3. Dados de Contato
                   </h4>
-                  <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md bg-warm text-forest/70 border border-soft">
-                    Comunicação
-                  </span>
+                  {currentRole === "profissional" && selectedCard.atribuicaoStatus !== "Aceito" ? (
+                    <span className="text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1 shadow-2xs">
+                      <Lock className="w-3 h-3 text-amber-700" /> Oculto até o Aceite
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md bg-warm text-forest/70 border border-soft">
+                      Comunicação
+                    </span>
+                  )}
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                  <EditableField
-                    label="E-mail"
-                    value={selectedCard.email}
-                    field="email"
-                    onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
-                    isEditing={isEditingCard}
-                  />
-                  <EditableField
-                    label="Telefone / WhatsApp"
-                    value={selectedCard.telefone}
-                    field="telefone"
-                    onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
-                    isEditing={isEditingCard}
-                  />
-                  <EditableField
-                    label="Cidade / Estado"
-                    value={selectedCard.cidadeEstado || (selectedCard.cidade ? `${selectedCard.cidade}${selectedCard.estado ? ` - ${selectedCard.estado}` : ''}` : '')}
-                    field="cidadeEstado"
-                    onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
-                    isEditing={isEditingCard}
-                  />
-                  <EditableField
-                    label="Endereço / Bairro"
-                    value={selectedCard.endereco}
-                    field="endereco"
-                    onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
-                    isEditing={isEditingCard}
-                  />
-                </div>
+                {currentRole === "profissional" && selectedCard.atribuicaoStatus !== "Aceito" ? (
+                  <div className="space-y-4">
+                    <div className="p-4 bg-amber-50/90 border border-amber-200 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
+                      <div className="flex items-start gap-3">
+                        <div className="w-9 h-9 rounded-xl bg-amber-200/80 text-amber-900 flex items-center justify-center shrink-0 mt-0.5">
+                          <Lock className="w-5 h-5 text-amber-800" />
+                        </div>
+                        <div className="space-y-1">
+                          <h5 className="text-xs font-bold text-amber-950">
+                            Dados de Contato Ocultos (Aguardando Aceite do Caso)
+                          </h5>
+                          <p className="text-xs text-amber-900/80 leading-relaxed max-w-2xl">
+                            Para resguardar o fluxo ético e evitar contatos prévios antes da confirmação, os dados de contato direto (telefone, WhatsApp, e-mail e endereço) ficam temporariamente ocultos. Para ter acesso completo aos dados e iniciar os atendimentos, formalize o aceite na <strong>seção 6 (Proposta & Atribuição de Profissional)</strong> abaixo. Caso o caso seja devolvido para a triagem, os dados continuam protegidos.
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const elem = document.getElementById("sec-6-proposta");
+                          if (elem) elem.scrollIntoView({ behavior: "smooth" });
+                        }}
+                        className="shrink-0 px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition-colors shadow-2xs flex items-center gap-1.5 self-end sm:self-center"
+                      >
+                        Ir para o Aceite <ArrowRight className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                      <div className="p-3 bg-warm/30 rounded-xl border border-soft space-y-1">
+                        <span className="text-[10px] uppercase font-bold text-forest/50 block">E-mail</span>
+                        <div className="flex items-center gap-1.5 text-xs text-forest/60 font-mono">
+                          <Lock className="w-3.5 h-3.5 text-amber-600" /> ••••••••••••
+                        </div>
+                      </div>
+                      <div className="p-3 bg-warm/30 rounded-xl border border-soft space-y-1">
+                        <span className="text-[10px] uppercase font-bold text-forest/50 block">Telefone / WhatsApp</span>
+                        <div className="flex items-center gap-1.5 text-xs text-forest/60 font-mono">
+                          <Lock className="w-3.5 h-3.5 text-amber-600" /> ••••••••••••
+                        </div>
+                      </div>
+                      <EditableField
+                        label="Cidade / Estado"
+                        value={selectedCard.cidadeEstado || (selectedCard.cidade ? `${selectedCard.cidade}${selectedCard.estado ? ` - ${selectedCard.estado}` : ''}` : '')}
+                        field="cidadeEstado"
+                        onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
+                        isEditing={isEditingCard}
+                      />
+                      <div className="p-3 bg-warm/30 rounded-xl border border-soft space-y-1">
+                        <span className="text-[10px] uppercase font-bold text-forest/50 block">Endereço / Bairro</span>
+                        <div className="flex items-center gap-1.5 text-xs text-forest/60">
+                          <Lock className="w-3.5 h-3.5 text-amber-600" /> (Oculto até o aceite)
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                    <EditableField
+                      label="E-mail"
+                      value={selectedCard.email}
+                      field="email"
+                      onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
+                      isEditing={isEditingCard}
+                    />
+                    <EditableField
+                      label="Telefone / WhatsApp"
+                      value={selectedCard.telefone}
+                      field="telefone"
+                      onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
+                      isEditing={isEditingCard}
+                    />
+                    <EditableField
+                      label="Cidade / Estado"
+                      value={selectedCard.cidadeEstado || (selectedCard.cidade ? `${selectedCard.cidade}${selectedCard.estado ? ` - ${selectedCard.estado}` : ''}` : '')}
+                      field="cidadeEstado"
+                      onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
+                      isEditing={isEditingCard}
+                    />
+                    <EditableField
+                      label="Endereço / Bairro"
+                      value={selectedCard.endereco}
+                      field="endereco"
+                      onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
+                      isEditing={isEditingCard}
+                    />
+                  </div>
+                )}
               </div>
 
               {/* 4. FONTE DE ACESSO (COMO CONHECEU O PROJETO) */}
@@ -14014,6 +14172,21 @@ export function DashboardView({
           }}
         />
       )}
+
+      {/* Modal de Enquadramento Inteligente e Auto-Centralização de Rosto */}
+      <PhotoCropModal
+        isOpen={photoCropModalOpen}
+        onClose={() => setPhotoCropModalOpen(false)}
+        imageSrc={rawPhotoToCrop}
+        onSave={(croppedUrl) => {
+          setProfile((prev: any) => ({
+            ...prev,
+            photoUrl: croppedUrl,
+          }));
+          showToast("Foto ajustada e centralizada com sucesso!", "success");
+        }}
+        title="Enquadramento do Perfil do Profissional"
+      />
     </div>
   );
 }

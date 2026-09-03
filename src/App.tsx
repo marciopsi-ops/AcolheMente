@@ -260,10 +260,24 @@ export default function App() {
       ) {
         setCurrentView(v as any);
       }
+      window.scrollTo({ top: 0, left: 0, behavior: "instant" });
     };
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
+
+  // Garante que qualquer retorno ou transição de tela apresente a página sempre do topo
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+  }, [
+    currentView,
+    publicProfUid,
+    publicServiceId,
+    publicEventoId,
+    publicContratoId,
+    publicPropostaId,
+    publicArtigoId,
+  ]);
 
   useEffect(() => {
     const fetchConfigs = async () => {
@@ -296,6 +310,7 @@ export default function App() {
   const [showDoacaoConfirm, setShowDoacaoConfirm] = useState(false);
 
   const handleNavigate = (view: any) => {
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
     if (view === "doacao") {
       if (doacoesAtivas) {
         setShowDoacaoConfirm(true);
@@ -308,6 +323,7 @@ export default function App() {
   };
 
   const handleGoToLanding = () => {
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
     try {
       const cleanUrl = window.location.origin + window.location.pathname;
       window.history.pushState({}, "", cleanUrl);
@@ -324,6 +340,7 @@ export default function App() {
   };
 
   const handleBackFromPublicProfile = () => {
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
     handleGoToLanding();
   };
 

@@ -40,6 +40,7 @@ export function Footer({ onNavigate }: { onNavigate?: (view: any) => void }) {
   }, []);
 
   const handleNav = (view: string) => {
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
     if (onNavigate) {
       onNavigate(view);
     }

@@ -1,6 +1,6 @@
 import { ArrowLeft, CheckCircle2, Leaf, Laptop, ShieldCheck, DollarSign, Building2, User } from "lucide-react";
 import { Footer } from "../components/Footer";
-import { FormEvent, useState } from "react";
+import { FormEvent, useState, useEffect } from "react";
 import { collection, addDoc, serverTimestamp, getDocs, query, where } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { sendPatientRegistrationEmail } from "../lib/emailService";
@@ -21,6 +21,10 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
   });
   const [step, setStep] = useState<number>(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+  }, []);
 
   // Form Data
   const [name, setName] = useState("");
@@ -321,7 +325,10 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
     <div className="min-h-screen flex flex-col relative overflow-x-hidden bg-warm">
       <nav className="w-full py-6 px-6 md:px-12 flex items-center border-b border-soft">
         <button 
-          onClick={() => onNavigate('landing')}
+          onClick={() => {
+            window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+            onNavigate('landing');
+          }}
           className="flex items-center gap-2 text-forest/70 hover:text-forest transition-colors mr-auto cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />

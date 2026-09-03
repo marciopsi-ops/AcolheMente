@@ -1,5 +1,5 @@
 import { Footer } from '../components/Footer';
-import { ArrowLeft, CheckCircle2, HeartHandshake, UserPlus, Clock, PiggyBank, Network, Wallet, Check, CreditCard, Sparkles } from "lucide-react";
+import { ArrowLeft, CheckCircle2, HeartHandshake, UserPlus, Clock, PiggyBank, Network, Wallet, Check, CreditCard, Sparkles, BookOpen } from "lucide-react";
 import React, { FormEvent, useState, useEffect } from "react";
 import { collection, addDoc, serverTimestamp, getDocs, query, where, doc, onSnapshot } from "firebase/firestore";
 import { db, handleFirestoreError, OperationType } from "../lib/firebase";
@@ -8,7 +8,7 @@ import { sendWebhookNotification } from "../lib/webhookNotifier";
 import { Breadcrumbs } from "../components/Breadcrumbs";
 import { StripeCheckoutModal } from "../components/StripeCheckoutModal";
 
-import psicologoHero from '../assets/images/psicologo_hero_photo_1781024080247.png';
+import psicologoHero from '../assets/images/psicologa_hero_parda_1788390113480.jpg';
 import logoImage from '../assets/images/logo_acolhe.jpeg';
 
 export const OPCOES_SERVICOS = [
@@ -62,6 +62,10 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
   const [cienciaTaxa, setCienciaTaxa] = useState(false);
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
   const [registeredLeadId, setRegisteredLeadId] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+  }, []);
 
   useEffect(() => {
     const unsub = onSnapshot(doc(db, "configuracoes", "master"), (snap) => {
@@ -243,7 +247,13 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
       {/* Header */}
       <nav className="h-20 bg-white/50 backdrop-blur-md border-b border-soft px-6 md:px-12 flex justify-between items-center sticky top-0 z-50">
         <div className="flex items-center gap-4">
-          <button onClick={() => onNavigate('landing')} className="text-forest/60 hover:text-forest transition-colors p-2 -ml-2 rounded-full hover:bg-forest/5">
+          <button 
+            onClick={() => {
+              window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+              onNavigate('landing');
+            }} 
+            className="text-forest/60 hover:text-forest transition-colors p-2 -ml-2 rounded-full hover:bg-forest/5 cursor-pointer"
+          >
             <ArrowLeft className="w-6 h-6" />
           </button>
           <div className="flex items-center gap-3">
@@ -276,7 +286,7 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
                 </p>
               </div>
               <div className="w-full lg:w-1/2 flex justify-center lg:justify-end">
-                <img src={psicologoHero} alt="Ilustração Psicologia" className="w-full max-w-lg object-contain rounded-3xl mix-blend-multiply" referrerPolicy="no-referrer" />
+                <img src={psicologoHero} alt="Psicóloga e Terapeuta AcolheMente" className="w-full max-w-lg object-cover aspect-[4/3] rounded-3xl shadow-sm border border-soft" referrerPolicy="no-referrer" />
               </div>
             </div>
             
@@ -305,6 +315,11 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
                 <Network className="w-8 h-8 text-sun-dark" />
                 <h3 className="font-semibold text-lg text-forest">Conexão entre Profissionais</h3>
                 <p className="text-sm text-forest/80">Ofereça e usufrua de serviços exclusivos na plataforma: supervisão, cursos, workshops e consultorias.</p>
+              </div>
+              <div className="bg-warm/50 p-6 rounded-3xl border border-soft flex flex-col gap-3">
+                <BookOpen className="w-8 h-8 text-sun-dark" />
+                <h3 className="font-semibold text-lg text-forest">Publicação de Artigos</h3>
+                <p className="text-sm text-forest/80">Publique conteúdos e artigos de sua autoria no Blog oficial do projeto, fortalecendo sua autoridade profissional e alcance.</p>
               </div>
               <div className="col-span-1 sm:col-span-2 lg:col-span-3 bg-gradient-to-br from-forest via-[#1d3c2b] to-[#12281c] text-white p-8 md:p-10 rounded-3xl border-2 border-sun-dark/40 shadow-xl relative overflow-hidden group hover:border-sun-dark transition-all duration-300 my-2">
                 {/* Background glow accent */}
@@ -432,14 +447,20 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
 
                 <div className="flex flex-col sm:flex-row gap-3 w-full max-w-lg">
                   <button 
-                    onClick={() => onNavigate('landing')}
-                    className="flex-1 py-3 px-6 border border-soft text-forest rounded-full font-semibold hover:bg-forest/5 transition-all text-sm"
+                    onClick={() => {
+                      window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+                      onNavigate('landing');
+                    }}
+                    className="flex-1 py-3 px-6 border border-soft text-forest rounded-full font-semibold hover:bg-forest/5 transition-all text-sm cursor-pointer"
                   >
                     Voltar ao Início
                   </button>
                   <button 
-                    onClick={() => onNavigate('dashboard')}
-                    className="flex-1 py-3 px-6 bg-warm text-forest border border-soft rounded-full font-semibold hover:bg-warm/80 transition-all text-sm"
+                    onClick={() => {
+                      window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+                      onNavigate('dashboard');
+                    }}
+                    className="flex-1 py-3 px-6 bg-warm text-forest border border-soft rounded-full font-semibold hover:bg-warm/80 transition-all text-sm cursor-pointer"
                   >
                     Acessar Meu Painel
                   </button>

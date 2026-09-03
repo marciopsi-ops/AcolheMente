@@ -32,6 +32,10 @@ export function EmpresaView({ onNavigate }: { onNavigate: (view: 'landing' | 'ac
   });
 
   useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+  }, []);
+
+  useEffect(() => {
     const fetchConfigs = async () => {
       try {
         const snap = await getDoc(doc(db, "configuracoes", "master"));
@@ -141,7 +145,13 @@ export function EmpresaView({ onNavigate }: { onNavigate: (view: 'landing' | 'ac
       {/* Header */}
       <nav className="h-20 bg-white/50 backdrop-blur-md border-b border-soft px-6 md:px-12 flex justify-between items-center sticky top-0 z-50">
         <div className="flex items-center gap-4">
-          <button onClick={() => onNavigate('landing')} className="text-forest/70 hover:text-forest transition-colors p-2 -ml-2 rounded-full hover:bg-forest/5">
+          <button 
+            onClick={() => {
+              window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+              onNavigate('landing');
+            }} 
+            className="text-forest/70 hover:text-forest transition-colors p-2 -ml-2 rounded-full hover:bg-forest/5 cursor-pointer"
+          >
             <ArrowLeft className="w-6 h-6" />
           </button>
           <div className="flex items-center gap-3">
@@ -316,8 +326,11 @@ export function EmpresaView({ onNavigate }: { onNavigate: (view: 'landing' | 'ac
                   Nossa equipe de parcerias já recebeu seus dados e entrará em contato em até 24h para montar uma proposta ideal.
                 </p>
                 <button 
-                  onClick={() => onNavigate('landing')}
-                  className="px-8 py-4 bg-forest text-white rounded-full font-semibold hover:bg-forest/90 transition-all shadow-md"
+                  onClick={() => {
+                    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+                    onNavigate('landing');
+                  }}
+                  className="px-8 py-4 bg-forest text-white rounded-full font-semibold hover:bg-forest/90 transition-all shadow-md cursor-pointer"
                 >
                   Voltar para o Início
                 </button>
