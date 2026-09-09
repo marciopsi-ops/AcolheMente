@@ -1,11 +1,12 @@
 import { ArrowLeft, CheckCircle2, Leaf, Laptop, ShieldCheck, DollarSign, Building2, User } from "lucide-react";
 import { Footer } from "../components/Footer";
 import { FormEvent, useState, useEffect } from "react";
-import { collection, addDoc, serverTimestamp, getDocs, query, where } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, getDocs, query, where, updateDoc, doc } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { sendPatientRegistrationEmail } from "../lib/emailService";
 import { Breadcrumbs } from "../components/Breadcrumbs";
 import { AcolhimentoCorporativoView } from "../components/AcolhimentoCorporativoView";
+import { ProcessoExistenteModal } from "../components/ProcessoExistenteModal";
 
 import pacienteHero from '../assets/images/paciente_hero_laptop_therapist_1782433549769.jpg';
 import logoImage from '../assets/images/logo_acolhe.jpeg';
@@ -21,6 +22,12 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
   });
   const [step, setStep] = useState<number>(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Estados para Detecção e Tratamento de Processo Existente
+  const [existingProcess, setExistingProcess] = useState<{ id: string; data: any } | null>(null);
+  const [showExistingModal, setShowExistingModal] = useState(false);
+  const [submissionType, setSubmissionType] = useState<"novo" | "atualizado" | "reiniciado">("novo");
+  const [isProcessingRestart, setIsProcessingRestart] = useState(false);
 
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: "instant" });
@@ -75,6 +82,147 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
       elem.scrollIntoView({ behavior: "smooth", block: "start" });
     } else {
       window.scrollTo({ top: 350, behavior: "smooth" });
+    }
+  };
+
+  const handleRestartProcess = async () => {
+    if (!existingProcess) return;
+    setIsProcessingRestart(true);
+    setErrorMsg("");
+    try {
+      const cleanEmail = (email.trim().toLowerCase() || existingProcess.data.email || "").trim().toLowerCase();
+      const patientName = name.trim() || existingProcess.data.nome || "Paciente";
+
+      await updateDoc(doc(db, "acolhimentos", existingProcess.id), {
+        status: "Aguardando Avaliação",
+        ativo: true,
+        statusInativacao: null,
+        desligado: false,
+        desligamentoMotivo: null,
+        desligadoEm: null,
+        propostaStatus: null,
+        propostaEnviada: false,
+        motivoPausaCancelamento: null,
+        motivoRevisao: null,
+        dataPausaCancelamento: null,
+        dataSolicitacaoRevisao: null,
+        reiniciadoEm: new Date().toISOString(),
+        notificacao: `Processo reiniciado pelo paciente em ${new Date().toLocaleDateString('pt-BR')}. Encaminhado para a fila de Novos Acolhimentos.`,
+        updatedAt: serverTimestamp(),
+        ...(name.trim() ? { nome: name.trim() } : {}),
+        ...(telefone.trim() ? { telefone: telefone.trim() } : {}),
+        ...(cpf.trim() ? { cpf: cpf.trim() } : {}),
+      });
+
+      if (cleanEmail) {
+        try {
+          await sendPatientRegistrationEmail(patientName, cleanEmail);
+        } catch (emailErr) {
+          console.error("Erro ao enviar email de reinício de acolhimento:", emailErr);
+        }
+      }
+
+      setSubmissionType("reiniciado");
+      setShowExistingModal(false);
+      setStep(5);
+      scrollToForm();
+    } catch (err) {
+      console.error("Erro ao reiniciar processo:", err);
+      setErrorMsg("Ocorreu um erro ao reiniciar o processo. Por favor, tente novamente.");
+    } finally {
+      setIsProcessingRestart(false);
+    }
+  };
+
+  const handleOptionUpdateQuestionnaire = async () => {
+    setShowExistingModal(false);
+    setSubmissionType("atualizado");
+    if (step === 1) {
+      setStep(2);
+      scrollToForm();
+    } else if (step === 4) {
+      if (existingProcess) {
+        await executeSubmit(existingProcess.id);
+      }
+    }
+  };
+
+  const executeSubmit = async (existingId?: string) => {
+    setIsSubmitting(true);
+    setErrorMsg("");
+    try {
+      const cleanEmail = email.trim().toLowerCase();
+      const payload: Record<string, any> = {
+        nome: name.trim(),
+        email: cleanEmail,
+        telefone: telefone.trim(),
+        cpf: cpf.trim(),
+        dataNascimento,
+        genero,
+        deficiencia,
+        estadoCivil,
+        temFilhos,
+        faixaEtariaFilhos: temFilhos === "Não possui filhos" ? "Não se aplica (sem filhos)" : faixaEtariaFilhos,
+        filhosMoramJunto: temFilhos === "Não possui filhos" ? "Não se aplica (sem filhos)" : filhosMoramJunto,
+        tratamentoPara,
+        idadeTratamento,
+        responsavelNome: responsavelNome.trim(),
+        responsavelCpf: responsavelCpf.trim(),
+        comoConheceu,
+        viaAcesso: "Particular",
+        empresa: "",
+        fonteRenda,
+        faixaSalarial,
+        dependentes,
+        planoSaude,
+        escolaridade,
+        moradia,
+        comodos,
+        internet,
+        dispositivo,
+        terapiaAnterior,
+        melhoresPeriodos,
+        motivo: `${motivo} - Detalhes: ${complaint.trim()}`,
+        status: "Aguardando Avaliação",
+        ativo: true,
+        statusInativacao: null,
+        desligado: false,
+        desligamentoMotivo: null,
+        desligadoEm: null,
+        propostaStatus: null,
+        propostaEnviada: false,
+        motivoPausaCancelamento: null,
+        motivoRevisao: null,
+        dataPausaCancelamento: null,
+        dataSolicitacaoRevisao: null,
+      };
+
+      if (existingId) {
+        payload.atualizadoEm = new Date().toISOString();
+        payload.notificacao = `Questionário atualizado pelo paciente em ${new Date().toLocaleDateString('pt-BR')}. Encaminhado para a fila de Novos Acolhimentos.`;
+        payload.updatedAt = serverTimestamp();
+        await updateDoc(doc(db, "acolhimentos", existingId), payload);
+        setSubmissionType("atualizado");
+      } else {
+        payload.notificacao = "Novo cadastro de paciente recebido no sistema. Por favor, analise a ficha.";
+        payload.createdAt = serverTimestamp();
+        await addDoc(collection(db, "acolhimentos"), payload);
+        setSubmissionType("novo");
+      }
+
+      try {
+        await sendPatientRegistrationEmail(name.trim(), cleanEmail);
+      } catch (emailErr) {
+        console.error("Erro ao enviar email de acolhimento:", emailErr);
+      }
+
+      setStep(5);
+      scrollToForm();
+    } catch (err: any) {
+      console.error("Erro ao registrar acolhimento:", err);
+      setErrorMsg("Ocorreu um erro ao salvar o acolhimento. Por favor, tente novamente.");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -159,6 +307,28 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
         setErrorMsg("Por favor, informe como nos conheceu.");
         scrollToForm();
         return;
+      }
+
+      // Verificar se já existe acolhimento cadastrado com este e-mail
+      const cleanEmail = email.trim().toLowerCase();
+      try {
+        setIsSubmitting(true);
+        const q = query(collection(db, "acolhimentos"), where("email", "==", cleanEmail));
+        const querySnapshot = await getDocs(q);
+        if (!querySnapshot.empty) {
+          const docData = querySnapshot.docs[0];
+          setExistingProcess({
+            id: docData.id,
+            data: docData.data(),
+          });
+          setShowExistingModal(true);
+          setIsSubmitting(false);
+          return;
+        }
+      } catch (err) {
+        console.error("Erro ao verificar duplicidade:", err);
+      } finally {
+        setIsSubmitting(false);
       }
 
       setErrorMsg("");
@@ -246,70 +416,36 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
         return;
       }
 
-      setIsSubmitting(true);
-      setErrorMsg("");
-      
+      const cleanEmail = email.trim().toLowerCase();
+
+      // Se já foi identificado processo existente anteriormente, atualiza diretamente
+      if (existingProcess) {
+        await executeSubmit(existingProcess.id);
+        return;
+      }
+
+      // Verificação de duplicidade de segurança no envio final
       try {
-        const cleanEmail = email.trim().toLowerCase();
+        setIsSubmitting(true);
         const q = query(collection(db, "acolhimentos"), where("email", "==", cleanEmail));
         const querySnapshot = await getDocs(q);
         if (!querySnapshot.empty) {
-          setErrorMsg("Este e-mail já aparece em nossa triagem ou em nosso banco de dados.");
+          const docData = querySnapshot.docs[0];
+          setExistingProcess({
+            id: docData.id,
+            data: docData.data(),
+          });
+          setShowExistingModal(true);
           setIsSubmitting(false);
-          scrollToForm();
           return;
         }
-
-        await addDoc(collection(db, "acolhimentos"), {
-          nome: name.trim(),
-          email: cleanEmail,
-          telefone: telefone.trim(),
-          cpf: cpf.trim(),
-          dataNascimento,
-          genero,
-          deficiencia,
-          estadoCivil,
-          temFilhos,
-          faixaEtariaFilhos: temFilhos === "Não possui filhos" ? "Não se aplica (sem filhos)" : faixaEtariaFilhos,
-          filhosMoramJunto: temFilhos === "Não possui filhos" ? "Não se aplica (sem filhos)" : filhosMoramJunto,
-          tratamentoPara,
-          idadeTratamento,
-          responsavelNome: responsavelNome.trim(),
-          responsavelCpf: responsavelCpf.trim(),
-          comoConheceu,
-          viaAcesso: "Particular",
-          empresa: "",
-          fonteRenda,
-          faixaSalarial,
-          dependentes,
-          planoSaude,
-          escolaridade,
-          moradia,
-          comodos,
-          internet,
-          dispositivo,
-          terapiaAnterior,
-          melhoresPeriodos,
-          motivo: `${motivo} - Detalhes: ${complaint.trim()}`,
-          status: "Aguardando Avaliação",
-          notificacao: "Novo cadastro de paciente recebido no sistema. Por favor, analise a ficha.",
-          createdAt: serverTimestamp()
-        });
-
-        try {
-          await sendPatientRegistrationEmail(name.trim(), cleanEmail);
-        } catch (emailErr) {
-          console.error("Erro ao enviar email de acolhimento:", emailErr);
-        }
-
-        setStep(5);
-        scrollToForm();
-      } catch (err: any) {
-        console.error("Erro ao registrar acolhimento:", err);
-        setErrorMsg("Ocorreu um erro ao salvar o acolhimento. Por favor, tente novamente.");
+      } catch (err) {
+        console.error("Erro ao verificar duplicidade no envio final:", err);
       } finally {
         setIsSubmitting(false);
       }
+
+      await executeSubmit();
     }
   };
 
@@ -494,9 +630,19 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
                     <div className="w-20 h-20 bg-sun-light rounded-full flex items-center justify-center text-forest mb-6">
                       <CheckCircle2 className="w-10 h-10" />
                     </div>
-                    <h2 className="font-serif text-3xl md:text-4xl font-medium text-forest mb-4">Acolhimento Recebido!</h2>
+                    <h2 className="font-serif text-3xl md:text-4xl font-medium text-forest mb-4">
+                      {submissionType === "reiniciado"
+                        ? "Processo Reiniciado!"
+                        : submissionType === "atualizado"
+                        ? "Questionário Atualizado!"
+                        : "Acolhimento Recebido!"}
+                    </h2>
                     <p className="text-forest/70 max-w-md mb-8 leading-relaxed">
-                      Agradecemos a confiança, {name.split(' ')[0]}. Nossa equipe de triagem já recebeu suas informações e está preparando o encaminhamento ideal em até 24h.
+                      {submissionType === "reiniciado"
+                        ? `Agradecemos a confiança, ${name.split(' ')[0]}. Seu processo foi reiniciado com sucesso e encaminhado diretamente para a fila de Novos Acolhimentos da equipe de triagem.`
+                        : submissionType === "atualizado"
+                        ? `Agradecemos a confiança, ${name.split(' ')[0]}. Suas respostas foram atualizadas com sucesso e seu acolhimento foi direcionado para a fila de Novos Acolhimentos da equipe de triagem.`
+                        : `Agradecemos a confiança, ${name.split(' ')[0]}. Nossa equipe de triagem já recebeu suas informações e está preparando o encaminhamento ideal em até 24h.`}
                     </p>
                     <div className="p-6 bg-warm rounded-2xl border border-soft text-sm text-forest/80 mb-8 max-w-sm">
                       Acompanhe o e-mail <strong>{email}</strong> para conferir os próximos passos. Verifique também a sua caixa de spam.
@@ -1014,6 +1160,17 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
         </>
         )}
       </main>
+
+      <ProcessoExistenteModal
+        isOpen={showExistingModal}
+        onClose={() => setShowExistingModal(false)}
+        email={email.trim().toLowerCase() || (existingProcess?.data?.email || "")}
+        nome={name.trim() || (existingProcess?.data?.nome || "")}
+        onUpdateQuestionnaire={handleOptionUpdateQuestionnaire}
+        onRestartProcess={handleRestartProcess}
+        isProcessing={isProcessingRestart}
+      />
+
       <Footer onNavigate={onNavigate} />
     </div>
   );

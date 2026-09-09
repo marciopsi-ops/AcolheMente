@@ -119,5 +119,23 @@ service cloud.firestore {
       allow create: if true;
       allow read, update, delete: if isSignedIn() && (isMaster() || isTriagem());
     }
+
+    // Fila de Notificações Agendadas e Histórico de Disparos
+    match /notificacoes_agendadas/{notifId} {
+      allow create: if true;
+      allow read, update, delete: if isSignedIn() && (isMaster() || isTriagem());
+    }
+
+    match /notificacoes_historico/{histId} {
+      allow create: if true;
+      allow read, update, delete: if isSignedIn() && (isMaster() || isTriagem());
+    }
+
+    // Alertas de Demanda entre Profissionais (Rede de Conexão)
+    match /alertas_demanda/{alertaId} {
+      allow read: if true;
+      allow create: if isSignedIn() && (isProfissional() || isMaster() || isTriagem());
+      allow update, delete: if isSignedIn() && (isMaster() || isTriagem() || (resource.data.autorUid == request.auth.uid));
+    }
   }
 }

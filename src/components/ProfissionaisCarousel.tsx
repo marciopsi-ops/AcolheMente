@@ -259,9 +259,9 @@ export function ProfissionaisCarousel() {
                     {prof.name}
                   </h3>
 
-                  {/* 3. Profissão */}
+                  {/* 3. Profissão (Permite até 2 linhas caso não caiba em uma) */}
                   <p
-                    className="text-xs text-forest/75 font-semibold tracking-wide w-full line-clamp-1 px-1 text-center leading-snug break-words"
+                    className="text-xs text-forest/75 font-semibold tracking-wide w-full line-clamp-2 min-h-[32px] flex items-center justify-center px-1 text-center leading-snug break-words"
                     title={prof.profissao}
                   >
                     {prof.profissao}

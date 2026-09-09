@@ -2,29 +2,26 @@ import { doc, getDoc } from "firebase/firestore";
 import { db } from "./firebase";
 
 export interface WebhookEventPayload {
-  event: 
-    | "novo_profissional"
-    | "novo_acolhimento"
-    | "novo_paciente_manual"
-    | "nova_empresa"
-    | "inscricao_evento_servico"
-    | "pagamento_profissional"
-    | "status_lead_alterado"
-    | "proposta_aceita"
-    | "proposta_revisao"
-    | "atribuicao_paciente_resumo"
-    | "notificacao_resumo_caso"
-    | "teste_webhook";
+  event: string;
   recipientEmail?: string;
+  recipientPhone?: string;
   recipientName?: string;
   title?: string;
   message?: string;
   data?: Record<string, any>;
 }
 
+export interface WebhookSendResult {
+  success: boolean;
+  status?: number;
+  messageId?: string;
+  error?: string;
+  data?: any;
+}
+
 /**
- * Dispatches automated transactional notification payloads to external webhooks
- * (such as Brevo, Make, N8n, Zapier, Resend or custom HTTP endpoints).
+ * Dispatches automated transactional notification payloads to Brevo or external webhooks
+ * (such as Brevo SMTP API, Make, N8n, Zapier, or custom HTTP endpoints).
  */
 export async function sendWebhookNotification(
   payload: WebhookEventPayload,
@@ -35,7 +32,7 @@ export async function sendWebhookNotification(
     webhookEmailSender?: string;
     emailSuporte?: string;
   }
-) {
+): Promise<WebhookSendResult> {
   try {
     let dbConfig: any = {};
     try {
@@ -49,72 +46,88 @@ export async function sendWebhookNotification(
 
     const config = { ...dbConfig, ...overrideConfig };
 
-    // For test events or when URL is provided directly, allow sending
+    // Auto-detect Brevo URL if secret (API key) is provided but URL was left blank
+    if (!config.webhookEmailUrl && config.webhookEmailSecret) {
+      config.webhookEmailUrl = "https://api.brevo.com/v3/smtp/email";
+    }
+
+    // If enabled is not explicitly set, enable if URL or secret exists
+    if (config.webhookEmailEnabled === undefined && (config.webhookEmailUrl || config.webhookEmailSecret)) {
+      config.webhookEmailEnabled = true;
+    }
+
+    // For test events, force enabled
     if (payload.event === "teste_webhook") {
       config.webhookEmailEnabled = true;
     }
 
-    // Check if webhook integrations are active and configured
+    // Check if webhook / email integration is active and configured
     if (!config.webhookEmailEnabled || !config.webhookEmailUrl) {
-      console.log(`[WebhookNotifier] Webhook is disabled or URL is missing for event "${payload.event}".`);
+      console.log(`[WebhookNotifier] Webhook / Brevo is disabled or URL is missing for event "${payload.event}".`);
       return {
         success: false,
-        error: "Integração desativada ou URL de destino não informada."
+        error: "Envio por e-mail desativado ou URL/Chave do Brevo não configurada no Painel Master."
       };
     }
 
-    // Check if specific event is enabled (if configured in options array)
-    if (config.webhookEmailEvents && Array.isArray(config.webhookEmailEvents) && config.webhookEmailEvents.length > 0) {
-      if (!config.webhookEmailEvents.includes(payload.event) && payload.event !== "teste_webhook") {
-        console.log(`[WebhookNotifier] Event "${payload.event}" is not enabled in webhook settings.`);
-        return;
-      }
-    }
+    const targetUrl = config.webhookEmailUrl.trim();
+    const isBrevoApi = targetUrl.includes("api.brevo.com");
 
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-      "User-Agent": "AcolheMente-Webhook/1.0",
-    };
-
-    const isBrevoApi = config.webhookEmailUrl.includes("api.brevo.com");
-
-    const senderEmail = config.webhookEmailSender || config.emailSuporte || "contato@proacolhemente.com.br";
+    const senderEmail = (config.webhookEmailSender || config.emailSuporte || "contato@proacolhemente.com.br").trim();
     const senderName = "Projeto AcolheMente Saúde";
-    const recipientEmail = payload.recipientEmail || senderEmail;
-    const recipientName = payload.recipientName || recipientEmail;
+    const recipientEmail = (payload.recipientEmail || senderEmail).trim();
+    const recipientName = (payload.recipientName || recipientEmail).trim();
+
+    // Prepare complete rich HTML body
+    const rawHtml = payload.data?.htmlContent || `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; padding: 20px 14px; color: #1e352f; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #1e352f; font-size: 14px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; margin: 0 0 12px 0; line-height: 1.3; white-space: nowrap !important; word-break: keep-all !important; overflow-wrap: normal !important; hyphens: none !important; -webkit-hyphens: none !important;">${payload.title || "AcolheMente Saúde"}</h2>
+        <p style="font-size: 14px; line-height: 1.6; color: #2e443e;">${(payload.message || "").replace(/\n/g, "<br>")}</p>
+        <hr style="border: none; border-top: 1px solid #e2ded5; margin: 20px 0;" />
+        <p style="font-size: 11px; color: #737c76; margin: 0; white-space: nowrap !important; word-break: keep-all !important;">Projeto AcolheMente Saúde • Notificação Automática</p>
+      </div>
+    `;
+
+    const htmlBody = rawHtml.replace(
+      /AcolheMente/g,
+      '<span style="white-space: nowrap !important; word-break: keep-all !important; overflow-wrap: normal !important; hyphens: none !important; -webkit-hyphens: none !important; display: inline-block;">AcolheMente</span>'
+    );
 
     let requestBody: any;
 
     if (isBrevoApi) {
-      const htmlBody = payload.data?.htmlContent || `
-        <div style="font-family: Arial, sans-serif; padding: 20px; color: #1e352f;">
-          <h2 style="color: #1e352f;">${payload.title || "AcolheMente Saúde"}</h2>
-          <p style="font-size: 15px; line-height: 1.6;">${(payload.message || "").replace(/\n/g, "<br>")}</p>
-          <hr style="border: none; border-top: 1px solid #e2ded5; margin: 20px 0;" />
-          <p style="font-size: 12px; color: #737c76;">Projeto AcolheMente Saúde • Notificação Automática</p>
-        </div>
-      `;
-
+      // Brevo v3 SMTP Email Schema (Standard API)
       requestBody = {
         sender: { name: senderName, email: senderEmail },
         to: [{ email: recipientEmail, name: recipientName }],
         subject: payload.title || "Notificação AcolheMente",
         htmlContent: htmlBody,
         textContent: payload.message || payload.title || "",
-        tags: [payload.event],
+        tags: [payload.event || "notificacao"],
       };
     } else {
+      // Generic Webhook / Inbound Webhook Schema
       requestBody = {
-        ...payload,
+        event: payload.event,
+        recipientEmail,
+        recipientName,
+        title: payload.title,
+        message: payload.message,
+        sender: { name: senderName, email: senderEmail },
+        to: [{ email: recipientEmail, name: recipientName }],
+        subject: payload.title || "Notificação AcolheMente",
+        htmlContent: htmlBody,
+        textContent: payload.message || payload.title || "",
+        tags: [payload.event || "notificacao"],
         timestamp: new Date().toISOString(),
         platform: "Projeto AcolheMente Saúde",
-        environment: "production",
+        data: payload.data || {},
       };
     }
 
-    console.log(`[WebhookNotifier] Dispatching ${isBrevoApi ? 'Brevo Direct Email' : 'Webhook payload'} for "${payload.event}" to ${config.webhookEmailUrl} (Sender: ${senderEmail}, Recipient: ${recipientEmail})`);
+    console.log(`[WebhookNotifier] Dispatching ${isBrevoApi ? 'Brevo Direct Email' : 'Webhook payload'} for "${payload.event}" to ${targetUrl} (Sender: ${senderEmail}, Recipient: ${recipientEmail})`);
 
-    // First try the server-side proxy endpoint (/api/send-email) to bypass browser CORS
+    // First try the server-side proxy endpoint (/api/send-email) to bypass browser CORS & hide secrets
     try {
       const proxyRes = await fetch("/api/send-email", {
         method: "POST",
@@ -123,7 +136,7 @@ export async function sendWebhookNotification(
         },
         body: JSON.stringify({
           apiKey: config.webhookEmailSecret,
-          url: config.webhookEmailUrl,
+          url: targetUrl,
           payload: requestBody,
         }),
       });
@@ -146,20 +159,30 @@ export async function sendWebhookNotification(
         };
       }
 
-      console.log(`[WebhookNotifier] Email proxy delivered successfully (${proxyRes.status}):`, resData);
+      console.log(`[WebhookNotifier] Brevo/Webhook delivered successfully (${proxyRes.status}):`, resData);
       return {
         success: true,
         status: proxyRes.status,
+        messageId: resData?.data?.messageId || resData?.messageId,
         data: resData
       };
     } catch (proxyErr: any) {
       console.warn("[WebhookNotifier] Server proxy fetch error, attempting direct client fetch as fallback...", proxyErr);
 
-      // Direct client fallback
+      // Direct client fallback (if backend unreachable)
       try {
-        const res = await fetch(config.webhookEmailUrl, {
+        const directHeaders: Record<string, string> = {
+          "Content-Type": "application/json",
+          "accept": "application/json",
+        };
+        if (config.webhookEmailSecret) {
+          directHeaders["api-key"] = config.webhookEmailSecret.trim();
+          directHeaders["Authorization"] = `Bearer ${config.webhookEmailSecret.trim()}`;
+        }
+
+        const res = await fetch(targetUrl, {
           method: "POST",
-          headers,
+          headers: directHeaders,
           body: JSON.stringify(requestBody),
         });
 
@@ -171,7 +194,7 @@ export async function sendWebhookNotification(
         }
 
         if (!res.ok) {
-          console.warn(`[WebhookNotifier] Webhook returned status ${res.status} ${res.statusText}`, resData);
+          console.warn(`[WebhookNotifier] Direct request returned status ${res.status} ${res.statusText}`, resData);
           return {
             success: false,
             status: res.status,
@@ -179,10 +202,11 @@ export async function sendWebhookNotification(
             data: resData
           };
         } else {
-          console.log(`[WebhookNotifier] Webhook delivered successfully (${res.status})`, resData);
+          console.log(`[WebhookNotifier] Direct request delivered successfully (${res.status})`, resData);
           return {
             success: true,
             status: res.status,
+            messageId: resData?.messageId,
             data: resData
           };
         }

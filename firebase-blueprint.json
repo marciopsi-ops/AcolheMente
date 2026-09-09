@@ -82,6 +82,26 @@
         "updatedAt": { "type": "timestamp" }
       },
       "required": ["titulo", "conteudo", "autorNome", "palavrasChave", "createdAt"]
+    },
+    "NotificacaoAgendada": {
+      "title": "NotificacaoAgendada",
+      "description": "Mensagens programadas com atraso para disparo via régua de comunicação.",
+      "type": "object",
+      "properties": {
+        "triggerId": { "type": "string" },
+        "triggerName": { "type": "string" },
+        "recipientEmail": { "type": "string" },
+        "recipientPhone": { "type": "string" },
+        "recipientName": { "type": "string" },
+        "subject": { "type": "string" },
+        "emailBody": { "type": "string" },
+        "whatsappText": { "type": "string" },
+        "scheduledFor": { "type": "string" },
+        "delayMinutes": { "type": "number" },
+        "status": { "type": "string", "enum": ["pendente", "enviado", "erro", "cancelado"] },
+        "createdAt": { "type": "timestamp" }
+      },
+      "required": ["triggerId", "triggerName", "status", "scheduledFor", "createdAt"]
     }
   },
   "firestore": {
@@ -100,6 +120,10 @@
     "artigos_blog": {
       "schema": { "$ref": "#/entities/ArtigoBlog" },
       "description": "Artigos públicos submetidos por profissionais de saúde e psicologia."
+    },
+    "notificacoes_agendadas": {
+      "schema": { "$ref": "#/entities/NotificacaoAgendada" },
+      "description": "Fila de mensagens agendadas para envio posterior."
     }
   }
 }

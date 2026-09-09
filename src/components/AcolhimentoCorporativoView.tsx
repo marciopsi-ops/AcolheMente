@@ -13,11 +13,12 @@ import {
   Loader2,
   AlertCircle
 } from "lucide-react";
-import { collection, addDoc, serverTimestamp, getDocs, query, where } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, getDocs, query, where, updateDoc, doc } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { sendPatientRegistrationEmail } from "../lib/emailService";
 import empresaHeroPhoto from "../assets/images/empresa_hero_photo_1781024092529.png";
 import logoImage from "../assets/images/logo_acolhe.jpeg";
+import { ProcessoExistenteModal } from "./ProcessoExistenteModal";
 
 interface EmpresaData {
   id: string;
@@ -45,6 +46,12 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
   const [step, setStep] = useState<number>(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+
+  // Estados para Detecção e Tratamento de Processo Existente
+  const [existingProcess, setExistingProcess] = useState<{ id: string; data: any } | null>(null);
+  const [showExistingModal, setShowExistingModal] = useState(false);
+  const [submissionType, setSubmissionType] = useState<"novo" | "atualizado" | "reiniciado">("novo");
+  const [isProcessingRestart, setIsProcessingRestart] = useState(false);
 
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: "instant" });
@@ -155,7 +162,7 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
     }
   };
 
-  const handleSubmitStep1 = (e: React.FormEvent) => {
+  const handleSubmitStep1 = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg("");
 
@@ -214,8 +221,166 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
       }
     }
 
+    // Check for existing process by email before step 2
+    try {
+      const cleanEmail = email.trim().toLowerCase();
+      const q = query(collection(db, "acolhimentos"), where("email", "==", cleanEmail));
+      const querySnapshot = await getDocs(q);
+      if (!querySnapshot.empty) {
+        const docData = querySnapshot.docs[0];
+        setExistingProcess({
+          id: docData.id,
+          data: docData.data(),
+        });
+        setShowExistingModal(true);
+        return;
+      }
+    } catch (err) {
+      console.error("Erro ao verificar duplicidade corporativa:", err);
+    }
+
     setStep(2);
     scrollToForm();
+  };
+
+  const handleRestartProcess = async () => {
+    if (!existingProcess) return;
+    setIsProcessingRestart(true);
+    setErrorMsg("");
+    try {
+      const cleanEmail = (email.trim().toLowerCase() || existingProcess.data.email || "").trim().toLowerCase();
+      const patientName = name.trim() || existingProcess.data.nome || "Colaborador";
+
+      await updateDoc(doc(db, "acolhimentos", existingProcess.id), {
+        status: "Aguardando Avaliação",
+        ativo: true,
+        statusInativacao: null,
+        desligado: false,
+        desligamentoMotivo: null,
+        desligadoEm: null,
+        propostaStatus: null,
+        propostaEnviada: false,
+        motivoPausaCancelamento: null,
+        motivoRevisao: null,
+        dataPausaCancelamento: null,
+        dataSolicitacaoRevisao: null,
+        reiniciadoEm: new Date().toISOString(),
+        notificacao: `Processo corporativo reiniciado pelo paciente em ${new Date().toLocaleDateString('pt-BR')} (${empresaValidated?.nomeEmpresa || "Empresa"}). Encaminhado para Novos Acolhimentos.`,
+        updatedAt: serverTimestamp(),
+        ...(name.trim() ? { nome: name.trim() } : {}),
+        ...(telefone.trim() ? { telefone: telefone.trim() } : {}),
+        ...(cpf.trim() ? { cpf: cpf.trim() } : {}),
+        ...(cargo.trim() ? { cargo: cargo.trim() } : {}),
+        ...(departamento.trim() ? { departamento: departamento.trim() } : {}),
+        ...(empresaValidated?.nomeEmpresa ? { empresa: empresaValidated.nomeEmpresa, empresaNome: empresaValidated.nomeEmpresa } : {})
+      });
+
+      if (cleanEmail) {
+        try {
+          await sendPatientRegistrationEmail(patientName, cleanEmail);
+        } catch (emailErr) {
+          console.error("Erro ao enviar email de reinício corporativo:", emailErr);
+        }
+      }
+
+      setSubmissionType("reiniciado");
+      setShowExistingModal(false);
+      setStep(3);
+      scrollToForm();
+    } catch (err) {
+      console.error("Erro ao reiniciar acolhimento corporativo:", err);
+      setErrorMsg("Ocorreu um erro ao reiniciar seu acolhimento. Por favor, tente novamente.");
+    } finally {
+      setIsProcessingRestart(false);
+    }
+  };
+
+  const handleOptionUpdateQuestionnaire = async () => {
+    setShowExistingModal(false);
+    setSubmissionType("atualizado");
+    if (step === 1) {
+      setStep(2);
+      scrollToForm();
+    } else if (step === 2) {
+      if (existingProcess) {
+        await executeFinalSubmit(existingProcess.id);
+      }
+    }
+  };
+
+  const executeFinalSubmit = async (existingId?: string) => {
+    setIsSubmitting(true);
+    setErrorMsg("");
+
+    try {
+      const cleanEmail = email.trim().toLowerCase();
+      const payload: Record<string, any> = {
+        nome: name.trim(),
+        email: cleanEmail,
+        telefone: telefone.trim(),
+        cpf: cpf.trim(),
+        dataNascimento,
+        cargo: cargo.trim(),
+        departamento: departamento.trim(),
+        genero,
+        deficiencia,
+        estadoCivil,
+        temFilhos,
+        faixaEtariaFilhos: temFilhos === "Não possui filhos" ? "Não se aplica (sem filhos)" : faixaEtariaFilhos,
+        filhosMoramJunto: temFilhos === "Não possui filhos" ? "Não se aplica (sem filhos)" : filhosMoramJunto,
+        tratamentoPara,
+        comoConheceu,
+        viaAcesso: "Corporativo",
+        empresa: empresaValidated?.nomeEmpresa || inputCode.trim(),
+        empresaCodigo: empresaValidated?.codigoAcesso || inputCode.trim().toUpperCase(),
+        empresaNome: empresaValidated?.nomeEmpresa || "Empresa Parceira",
+        empresaId: empresaValidated?.id || "",
+        empresaLogoUrl: empresaValidated?.logoUrl || "",
+        empresaSlogan: empresaValidated?.slogan || "",
+        terapiaAnterior,
+        melhoresPeriodos,
+        motivo: `[CORPORATIVO - ${empresaValidated?.nomeEmpresa || "Empresa"}] ${motivo} - Detalhes: ${complaint.trim()}`,
+        status: "Aguardando Avaliação",
+        ativo: true,
+        statusInativacao: null,
+        desligado: false,
+        desligamentoMotivo: null,
+        desligadoEm: null,
+        propostaStatus: null,
+        propostaEnviada: false,
+        motivoPausaCancelamento: null,
+        motivoRevisao: null,
+        dataPausaCancelamento: null,
+        dataSolicitacaoRevisao: null,
+      };
+
+      if (existingId) {
+        payload.atualizadoEm = new Date().toISOString();
+        payload.notificacao = `Questionário corporativo atualizado pelo paciente em ${new Date().toLocaleDateString('pt-BR')}. Encaminhado para a fila de Novos Acolhimentos.`;
+        payload.updatedAt = serverTimestamp();
+        await updateDoc(doc(db, "acolhimentos", existingId), payload);
+        setSubmissionType("atualizado");
+      } else {
+        payload.notificacao = `Novo acolhimento corporativo recebido: ${name.trim()} (${empresaValidated?.nomeEmpresa || "Empresa"}). Cargo: ${cargo.trim()} - Setor: ${departamento.trim()}.`;
+        payload.createdAt = serverTimestamp();
+        await addDoc(collection(db, "acolhimentos"), payload);
+        setSubmissionType("novo");
+      }
+
+      try {
+        await sendPatientRegistrationEmail(name.trim(), cleanEmail);
+      } catch (emailErr) {
+        console.error("Erro ao disparar e-mail de acolhimento corporativo:", emailErr);
+      }
+
+      setStep(3); // Success step
+      scrollToForm();
+    } catch (err) {
+      console.error("Erro ao cadastrar acolhimento corporativo:", err);
+      setErrorMsg("Ocorreu um erro ao enviar seu cadastro. Por favor, tente novamente.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleFinalSubmit = async (e: React.FormEvent) => {
@@ -243,63 +408,34 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
       return;
     }
 
-    setIsSubmitting(true);
+    const cleanEmail = email.trim().toLowerCase();
+
+    if (existingProcess) {
+      await executeFinalSubmit(existingProcess.id);
+      return;
+    }
 
     try {
-      const cleanEmail = email.trim().toLowerCase();
+      setIsSubmitting(true);
       const q = query(collection(db, "acolhimentos"), where("email", "==", cleanEmail));
       const querySnapshot = await getDocs(q);
       if (!querySnapshot.empty) {
-        setErrorMsg("Este e-mail já aparece cadastrado em nosso sistema de triagem.");
+        const docData = querySnapshot.docs[0];
+        setExistingProcess({
+          id: docData.id,
+          data: docData.data(),
+        });
+        setShowExistingModal(true);
         setIsSubmitting(false);
         return;
       }
-
-      await addDoc(collection(db, "acolhimentos"), {
-        nome: name.trim(),
-        email: cleanEmail,
-        telefone: telefone.trim(),
-        cpf: cpf.trim(),
-        dataNascimento,
-        cargo: cargo.trim(),
-        departamento: departamento.trim(),
-        genero,
-        deficiencia,
-        estadoCivil,
-        temFilhos,
-        faixaEtariaFilhos: temFilhos === "Não possui filhos" ? "Não se aplica (sem filhos)" : faixaEtariaFilhos,
-        filhosMoramJunto: temFilhos === "Não possui filhos" ? "Não se aplica (sem filhos)" : filhosMoramJunto,
-        tratamentoPara,
-        comoConheceu,
-        viaAcesso: "Corporativo",
-        empresa: empresaValidated?.nomeEmpresa || inputCode.trim(),
-        empresaCodigo: empresaValidated?.codigoAcesso || inputCode.trim().toUpperCase(),
-        empresaNome: empresaValidated?.nomeEmpresa || "Empresa Parceira",
-        empresaId: empresaValidated?.id || "",
-        empresaLogoUrl: empresaValidated?.logoUrl || "",
-        empresaSlogan: empresaValidated?.slogan || "",
-        terapiaAnterior,
-        melhoresPeriodos,
-        motivo: `[CORPORATIVO - ${empresaValidated?.nomeEmpresa || "Empresa"}] ${motivo} - Detalhes: ${complaint.trim()}`,
-        status: "Aguardando Avaliação",
-        notificacao: `Novo acolhimento corporativo recebido: ${name.trim()} (${empresaValidated?.nomeEmpresa || "Empresa"}). Cargo: ${cargo.trim()} - Setor: ${departamento.trim()}.`,
-        createdAt: serverTimestamp()
-      });
-
-      try {
-        await sendPatientRegistrationEmail(name.trim(), cleanEmail);
-      } catch (emailErr) {
-        console.error("Erro ao disparar e-mail de acolhimento corporativo:", emailErr);
-      }
-
-      setStep(3); // Success step
-      scrollToForm();
     } catch (err) {
-      console.error("Erro ao cadastrar acolhimento corporativo:", err);
-      setErrorMsg("Ocorreu um erro ao enviar seu cadastro. Por favor, tente novamente.");
+      console.error("Erro ao verificar duplicidade:", err);
     } finally {
       setIsSubmitting(false);
     }
+
+    await executeFinalSubmit();
   };
 
   return (
@@ -396,10 +532,18 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
                 <CheckCircle2 className="w-10 h-10" />
               </div>
               <h2 className="font-serif text-3xl md:text-4xl font-medium text-forest mb-4">
-                Acolhimento Corporativo Confirmado!
+                {submissionType === "reiniciado"
+                  ? "Processo Corporativo Reiniciado!"
+                  : submissionType === "atualizado"
+                  ? "Questionário Corporativo Atualizado!"
+                  : "Acolhimento Corporativo Confirmado!"}
               </h2>
               <p className="text-forest/70 max-w-md mb-6 leading-relaxed">
-                Agradecemos a confiança, <strong>{name.split(' ')[0]}</strong>! Suas informações foram registradas com sucesso sob a parceria com <strong>{empresaValidated?.nomeEmpresa}</strong>.
+                {submissionType === "reiniciado"
+                  ? `Agradecemos a confiança, ${name.split(' ')[0]}! Seu processo corporativo foi reiniciado com sucesso e direcionado para a fila de Novos Acolhimentos sob a parceria com ${empresaValidated?.nomeEmpresa || "sua empresa"}.`
+                  : submissionType === "atualizado"
+                  ? `Agradecemos a confiança, ${name.split(' ')[0]}! Suas respostas foram atualizadas com sucesso e seu acolhimento corporativo foi encaminhado para a fila de Novos Acolhimentos.`
+                  : `Agradecemos a confiança, ${name.split(' ')[0]}! Suas informações foram registradas com sucesso sob a parceria com ${empresaValidated?.nomeEmpresa}.`}
               </p>
               <div className="p-6 bg-warm rounded-2xl border border-soft text-sm text-forest/80 mb-8 max-w-md text-left space-y-2">
                 <p className="font-semibold text-forest flex items-center gap-2">
@@ -934,6 +1078,16 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
 
         </div>
       </section>
+
+      <ProcessoExistenteModal
+        isOpen={showExistingModal}
+        onClose={() => setShowExistingModal(false)}
+        email={email.trim().toLowerCase() || (existingProcess?.data?.email || "")}
+        nome={name.trim() || (existingProcess?.data?.nome || "")}
+        onUpdateQuestionnaire={handleOptionUpdateQuestionnaire}
+        onRestartProcess={handleRestartProcess}
+        isProcessing={isProcessingRestart}
+      />
     </div>
   );
 }

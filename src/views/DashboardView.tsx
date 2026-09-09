@@ -9,7 +9,9 @@ import { EventosServicosView } from "./EventosServicosView";
 import { ComplianceModal } from "../components/ComplianceModal";
 import { BackupManager } from "../components/BackupManager";
 import { EmpresaBeneficioManager } from "../components/EmpresaBeneficioManager";
+import { EvolutionDiagnosticModal } from "../components/EvolutionDiagnosticModal";
 import {
+  Activity,
   ArrowLeft,
   ArrowRight,
   ArrowUpDown,
@@ -66,6 +68,7 @@ import {
   Gift,
   UserCheck,
   RotateCcw,
+  PauseCircle,
   AlertTriangle,
   Loader2,
   ClipboardList,
@@ -82,7 +85,28 @@ import {
   PlusCircle,
   BookOpen,
   Database,
+  QrCode,
+  Wifi,
+  WifiOff,
+  ExternalLink,
+  Server,
+  Radio,
+  Bell,
+  Play,
+  Inbox,
+  Layers,
 } from "lucide-react";
+import {
+  checkEvolutionStatus,
+  connectEvolutionInstance,
+  configureEvolutionWebhook,
+  sendEvolutionMessage,
+  disconnectEvolutionInstance,
+  fetchRecentWebhookEvents,
+  clearRecentWebhookEvents,
+  normalizeEvolutionUrl,
+  WebhookEventItem,
+} from "../lib/whatsappService";
 import { auth, db, handleFirestoreError, OperationType } from "../lib/firebase";
 import { triggerEmail, sendTrialExpiredCheckoutEmail } from "../lib/emailService";
 import {
@@ -120,6 +144,9 @@ import { GestaoEsteiraTarefas } from "../components/GestaoEsteiraTarefas";
 import { ProfissionalEsteiraTarefas } from "../components/ProfissionalEsteiraTarefas";
 import { GestaoBlogView } from "../components/GestaoBlogView";
 import { ProfissionalBlogView } from "../components/ProfissionalBlogView";
+import { NotificationRulesManager } from "../components/NotificationRulesManager";
+import { PatientNotificationModal } from "../components/PatientNotificationModal";
+import { RedeProfissionalView } from "../components/RedeProfissionalView";
 
 const safeLocalStorage = {
   getItem: (key: string): string | null => {
@@ -401,6 +428,14 @@ export function getPatientFlowDetails(card: any) {
   };
 }
 
+export function isCardInStandby(card: any): boolean {
+  if (!card) return false;
+  const s = String(card.status || "").toLowerCase().trim();
+  const si = String(card.statusInativacao || "").toLowerCase().trim();
+  const at = typeof card.ativo === "string" ? card.ativo.toLowerCase().trim() : "";
+  return s === "standby" || s === "stand-by" || si === "standby" || si === "stand-by" || at === "standby";
+}
+
 export function buildCaseSummaryText(card: any) {
   if (!card) return "";
   const nome = card.nome || card.nomeCompleto || "Paciente";
@@ -547,6 +582,12 @@ const COLUMNS = [
   {
     id: "Em Triagem",
     label: "Em Análise",
+    role: ["master", "triagem"],
+    tab: "kanban",
+  },
+  {
+    id: "Standby",
+    label: "Standby",
     role: ["master", "triagem"],
     tab: "kanban",
   },
@@ -798,6 +839,7 @@ export function DashboardView({
       tarefasProfissional: "Minhas Pendências",
       perfil: "Configurações de Perfil",
       pagamentosProfissional: "Gerenciar Meus Pagamentos",
+      redeProfissional: "Rede de Conexão",
     };
     return [
       { label: "Painel", onClick: () => onNavigate("landing") },
@@ -825,8 +867,10 @@ export function DashboardView({
     | "meusServicos"
     | "compliance"
     | "backup"
+    | "notificacoes"
     | "gestaoArtigos"
     | "artigosProfissional"
+    | "redeProfissional"
   >("kanban");
 
   // Search
@@ -861,6 +905,8 @@ export function DashboardView({
 
   // Acolhimento Modal Actions
   const [showNotificarModal, setShowNotificarModal] = useState(false);
+  const [notificarInitialMode, setNotificarInitialMode] = useState<"templates" | "custom">("templates");
+  const [notificarInitialTemplateId, setNotificarInitialTemplateId] = useState<string>("proposta");
   const [showContratoModal, setShowContratoModal] = useState(false);
   const [showDesligamentoModal, setShowDesligamentoModal] = useState(false);
   const [desligamentoMotivo, setDesligamentoMotivo] = useState("");
@@ -1381,7 +1427,44 @@ export function DashboardView({
     webhookEmailUrl: "",
     webhookEmailSecret: "",
     webhookEmailSender: "",
+    whatsappEvolutionEnabled: false,
+    whatsappEvolutionUrl: "",
+    whatsappEvolutionApiKey: "",
+    whatsappEvolutionInstance: "acolhemente",
+    whatsappEvolutionAutoNotif: true,
   });
+
+  // WhatsApp Evolution API State
+  const [whatsappState, setWhatsappState] = useState<
+    "open" | "connecting" | "close" | "checking" | "unknown"
+  >("unknown");
+  const [whatsappQrCode, setWhatsappQrCode] = useState<string | null>(null);
+  const [whatsappPairingCode, setWhatsappPairingCode] = useState<string | null>(
+    null
+  );
+  const [isLoadingWhatsappStatus, setIsLoadingWhatsappStatus] = useState(false);
+  const [isConnectingWhatsapp, setIsConnectingWhatsapp] = useState(false);
+  const [isConfiguringWebhook, setIsConfiguringWebhook] = useState(false);
+  const [whatsappWebhookFeedback, setWhatsappWebhookFeedback] = useState<{
+    success: boolean;
+    message: string;
+  } | null>(null);
+  const [testWhatsappPhone, setTestWhatsappPhone] = useState("");
+  const [testWhatsappMessage, setTestWhatsappMessage] = useState(
+    "Olá! Esta é uma mensagem de teste enviada pelo Projeto AcolheMente Saúde via Evolution API."
+  );
+  const [isSendingTestWhatsapp, setIsSendingTestWhatsapp] = useState(false);
+  const [testWhatsappResult, setTestWhatsappResult] = useState<{
+    success: boolean;
+    message: string;
+    formattedNumber?: string;
+  } | null>(null);
+  const [webhookEventsList, setWebhookEventsList] = useState<WebhookEventItem[]>([]);
+  const [isLoadingWebhookEvents, setIsLoadingWebhookEvents] = useState(false);
+  const [showEvolutionGuide, setShowEvolutionGuide] = useState(false);
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [showEvolutionDiagnosticModal, setShowEvolutionDiagnosticModal] = useState(false);
+  const [isCreatingWhatsappInstance, setIsCreatingWhatsappInstance] = useState(false);
 
   // Psychologist State
   const [meusPacientes, setMeusPacientes] = useState<Acolhimento[]>([]);
@@ -1965,7 +2048,14 @@ export function DashboardView({
 
   const handleSaveConfiguracoes = async () => {
     try {
-      await setDoc(doc(db, "configuracoes", "master"), globalConfigs, {
+      const sanitizedConfigs = {
+        ...globalConfigs,
+        whatsappEvolutionUrl: normalizeEvolutionUrl(globalConfigs.whatsappEvolutionUrl),
+        whatsappEvolutionApiKey: (globalConfigs.whatsappEvolutionApiKey || "").trim(),
+        whatsappEvolutionInstance: (globalConfigs.whatsappEvolutionInstance || "acolhemente").trim(),
+      };
+      setGlobalConfigs(sanitizedConfigs);
+      await setDoc(doc(db, "configuracoes", "master"), sanitizedConfigs, {
         merge: true,
       });
       showToast("Configurações salvas com sucesso!", "success");
@@ -1977,6 +2067,245 @@ export function DashboardView({
 
   const handleUpdateConfiguracoesProperty = (field: string, value: any) => {
     setGlobalConfigs((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleCheckWhatsappStatus = async () => {
+    if (!globalConfigs.whatsappEvolutionUrl) {
+      showToast("Informe a URL da Evolution API para verificar o status.", "error");
+      return;
+    }
+    setIsLoadingWhatsappStatus(true);
+    try {
+      const res = await checkEvolutionStatus(globalConfigs);
+      if (res.success && res.state) {
+        setWhatsappState(res.state as any);
+        if (res.state === "open") {
+          showToast("WhatsApp Conectado e Ativo!", "success");
+          setWhatsappQrCode(null);
+        } else if (res.state === "connecting") {
+          showToast("Instância aguardando conexão. Clique em Gerar QR Code.", "info");
+        } else {
+          showToast("Instância desconectada. Clique em Gerar QR Code para conectar.", "info");
+        }
+      } else {
+        setWhatsappState("close");
+        showToast(res.error || "Não foi possível obter status da instância.", "error");
+      }
+    } catch (e: any) {
+      setWhatsappState("close");
+      showToast(e.message || "Erro ao consultar status da Evolution API.", "error");
+    } finally {
+      setIsLoadingWhatsappStatus(false);
+    }
+  };
+
+  const handleConnectWhatsapp = async () => {
+    if (!globalConfigs.whatsappEvolutionUrl) {
+      showToast("Informe a URL da Evolution API antes de conectar.", "error");
+      return;
+    }
+    const currentApiKey = (globalConfigs.whatsappEvolutionApiKey || "").trim();
+    if (currentApiKey.includes("${{") || currentApiKey.includes("secret(")) {
+      showToast(
+        "A Chave API informada é a fórmula do Railway '${{secret...}}'. No Railway, acesse seu serviço Evolution > Variables > clique no ícone de olho em AUTHENTICATION_API_KEY para copiar o valor real gerado.",
+        "error"
+      );
+      return;
+    }
+    setIsConnectingWhatsapp(true);
+    setWhatsappQrCode(null);
+    setWhatsappPairingCode(null);
+    try {
+      const res = await connectEvolutionInstance(
+        globalConfigs,
+        `${window.location.origin}/api/whatsapp/webhook`
+      );
+      if (res.success) {
+        if (res.state === "open") {
+          setWhatsappState("open");
+          setWhatsappQrCode(null);
+          showToast("Esta instância já está conectada e ativa no WhatsApp!", "success");
+        } else if (res.base64) {
+          setWhatsappQrCode(res.base64);
+          setWhatsappPairingCode(res.pairingCode || null);
+          setWhatsappState("connecting");
+          showToast("QR Code gerado! Aponte o WhatsApp do seu celular para conectar.", "success");
+        } else {
+          setWhatsappState("connecting");
+          showToast("Instância iniciada. Aguarde alguns instantes e tente novamente.", "info");
+        }
+      } else {
+        showToast(res.error || "Falha ao gerar QR Code na Evolution API.", "error");
+      }
+    } catch (e: any) {
+      showToast(e.message || "Erro ao conectar à Evolution API.", "error");
+    } finally {
+      setIsConnectingWhatsapp(false);
+    }
+  };
+
+  const handleCreateWhatsappInstance = async () => {
+    if (!globalConfigs.whatsappEvolutionUrl) {
+      showToast("Informe a URL da Evolution API antes de criar a instância.", "error");
+      return;
+    }
+    const currentApiKey = (globalConfigs.whatsappEvolutionApiKey || "").trim();
+    if (currentApiKey.includes("${{") || currentApiKey.includes("secret(")) {
+      showToast(
+        "A Chave API informada é a fórmula do Railway '${{secret...}}'. Copie a chave real gerada no Railway.",
+        "error"
+      );
+      return;
+    }
+    setIsCreatingWhatsappInstance(true);
+    try {
+      const res = await fetch("/api/whatsapp/evolution/create-instance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          apiUrl: globalConfigs.whatsappEvolutionUrl,
+          apiKey: globalConfigs.whatsappEvolutionApiKey,
+          instanceName: globalConfigs.whatsappEvolutionInstance || "acolhemente",
+          webhookUrl: `${window.location.origin}/api/whatsapp/webhook`,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast(`Instância "${globalConfigs.whatsappEvolutionInstance || "acolhemente"}" criada com sucesso!`, "success");
+        if (data.base64) {
+          setWhatsappQrCode(data.base64);
+          if (data.pairingCode) setWhatsappPairingCode(data.pairingCode);
+          setWhatsappState("connecting");
+        } else {
+          handleConnectWhatsapp();
+        }
+      } else {
+        if (data.error?.toLowerCase().includes("already in use")) {
+          showToast("A instância já existe na Evolution API! Carregando QR Code...", "info");
+          handleConnectWhatsapp();
+        } else {
+          showToast(data.error || "Erro ao criar instância na Evolution API.", "error");
+        }
+      }
+    } catch (e: any) {
+      showToast(e.message || "Falha ao criar instância.", "error");
+    } finally {
+      setIsCreatingWhatsappInstance(false);
+    }
+  };
+
+  const handleConfigureWhatsappWebhook = async () => {
+    if (!globalConfigs.whatsappEvolutionUrl) {
+      showToast("Informe a URL da Evolution API.", "error");
+      return;
+    }
+    setIsConfiguringWebhook(true);
+    setWhatsappWebhookFeedback(null);
+    try {
+      const webhookUrl = `${window.location.origin}/api/whatsapp/webhook`;
+      const res = await configureEvolutionWebhook(webhookUrl, globalConfigs);
+      if (res.success) {
+        setWhatsappWebhookFeedback({
+          success: true,
+          message: `Webhook configurado com sucesso! A Evolution API agora enviará eventos para ${webhookUrl}`,
+        });
+        showToast("Webhook da Evolution API registrado com sucesso!", "success");
+        handleRefreshWebhookEvents();
+      } else {
+        setWhatsappWebhookFeedback({
+          success: false,
+          message: res.error || "Falha ao registrar webhook.",
+        });
+        showToast(res.error || "Erro ao registrar webhook na Evolution API.", "error");
+      }
+    } catch (e: any) {
+      setWhatsappWebhookFeedback({
+        success: false,
+        message: e.message || "Erro inesperado ao configurar webhook.",
+      });
+      showToast(e.message || "Erro ao configurar webhook.", "error");
+    } finally {
+      setIsConfiguringWebhook(false);
+    }
+  };
+
+  const handleDisconnectWhatsapp = async () => {
+    if (!window.confirm("Deseja realmente desconectar este WhatsApp da Evolution API?")) {
+      return;
+    }
+    try {
+      const res = await disconnectEvolutionInstance(globalConfigs);
+      if (res.success) {
+        setWhatsappState("close");
+        setWhatsappQrCode(null);
+        setWhatsappPairingCode(null);
+        showToast("WhatsApp desconectado com sucesso.", "success");
+      } else {
+        showToast(res.error || "Erro ao desconectar.", "error");
+      }
+    } catch (e: any) {
+      showToast(e.message || "Erro ao desconectar.", "error");
+    }
+  };
+
+  const handleSendTestWhatsapp = async () => {
+    if (!testWhatsappPhone || !testWhatsappMessage) {
+      showToast("Informe o número de telefone e a mensagem de teste.", "error");
+      return;
+    }
+    setIsSendingTestWhatsapp(true);
+    setTestWhatsappResult(null);
+    try {
+      const res = await sendEvolutionMessage(
+        testWhatsappPhone,
+        testWhatsappMessage,
+        globalConfigs
+      );
+      if (res.success) {
+        setTestWhatsappResult({
+          success: true,
+          message: "Mensagem de WhatsApp enviada com sucesso!",
+          formattedNumber: res.formattedNumber,
+        });
+        showToast("Mensagem de WhatsApp enviada com sucesso!", "success");
+      } else {
+        setTestWhatsappResult({
+          success: false,
+          message: res.error || "Falha ao enviar mensagem pelo WhatsApp.",
+        });
+        showToast(res.error || "Erro ao disparar WhatsApp.", "error");
+      }
+    } catch (e: any) {
+      setTestWhatsappResult({
+        success: false,
+        message: e.message || "Erro inesperado ao disparar WhatsApp.",
+      });
+      showToast(e.message || "Erro inesperado.", "error");
+    } finally {
+      setIsSendingTestWhatsapp(false);
+    }
+  };
+
+  const handleRefreshWebhookEvents = async () => {
+    setIsLoadingWebhookEvents(true);
+    try {
+      const res = await fetchRecentWebhookEvents();
+      if (res.success) {
+        setWebhookEventsList(res.events || []);
+      }
+    } catch (e) {
+      console.warn("Erro ao buscar eventos do webhook:", e);
+    } finally {
+      setIsLoadingWebhookEvents(false);
+    }
+  };
+
+  const handleClearWebhookEvents = async () => {
+    const ok = await clearRecentWebhookEvents();
+    if (ok) {
+      setWebhookEventsList([]);
+      showToast("Histórico de eventos do webhook limpo.", "success");
+    }
   };
 
   const handleAuth = async (e: React.FormEvent) => {
@@ -2119,6 +2448,9 @@ export function DashboardView({
       if (newStatus === "Alta") {
         updates.ativo = false;
         updates.statusInativacao = "Desligado";
+      } else if (newStatus === "Standby") {
+        updates.ativo = true;
+        updates.statusInativacao = "Standby";
       } else if (
         newStatus === "Aguardando Avaliação" ||
         newStatus === "Em Triagem" ||
@@ -2364,6 +2696,76 @@ export function DashboardView({
     } catch (error) {
       console.error(error);
       alert("Erro ao salvar.");
+    }
+  };
+
+  const handleReativarParaEmAnalise = async (cardOrId: any) => {
+    const id = typeof cardOrId === "string" ? cardOrId : cardOrId?.id;
+    if (!id) return;
+    try {
+      const currentPaciente = acolhimentos.find((a) => a.id === id);
+      const notifAnterior = currentPaciente?.notificacao
+        ? currentPaciente.notificacao + "\n\n"
+        : "";
+      const nowStr = new Date().toLocaleString("pt-BR");
+      const authName = profile?.name || "Triador";
+
+      const updates: any = {
+        status: "Em Triagem", // "Em Análise"
+        ativo: true,
+        statusInativacao: "Ativo",
+        statusUpdatedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        notificacao: `${notifAnterior}[${nowStr}] Paciente reativado do Standby e retornado para "Em Análise" por ${authName}.`,
+      };
+
+      await updateDoc(doc(db, "acolhimentos", id), updates);
+
+      if (selectedCard && selectedCard.id === id) {
+        setSelectedCard((prev: any) => (prev ? { ...prev, ...updates } : null));
+      }
+      setAcolhimentos((prev) =>
+        prev.map((a) => (a.id === id ? { ...a, ...updates } : a))
+      );
+      showToast("Paciente reativado com sucesso e retornado para Em Análise!", "success");
+    } catch (err) {
+      console.error("Erro ao reativar paciente para Em Análise:", err);
+      showToast("Erro ao reativar paciente.", "error");
+    }
+  };
+
+  const handleColocarEmStandby = async (cardOrId: any) => {
+    const id = typeof cardOrId === "string" ? cardOrId : cardOrId?.id;
+    if (!id) return;
+    try {
+      const currentPaciente = acolhimentos.find((a) => a.id === id);
+      const notifAnterior = currentPaciente?.notificacao
+        ? currentPaciente.notificacao + "\n\n"
+        : "";
+      const nowStr = new Date().toLocaleString("pt-BR");
+      const authName = profile?.name || "Triador";
+
+      const updates: any = {
+        status: "Standby",
+        ativo: true,
+        statusInativacao: "Standby",
+        statusUpdatedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        notificacao: `${notifAnterior}[${nowStr}] Paciente colocado em Standby na Triagem por ${authName}.`,
+      };
+
+      await updateDoc(doc(db, "acolhimentos", id), updates);
+
+      if (selectedCard && selectedCard.id === id) {
+        setSelectedCard((prev: any) => (prev ? { ...prev, ...updates } : null));
+      }
+      setAcolhimentos((prev) =>
+        prev.map((a) => (a.id === id ? { ...a, ...updates } : a))
+      );
+      showToast("Paciente movido para a etapa de Standby na Triagem.", "info");
+    } catch (err) {
+      console.error("Erro ao colocar paciente em Standby:", err);
+      showToast("Erro ao colocar paciente em Standby.", "error");
     }
   };
 
@@ -4453,6 +4855,13 @@ export function DashboardView({
                   <Database className="w-3.5 h-3.5 text-forest/70" />
                   <span>Backup & Dados</span>
                 </button>
+                <button
+                  onClick={() => setActiveTab("notificacoes")}
+                  className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "notificacoes" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70/70 hover:text-forest/70"}`}
+                >
+                  <Bell className="w-3.5 h-3.5 text-forest/70" />
+                  <span>Régua & Mensagens</span>
+                </button>
               </>
             )}
             <button
@@ -4479,6 +4888,13 @@ export function DashboardView({
                 </span>
               )}
             </button>
+            <button
+              onClick={() => setActiveTab("redeProfissional")}
+              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "redeProfissional" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70/70 hover:text-forest/70"}`}
+            >
+              <Users className="w-3.5 h-3.5 text-emerald-700" />
+              <span>Rede de Conexão</span>
+            </button>
           </div>
         )}
 
@@ -4495,6 +4911,13 @@ export function DashboardView({
               className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap ${activeTab === "pacientes" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
             >
               Meus Pacientes
+            </button>
+            <button
+              onClick={() => setActiveTab("redeProfissional")}
+              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "redeProfissional" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70/70 hover:text-forest/70"}`}
+            >
+              <Users className="w-3.5 h-3.5 text-emerald-700" />
+              <span>Rede de Conexão</span>
             </button>
             <button
               onClick={() => setActiveTab("eventos")}
@@ -4548,15 +4971,32 @@ export function DashboardView({
         )}
 
         {activeTab !== "estatisticas" && (
-          <div className="flex-1 w-full lg:w-auto lg:max-w-xs relative order-last lg:order-none mt-3 sm:mt-0">
+          <div className={`flex-1 w-full lg:w-auto relative order-last lg:order-none mt-3 sm:mt-0 transition-all ${
+            activeTab === "redeProfissional" ? "lg:max-w-md" : "lg:max-w-xs"
+          }`}>
             <Search className="w-4 h-4 text-forest/70 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
+              id="global-search-input"
               type="text"
-              placeholder="Buscar..."
+              placeholder={
+                activeTab === "redeProfissional"
+                  ? "Buscar profissionais por palavras-chave, especialidade ou abordagem..."
+                  : "Buscar..."
+              }
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-4 py-1.5 sm:py-2 text-sm bg-warm/50 border border-soft rounded-full focus:outline-none focus:border-sun-dark focus:bg-white text-forest transition-colors"
+              className="w-full pl-9 pr-8 py-1.5 sm:py-2 text-xs sm:text-sm bg-warm/50 border border-soft rounded-full focus:outline-none focus:border-sun-dark focus:bg-white text-forest placeholder:text-forest/60 transition-all"
             />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery("")}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-forest/50 hover:text-forest transition-colors cursor-pointer"
+                title="Limpar busca"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
         )}
 
@@ -5622,6 +6062,701 @@ export function DashboardView({
                               </ul>
                             </div>
                           )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* WhatsApp via Evolution API (QR Code & Webhook) */}
+                  <div className="bg-warm/30 p-6 rounded-2xl border border-soft space-y-6">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-soft pb-4">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center">
+                            <MessageSquare className="w-4 h-4" />
+                          </div>
+                          <h4 className="text-base font-bold text-forest flex items-center gap-2">
+                            WhatsApp via Evolution API (QR Code & Webhook)
+                            <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                              Recomendado
+                            </span>
+                          </h4>
+                        </div>
+                        <p className="text-xs text-forest/70 mt-1 max-w-2xl leading-relaxed">
+                          Conecte um número de WhatsApp via leitura de QR Code direto no navegador, sem burocracias do Facebook/Meta. Envie notificações de novos acolhimentos, propostas e atualizações com Webhooks em tempo real.
+                        </p>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-4 shrink-0">
+                        <label className="flex items-center gap-2 cursor-pointer bg-white px-3 py-1.5 rounded-xl border border-soft shadow-2xs">
+                          <input
+                            type="checkbox"
+                            checked={globalConfigs.whatsappEvolutionEnabled ?? false}
+                            onChange={(e) =>
+                              handleUpdateConfiguracoesProperty(
+                                "whatsappEvolutionEnabled",
+                                e.target.checked
+                              )
+                            }
+                            className="rounded border-soft text-emerald-600 focus:ring-emerald-500 w-4 h-4"
+                          />
+                          <span className="text-xs font-bold text-forest">
+                            Ativar WhatsApp
+                          </span>
+                        </label>
+
+                        <label className="flex items-center gap-2 cursor-pointer bg-white px-3 py-1.5 rounded-xl border border-soft shadow-2xs">
+                          <input
+                            type="checkbox"
+                            checked={globalConfigs.whatsappEvolutionAutoNotif ?? true}
+                            onChange={(e) =>
+                              handleUpdateConfiguracoesProperty(
+                                "whatsappEvolutionAutoNotif",
+                                e.target.checked
+                              )
+                            }
+                            className="rounded border-soft text-emerald-600 focus:ring-emerald-500 w-4 h-4"
+                          />
+                          <span className="text-xs font-bold text-forest">
+                            Envios Automáticos
+                          </span>
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* Status da Conexão & Ações Rápidas */}
+                    <div className="bg-white p-4 rounded-xl border border-soft/80 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-2xs">
+                      <div className="flex items-center gap-3">
+                        <div
+                          className={`w-3.5 h-3.5 rounded-full shrink-0 ${
+                            whatsappState === "open"
+                              ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)] animate-pulse"
+                              : whatsappState === "connecting"
+                              ? "bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.6)]"
+                              : whatsappState === "close"
+                              ? "bg-rose-500"
+                              : "bg-slate-300"
+                          }`}
+                        />
+                        <div>
+                          <div className="text-xs font-bold text-forest flex items-center gap-2">
+                            <span>Status da Conexão:</span>
+                            {whatsappState === "open" && (
+                              <span className="text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200 text-[11px] font-bold flex items-center gap-1">
+                                <Wifi className="w-3 h-3 text-emerald-600" />
+                                Conectado e Operando
+                              </span>
+                            )}
+                            {whatsappState === "connecting" && (
+                              <span className="text-amber-800 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200 text-[11px] font-bold flex items-center gap-1">
+                                <Clock className="w-3 h-3 text-amber-600" />
+                                Aguardando Leitura do QR Code
+                              </span>
+                            )}
+                            {whatsappState === "close" && (
+                              <span className="text-rose-700 bg-rose-50 px-2.5 py-0.5 rounded-full border border-rose-200 text-[11px] font-bold flex items-center gap-1">
+                                <WifiOff className="w-3 h-3 text-rose-600" />
+                                Desconectado
+                              </span>
+                            )}
+                            {whatsappState === "unknown" && (
+                              <span className="text-slate-600 bg-slate-100 px-2.5 py-0.5 rounded-full border border-slate-200 text-[11px] font-semibold">
+                                Não verificado
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-forest/60 mt-0.5">
+                            Instância: <strong>{globalConfigs.whatsappEvolutionInstance || "acolhemente"}</strong>
+                            {globalConfigs.whatsappEvolutionUrl && (
+                              <span className="ml-2 opacity-80">({globalConfigs.whatsappEvolutionUrl})</span>
+                            )}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setShowEvolutionDiagnosticModal(true)}
+                          className="px-3 py-1.5 rounded-xl border border-sky-200 bg-sky-50/90 hover:bg-sky-100 text-sky-900 text-xs font-bold transition-all flex items-center gap-1.5 shadow-2xs"
+                          title="Diagnóstico avançado e logs detalhados de requisições"
+                        >
+                          <Activity className="w-3.5 h-3.5 text-sky-700" />
+                          <span>Diagnóstico & Logs</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={handleCheckWhatsappStatus}
+                          disabled={isLoadingWhatsappStatus || !globalConfigs.whatsappEvolutionUrl}
+                          className="px-3 py-1.5 rounded-xl border border-soft hover:bg-warm/40 text-forest text-xs font-bold transition-all flex items-center gap-1.5 disabled:opacity-50"
+                          title="Consultar se o WhatsApp está online"
+                        >
+                          <RefreshCw className={`w-3.5 h-3.5 ${isLoadingWhatsappStatus ? "animate-spin text-forest" : ""}`} />
+                          <span>{isLoadingWhatsappStatus ? "Verificando..." : "Verificar Status"}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={handleCreateWhatsappInstance}
+                          disabled={isCreatingWhatsappInstance || !globalConfigs.whatsappEvolutionUrl}
+                          className="px-3 py-1.5 rounded-xl border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 text-xs font-bold transition-all flex items-center gap-1.5 shadow-2xs disabled:opacity-50"
+                          title="Garante a criação da instância no banco de dados da Evolution API"
+                        >
+                          {isCreatingWhatsappInstance ? (
+                            <>
+                              <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-700" />
+                              <span>Criando...</span>
+                            </>
+                          ) : (
+                            <>
+                              <PlusCircle className="w-3.5 h-3.5 text-emerald-700" />
+                              <span>Criar Instância</span>
+                            </>
+                          )}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={handleConnectWhatsapp}
+                          disabled={isConnectingWhatsapp || !globalConfigs.whatsappEvolutionUrl}
+                          className="px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5 disabled:opacity-50"
+                          title="Gerar QR Code para escanear com o celular"
+                        >
+                          {isConnectingWhatsapp ? (
+                            <>
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              <span>Gerando QR Code...</span>
+                            </>
+                          ) : (
+                            <>
+                              <QrCode className="w-3.5 h-3.5" />
+                              <span>Conectar via QR Code</span>
+                            </>
+                          )}
+                        </button>
+
+                        {whatsappState === "open" && (
+                          <button
+                            type="button"
+                            onClick={handleDisconnectWhatsapp}
+                            className="px-3 py-1.5 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 text-xs font-bold transition-all"
+                            title="Desconectar WhatsApp"
+                          >
+                            Desconectar
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Exibição do QR Code quando disponível */}
+                    {whatsappQrCode && (
+                      <div className="bg-emerald-50/70 border-2 border-emerald-300 rounded-2xl p-6 text-center space-y-4 shadow-sm animate-in fade-in duration-300">
+                        <div className="max-w-md mx-auto">
+                          <div className="inline-flex items-center gap-2 bg-emerald-100 text-emerald-900 px-3 py-1 rounded-full text-xs font-bold mb-2">
+                            <QrCode className="w-4 h-4 text-emerald-700" />
+                            <span>Escaneie com seu WhatsApp</span>
+                          </div>
+                          <h5 className="font-bold text-forest text-base">
+                            Conecte o Celular ao Sistema
+                          </h5>
+                          <ol className="text-xs text-forest/80 text-left list-decimal list-inside space-y-1.5 mt-2 bg-white/80 p-3.5 rounded-xl border border-emerald-200/60 font-medium">
+                            <li>Abra o <strong>WhatsApp</strong> no seu smartphone.</li>
+                            <li>Toque em <strong>Configurações</strong> (ou no menu de 3 pontinhos ⋮).</li>
+                            <li>Selecione <strong>Aparelhos conectados</strong> e depois <strong>Conectar um aparelho</strong>.</li>
+                            <li>Aponte a câmera para o QR Code abaixo:</li>
+                          </ol>
+                        </div>
+
+                        <div className="inline-block p-4 bg-white rounded-2xl shadow-md border border-emerald-200">
+                          <img
+                            src={
+                              whatsappQrCode.startsWith("data:")
+                                ? whatsappQrCode
+                                : `data:image/png;base64,${whatsappQrCode}`
+                            }
+                            alt="QR Code WhatsApp Evolution"
+                            className="w-56 h-56 object-contain mx-auto"
+                          />
+                        </div>
+
+                        {whatsappPairingCode && (
+                          <div className="max-w-xs mx-auto bg-white p-3 rounded-xl border border-emerald-200 text-center">
+                            <span className="text-[10px] uppercase font-bold text-forest/60">
+                              Código de Pareamento (Alternativo):
+                            </span>
+                            <div className="font-mono text-lg font-bold tracking-widest text-emerald-700 mt-1">
+                              {whatsappPairingCode}
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="flex justify-center items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={handleConnectWhatsapp}
+                            disabled={isConnectingWhatsapp}
+                            className="px-4 py-2 bg-forest text-white rounded-xl text-xs font-bold hover:bg-forest/90 transition-all flex items-center gap-1.5 shadow-2xs"
+                          >
+                            <RefreshCw className="w-3.5 h-3.5 text-sun" />
+                            <span>Atualizar QR Code</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={handleCheckWhatsappStatus}
+                            disabled={isLoadingWhatsappStatus}
+                            className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 transition-all flex items-center gap-1.5 shadow-2xs"
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>Já escaneei, verificar!</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setWhatsappQrCode(null)}
+                            className="px-3 py-2 text-forest/60 hover:text-forest text-xs font-bold"
+                          >
+                            Fechar QR Code
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Campos de Configuração da Evolution API */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      {/* URL da API */}
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-semibold uppercase text-forest/70 ml-2 flex items-center gap-1">
+                          <Server className="w-3 h-3 text-forest/60" />
+                          <span>URL Base da Evolution API</span>
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="https://evolution-api-production-xxx.up.railway.app"
+                          value={globalConfigs.whatsappEvolutionUrl || ""}
+                          onChange={(e) =>
+                            handleUpdateConfiguracoesProperty(
+                              "whatsappEvolutionUrl",
+                              e.target.value
+                            )
+                          }
+                          onBlur={(e) => {
+                            const normalized = normalizeEvolutionUrl(e.target.value);
+                            if (normalized !== e.target.value) {
+                              handleUpdateConfiguracoesProperty("whatsappEvolutionUrl", normalized);
+                            }
+                          }}
+                          className="text-sm bg-white border border-soft px-3 py-2.5 rounded-xl focus:outline-none focus:border-emerald-600 transition-colors font-mono text-xs"
+                        />
+                        <span className="text-[10px] text-forest/50 ml-2">
+                          Endpoint onde sua instância Evolution está hospedada.
+                        </span>
+                      </div>
+
+                      {/* Chave API */}
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-semibold uppercase text-forest/70 ml-2 flex items-center justify-between">
+                          <span className="flex items-center gap-1">
+                            <Lock className="w-3 h-3 text-forest/60" />
+                            Chave Global (API Key)
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setShowApiKey(!showApiKey)}
+                            className="text-[10px] text-emerald-700 hover:underline capitalize"
+                          >
+                            {showApiKey ? "Ocultar" : "Mostrar"}
+                          </button>
+                        </label>
+                        <div className="relative">
+                          <input
+                            type={showApiKey ? "text" : "password"}
+                            placeholder="AUTHENTICATION_API_KEY"
+                            value={globalConfigs.whatsappEvolutionApiKey || ""}
+                            onChange={(e) =>
+                              handleUpdateConfiguracoesProperty(
+                                "whatsappEvolutionApiKey",
+                                e.target.value
+                              )
+                            }
+                            className="text-sm bg-white border border-soft px-3 py-2.5 rounded-xl focus:outline-none focus:border-emerald-600 transition-colors font-mono text-xs w-full pr-10"
+                          />
+                        </div>
+                        {globalConfigs.whatsappEvolutionApiKey &&
+                          (globalConfigs.whatsappEvolutionApiKey.includes("${{") ||
+                            globalConfigs.whatsappEvolutionApiKey.includes("secret(")) && (
+                            <div className="text-[11px] text-amber-900 bg-amber-50/90 border border-amber-300 p-2.5 rounded-xl mt-1 space-y-1">
+                              <p className="font-bold flex items-center gap-1.5 text-amber-900">
+                                <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                Atenção: Fórmula do Railway detectada!
+                              </p>
+                              <p className="text-[10px] leading-relaxed text-amber-900/90">
+                                Você colou o modelo <code>{"${{secret(...)}}"}</code>. Para obter a chave real: no Railway, abra seu serviço da Evolution API &gt; aba <strong>Variables</strong> &gt; clique no ícone de <strong>olho 👁️</strong> ao lado de <code>AUTHENTICATION_API_KEY</code> para copiar o valor real alfanumérico gerado, ou defina uma senha como <code>acolhemente2026</code>.
+                              </p>
+                            </div>
+                          )}
+                        <span className="text-[10px] text-forest/50 ml-2">
+                          Chave configurada na variável AUTHENTICATION_API_KEY.
+                        </span>
+                      </div>
+
+                      {/* Nome da Instância */}
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-semibold uppercase text-forest/70 ml-2 flex items-center gap-1">
+                          <Radio className="w-3 h-3 text-forest/60" />
+                          <span>Nome da Instância</span>
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="acolhemente"
+                          value={globalConfigs.whatsappEvolutionInstance || "acolhemente"}
+                          onChange={(e) =>
+                            handleUpdateConfiguracoesProperty(
+                              "whatsappEvolutionInstance",
+                              e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, "")
+                            )
+                          }
+                          className="text-sm bg-white border border-soft px-3 py-2.5 rounded-xl focus:outline-none focus:border-emerald-600 transition-colors font-mono text-xs"
+                        />
+                        <span className="text-[10px] text-forest/50 ml-2">
+                          Identificador único da sessão (letras minúsculas e números).
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Sincronização de Webhook do Sistema */}
+                    <div className="bg-white p-4.5 rounded-xl border border-soft space-y-3">
+                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-forest uppercase tracking-wider">
+                              Webhook Receptor do Sistema
+                            </span>
+                            <span className="text-[10px] bg-sky-100 text-sky-800 font-bold px-2 py-0.5 rounded-md">
+                              Ingress Ativo
+                            </span>
+                          </div>
+                          <p className="text-xs text-forest/70 mt-0.5">
+                            A Evolution API enviará eventos de mensagens recebidas, confirmações de entrega e status da conexão para esta URL.
+                          </p>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const webhookUrl = `${window.location.origin}/api/whatsapp/webhook`;
+                              navigator.clipboard.writeText(webhookUrl);
+                              showToast("URL do Webhook copiada para a área de transferência!", "success");
+                            }}
+                            className="px-3 py-1.5 rounded-xl border border-soft hover:bg-warm/40 text-forest text-xs font-bold transition-all flex items-center gap-1.5"
+                          >
+                            <Copy className="w-3.5 h-3.5 text-forest/70" />
+                            <span>Copiar URL</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setShowEvolutionDiagnosticModal(true)}
+                            className="px-3 py-1.5 rounded-xl border border-sky-200 bg-sky-50 hover:bg-sky-100 text-sky-900 text-xs font-bold transition-all flex items-center gap-1.5"
+                            title="Diagnóstico detalhado dos endpoints /webhook/set e QR Code"
+                          >
+                            <Activity className="w-3.5 h-3.5 text-sky-700" />
+                            <span>Diagnóstico do Webhook</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setActiveTab("notificacoes")}
+                            className="px-3 py-1.5 rounded-xl border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 text-xs font-bold transition-all flex items-center gap-1.5"
+                            title="Acessar a Central de Mensagens e Régua de Comunicação"
+                          >
+                            <Bell className="w-3.5 h-3.5 text-emerald-700" />
+                            <span>Régua de Mensagens & Tempos</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={handleConfigureWhatsappWebhook}
+                            disabled={isConfiguringWebhook || !globalConfigs.whatsappEvolutionUrl}
+                            className="px-3.5 py-1.5 rounded-xl bg-forest text-white hover:bg-forest/90 text-xs font-bold transition-all flex items-center gap-1.5 shadow-2xs disabled:opacity-50"
+                          >
+                            {isConfiguringWebhook ? (
+                              <>
+                                <Loader2 className="w-3.5 h-3.5 animate-spin text-sun" />
+                                <span>Configurando...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Sparkles className="w-3.5 h-3.5 text-sun" />
+                                <span>Configurar Webhook na Instância</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Display da URL */}
+                      <div className="bg-warm/30 p-2.5 rounded-lg border border-soft/60 flex items-center justify-between gap-2 font-mono text-xs text-forest/80 overflow-x-auto">
+                        <span>{typeof window !== "undefined" ? `${window.location.origin}/api/whatsapp/webhook` : "/api/whatsapp/webhook"}</span>
+                        <span className="text-[10px] text-forest/50 shrink-0 font-sans font-semibold">
+                          (Rota gerenciada pelo servidor)
+                        </span>
+                      </div>
+
+                      {whatsappWebhookFeedback && (
+                        <div
+                          className={`p-3 rounded-xl border text-xs flex flex-wrap items-center justify-between gap-2 ${
+                            whatsappWebhookFeedback.success
+                              ? "bg-emerald-50 border-emerald-200 text-emerald-900"
+                              : "bg-rose-50 border-rose-200 text-rose-900"
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 flex-1 min-w-[200px]">
+                            {whatsappWebhookFeedback.success ? (
+                              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                            ) : (
+                              <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                            )}
+                            <div>
+                              <span>{whatsappWebhookFeedback.message}</span>
+                              {!whatsappWebhookFeedback.success && (
+                                <button
+                                  type="button"
+                                  onClick={() => setShowEvolutionDiagnosticModal(true)}
+                                  className="ml-2 font-bold text-sky-800 underline hover:text-sky-950 inline-flex items-center gap-1"
+                                >
+                                  Ver Diagnóstico & Logs Detalhados
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setWhatsappWebhookFeedback(null)}
+                            className="text-forest/40 hover:text-forest text-xs font-bold"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Histórico Recente de Eventos do Webhook */}
+                      <div className="pt-2 border-t border-soft/60">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[11px] font-bold text-forest/80 uppercase tracking-wider">
+                              Últimos Eventos Recebidos no Webhook ({webhookEventsList.length})
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={handleRefreshWebhookEvents}
+                              disabled={isLoadingWebhookEvents}
+                              className="text-[11px] text-forest/70 hover:text-forest flex items-center gap-1 font-semibold"
+                            >
+                              <RefreshCw className={`w-3 h-3 ${isLoadingWebhookEvents ? "animate-spin" : ""}`} />
+                              <span>Atualizar</span>
+                            </button>
+                            {webhookEventsList.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={handleClearWebhookEvents}
+                                className="text-[11px] text-rose-600 hover:text-rose-700 font-semibold"
+                              >
+                                Limpar
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {webhookEventsList.length === 0 ? (
+                          <div className="p-3 text-center text-forest/50 text-xs bg-warm/20 rounded-lg border border-dashed border-soft">
+                            Nenhum evento registrado ainda. Quando a Evolution API enviar eventos (mensagens, conexão, etc.), eles aparecerão aqui.
+                          </div>
+                        ) : (
+                          <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
+                            {webhookEventsList.slice(0, 8).map((evt) => (
+                              <div
+                                key={evt.id}
+                                className="p-2 bg-warm/20 rounded-lg border border-soft/80 text-[11px] flex items-start justify-between gap-2"
+                              >
+                                <div className="space-y-0.5">
+                                  <div className="flex items-center gap-2 font-bold text-forest">
+                                    <span className="px-1.5 py-0.2 bg-emerald-100 text-emerald-800 rounded font-mono text-[10px]">
+                                      {evt.event}
+                                    </span>
+                                    {evt.sender && (
+                                      <span className="text-forest/70 font-mono text-[10px]">
+                                        De: {evt.sender}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-forest/80 line-clamp-1">
+                                    {evt.summary}
+                                  </p>
+                                </div>
+                                <span className="text-[10px] text-forest/40 font-mono shrink-0">
+                                  {new Date(evt.timestamp).toLocaleTimeString("pt-BR")}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Simulador e Teste Prático de Envio */}
+                    <div className="bg-emerald-500/5 p-4.5 rounded-xl border border-emerald-500/20 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Send className="w-4 h-4 text-emerald-600" />
+                          <h5 className="text-xs font-bold uppercase tracking-wider text-emerald-950">
+                            Simulador de Disparo de WhatsApp
+                          </h5>
+                        </div>
+                        <span className="text-[10px] text-emerald-800 font-medium">
+                          Valida o envio em tempo real para seu número
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div className="flex flex-col gap-1">
+                          <label className="text-[10px] font-semibold uppercase text-forest/70 ml-2">
+                            WhatsApp de Destino (com DDD)
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="(11) 99999-9999"
+                            value={testWhatsappPhone}
+                            onChange={(e) => setTestWhatsappPhone(e.target.value)}
+                            className="text-xs bg-white border border-soft px-3 py-2 rounded-xl focus:outline-none focus:border-emerald-600 transition-colors"
+                          />
+                        </div>
+
+                        <div className="flex flex-col gap-1 md:col-span-2">
+                          <label className="text-[10px] font-semibold uppercase text-forest/70 ml-2">
+                            Mensagem de Teste
+                          </label>
+                          <div className="flex gap-2">
+                            <input
+                              type="text"
+                              placeholder="Digite uma mensagem..."
+                              value={testWhatsappMessage}
+                              onChange={(e) => setTestWhatsappMessage(e.target.value)}
+                              className="text-xs bg-white border border-soft px-3 py-2 rounded-xl focus:outline-none focus:border-emerald-600 transition-colors flex-1"
+                            />
+                            <button
+                              type="button"
+                              onClick={handleSendTestWhatsapp}
+                              disabled={isSendingTestWhatsapp || !testWhatsappPhone || !globalConfigs.whatsappEvolutionUrl}
+                              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs transition-all shadow-2xs flex items-center gap-1.5 disabled:opacity-50 shrink-0"
+                            >
+                              {isSendingTestWhatsapp ? (
+                                <>
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  <span>Enviando...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Send className="w-3.5 h-3.5" />
+                                  <span>Enviar Teste</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      {testWhatsappResult && (
+                        <div
+                          className={`p-3 rounded-xl border text-xs flex items-center justify-between gap-2 ${
+                            testWhatsappResult.success
+                              ? "bg-emerald-50 border-emerald-200 text-emerald-900"
+                              : "bg-rose-50 border-rose-200 text-rose-900"
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            {testWhatsappResult.success ? (
+                              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                            ) : (
+                              <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                            )}
+                            <div>
+                              <p className="font-bold">{testWhatsappResult.message}</p>
+                              {testWhatsappResult.formattedNumber && (
+                                <p className="text-[10px] opacity-80 font-mono mt-0.5">
+                                  Enviado para: {testWhatsappResult.formattedNumber}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setTestWhatsappResult(null)}
+                            className="text-forest/40 hover:text-forest text-xs font-bold"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Guia Rápido de Deploy da Evolution API (Colapsável) */}
+                    <div className="border border-soft/80 rounded-xl overflow-hidden">
+                      <button
+                        type="button"
+                        onClick={() => setShowEvolutionGuide(!showEvolutionGuide)}
+                        className="w-full px-4 py-3 bg-warm/20 hover:bg-warm/30 flex items-center justify-between text-left transition-colors"
+                      >
+                        <div className="flex items-center gap-2">
+                          <HelpCircle className="w-4 h-4 text-forest/70" />
+                          <span className="text-xs font-bold text-forest">
+                            Como hospedar a Evolution API em 2 minutos (Railway ou Docker VPS)?
+                          </span>
+                        </div>
+                        <ChevronDown
+                          className={`w-4 h-4 text-forest/60 transition-transform duration-200 ${
+                            showEvolutionGuide ? "rotate-180" : ""
+                          }`}
+                        />
+                      </button>
+
+                      {showEvolutionGuide && (
+                        <div className="p-4 bg-white space-y-3 text-xs text-forest/80 leading-relaxed border-t border-soft/60">
+                          <p>
+                            A <strong>Evolution API</strong> é um servidor open-source de WhatsApp em Node.js de alta performance. Ela não exige aprovações da Meta e pode ser implantada com 1 clique.
+                          </p>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+                            <div className="p-3 rounded-lg bg-warm/30 border border-soft">
+                              <h6 className="font-bold text-forest text-xs mb-1 flex items-center gap-1.5">
+                                <span>Opção 1: Railway (1-Clique sem servidor)</span>
+                              </h6>
+                              <p className="text-[11px] text-forest/70 mb-2">
+                                Ideal para subir em poucos minutos com URL HTTPS automática:
+                              </p>
+                              <ol className="list-decimal list-inside text-[11px] space-y-1 text-forest/80 font-medium">
+                                <li>Acesse o template oficial da Evolution API no Railway.</li>
+                                <li>Defina a variável <code>AUTHENTICATION_API_KEY</code> com sua senha secreta.</li>
+                                <li>Copie a URL pública gerada (ex: <code>https://evolution-xxx.up.railway.app</code>) e cole no campo acima.</li>
+                              </ol>
+                            </div>
+
+                            <div className="p-3 rounded-lg bg-warm/30 border border-soft">
+                              <h6 className="font-bold text-forest text-xs mb-1 flex items-center gap-1.5">
+                                <span>Opção 2: Docker / VPS Própria</span>
+                              </h6>
+                              <p className="text-[11px] text-forest/70 mb-2">
+                                Para máxima economia (R$ 20/mês em qualquer VPS):
+                              </p>
+                              <code className="block p-2 bg-forest/5 rounded border border-soft font-mono text-[10px] text-forest overflow-x-auto">
+                                docker run -d --name evolution-api -p 8080:8080 -e AUTHENTICATION_API_KEY=sua_chave atendai/evolution-api:v2.1.0
+                              </code>
+                            </div>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -7419,29 +8554,39 @@ export function DashboardView({
                   const colCards = filteredAcolhimentos
                     .filter((a) => {
                       const cardStatus = a.status || "Aguardando Avaliação";
-                      const isInactiveOrAlta =
+                      const cardInStandby = isCardInStandby(a);
+                      const isDesligadoOrFinal =
                         cardStatus === "Alta" ||
                         cardStatus === "Inativo" ||
                         cardStatus === "Desligado" ||
-                        a.ativo === false ||
                         a.desligado === true ||
                         a.statusInativacao === "Inativo" ||
                         a.statusInativacao === "Desligado";
+                      const isInactiveOrAlta = isDesligadoOrFinal || (!cardInStandby && a.ativo === false);
                       const flow = getPatientFlowDetails(a);
 
                       if (activeTab === "kanban") {
                         // Triagem tab: shows active leads undergoing triage
+                        if (isDesligadoOrFinal) return false;
+                        if (cardStatus === "Em Atendimento") return false;
+                        if (flow.activeStep >= 6) return false;
+
+                        if (col.id === "Standby") {
+                          return cardInStandby;
+                        }
+
+                        // Other triage columns must not show standby cards
+                        if (cardInStandby) return false;
+
                         return (
                           !isInactiveOrAlta &&
-                          cardStatus === col.id &&
-                          cardStatus !== "Em Atendimento" &&
-                          flow.activeStep < 6
+                          cardStatus === col.id
                         );
                       } else {
                         // Pacientes tab (activeTab === "pacientesAcolhidos" or for profissional)
                         if (col.id === "Alta") {
                           // All inactive, desligado, or alta patients go to the Alta / Finalizado column
-                          return isInactiveOrAlta;
+                          return isDesligadoOrFinal || (!cardInStandby && a.ativo === false);
                         }
                         if (col.id === "Em Atendimento") {
                           // Active patients in accompaniment
@@ -7471,7 +8616,9 @@ export function DashboardView({
                       className={`w-[320px] shrink-0 h-full flex flex-col rounded-2xl overflow-hidden transition-colors duration-200 ${
                         isColOver
                           ? "bg-sun/15 border-2 border-sun shadow-md"
-                          : "bg-white/50 border border-soft shadow-xs"
+                          : col.id === "Standby"
+                            ? "bg-amber-50/40 border border-amber-200/80 shadow-xs"
+                            : "bg-white/50 border border-soft shadow-xs"
                       }`}
                       onDrop={(e) => {
                         setDragOverColId(null);
@@ -7493,11 +8640,27 @@ export function DashboardView({
                       {/* Column Header */}
                       <div className="p-4 bg-white border-b border-soft flex justify-between items-center shadow-sm z-10">
                         <div className="flex items-center gap-2">
-                          <h3 className="font-semibold text-forest text-sm">
-                            {col.label}
-                          </h3>
+                          {col.id === "Standby" && (
+                            <div className="w-5 h-5 rounded-md bg-amber-100 border border-amber-300 flex items-center justify-center text-amber-700 shrink-0">
+                              <Clock className="w-3 h-3 text-amber-700" />
+                            </div>
+                          )}
+                          <div>
+                            <h3 className="font-semibold text-forest text-sm">
+                              {col.label}
+                            </h3>
+                            {col.id === "Standby" && (
+                              <p className="text-[10px] text-amber-700/90 font-medium -mt-0.5">
+                                Aguardando retomada
+                              </p>
+                            )}
+                          </div>
                         </div>
-                        <span className="bg-warm text-forest/70 px-2 py-0.5 rounded-full text-xs font-bold border border-soft">
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-bold border ${
+                          col.id === "Standby"
+                            ? "bg-amber-100 text-amber-900 border-amber-300"
+                            : "bg-warm text-forest/70 border-soft"
+                        }`}>
                           {colCards.length}
                         </span>
                       </div>
@@ -7563,10 +8726,16 @@ export function DashboardView({
                                     >
                                       {card.viaAcesso}
                                     </span>
-                                    {(card.status === "Alta" || card.ativo === false || card.desligado || card.statusInativacao === "Inativo" || card.statusInativacao === "Desligado") && (
+                                    {!isCardInStandby(card) && (card.status === "Alta" || card.ativo === false || card.desligado || card.statusInativacao === "Inativo" || card.statusInativacao === "Desligado") && (
                                       <span className="text-[9px] font-bold text-rose-800 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-200 flex items-center gap-0.5">
                                         <XCircle className="w-2.5 h-2.5 text-rose-600" />
                                         {card.desligamentoMotivo || (card.statusInativacao === "Inativo" ? "Inativo" : "Alta")}
+                                      </span>
+                                    )}
+                                    {isCardInStandby(card) && (
+                                      <span className="text-[9px] font-bold text-amber-900 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-300 flex items-center gap-0.5">
+                                        <Clock className="w-2.5 h-2.5 text-amber-700" />
+                                        Standby
                                       </span>
                                     )}
                                   </div>
@@ -7730,6 +8899,43 @@ export function DashboardView({
                                       </div>
                                     );
                                   })()}
+
+                                  {/* Motivo de Pausa / Cancelamento na Proposta (Standby) */}
+                                  {card.motivoPausaCancelamento && (
+                                    <div className="mt-2 p-2 bg-amber-50/90 border border-amber-300/80 rounded-xl text-[10px] text-amber-950 leading-tight">
+                                      <span className="font-extrabold text-[9px] uppercase tracking-wider text-amber-900 flex items-center gap-1">
+                                        <PauseCircle className="w-3 h-3 text-amber-700 shrink-0" /> Motivo da Pausa:
+                                      </span>
+                                      <p className="line-clamp-2 italic text-forest/90 mt-0.5 font-serif">"{card.motivoPausaCancelamento}"</p>
+                                    </div>
+                                  )}
+
+                                  {/* Motivo de Revisão Solicitada */}
+                                  {card.motivoRevisao && (card.propostaStatus === "Paciente solicita revisão da proposta" || card.propostaStatus === "Revisão solicitada") && (
+                                    <div className="mt-2 p-2 bg-orange-50/90 border border-orange-300/80 rounded-xl text-[10px] text-orange-950 leading-tight">
+                                      <span className="font-extrabold text-[9px] uppercase tracking-wider text-orange-900 flex items-center gap-1">
+                                        <RotateCcw className="w-3 h-3 text-orange-700 shrink-0" /> Motivo da Revisão:
+                                      </span>
+                                      <p className="line-clamp-2 italic text-forest/90 mt-0.5 font-serif">"{card.motivoRevisao}"</p>
+                                    </div>
+                                  )}
+
+                                  {(col.id === "Standby" || isCardInStandby(card)) && (
+                                    <div className="mt-2.5 pt-2 border-t border-amber-200/60 flex flex-col gap-1 w-full">
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleReativarParaEmAnalise(card);
+                                        }}
+                                        className="w-full py-1.5 px-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white rounded-lg text-[11px] font-bold transition-all flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
+                                        title="Retomar processo e retornar paciente para 'Em Análise'"
+                                      >
+                                        <Play className="w-3 h-3 fill-white" />
+                                        <span>Reativar (Mover para Em Análise)</span>
+                                      </button>
+                                    </div>
+                                  )}
                               </motion.div>
                             );
                           })}
@@ -7746,7 +8952,16 @@ export function DashboardView({
                                 : "border-soft text-forest/70/40"
                             }`}
                           >
-                            <span>Solte cards aqui</span>
+                            <span>
+                              {col.id === "Standby"
+                                ? "Nenhum paciente em standby"
+                                : "Solte cards aqui"}
+                            </span>
+                            {col.id === "Standby" && !isColOver && (
+                              <span className="text-[10px] text-forest/50 mt-0.5">
+                                Arraste ou pause na Ficha de Bordo
+                              </span>
+                            )}
                             {isColOver && (
                               <span className="text-[10px] text-amber-700 mt-0.5">
                                 Mover para {col.label}
@@ -9126,6 +10341,14 @@ export function DashboardView({
             userRole={currentRole}
           />
         </div>
+      ) : activeTab === "notificacoes" ? (
+        <div className="flex-1 overflow-auto p-6 md:p-8 flex items-start flex-col gap-8 slide-up w-full">
+          <NotificationRulesManager
+            onShowToast={showToast}
+            whatsappInstanceName={globalConfigs.whatsappEvolutionInstance || "acolhemente"}
+            whatsappConnected={whatsappState === "open"}
+          />
+        </div>
       ) : activeTab === "gestaoArtigos" ? (
         <GestaoBlogView
           profile={profile}
@@ -9156,6 +10379,18 @@ export function DashboardView({
             onNavigate("blog");
           }}
         />
+      ) : activeTab === "redeProfissional" ? (
+        <div className="flex-1 overflow-y-auto overscroll-contain p-3 sm:p-6 md:p-8 flex flex-col slide-up w-full">
+          <div className="max-w-7xl w-full mx-auto">
+            <RedeProfissionalView
+              profile={profile}
+              currentRole={currentRole}
+              onShowToast={showToast}
+              externalSearchQuery={searchQuery}
+              onExternalSearchChange={setSearchQuery}
+            />
+          </div>
+        </div>
       ) : activeTab === "eventos" || activeTab === "servicos" ? (
         <EventosServicosView activeSection={activeTab} profile={profile} />
       ) : null}
@@ -9178,16 +10413,23 @@ export function DashboardView({
                       </h3>
                       <span
                         className={`text-[9px] sm:text-[10px] font-extrabold uppercase px-2 sm:px-2.5 py-0.5 rounded-full border ${
-                          selectedCard.ativo === false
-                            ? "bg-slate-100 text-slate-600 border-slate-200"
-                            : "bg-emerald-100 text-emerald-800 border-emerald-200"
+                          isCardInStandby(selectedCard)
+                            ? "bg-amber-100 text-amber-900 border-amber-300"
+                            : selectedCard.ativo === false
+                              ? "bg-slate-100 text-slate-600 border-slate-200"
+                              : "bg-emerald-100 text-emerald-800 border-emerald-200"
                         }`}
                       >
-                        {selectedCard.ativo === false ? "Inativo" : "Ativo"}
+                        {isCardInStandby(selectedCard) ? "Standby" : selectedCard.ativo === false ? "Inativo" : "Ativo"}
                       </span>
-                      {selectedCard.status && (
+                      {selectedCard.status && !isCardInStandby(selectedCard) && (
                         <span className="text-[9px] sm:text-[10px] font-bold uppercase px-2 sm:px-2.5 py-0.5 rounded-full bg-sun/30 text-forest border border-sun/50">
                           {selectedCard.status}
+                        </span>
+                      )}
+                      {isCardInStandby(selectedCard) && (
+                        <span className="text-[9px] sm:text-[10px] font-bold uppercase px-2 sm:px-2.5 py-0.5 rounded-full bg-amber-200/90 text-amber-950 border border-amber-300">
+                          Etapa: Standby
                         </span>
                       )}
                     </div>
@@ -9322,18 +10564,12 @@ export function DashboardView({
               <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
                 <button
                   onClick={() => {
-                    const tpl =
-                      templates.find((t) => t.id === "pagamento") || templates[0];
-                    setNotificacaoType(tpl.id);
-                    setNotificacaoName(tpl.name);
-                    setNotificacaoMsg(
-                      processNotificationTemplate(tpl.msg, selectedCard),
-                    );
                     setShowNotificarModal(true);
                   }}
-                  className="flex items-center gap-1 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-bold text-[11px] sm:text-xs px-2.5 sm:px-3 py-1.5 rounded-xl border border-emerald-200/80 transition-colors shadow-2xs whitespace-nowrap"
+                  className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] sm:text-xs px-3 py-1.5 rounded-xl border border-emerald-500/80 transition-all shadow-2xs whitespace-nowrap"
+                  title="Disparar notificação via WhatsApp (Evolution) e E-mail Webhook (Brevo)"
                 >
-                  <Send className="w-3.5 h-3.5" /> Notificar Paciente
+                  <Send className="w-3.5 h-3.5 text-sun" /> Notificar Paciente (Whats/E-mail)
                 </button>
 
                 <button
@@ -9415,36 +10651,39 @@ export function DashboardView({
                     <button
                       type="button"
                       onClick={() => {
-                        handleUpdateAcolhimentoProperty(selectedCard.id, "ativo", true);
-                        handleUpdateAcolhimentoProperty(selectedCard.id, "statusInativacao", "Ativo");
-                        if (selectedCard.status === "Inativo" || selectedCard.status === "Standby" || selectedCard.status === "Alta") {
-                          handleUpdateAcolhimentoProperty(selectedCard.id, "status", "Aguardando Avaliação");
+                        if (isCardInStandby(selectedCard)) {
+                          handleReativarParaEmAnalise(selectedCard.id);
+                        } else {
+                          handleUpdateAcolhimentoProperty(selectedCard.id, "ativo", true);
+                          handleUpdateAcolhimentoProperty(selectedCard.id, "statusInativacao", "Ativo");
+                          if (selectedCard.status === "Inativo" || selectedCard.status === "Standby" || selectedCard.status === "Alta") {
+                            handleUpdateAcolhimentoProperty(selectedCard.id, "status", "Em Triagem");
+                          }
+                          showToast("Status alterado para Ativo", "success");
                         }
-                        showToast("Status alterado para Ativo", "success");
                       }}
                       className={`px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-[10px] sm:text-xs font-bold transition-all flex items-center gap-1 ${
-                        selectedCard.ativo !== false && selectedCard.statusInativacao !== "Standby" && selectedCard.statusInativacao !== "Inativo" && selectedCard.status !== "Alta"
+                        !isCardInStandby(selectedCard) && selectedCard.ativo !== false && selectedCard.statusInativacao !== "Inativo" && selectedCard.status !== "Alta"
                           ? "bg-emerald-600 text-white shadow-2xs"
                           : "text-forest/70 hover:text-forest hover:bg-white/60"
                       }`}
-                      title="Ativar paciente"
+                      title={isCardInStandby(selectedCard) ? "Reativar paciente e retornar para Em Análise" : "Ativar paciente"}
                     >
-                      <CheckCircle2 className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> <span className="hidden sm:inline">Ativar</span>
+                      <CheckCircle2 className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                      <span className="hidden sm:inline">{isCardInStandby(selectedCard) ? "Reativar (Em Análise)" : "Ativar"}</span>
                     </button>
 
                     <button
                       type="button"
                       onClick={() => {
-                        handleUpdateAcolhimentoProperty(selectedCard.id, "ativo", "standby");
-                        handleUpdateAcolhimentoProperty(selectedCard.id, "statusInativacao", "Standby");
-                        showToast("Status alterado para Standby", "info");
+                        handleColocarEmStandby(selectedCard.id);
                       }}
                       className={`px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-[10px] sm:text-xs font-bold transition-all flex items-center gap-1 ${
-                        selectedCard.ativo === "standby" || selectedCard.statusInativacao === "Standby"
+                        isCardInStandby(selectedCard)
                           ? "bg-amber-500 text-white shadow-2xs"
                           : "text-forest/70 hover:text-forest hover:bg-white/60"
                       }`}
-                      title="Colocar em Standby"
+                      title="Armazenar paciente na etapa Standby da Triagem"
                     >
                       <Clock className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> <span className="hidden sm:inline">Standby</span>
                     </button>
@@ -9474,6 +10713,119 @@ export function DashboardView({
             {/* Modal Scrollable Body - Organized in Distinct Sections */}
             <div className="flex-1 overflow-y-auto p-3 sm:p-6 lg:p-8 space-y-4 sm:space-y-7 bg-warm/10 custom-scrollbar">
 
+              {/* Standby Resumption Banner */}
+              {isCardInStandby(selectedCard) && (
+                <div className="w-full bg-gradient-to-r from-amber-50 via-orange-50/70 to-amber-50 border-2 border-amber-300/90 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm">
+                  <div className="flex items-start sm:items-center gap-3.5">
+                    <div className="w-11 h-11 rounded-2xl bg-amber-100 border border-amber-300 flex items-center justify-center text-amber-700 shrink-0 shadow-2xs">
+                      <Clock className="w-5 h-5 text-amber-700" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h4 className="text-sm sm:text-base font-bold text-amber-950">
+                          Paciente na etapa de Standby
+                        </h4>
+                        <span className="text-[10px] bg-amber-200 text-amber-900 font-extrabold px-2 py-0.5 rounded-full border border-amber-300">
+                          Triagem Pausada
+                        </span>
+                      </div>
+                      <p className="text-xs text-amber-900/80 mt-1 max-w-2xl leading-relaxed">
+                        Este paciente está armazenado na coluna <strong>Standby</strong> da Triagem. Ao retomar o processo, clique no botão ao lado para reativá-lo e retorná-lo imediatamente para <strong>Em Análise</strong>.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleReativarParaEmAnalise(selectedCard.id)}
+                    className="shrink-0 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 shadow-sm cursor-pointer"
+                    title="Retomar processo do paciente e retornar para Em Análise"
+                  >
+                    <Play className="w-4 h-4 fill-white" />
+                    <span>Reativar (Retornar para Em Análise)</span>
+                  </button>
+                </div>
+              )}
+
+              {/* Motivo de Pausa / Cancelamento da Proposta (Standby) */}
+              {selectedCard.motivoPausaCancelamento && (
+                <div className="w-full bg-gradient-to-r from-amber-50 via-amber-50/80 to-amber-100/40 border-2 border-amber-300 rounded-2xl p-4 sm:p-5 flex flex-col gap-3 shadow-sm">
+                  <div className="flex items-start justify-between gap-3 flex-wrap">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-2xl bg-amber-100 border border-amber-300 flex items-center justify-center text-amber-800 shrink-0 shadow-2xs">
+                        <PauseCircle className="w-5 h-5 text-amber-700" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h4 className="text-sm sm:text-base font-bold text-amber-950">
+                            Processo Pausado / Cancelado pelo Paciente
+                          </h4>
+                          <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-900 bg-amber-200/90 px-2 py-0.5 rounded-full border border-amber-300">
+                            Resposta na Proposta
+                          </span>
+                        </div>
+                        <p className="text-xs text-amber-900/80 mt-0.5">
+                          O paciente interrompeu o processo ao receber a proposta e justificou o motivo abaixo:
+                        </p>
+                      </div>
+                    </div>
+                    {selectedCard.dataPausaCancelamento && (
+                      <span className="text-[11px] font-semibold text-amber-800 flex items-center gap-1.5 bg-white/80 px-3 py-1 rounded-xl border border-amber-200">
+                        <Clock className="w-3.5 h-3.5 text-amber-600" />
+                        Registrado em: {new Date(selectedCard.dataPausaCancelamento).toLocaleString('pt-BR')}
+                      </span>
+                    )}
+                  </div>
+                  <div className="bg-white/95 p-3.5 sm:p-4 rounded-xl border border-amber-200 shadow-2xs">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-amber-900/70 block mb-1">
+                      Motivo Declarado pelo Paciente:
+                    </span>
+                    <p className="font-serif italic text-forest text-sm sm:text-base leading-relaxed">
+                      "{selectedCard.motivoPausaCancelamento}"
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Motivo da Solicitação de Revisão da Proposta */}
+              {selectedCard.motivoRevisao && (
+                <div className="w-full bg-gradient-to-r from-orange-50 via-orange-50/80 to-amber-50 border-2 border-orange-300 rounded-2xl p-4 sm:p-5 flex flex-col gap-3 shadow-sm">
+                  <div className="flex items-start justify-between gap-3 flex-wrap">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-2xl bg-orange-100 border border-orange-300 flex items-center justify-center text-orange-800 shrink-0 shadow-2xs">
+                        <RotateCcw className="w-5 h-5 text-orange-700" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h4 className="text-sm sm:text-base font-bold text-orange-950">
+                            Revisão de Proposta Solicitada pelo Paciente
+                          </h4>
+                          <span className="text-[10px] font-extrabold uppercase tracking-wider text-orange-900 bg-orange-200/90 px-2 py-0.5 rounded-full border border-orange-300">
+                            Revisão de Valores/Frequência
+                          </span>
+                        </div>
+                        <p className="text-xs text-orange-900/80 mt-0.5">
+                          O paciente solicitou ajuste na proposta enviada. Verifique os apontamentos para negociar nova condição:
+                        </p>
+                      </div>
+                    </div>
+                    {selectedCard.dataSolicitacaoRevisao && (
+                      <span className="text-[11px] font-semibold text-orange-800 flex items-center gap-1.5 bg-white/80 px-3 py-1 rounded-xl border border-orange-200">
+                        <Clock className="w-3.5 h-3.5 text-orange-600" />
+                        Registrado em: {new Date(selectedCard.dataSolicitacaoRevisao).toLocaleString('pt-BR')}
+                      </span>
+                    )}
+                  </div>
+                  <div className="bg-white/95 p-3.5 sm:p-4 rounded-xl border border-orange-200 shadow-2xs">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-orange-900/70 block mb-1">
+                      Motivo / Observações para Revisão:
+                    </span>
+                    <p className="font-serif italic text-forest text-sm sm:text-base leading-relaxed">
+                      "{selectedCard.motivoRevisao}"
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* Sticky Quick Jump Bar */}
               <div className="sticky top-0 z-20 -mx-3 sm:-mx-6 lg:-mx-8 -mt-3 sm:-mt-6 lg:-mt-8 px-3 sm:px-6 py-2 bg-white/95 backdrop-blur-md border-b border-soft flex items-center gap-1.5 overflow-x-auto custom-scrollbar shadow-2xs">
                 <span className="text-[10px] font-bold uppercase text-forest/50 shrink-0 flex items-center gap-1 pr-1">
@@ -9487,6 +10839,8 @@ export function DashboardView({
                 <button type="button" onClick={() => document.getElementById('sec-6-proposta')?.scrollIntoView({ behavior: 'smooth' })} className="px-2.5 py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-warm/60 hover:bg-warm rounded-lg shrink-0 transition-colors whitespace-nowrap">6. Proposta & Atribuição</button>
                 <button type="button" onClick={() => document.getElementById('sec-7-resumo')?.scrollIntoView({ behavior: 'smooth' })} className="px-2.5 py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-warm/60 hover:bg-warm rounded-lg shrink-0 transition-colors whitespace-nowrap">7. Resumo do Caso</button>
                 <button type="button" onClick={() => document.getElementById('sec-8-registros')?.scrollIntoView({ behavior: 'smooth' })} className="px-2.5 py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-warm/60 hover:bg-warm rounded-lg shrink-0 transition-colors whitespace-nowrap">8. Registros</button>
+                <button type="button" onClick={() => document.getElementById('sec-9-alertas')?.scrollIntoView({ behavior: 'smooth' })} className="px-2.5 py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-warm/60 hover:bg-warm rounded-lg shrink-0 transition-colors whitespace-nowrap">9. Alertas</button>
+                <button type="button" onClick={() => document.getElementById('sec-10-notificacoes')?.scrollIntoView({ behavior: 'smooth' })} className="px-2.5 py-1 text-[10px] sm:text-[11px] font-bold text-emerald-800 hover:text-emerald-950 bg-emerald-100/90 hover:bg-emerald-200 rounded-lg shrink-0 transition-colors whitespace-nowrap">10. Notificações</button>
               </div>
 
               {/* 1. DADOS PESSOAIS */}
@@ -9940,6 +11294,10 @@ export function DashboardView({
                       <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 bg-emerald-100 px-2.5 py-1 rounded-lg border border-emerald-300">
                         <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Revisão Concluída
                       </span>
+                    ) : selectedCard.propostaStatus === "Processo pausado ou cancelado pelo paciente" ? (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-900 bg-amber-100 px-2.5 py-1 rounded-lg border border-amber-300">
+                        <PauseCircle className="w-3.5 h-3.5 text-amber-700" /> Processo Pausado / Cancelado
+                      </span>
                     ) : selectedCard.propostaEnviada ? (
                       <span className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-800 bg-blue-100 px-2.5 py-1 rounded-lg border border-blue-300">
                         <Send className="w-3.5 h-3.5 text-blue-600" /> Proposta Enviada
@@ -9970,6 +11328,52 @@ export function DashboardView({
                     )}
                   </div>
                 </div>
+
+                {/* Bloco de Justificativa / Motivo da Proposta do Paciente */}
+                {(selectedCard.motivoPausaCancelamento || selectedCard.motivoRevisao) && (
+                  <div className="space-y-3">
+                    {selectedCard.motivoPausaCancelamento && (
+                      <div className="p-4 bg-amber-50 border border-amber-300 rounded-xl flex items-start gap-3">
+                        <PauseCircle className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
+                        <div className="space-y-1 flex-1">
+                          <div className="flex items-center justify-between flex-wrap gap-2">
+                            <span className="text-xs font-bold uppercase tracking-wider text-amber-950">
+                              Paciente Pausou / Cancelou o Processo na Proposta (Standby)
+                            </span>
+                            {selectedCard.dataPausaCancelamento && (
+                              <span className="text-[10px] font-semibold text-amber-800">
+                                {new Date(selectedCard.dataPausaCancelamento).toLocaleString('pt-BR')}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-forest bg-white/80 p-2.5 rounded-lg border border-amber-200 font-serif italic">
+                            "{selectedCard.motivoPausaCancelamento}"
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                    {selectedCard.motivoRevisao && (
+                      <div className="p-4 bg-orange-50 border border-orange-300 rounded-xl flex items-start gap-3">
+                        <RotateCcw className="w-5 h-5 text-orange-700 shrink-0 mt-0.5" />
+                        <div className="space-y-1 flex-1">
+                          <div className="flex items-center justify-between flex-wrap gap-2">
+                            <span className="text-xs font-bold uppercase tracking-wider text-orange-950">
+                              Paciente Solicitou Revisão da Proposta (Valores / Frequência)
+                            </span>
+                            {selectedCard.dataSolicitacaoRevisao && (
+                              <span className="text-[10px] font-semibold text-orange-800">
+                                {new Date(selectedCard.dataSolicitacaoRevisao).toLocaleString('pt-BR')}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-forest bg-white/80 p-2.5 rounded-lg border border-orange-200 font-serif italic">
+                            "{selectedCard.motivoRevisao}"
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Botões Rápidos de Valor da Sessão e Frequência */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -10575,6 +11979,50 @@ export function DashboardView({
                   </div>
                 )}
 
+                {/* Registro de Pausa / Cancelamento da Proposta */}
+                {selectedCard.motivoPausaCancelamento && (
+                  <div className="p-4 bg-amber-50 border border-amber-300 rounded-2xl space-y-2">
+                    <div className="flex items-center justify-between border-b border-amber-200/60 pb-2">
+                      <span className="text-xs font-bold uppercase tracking-wider text-amber-950 flex items-center gap-1.5">
+                        <PauseCircle className="w-4 h-4 text-amber-700" /> Registro de Pausa / Cancelamento da Proposta (Standby)
+                      </span>
+                      {selectedCard.dataPausaCancelamento && (
+                        <span className="text-[10px] font-extrabold text-amber-900 bg-white px-2.5 py-0.5 rounded-md border border-amber-300">
+                          Data: {formatDate(selectedCard.dataPausaCancelamento)}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-xs text-amber-950">
+                      <strong>Motivo informado pelo paciente:</strong>
+                      <p className="mt-1 p-2.5 bg-white/90 rounded-xl border border-amber-200 text-forest font-serif italic leading-relaxed">
+                        "{selectedCard.motivoPausaCancelamento}"
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Registro de Solicitação de Revisão */}
+                {selectedCard.motivoRevisao && (
+                  <div className="p-4 bg-orange-50 border border-orange-300 rounded-2xl space-y-2">
+                    <div className="flex items-center justify-between border-b border-orange-200/60 pb-2">
+                      <span className="text-xs font-bold uppercase tracking-wider text-orange-950 flex items-center gap-1.5">
+                        <RotateCcw className="w-4 h-4 text-orange-700" /> Registro de Solicitação de Revisão de Proposta
+                      </span>
+                      {selectedCard.dataSolicitacaoRevisao && (
+                        <span className="text-[10px] font-extrabold text-orange-900 bg-white px-2.5 py-0.5 rounded-md border border-orange-300">
+                          Data: {formatDate(selectedCard.dataSolicitacaoRevisao)}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-xs text-orange-950">
+                      <strong>Motivo / observações do paciente:</strong>
+                      <p className="mt-1 p-2.5 bg-white/90 rounded-xl border border-orange-200 text-forest font-serif italic leading-relaxed">
+                        "{selectedCard.motivoRevisao}"
+                      </p>
+                    </div>
+                  </div>
+                )}
+
                 {/* Linha do Tempo e Movimentações */}
                 <div className="p-4 bg-warm/30 border border-soft rounded-xl space-y-3">
                   <span className="text-[11px] font-bold uppercase tracking-wider text-forest/70 block">
@@ -10599,6 +12047,153 @@ export function DashboardView({
                         {selectedCard.contratoAssinado ? "Assinado" : "Pendente"}
                       </span>
                     </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 10. NOTIFICAÇÕES & DISPARO DIRETO (WHATSAPP & E-MAIL WEBHOOK) */}
+              <div id="sec-10-notificacoes" className="bg-white p-4 sm:p-6 rounded-2xl border border-soft shadow-2xs space-y-6">
+                <div className="flex flex-wrap items-center justify-between border-b border-soft pb-3 gap-2">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-900 flex items-center gap-2">
+                    <MessageSquare className="w-4 h-4 text-emerald-700" /> 10. Notificações ao Paciente (Whats / E-mail Webhook)
+                  </h4>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${whatsappState === "open" ? "bg-emerald-50 text-emerald-800 border-emerald-300" : "bg-amber-50 text-amber-800 border-amber-300"}`}>
+                      WhatsApp: {whatsappState === "open" ? "Instância Conectada" : "Instância Desconectada"}
+                    </span>
+                    <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full border bg-sky-50 text-sky-800 border-sky-300">
+                      E-mail: Brevo / Webhook Ativo
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Card de Contato Atual do Paciente */}
+                  <div className="p-4 bg-warm/30 border border-soft rounded-xl space-y-2">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-forest/70 block">
+                      Dados de Destino na Ficha de Bordo
+                    </span>
+                    <div className="space-y-1.5 text-xs">
+                      <div className="flex items-center gap-2">
+                        <Phone className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        <span className="font-semibold text-forest">WhatsApp:</span>
+                        <span className="text-forest/80 font-mono">{selectedCard.telefone || "Não cadastrado"}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Mail className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+                        <span className="font-semibold text-forest">E-mail:</span>
+                        <span className="text-forest/80 font-mono">{selectedCard.email || "Não cadastrado"}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Resumo do Status de Comunicação */}
+                  <div className="p-4 bg-warm/30 border border-soft rounded-xl space-y-2">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-forest/70 block">
+                      Status de Notificações Registradas
+                    </span>
+                    <div className="space-y-1.5 text-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="text-forest/70">Proposta Notificada:</span>
+                        <span className={`font-bold ${selectedCard.propostaEnviada ? "text-emerald-700" : "text-amber-700"}`}>
+                          {selectedCard.propostaEnviada ? `Sim (${selectedCard.propostaEnviadaEm ? formatDate(selectedCard.propostaEnviadaEm) : "Enviada"})` : "Pendente"}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-forest/70">Contato de Boas-Vindas:</span>
+                        <span className={`font-bold ${selectedCard.contatoEnviado ? "text-emerald-700" : "text-amber-700"}`}>
+                          {selectedCard.contatoEnviado ? `Sim (${selectedCard.contatoEnviadoEm ? formatDate(selectedCard.contatoEnviadoEm) : "Enviado"})` : "Pendente"}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Ações de Disparo */}
+                <div className="p-4.5 bg-emerald-50/70 border border-emerald-200 rounded-2xl space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="space-y-0.5 max-w-lg">
+                      <h5 className="text-xs font-bold text-emerald-950 flex items-center gap-1.5">
+                        <Send className="w-3.5 h-3.5 text-emerald-700" /> Disparo Sob Demanda & Mensagens Eventuais
+                      </h5>
+                      <p className="text-[11px] text-emerald-900/80 leading-relaxed">
+                        Envie notificações pontuais via WhatsApp (Evolution API) e E-mail (Brevo / Webhook). Selecione modelos rápidos pré-configurados, gatilhos da Régua oficial ou redija uma mensagem livre e eventual para este paciente.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNotificarInitialMode("templates");
+                          setShowNotificarModal(true);
+                        }}
+                        className="px-3.5 py-2 bg-white border border-emerald-300 hover:bg-emerald-100/50 text-emerald-900 rounded-xl text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5"
+                      >
+                        <Layers className="w-3.5 h-3.5 text-emerald-700" />
+                        Régua &amp; Modelos
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNotificarInitialMode("custom");
+                          setShowNotificarModal(true);
+                        }}
+                        className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 text-sun" />
+                        Mensagem Específica / Eventual
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Atalhos Rápidos por Assunto */}
+                  <div className="pt-2 border-t border-emerald-200/60 flex flex-wrap items-center gap-1.5 text-xs">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-900/70 mr-1">
+                      Atalhos rápidos:
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNotificarInitialMode("templates");
+                        setNotificarInitialTemplateId("proposta");
+                        setShowNotificarModal(true);
+                      }}
+                      className="px-2.5 py-1 bg-white hover:bg-emerald-100 text-emerald-900 rounded-lg text-[11px] font-semibold border border-emerald-200/80 transition-colors flex items-center gap-1"
+                    >
+                      📋 Proposta
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNotificarInitialMode("templates");
+                        setNotificarInitialTemplateId("boas_vindas");
+                        setShowNotificarModal(true);
+                      }}
+                      className="px-2.5 py-1 bg-white hover:bg-emerald-100 text-emerald-900 rounded-lg text-[11px] font-semibold border border-emerald-200/80 transition-colors flex items-center gap-1"
+                    >
+                      🤝 Boas-Vindas
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNotificarInitialMode("templates");
+                        setNotificarInitialTemplateId("lembrete_sessao");
+                        setShowNotificarModal(true);
+                      }}
+                      className="px-2.5 py-1 bg-white hover:bg-emerald-100 text-emerald-900 rounded-lg text-[11px] font-semibold border border-emerald-200/80 transition-colors flex items-center gap-1"
+                    >
+                      ⏰ Lembrete
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNotificarInitialMode("custom");
+                        setShowNotificarModal(true);
+                      }}
+                      className="px-2.5 py-1 bg-sun-dark/20 hover:bg-sun-dark/40 text-forest rounded-lg text-[11px] font-bold border border-sun-dark/30 transition-colors flex items-center gap-1"
+                    >
+                      ✨ Redigir Avulsa
+                    </button>
                   </div>
                 </div>
               </div>
@@ -10648,235 +12243,24 @@ export function DashboardView({
         </div>
       )}
 
-      {/* Notificar Modal */}
+      {/* Notificar Modal com WhatsApp & E-mail Webhook */}
       {showNotificarModal && notificarTarget && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center px-4 bg-forest/20 backdrop-blur-sm animate-in fade-in">
-          <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl border border-soft overflow-hidden animate-in zoom-in-95">
-            <div className="px-6 py-4 flex justify-between items-center border-b border-soft bg-warm/50">
-              <h3 className="font-serif text-xl text-forest">
-                Notificar{" "}
-                {notificarTarget.nome ||
-                  ("nomeEmpresa" in notificarTarget
-                    ? notificarTarget.nomeEmpresa
-                    : notificarTarget.name)}
-              </h3>
-              <button
-                onClick={() => setShowNotificarModal(false)}
-                className="p-2 text-forest/70 hover:text-red-500 rounded-full hover:bg-white transition-colors"
-              >
-                <XCircle className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">
-                  Modelos de Mensagem
-                </label>
-                <select
-                  className="w-full text-sm bg-warm/50 border border-soft px-4 py-2.5 rounded-xl focus:outline-none focus:border-sun-dark"
-                  value={notificacaoType}
-                  onChange={(e) => {
-                    const selected = templates.find(
-                      (t) => t.id === e.target.value,
-                    );
-                    if (selected) {
-                      setNotificacaoType(selected.id);
-                      setNotificacaoName(selected.name);
-                      setNotificacaoMsg(
-                        processNotificationTemplate(
-                          selected.msg,
-                          notificarTarget,
-                        ),
-                      );
-                    }
-                  }}
-                >
-                  {templates.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <div className="flex justify-between items-center mb-2">
-                  <label className="text-xs font-bold uppercase tracking-wider text-forest/70 block">
-                    Assunto / Título do Modelo
-                  </label>
-                  <label className="flex items-center gap-1 text-xs text-forest/80 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      className="accent-sun-dark h-3 w-3"
-                      checked={isEditingTemplate}
-                      onChange={(e) => setIsEditingTemplate(e.target.checked)}
-                    />
-                    Editar Modelo Atual
-                  </label>
-                </div>
-                <input
-                  type="text"
-                  value={notificacaoName}
-                  onChange={(e) => setNotificacaoName(e.target.value)}
-                  readOnly={!isEditingTemplate}
-                  className={`w-full text-sm border px-4 py-2 rounded-xl focus:outline-none mb-3 ${isEditingTemplate ? "bg-white border-sun-dark" : "bg-warm/50 border-soft"}`}
-                />
-
-                <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">
-                  Mensagem
-                </label>
-                <textarea
-                  value={notificacaoMsg}
-                  onChange={(e) => setNotificacaoMsg(e.target.value)}
-                  readOnly={!isEditingTemplate}
-                  className={`w-full text-sm border px-4 py-3 rounded-2xl focus:outline-none resize-none h-32 ${isEditingTemplate ? "bg-white border-sun-dark" : "bg-warm/50 border-soft"}`}
-                />
-
-                {isEditingTemplate && (
-                  <button
-                    onClick={() => {
-                      setTemplates(
-                        templates.map((t) =>
-                          t.id === notificacaoType
-                            ? {
-                                ...t,
-                                name: notificacaoName,
-                                msg: notificacaoMsg,
-                              }
-                            : t,
-                        ),
-                      );
-                      setIsEditingTemplate(false);
-                      showToast("Modelo atualizado com sucesso!", "success");
-                    }}
-                    className="mt-2 text-xs font-semibold px-4 py-1.5 bg-sun-dark text-forest rounded-lg hover:bg-sun-dark-dark transition-colors"
-                  >
-                    Salvar Alterações no Modelo
-                  </button>
-                )}
-              </div>
-            </div>
-            <div className="p-6 border-t border-soft bg-warm flex flex-wrap justify-end gap-3">
-              <button
-                onClick={() => setShowNotificarModal(false)}
-                className="px-5 py-2 text-forest font-semibold text-sm hover:underline"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={async () => {
-                  window.open(
-                    `mailto:${notificarTarget.email}?subject=${encodeURIComponent(notificacaoName)}&body=${encodeURIComponent(notificacaoMsg)}`,
-                  );
-                  if (notificarTarget && notificarTarget.id && "nome" in notificarTarget) {
-                    const updates: any = {};
-                    if (notificacaoType === "proposta") {
-                      updates.propostaEnviada = true;
-                      updates.propostaEnviadaEm = new Date().toISOString();
-                      if (!notificarTarget.status || notificarTarget.status === "Aguardando Avaliação") updates.status = "Aprovado";
-                    } else if (notificacaoType === "boas-vindas-atribuicao") {
-                      updates.contatoEnviado = true;
-                      updates.contatoEnviadoEm = new Date().toISOString();
-                      updates.status = "Em Atendimento";
-                    }
-                    if (Object.keys(updates).length > 0) {
-                      try {
-                        await updateDoc(doc(db, "acolhimentos", notificarTarget.id), updates);
-                        if (selectedCard && selectedCard.id === notificarTarget.id) {
-                          setSelectedCard((prev: any) => prev ? { ...prev, ...updates } : null);
-                        }
-                      } catch (err) {
-                        console.error(err);
-                      }
-                    }
-                  }
-                  setShowNotificarModal(false);
-                }}
-                className="px-5 py-2 bg-white border border-soft text-forest rounded-full text-sm font-semibold hover:bg-slate-50 transition-colors flex items-center gap-2"
-              >
-                <Mail className="w-4 h-4" /> Enviar p/ E-mail Local
-              </button>
-              <button
-                onClick={async () => {
-                  if (notificarTarget && notificarTarget.email) {
-                    try {
-                      await triggerEmail(
-                        notificarTarget.email,
-                        notificacaoName || "Notificação Projeto AcolheMente",
-                        `<h3>Olá!</h3><p>${notificacaoMsg.replace(/\n/g, "<br>")}</p>`
-                      );
-                      showToast("E-mail enfileirado para envio automático!", "success");
-                    } catch (err) {
-                      console.error("Erro ao enviar e-mail pela plataforma:", err);
-                      showToast("Ocorreu um erro ao enviar via plataforma.", "error");
-                    }
-                  } else {
-                    showToast("Este destinatário não possui e-mail cadastrado.", "error");
-                  }
-                  if (notificarTarget && notificarTarget.id && "nome" in notificarTarget) {
-                    const updates: any = {};
-                    if (notificacaoType === "proposta") {
-                      updates.propostaEnviada = true;
-                      updates.propostaEnviadaEm = new Date().toISOString();
-                      if (!notificarTarget.status || notificarTarget.status === "Aguardando Avaliação") updates.status = "Aprovado";
-                    } else if (notificacaoType === "boas-vindas-atribuicao") {
-                      updates.contatoEnviado = true;
-                      updates.contatoEnviadoEm = new Date().toISOString();
-                      updates.status = "Em Atendimento";
-                    }
-                    if (Object.keys(updates).length > 0) {
-                      try {
-                        await updateDoc(doc(db, "acolhimentos", notificarTarget.id), updates);
-                        if (selectedCard && selectedCard.id === notificarTarget.id) {
-                          setSelectedCard((prev: any) => prev ? { ...prev, ...updates } : null);
-                        }
-                      } catch (err) {
-                        console.error(err);
-                      }
-                    }
-                  }
-                  setShowNotificarModal(false);
-                }}
-                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-full text-sm font-semibold transition-colors flex items-center gap-2 shadow-sm"
-              >
-                <Send className="w-4 h-4" /> Enviar pela Plataforma
-              </button>
-              <button
-                onClick={async () => {
-                  window.open(
-                    `https://wa.me/?text=${encodeURIComponent(notificacaoMsg)}`,
-                    "_blank",
-                  );
-                  if (notificarTarget && notificarTarget.id && "nome" in notificarTarget) {
-                    const updates: any = {};
-                    if (notificacaoType === "proposta") {
-                      updates.propostaEnviada = true;
-                      updates.propostaEnviadaEm = new Date().toISOString();
-                      if (!notificarTarget.status || notificarTarget.status === "Aguardando Avaliação") updates.status = "Aprovado";
-                    } else if (notificacaoType === "boas-vindas-atribuicao") {
-                      updates.contatoEnviado = true;
-                      updates.contatoEnviadoEm = new Date().toISOString();
-                      updates.status = "Em Atendimento";
-                    }
-                    if (Object.keys(updates).length > 0) {
-                      try {
-                        await updateDoc(doc(db, "acolhimentos", notificarTarget.id), updates);
-                        if (selectedCard && selectedCard.id === notificarTarget.id) {
-                          setSelectedCard((prev: any) => prev ? { ...prev, ...updates } : null);
-                        }
-                      } catch (err) {
-                        console.error(err);
-                      }
-                    }
-                  }
-                  setShowNotificarModal(false);
-                }}
-                className="px-5 py-2 bg-[#25D366] text-white rounded-full text-sm font-semibold hover:bg-[#20b858] transition-colors flex items-center gap-2"
-              >
-                <Phone className="w-4 h-4" /> Enviar via WhatsApp
-              </button>
-            </div>
-          </div>
-        </div>
+        <PatientNotificationModal
+          isOpen={showNotificarModal}
+          onClose={() => setShowNotificarModal(false)}
+          target={notificarTarget}
+          profissionaisAtivos={profissionaisAtivos}
+          whatsappConnected={whatsappState === "open"}
+          globalConfigs={globalConfigs}
+          initialMode={notificarInitialMode}
+          initialTemplateId={notificarInitialTemplateId}
+          onShowToast={showToast}
+          onTargetUpdated={(updatedFields) => {
+            if (selectedCard && selectedCard.id === notificarTarget.id) {
+              setSelectedCard((prev: any) => (prev ? { ...prev, ...updatedFields } : null));
+            }
+          }}
+        />
       )}
 
       {/* Contrato Modal */}
@@ -14047,6 +15431,24 @@ export function DashboardView({
           userRole={profile?.role || currentRole}
           userName={profile?.name}
           userEmail={profile?.email}
+        />
+      )}
+
+      {showEvolutionDiagnosticModal && (
+        <EvolutionDiagnosticModal
+          isOpen={showEvolutionDiagnosticModal}
+          onClose={() => setShowEvolutionDiagnosticModal(false)}
+          apiUrl={globalConfigs.whatsappEvolutionUrl || ""}
+          apiKey={globalConfigs.whatsappEvolutionApiKey || ""}
+          instanceName={globalConfigs.whatsappEvolutionInstance || "acolhemente"}
+          onQrCodeReceived={(qr, pairing) => {
+            setWhatsappQrCode(qr);
+            if (pairing) setWhatsappPairingCode(pairing);
+          }}
+          onInstanceCreated={() => {
+            setWhatsappState("connecting");
+            handleCheckWhatsappStatus();
+          }}
         />
       )}
 
