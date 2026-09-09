@@ -85,6 +85,66 @@ export async function getEvolutionConfig(
 }
 
 /**
+ * Safe fetch wrapper that guarantees JSON parsing and intercepts non-JSON HTML error pages
+ * preventing "Unexpected token 'T', 'The page c'... is not valid JSON".
+ */
+export async function safeFetchJson<T = any>(
+  input: RequestInfo | URL,
+  init?: RequestInit
+): Promise<{ ok: boolean; status: number; data: T | null; error?: string }> {
+  try {
+    const res = await fetch(input, init);
+    const text = await res.text();
+    let parsed: any = null;
+
+    if (text && text.trim()) {
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        // Response was not valid JSON (e.g. an HTML 404/502 page from cloud proxy or nginx)
+        const stripped = text.replace(/<[^>]*>?/gm, " ").replace(/\s+/g, " ").trim();
+        const snippet = stripped.length > 140 ? `${stripped.slice(0, 140)}...` : stripped;
+        return {
+          ok: false,
+          status: res.status,
+          data: null,
+          error:
+            snippet ||
+            `Resposta inesperada do servidor (HTTP ${res.status}). O endpoint não retornou JSON válido.`,
+        };
+      }
+    }
+
+    if (!res.ok) {
+      const errMsg =
+        (typeof parsed === "object" && parsed !== null
+          ? parsed.error || parsed.message || parsed.response?.message
+          : null) || `Erro na requisição (HTTP ${res.status}).`;
+
+      return {
+        ok: false,
+        status: res.status,
+        data: parsed,
+        error: typeof errMsg === "string" ? errMsg : JSON.stringify(errMsg),
+      };
+    }
+
+    return {
+      ok: true,
+      status: res.status,
+      data: parsed,
+    };
+  } catch (err: any) {
+    return {
+      ok: false,
+      status: 0,
+      data: null,
+      error: err?.message || "Falha de rede ao se comunicar com o servidor.",
+    };
+  }
+}
+
+/**
  * Checks WhatsApp connection state (open / connecting / close)
  */
 export async function checkEvolutionStatus(
@@ -99,25 +159,25 @@ export async function checkEvolutionStatus(
     };
   }
 
-  try {
-    const res = await fetch("/api/whatsapp/evolution/status", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        apiUrl: config.whatsappEvolutionUrl,
-        apiKey: config.whatsappEvolutionApiKey,
-        instanceName: config.whatsappEvolutionInstance,
-      }),
-    });
+  const res = await safeFetchJson<EvolutionStatusResponse>("/api/whatsapp/evolution/status", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      apiUrl: config.whatsappEvolutionUrl,
+      apiKey: config.whatsappEvolutionApiKey,
+      instanceName: config.whatsappEvolutionInstance,
+    }),
+  });
 
-    return await res.json();
-  } catch (err: any) {
+  if (!res.ok || !res.data) {
     return {
       success: false,
-      state: "error",
-      error: err?.message || "Falha na requisição de status.",
+      state: "close",
+      error: res.error || "Falha na requisição de status da Evolution API.",
     };
   }
+
+  return res.data;
 }
 
 /**
@@ -135,25 +195,29 @@ export async function connectEvolutionInstance(
     };
   }
 
-  try {
-    const res = await fetch("/api/whatsapp/evolution/connect", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        apiUrl: config.whatsappEvolutionUrl,
-        apiKey: config.whatsappEvolutionApiKey,
-        instanceName: config.whatsappEvolutionInstance,
-        webhookUrl: webhookUrl || (typeof window !== "undefined" ? `${window.location.origin}/api/whatsapp/webhook` : undefined),
-      }),
-    });
+  const res = await safeFetchJson<EvolutionConnectResponse>("/api/whatsapp/evolution/connect", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      apiUrl: config.whatsappEvolutionUrl,
+      apiKey: config.whatsappEvolutionApiKey,
+      instanceName: config.whatsappEvolutionInstance,
+      webhookUrl:
+        webhookUrl ||
+        (typeof window !== "undefined"
+          ? `${window.location.origin}/api/whatsapp/webhook`
+          : undefined),
+    }),
+  });
 
-    return await res.json();
-  } catch (err: any) {
+  if (!res.ok || !res.data) {
     return {
       success: false,
-      error: err?.message || "Falha ao solicitar conexão QR Code.",
+      error: res.error || "Falha ao solicitar conexão QR Code na Evolution API.",
     };
   }
+
+  return res.data;
 }
 
 /**
@@ -175,8 +239,9 @@ export async function configureEvolutionWebhook(
     };
   }
 
-  try {
-    const res = await fetch("/api/whatsapp/evolution/set-webhook", {
+  const res = await safeFetchJson<{ success: boolean; message?: string; error?: string }>(
+    "/api/whatsapp/evolution/set-webhook",
+    {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -185,15 +250,17 @@ export async function configureEvolutionWebhook(
         instanceName: config.whatsappEvolutionInstance,
         webhookUrl: targetWebhook,
       }),
-    });
+    }
+  );
 
-    return await res.json();
-  } catch (err: any) {
+  if (!res.ok || !res.data) {
     return {
       success: false,
-      error: err?.message || "Falha ao registrar webhook na Evolution API.",
+      error: res.error || "Falha ao registrar webhook na Evolution API.",
     };
   }
+
+  return res.data;
 }
 
 /**
@@ -212,26 +279,26 @@ export async function sendEvolutionMessage(
     };
   }
 
-  try {
-    const res = await fetch("/api/whatsapp/evolution/send-message", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        apiUrl: config.whatsappEvolutionUrl,
-        apiKey: config.whatsappEvolutionApiKey,
-        instanceName: config.whatsappEvolutionInstance,
-        number,
-        text,
-      }),
-    });
+  const res = await safeFetchJson<EvolutionSendResponse>("/api/whatsapp/evolution/send-message", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      apiUrl: config.whatsappEvolutionUrl,
+      apiKey: config.whatsappEvolutionApiKey,
+      instanceName: config.whatsappEvolutionInstance,
+      number,
+      text,
+    }),
+  });
 
-    return await res.json();
-  } catch (err: any) {
+  if (!res.ok || !res.data) {
     return {
       success: false,
-      error: err?.message || "Falha de rede ao disparar WhatsApp.",
+      error: res.error || "Falha de rede ao disparar WhatsApp.",
     };
   }
+
+  return res.data;
 }
 
 /**
@@ -245,8 +312,9 @@ export async function disconnectEvolutionInstance(
     return { success: false, error: "Dados da instância ausentes." };
   }
 
-  try {
-    const res = await fetch("/api/whatsapp/evolution/logout", {
+  const res = await safeFetchJson<{ success: boolean; error?: string }>(
+    "/api/whatsapp/evolution/logout",
+    {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -254,15 +322,17 @@ export async function disconnectEvolutionInstance(
         apiKey: config.whatsappEvolutionApiKey,
         instanceName: config.whatsappEvolutionInstance,
       }),
-    });
+    }
+  );
 
-    return await res.json();
-  } catch (err: any) {
+  if (!res.ok || !res.data) {
     return {
       success: false,
-      error: err?.message || "Falha ao desconectar.",
+      error: res.error || "Falha ao desconectar instância na Evolution API.",
     };
   }
+
+  return res.data;
 }
 
 /**
@@ -274,8 +344,17 @@ export async function fetchRecentWebhookEvents(): Promise<{
   count: number;
 }> {
   try {
-    const res = await fetch("/api/whatsapp/webhook/events");
-    return await res.json();
+    const res = await safeFetchJson<{
+      success: boolean;
+      events: WebhookEventItem[];
+      count: number;
+    }>("/api/whatsapp/webhook/events");
+
+    if (!res.ok || !res.data) {
+      return { success: false, events: [], count: 0 };
+    }
+
+    return res.data;
   } catch (err) {
     console.error("[WhatsAppService] Error fetching webhook events:", err);
     return { success: false, events: [], count: 0 };
@@ -287,9 +366,10 @@ export async function fetchRecentWebhookEvents(): Promise<{
  */
 export async function clearRecentWebhookEvents(): Promise<boolean> {
   try {
-    const res = await fetch("/api/whatsapp/webhook/clear", { method: "POST" });
-    const data = await res.json();
-    return !!data.success;
+    const res = await safeFetchJson<{ success: boolean }>("/api/whatsapp/webhook/clear", {
+      method: "POST",
+    });
+    return !!res.data?.success;
   } catch (err) {
     console.error("[WhatsAppService] Error clearing webhook events:", err);
     return false;

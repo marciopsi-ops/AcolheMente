@@ -1,12 +1,33 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
 import { createServer as createViteServer } from "vite";
 
 async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(express.json());
+  // Enable trust proxy for Cloud Run and Nginx reverse proxies
+  app.set("trust proxy", 1);
+
+  // Global CORS & Preflight handler for webhooks & external consumers
+  app.use((req, res, next) => {
+    res.header("Access-Control-Allow-Origin", "*");
+    res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH");
+    res.header(
+      "Access-Control-Allow-Headers",
+      "Origin, X-Requested-With, Content-Type, Accept, Authorization, apikey, api-key, X-Webhook-Secret"
+    );
+    if (req.method === "OPTIONS") {
+      return res.sendStatus(204);
+    }
+    next();
+  });
+
+  // Support up to 50mb for WhatsApp webhooks (media, base64 QR codes, message attachments)
+  app.use(express.json({ limit: "50mb" }));
+  app.use(express.urlencoded({ extended: true, limit: "50mb" }));
+  app.use(express.text({ limit: "50mb" }));
 
   // Healthcheck endpoint
   app.get("/api/health", (req, res) => {
@@ -60,7 +81,7 @@ async function startServer() {
           errorMessage = resData;
         }
 
-        return res.status(brevoRes.status).json({
+        return res.json({
           success: false,
           status: brevoRes.status,
           error: errorMessage,
@@ -75,8 +96,9 @@ async function startServer() {
       });
     } catch (err: any) {
       console.error("[Server Email Proxy Error]", err);
-      return res.status(500).json({
+      return res.json({
         success: false,
+        status: 500,
         error: err?.message || "Erro de rede no servidor ao disparar e-mail.",
       });
     }
@@ -218,7 +240,8 @@ async function startServer() {
       });
     } catch (e: any) {
       console.error("[WhatsApp Evolution Webhook Error]", e);
-      return res.status(500).json({
+      return res.json({
+        received: false,
         error: e?.message || "Erro no processamento do webhook WhatsApp.",
       });
     }
@@ -244,14 +267,15 @@ async function startServer() {
     try {
       const { apiUrl, apiKey, instanceName } = req.body;
       if (!apiUrl || !instanceName) {
-        return res.status(400).json({
+        return res.json({
           success: false,
+          state: "close",
           error: "URL da Evolution API e Nome da Instância são obrigatórios.",
         });
       }
 
       if (isRailwayFormula(apiKey)) {
-        return res.status(400).json({
+        return res.json({
           success: false,
           state: "close",
           error:
@@ -279,7 +303,7 @@ async function startServer() {
 
       if (!evoRes.ok) {
         if (evoRes.status === 401 || evoRes.status === 403) {
-          return res.status(401).json({
+          return res.json({
             success: false,
             state: "close",
             status: evoRes.status,
@@ -314,7 +338,7 @@ async function startServer() {
       });
     } catch (err: any) {
       console.error("[Evolution Status Error]", err);
-      return res.status(500).json({
+      return res.json({
         success: false,
         state: "error",
         error:
@@ -328,14 +352,14 @@ async function startServer() {
     try {
       const { apiUrl, apiKey, instanceName, webhookUrl } = req.body;
       if (!apiUrl || !instanceName) {
-        return res.status(400).json({
+        return res.json({
           success: false,
           error: "URL da Evolution API e Nome da Instância são obrigatórios.",
         });
       }
 
       if (isRailwayFormula(apiKey)) {
-        return res.status(400).json({
+        return res.json({
           success: false,
           error:
             "A Chave API informada é a fórmula do Railway (${{secret...}}) e não o valor real gerado. No painel do Railway, vá na aba Variables da Evolution API e clique no ícone de olho em AUTHENTICATION_API_KEY para copiar o valor real, ou defina uma senha como acolhemente2026.",
@@ -378,8 +402,9 @@ async function startServer() {
         }
 
         if (createRes.status === 401) {
-          return res.status(401).json({
+          return res.json({
             success: false,
+            status: 401,
             error:
               "Chave API não autorizada (401). Verifique se o valor de 'Chave Global (API Key)' corresponde exatamente à variável AUTHENTICATION_API_KEY no Railway.",
           });
@@ -391,8 +416,9 @@ async function startServer() {
             : createJson?.response?.message || createJson?.message || "";
           
           if (!msg.toLowerCase().includes("already in use")) {
-            return res.status(403).json({
+            return res.json({
               success: false,
+              status: 403,
               error: msg || "Acesso negado pela Evolution API (403).",
             });
           }
@@ -444,15 +470,17 @@ async function startServer() {
 
       if (!connectRes.ok) {
         if (connectRes.status === 401 || connectRes.status === 403) {
-          return res.status(401).json({
+          return res.json({
             success: false,
+            status: connectRes.status,
             error:
               "Chave API não autorizada (401). Verifique se a Chave Global informada confere com a variável AUTHENTICATION_API_KEY do Railway.",
           });
         }
 
-        return res.status(connectRes.status).json({
+        return res.json({
           success: false,
+          status: connectRes.status,
           error:
             typeof resData === "object"
               ? (Array.isArray(resData?.response?.message)
@@ -518,7 +546,7 @@ async function startServer() {
       });
     } catch (err: any) {
       console.error("[Evolution Connect Error]", err);
-      return res.status(500).json({
+      return res.json({
         success: false,
         error:
           err?.message ||
@@ -532,7 +560,7 @@ async function startServer() {
     try {
       const { apiUrl, apiKey, instanceName, webhookUrl } = req.body;
       if (!apiUrl || !instanceName || !webhookUrl) {
-        return res.status(400).json({
+        return res.json({
           success: false,
           error:
             "URL da Evolution, Nome da Instância e URL do Webhook são obrigatórios.",
@@ -540,7 +568,7 @@ async function startServer() {
       }
 
       if (isRailwayFormula(apiKey)) {
-        return res.status(400).json({
+        return res.json({
           success: false,
           error:
             "A Chave API informada é a fórmula do Railway (${{secret...}}). Copie o valor real gerado na aba Variables do Railway.",
@@ -626,8 +654,9 @@ async function startServer() {
             "Instância não encontrada. Clique em 'Conectar via QR Code' primeiro para criá-la.";
         }
 
-        return res.status(evoRes.status).json({
+        return res.json({
           success: false,
+          status: evoRes.status,
           error: errorMsg,
           data: resData,
         });
@@ -640,7 +669,7 @@ async function startServer() {
       });
     } catch (err: any) {
       console.error("[Evolution Set Webhook Error]", err);
-      return res.status(500).json({
+      return res.json({
         success: false,
         error:
           err?.message || "Falha de rede ao configurar webhook na Evolution API.",
@@ -1031,7 +1060,7 @@ async function startServer() {
       });
     } catch (err: any) {
       console.error("[Evolution Diagnose Error]", err);
-      return res.status(500).json({
+      return res.json({
         success: false,
         error: err?.message || "Erro inesperado ao executar diagnóstico da Evolution API.",
       });
@@ -1043,14 +1072,14 @@ async function startServer() {
     try {
       const { apiUrl, apiKey, instanceName, webhookUrl } = req.body;
       if (!apiUrl) {
-        return res.status(400).json({
+        return res.json({
           success: false,
           error: "URL da Evolution API é obrigatória.",
         });
       }
 
       if (isRailwayFormula(apiKey)) {
-        return res.status(400).json({
+        return res.json({
           success: false,
           error:
             "A Chave API informada é a fórmula do Railway (${{secret...}}). Copie o valor real gerado na aba Variables do Railway.",
@@ -1106,8 +1135,9 @@ async function startServer() {
               "Erro ao criar instância na Evolution API"
             : resData;
 
-        return res.status(createRes.status).json({
+        return res.json({
           success: false,
+          status: createRes.status,
           error: errorMsg,
           data: resData,
         });
@@ -1131,7 +1161,7 @@ async function startServer() {
       });
     } catch (err: any) {
       console.error("[Evolution Explicit Create Error]", err);
-      return res.status(500).json({
+      return res.json({
         success: false,
         error: err?.message || "Falha de rede ao criar instância na Evolution API.",
       });
@@ -1143,7 +1173,7 @@ async function startServer() {
     try {
       const { apiUrl, apiKey, instanceName, number, text } = req.body;
       if (!apiUrl || !instanceName || !number || !text) {
-        return res.status(400).json({
+        return res.json({
           success: false,
           error:
             "Dados incompletos: informe URL, Instância, Número de Destino e Mensagem.",
@@ -1151,7 +1181,7 @@ async function startServer() {
       }
 
       if (isRailwayFormula(apiKey)) {
-        return res.status(400).json({
+        return res.json({
           success: false,
           error:
             "A Chave API informada é a fórmula do Railway (${{secret...}}). Copie o valor real gerado na aba Variables do Railway.",
@@ -1160,7 +1190,7 @@ async function startServer() {
 
       const digitsOnly = String(number).replace(/\D/g, "");
       if (digitsOnly.length < 10) {
-        return res.status(400).json({
+        return res.json({
           success: false,
           error: `Número de telefone inválido: "${number}". Deve conter pelo menos DDD e número.`,
         });
@@ -1200,7 +1230,7 @@ async function startServer() {
       }
 
       if (!evoRes.ok) {
-        return res.status(evoRes.status).json({
+        return res.json({
           success: false,
           status: evoRes.status,
           error:
@@ -1223,7 +1253,7 @@ async function startServer() {
       });
     } catch (err: any) {
       console.error("[Evolution Send Message Error]", err);
-      return res.status(500).json({
+      return res.json({
         success: false,
         error:
           err?.message ||
@@ -1237,7 +1267,7 @@ async function startServer() {
     try {
       const { apiUrl, apiKey, instanceName } = req.body;
       if (!apiUrl || !instanceName) {
-        return res.status(400).json({
+        return res.json({
           success: false,
           error: "URL da Evolution API e Nome da Instância são obrigatórios.",
         });
@@ -1268,12 +1298,20 @@ async function startServer() {
       });
     } catch (err: any) {
       console.error("[Evolution Logout Error]", err);
-      return res.status(500).json({
+      return res.json({
         success: false,
         error:
           err?.message || "Erro ao desconectar instância na Evolution API.",
       });
     }
+  });
+
+  // Guaranteed JSON response for unhandled /api/* routes (prevents returning SPA index.html to API fetch calls)
+  app.all("/api/*", (req, res) => {
+    res.json({
+      success: false,
+      error: `Endpoint da API não encontrado: ${req.method} ${req.path}`,
+    });
   });
 
   // Vite middleware for development vs static serving for production

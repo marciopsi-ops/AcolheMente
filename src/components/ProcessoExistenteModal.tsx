@@ -5,6 +5,7 @@ interface ProcessoExistenteModalProps {
   isOpen: boolean;
   onClose: () => void;
   email: string;
+  cpf?: string;
   nome?: string;
   onUpdateQuestionnaire: () => void;
   onRestartProcess: () => Promise<void> | void;
@@ -15,6 +16,7 @@ export function ProcessoExistenteModal({
   isOpen,
   onClose,
   email,
+  cpf,
   nome,
   onUpdateQuestionnaire,
   onRestartProcess,
@@ -53,10 +55,19 @@ export function ProcessoExistenteModal({
               {nome ? `Olá, ${nome.split(" ")[0]}!` : "Identificamos seu cadastro anterior"}
             </h3>
             <p className="text-xs sm:text-sm text-forest/80 mt-1">
-              Já existe um processo em nosso sistema vinculado a:
+              Já existe um processo em nosso sistema com esses dados:
             </p>
-            <div className="mt-1.5 inline-block font-mono text-xs font-semibold text-forest bg-warm px-3 py-1 rounded-lg border border-soft">
-              {email}
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {email && (
+                <div className="font-mono text-xs font-semibold text-forest bg-warm px-2.5 py-1 rounded-lg border border-soft">
+                  {email}
+                </div>
+              )}
+              {cpf && (
+                <div className="font-mono text-xs font-semibold text-forest bg-warm px-2.5 py-1 rounded-lg border border-soft">
+                  CPF: {cpf}
+                </div>
+              )}
             </div>
           </div>
         </div>

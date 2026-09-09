@@ -45,6 +45,7 @@ import { BlogView } from "./views/BlogView";
 import { Footer } from "./components/Footer";
 import { ProfissionaisCarousel } from "./components/ProfissionaisCarousel";
 import { PWAInstallBanner } from "./components/PWAInstallBanner";
+import { CampanhaPrevencaoBanner } from "./components/CampanhaPrevencaoBanner";
 
 import homeHero from "./assets/images/home_hero_photo_parda_1781024318036.png";
 import logoImage from "./assets/images/logo_acolhe.jpeg";
@@ -583,6 +584,9 @@ function LandingPage({
 
   return (
     <div className="min-h-screen flex flex-col relative overflow-x-hidden bg-warm">
+      {/* Banner Sazonal - Campanha de Prevenção ao Suicídio / Valorização da Vida */}
+      <CampanhaPrevencaoBanner onNavigateAcolhimento={() => onNavigate("acolhimento")} />
+
       {/* Navbar */}
       <nav className="w-full py-4 sm:py-6 px-4 sm:px-6 md:px-12 flex justify-between items-center border-b border-soft gap-2 relative z-50 bg-warm/80 backdrop-blur-md">
         <div className="flex items-center gap-3 sm:gap-4 shrink-0">
@@ -696,6 +700,23 @@ function LandingPage({
                       Doe uma sessão de terapia
                     </button>
                   )}
+
+                  <button
+                    onClick={() => {
+                      setIsMenuOpen(false);
+                      window.dispatchEvent(new CustomEvent("reopen-campanha-prevencao"));
+                    }}
+                    className="text-left font-sans text-sm text-amber-950 hover:bg-amber-100/80 bg-amber-50/70 border border-amber-200/80 px-3.5 py-2 rounded-xl transition-all font-semibold flex items-center justify-between cursor-pointer mt-0.5"
+                    title="Ver campanha e canais de apoio emocional"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-base leading-none">🎗️</span>
+                      <span>Setembro Amarelo</span>
+                    </div>
+                    <span className="text-[10px] bg-amber-200 text-amber-950 font-bold px-2 py-0.5 rounded-full">
+                      Apoio 188
+                    </span>
+                  </button>
                 </div>
                 
                 <div className="border-t border-soft pt-3.5 flex flex-col gap-2.5">

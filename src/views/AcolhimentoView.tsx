@@ -137,6 +137,47 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
   const handleOptionUpdateQuestionnaire = async () => {
     setShowExistingModal(false);
     setSubmissionType("atualizado");
+
+    if (existingProcess?.data) {
+      const d = existingProcess.data;
+      if (!tratamentoPara && d.tratamentoPara) setTratamentoPara(d.tratamentoPara);
+      if (!idadeTratamento && d.idadeTratamento) setIdadeTratamento(d.idadeTratamento);
+      if (!name && d.nome) setName(d.nome);
+      if (!email && d.email) setEmail(d.email);
+      if (!telefone && d.telefone) setTelefone(d.telefone);
+      if (!cpf && d.cpf) setCpf(d.cpf);
+      if (!dataNascimento && d.dataNascimento) setDataNascimento(d.dataNascimento);
+      if (!genero && d.genero) setGenero(d.genero);
+      if (!deficiencia && d.deficiencia) setDeficiencia(d.deficiencia);
+      if (!estadoCivil && d.estadoCivil) setEstadoCivil(d.estadoCivil);
+      if (!temFilhos && d.temFilhos) setTemFilhos(d.temFilhos);
+      if (!faixaEtariaFilhos && d.faixaEtariaFilhos) setFaixaEtariaFilhos(d.faixaEtariaFilhos);
+      if (!filhosMoramJunto && d.filhosMoramJunto) setFilhosMoramJunto(d.filhosMoramJunto);
+      if (!responsavelNome && d.responsavelNome) setResponsavelNome(d.responsavelNome);
+      if (!responsavelCpf && d.responsavelCpf) setResponsavelCpf(d.responsavelCpf);
+      if (!comoConheceu && d.comoConheceu) setComoConheceu(d.comoConheceu);
+      if (!fonteRenda && d.fonteRenda) setFonteRenda(d.fonteRenda);
+      if (!faixaSalarial && d.faixaSalarial) setFaixaSalarial(d.faixaSalarial);
+      if (!dependentes && d.dependentes) setDependentes(d.dependentes);
+      if (!planoSaude && d.planoSaude) setPlanoSaude(d.planoSaude);
+      if (!escolaridade && d.escolaridade) setEscolaridade(d.escolaridade);
+      if (!moradia && d.moradia) setMoradia(d.moradia);
+      if (!comodos && d.comodos) setComodos(d.comodos);
+      if (!internet && d.internet) setInternet(d.internet);
+      if (!dispositivo && d.dispositivo) setDispositivo(d.dispositivo);
+      if (!terapiaAnterior && d.terapiaAnterior) setTerapiaAnterior(d.terapiaAnterior);
+      if (melhoresPeriodos.length === 0 && Array.isArray(d.melhoresPeriodos)) setMelhoresPeriodos(d.melhoresPeriodos);
+      if (!motivo && d.motivo) {
+        if (d.motivo.includes(" - Detalhes: ")) {
+          const [mPart, cPart] = d.motivo.split(" - Detalhes: ");
+          setMotivo(mPart);
+          if (!complaint && cPart) setComplaint(cPart);
+        } else {
+          setMotivo(d.motivo);
+        }
+      }
+    }
+
     if (step === 1) {
       setStep(2);
       scrollToForm();
@@ -309,14 +350,31 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
         return;
       }
 
-      // Verificar se já existe acolhimento cadastrado com este e-mail
+      // Verificar se já existe acolhimento cadastrado com este e-mail ou CPF
       const cleanEmail = email.trim().toLowerCase();
+      const cleanCpf = cpf.trim();
       try {
         setIsSubmitting(true);
-        const q = query(collection(db, "acolhimentos"), where("email", "==", cleanEmail));
-        const querySnapshot = await getDocs(q);
-        if (!querySnapshot.empty) {
-          const docData = querySnapshot.docs[0];
+        let foundDoc: any = null;
+
+        if (cleanEmail) {
+          const qEmail = query(collection(db, "acolhimentos"), where("email", "==", cleanEmail));
+          const querySnapshotEmail = await getDocs(qEmail);
+          if (!querySnapshotEmail.empty) {
+            foundDoc = querySnapshotEmail.docs[0];
+          }
+        }
+
+        if (!foundDoc && cleanCpf) {
+          const qCpf = query(collection(db, "acolhimentos"), where("cpf", "==", cleanCpf));
+          const querySnapshotCpf = await getDocs(qCpf);
+          if (!querySnapshotCpf.empty) {
+            foundDoc = querySnapshotCpf.docs[0];
+          }
+        }
+
+        if (foundDoc) {
+          const docData = foundDoc;
           setExistingProcess({
             id: docData.id,
             data: docData.data(),
@@ -424,13 +482,30 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
         return;
       }
 
-      // Verificação de duplicidade de segurança no envio final
+      // Verificação de duplicidade de segurança no envio final (por e-mail ou CPF)
+      const cleanCpf = cpf.trim();
       try {
         setIsSubmitting(true);
-        const q = query(collection(db, "acolhimentos"), where("email", "==", cleanEmail));
-        const querySnapshot = await getDocs(q);
-        if (!querySnapshot.empty) {
-          const docData = querySnapshot.docs[0];
+        let foundDoc: any = null;
+
+        if (cleanEmail) {
+          const qEmail = query(collection(db, "acolhimentos"), where("email", "==", cleanEmail));
+          const querySnapshotEmail = await getDocs(qEmail);
+          if (!querySnapshotEmail.empty) {
+            foundDoc = querySnapshotEmail.docs[0];
+          }
+        }
+
+        if (!foundDoc && cleanCpf) {
+          const qCpf = query(collection(db, "acolhimentos"), where("cpf", "==", cleanCpf));
+          const querySnapshotCpf = await getDocs(qCpf);
+          if (!querySnapshotCpf.empty) {
+            foundDoc = querySnapshotCpf.docs[0];
+          }
+        }
+
+        if (foundDoc) {
+          const docData = foundDoc;
           setExistingProcess({
             id: docData.id,
             data: docData.data(),
@@ -1165,6 +1240,7 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
         isOpen={showExistingModal}
         onClose={() => setShowExistingModal(false)}
         email={email.trim().toLowerCase() || (existingProcess?.data?.email || "")}
+        cpf={cpf.trim() || (existingProcess?.data?.cpf || "")}
         nome={name.trim() || (existingProcess?.data?.nome || "")}
         onUpdateQuestionnaire={handleOptionUpdateQuestionnaire}
         onRestartProcess={handleRestartProcess}

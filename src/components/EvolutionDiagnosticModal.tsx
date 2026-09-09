@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { safeFetchJson } from "../lib/whatsappService";
 import {
   Activity,
   AlertCircle,
@@ -103,7 +104,7 @@ export const EvolutionDiagnosticModal: React.FC<EvolutionDiagnosticModalProps> =
     setIsRunning(true);
     setActionFeedback(null);
     try {
-      const res = await fetch("/api/whatsapp/evolution/diagnose", {
+      const res = await safeFetchJson<DiagnosticReport>("/api/whatsapp/evolution/diagnose", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -114,8 +115,8 @@ export const EvolutionDiagnosticModal: React.FC<EvolutionDiagnosticModalProps> =
         }),
       });
 
-      const data = await res.json();
-      if (res.ok && data.success) {
+      const data = res.data;
+      if (res.ok && data && data.success) {
         setReport(data);
         // Expand the first error or the webhook step for easy review
         const errorStep = data.steps.find((s: DiagnosticStepResult) => s.status === "error");
@@ -131,7 +132,7 @@ export const EvolutionDiagnosticModal: React.FC<EvolutionDiagnosticModalProps> =
       } else {
         setActionFeedback({
           type: "error",
-          message: data.error || "Erro ao executar diagnóstico.",
+          message: (data as any)?.error || res.error || "Erro ao executar diagnóstico.",
         });
       }
     } catch (err: any) {
@@ -148,7 +149,7 @@ export const EvolutionDiagnosticModal: React.FC<EvolutionDiagnosticModalProps> =
     setIsCreatingInstance(true);
     setActionFeedback(null);
     try {
-      const res = await fetch("/api/whatsapp/evolution/create-instance", {
+      const res = await safeFetchJson<any>("/api/whatsapp/evolution/create-instance", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -159,8 +160,8 @@ export const EvolutionDiagnosticModal: React.FC<EvolutionDiagnosticModalProps> =
         }),
       });
 
-      const data = await res.json();
-      if (res.ok && data.success) {
+      const data = res.data;
+      if (res.ok && data && data.success) {
         setActionFeedback({
           type: "success",
           message: `Instância "${currentInstance}" criada com sucesso! Re-executando diagnóstico...`,
@@ -178,7 +179,7 @@ export const EvolutionDiagnosticModal: React.FC<EvolutionDiagnosticModalProps> =
       } else {
         setActionFeedback({
           type: "error",
-          message: data.error || "Não foi possível criar a instância.",
+          message: data?.error || res.error || "Não foi possível criar a instância.",
         });
       }
     } catch (err: any) {
