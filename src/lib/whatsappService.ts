@@ -1,5 +1,8 @@
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "./firebase";
+import { safeFetchJson } from "./safeFetch";
+
+export { safeFetchJson };
 
 export interface EvolutionConfig {
   whatsappEvolutionEnabled?: boolean;
@@ -82,66 +85,6 @@ export async function getEvolutionConfig(
     whatsappEvolutionAutoNotif:
       override?.whatsappEvolutionAutoNotif ?? dbConfig.whatsappEvolutionAutoNotif ?? true,
   };
-}
-
-/**
- * Safe fetch wrapper that guarantees JSON parsing and intercepts non-JSON HTML error pages
- * preventing "Unexpected token 'T', 'The page c'... is not valid JSON".
- */
-export async function safeFetchJson<T = any>(
-  input: RequestInfo | URL,
-  init?: RequestInit
-): Promise<{ ok: boolean; status: number; data: T | null; error?: string }> {
-  try {
-    const res = await fetch(input, init);
-    const text = await res.text();
-    let parsed: any = null;
-
-    if (text && text.trim()) {
-      try {
-        parsed = JSON.parse(text);
-      } catch {
-        // Response was not valid JSON (e.g. an HTML 404/502 page from cloud proxy or nginx)
-        const stripped = text.replace(/<[^>]*>?/gm, " ").replace(/\s+/g, " ").trim();
-        const snippet = stripped.length > 140 ? `${stripped.slice(0, 140)}...` : stripped;
-        return {
-          ok: false,
-          status: res.status,
-          data: null,
-          error:
-            snippet ||
-            `Resposta inesperada do servidor (HTTP ${res.status}). O endpoint não retornou JSON válido.`,
-        };
-      }
-    }
-
-    if (!res.ok) {
-      const errMsg =
-        (typeof parsed === "object" && parsed !== null
-          ? parsed.error || parsed.message || parsed.response?.message
-          : null) || `Erro na requisição (HTTP ${res.status}).`;
-
-      return {
-        ok: false,
-        status: res.status,
-        data: parsed,
-        error: typeof errMsg === "string" ? errMsg : JSON.stringify(errMsg),
-      };
-    }
-
-    return {
-      ok: true,
-      status: res.status,
-      data: parsed,
-    };
-  } catch (err: any) {
-    return {
-      ok: false,
-      status: 0,
-      data: null,
-      error: err?.message || "Falha de rede ao se comunicar com o servidor.",
-    };
-  }
 }
 
 /**

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { PhoneCall, ArrowRight, X, Heart, ExternalLink, LifeBuoy, AlertCircle } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
+import bannerBgImage from "../assets/images/setembro_amarelo_wide_banner_1788989264676.jpg";
 
 interface CampanhaPrevencaoBannerProps {
   onNavigateAcolhimento: () => void;
@@ -11,19 +12,8 @@ export function CampanhaPrevencaoBanner({ onNavigateAcolhimento }: CampanhaPreve
   const [showCvvModal, setShowCvvModal] = useState(false);
 
   useEffect(() => {
-    // Check if dismissed in current session
-    const dismissed = sessionStorage.getItem("dismiss_campanha_prevencao");
-    if (dismissed === "true") {
-      setIsVisible(false);
-    }
-
     const handleReopen = () => {
       setIsVisible(true);
-      try {
-        sessionStorage.removeItem("dismiss_campanha_prevencao");
-      } catch {
-        // ignore storage errors
-      }
       window.scrollTo({ top: 0, behavior: "smooth" });
     };
 
@@ -42,20 +32,10 @@ export function CampanhaPrevencaoBanner({ onNavigateAcolhimento }: CampanhaPreve
 
   const handleDismiss = () => {
     setIsVisible(false);
-    try {
-      sessionStorage.setItem("dismiss_campanha_prevencao", "true");
-    } catch {
-      // ignore storage access errors
-    }
   };
 
   const handleRestore = () => {
     setIsVisible(true);
-    try {
-      sessionStorage.removeItem("dismiss_campanha_prevencao");
-    } catch {
-      // ignore storage errors
-    }
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -64,57 +44,72 @@ export function CampanhaPrevencaoBanner({ onNavigateAcolhimento }: CampanhaPreve
       {isVisible && (
         <aside 
           aria-label="Campanha de Valorização da Vida e Prevenção ao Suicídio"
-          className="w-full bg-[#FFFBEB] border-b border-amber-200/90 text-[#14342B] relative z-[60] shadow-xs"
+          className="w-full relative z-[60] shadow-sm border-b border-amber-300/80 overflow-hidden flex flex-col items-center justify-center py-2.5 sm:py-3.5"
         >
-          <div className="max-w-[1440px] mx-auto px-3.5 sm:px-6 py-2.5 sm:py-3 flex flex-col md:flex-row items-center justify-between gap-2.5 sm:gap-3">
-            
-            {/* Left: Seasonal Theme Ribbon & Empathetic Message */}
-            <div className="flex items-center gap-2 sm:gap-2.5 text-center md:text-left flex-wrap justify-center md:justify-start">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-200/85 text-amber-950 text-xs font-semibold tracking-tight shadow-2xs">
-                <span className="text-sm leading-none" role="img" aria-label="Laço amarelo">🎗️</span>
-                <span className="font-bold uppercase tracking-wider text-[11px]">Setembro Amarelo</span>
-                <span className="text-amber-800/60 hidden sm:inline">•</span>
-                <span className="text-amber-900 hidden sm:inline font-medium text-[11px]">Mês de prevenção ao suicídio</span>
-              </span>
+          {/* Foto de fundo nítida de ponta a ponta */}
+          <div className="absolute inset-0 pointer-events-none">
+            <img
+              src={bannerBgImage}
+              alt="Flores amarelas ao amanhecer - Setembro Amarelo"
+              className="w-full h-full object-cover object-center"
+            />
+            {/* Película sutil para garantir leitura da tipografia */}
+            <div className="absolute inset-0 bg-gradient-to-b from-black/55 via-black/45 to-black/55" />
+          </div>
 
-              <p className="text-xs sm:text-sm text-forest/90 font-medium">
-                <span className="sm:hidden font-semibold text-amber-900 block text-[11px]">Mês de prevenção ao suicídio:</span>
-                <span className="font-semibold text-forest">Você não está sozinho(a).</span>{" "}
-                Falar sobre suas dores é o primeiro passo para o acolhimento.
-              </p>
+          {/* Botão de Fechar no canto superior direito */}
+          <button
+            onClick={handleDismiss}
+            className="absolute top-2 right-2 sm:top-2.5 sm:right-4 p-1.5 text-white/80 hover:text-white hover:bg-black/30 rounded-full transition-colors cursor-pointer z-20"
+            title="Ocultar aviso temporariamente"
+            aria-label="Ocultar aviso de campanha"
+          >
+            <X className="w-4 h-4" />
+          </button>
+
+          <div className="max-w-[1440px] mx-auto w-full px-3.5 sm:px-6 relative z-10 flex flex-col items-center text-center gap-1.5 sm:gap-2 text-white">
+            
+            {/* LINHA 1: Setembro Amarelo */}
+            <div className="flex items-center justify-center">
+              <span className="inline-flex items-center gap-1.5 px-3 py-0.5 sm:py-1 rounded-full bg-amber-400 text-amber-950 text-xs font-bold tracking-tight shadow-md">
+                <span className="text-sm leading-none" role="img" aria-label="Laço amarelo">🎗️</span>
+                <span>Setembro Amarelo</span>
+                <span className="text-amber-950/60">•</span>
+                <span className="text-amber-950 font-semibold text-[11px]">Mês de prevenção ao suicídio</span>
+              </span>
             </div>
 
-            {/* Right: Direct Actions & Close */}
-            <div className="flex items-center gap-2 sm:gap-2.5 shrink-0 flex-wrap justify-center">
-              {/* Action 1: Acolhimento Form */}
+            {/* LINHA 2: Frase */}
+            <p className="text-xs sm:text-sm text-white font-medium leading-tight drop-shadow-[0_1px_3px_rgba(0,0,0,0.8)] max-w-2xl px-2">
+              <strong className="font-semibold text-white">Você não está sozinho.</strong>{" "}
+              Falar sobre o que sente é o primeiro passo para o acolhimento.
+            </p>
+
+            {/* LINHA 3: Botões na mesma linha */}
+            <div className="flex items-center justify-center flex-nowrap gap-2 sm:gap-3 shrink-0 pt-0.5">
+              {/* Ação 1: Iniciar Acolhimento */}
               <button
                 onClick={onNavigateAcolhimento}
-                className="inline-flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 bg-[#14342B] text-white hover:bg-[#1C4539] text-xs font-semibold rounded-full shadow-xs transition-colors cursor-pointer"
+                className="inline-flex items-center gap-1 sm:gap-1.5 px-3 sm:px-4 py-1.5 sm:py-2 bg-[#14342B] text-white hover:bg-[#1C4539] border border-amber-300/40 text-xs font-semibold rounded-full shadow-md transition-all hover:scale-[1.02] cursor-pointer whitespace-nowrap"
                 title="Iniciar triagem com valores acessíveis"
               >
-                <Heart className="w-3.5 h-3.5 text-amber-300" />
-                <span>Iniciar Acolhimento</span>
-                <ArrowRight className="w-3.5 h-3.5 ml-0.5" />
+                <Heart className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+                <span>
+                  <span className="hidden sm:inline">Iniciar </span>Acolhimento
+                </span>
+                <ArrowRight className="w-3.5 h-3.5 ml-0.5 shrink-0 hidden sm:inline" />
               </button>
 
-              {/* Action 2: CVV 188 Instant Help */}
+              {/* Ação 2: CVV 188 Apoio Imediato */}
               <button
                 onClick={() => setShowCvvModal(true)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white/90 hover:bg-white text-forest border border-amber-300/80 hover:border-amber-400 text-xs font-bold rounded-full shadow-2xs transition-colors cursor-pointer"
+                className="inline-flex items-center gap-1 sm:gap-1.5 px-3 sm:px-4 py-1.5 sm:py-2 bg-amber-400 hover:bg-amber-300 text-amber-950 text-xs font-bold rounded-full shadow-md transition-all hover:scale-[1.02] cursor-pointer whitespace-nowrap"
                 title="Ver canais de apoio imediato e emergência"
               >
-                <PhoneCall className="w-3.5 h-3.5 text-amber-700" />
-                <span>Apoio Imediato • CVV 188</span>
-              </button>
-
-              {/* Dismiss button */}
-              <button
-                onClick={handleDismiss}
-                className="p-1.5 text-forest/50 hover:text-forest hover:bg-amber-200/50 rounded-full transition-colors cursor-pointer ml-0.5"
-                title="Ocultar aviso nesta sessão"
-                aria-label="Ocultar aviso de campanha"
-              >
-                <X className="w-4 h-4" />
+                <PhoneCall className="w-3.5 h-3.5 text-amber-950 shrink-0" />
+                <span>
+                  <span className="hidden sm:inline">Apoio Imediato • </span>CVV 188
+                </span>
               </button>
             </div>
 

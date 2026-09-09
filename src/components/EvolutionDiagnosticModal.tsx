@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { safeFetchJson } from "../lib/whatsappService";
+import { safeFetchJson } from "../lib/safeFetch";
 import {
   Activity,
   AlertCircle,
