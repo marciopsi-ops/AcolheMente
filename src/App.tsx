@@ -48,12 +48,14 @@ import { DoacaoView } from "./views/DoacaoView";
 import { ProfissionalLandingView } from "./views/ProfissionalLandingView";
 import { ContratoLandingView } from "./views/ContratoLandingView";
 import { PropostaLandingView } from "./views/PropostaLandingView";
+import { FichaEmpresaLandingView } from "./views/FichaEmpresaLandingView";
 import { BlogView } from "./views/BlogView";
 
 import { Footer } from "./components/Footer";
 import { ProfissionaisCarousel } from "./components/ProfissionaisCarousel";
 import { PWAInstallBanner } from "./components/PWAInstallBanner";
 import { CampanhaPrevencaoBanner } from "./components/CampanhaPrevencaoBanner";
+import { BlurImageBackground } from "./components/BlurImageBackground";
 
 import homeHero from "./assets/images/home_hero_photo_parda_1781024318036.png";
 import logoImage from "./assets/images/logo_acolhe.jpeg";
@@ -248,7 +250,7 @@ const FAQ_ITEMS = [
   },
   {
     question: "Os preços são fixos?",
-    answer: "Respeitamos faixas de valores solidários que variam entre R$ 30 e R$ 110 por sessão. Uma vez que você aceita a proposta com as condições de atendimento, o valor combinado mantém-se fixo, sendo reajustado apenas anualmente com base no índice do INPC."
+    answer: "Respeitamos faixas de valores solidários que variam entre R$ 30 e R$ 110 por sessão para atendimentos particulares que passam por triagem socioeconômica. No caso de benefício corporativo, os valores são personalizados por contrato com a empresa. Em ambos os casos, o valor mantém-se fixo, sendo reajustado apenas anualmente com base no índice do INPC ou índice similar."
   }
 ];
 
@@ -351,6 +353,9 @@ export default function App() {
   const [publicPropostaId, setPublicPropostaId] = useState<string | null>(() => {
     return new URLSearchParams(window.location.search).get("proposta");
   });
+  const [publicFichaEmpresaId, setPublicFichaEmpresaId] = useState<string | null>(() => {
+    return new URLSearchParams(window.location.search).get("ficha_empresa") || new URLSearchParams(window.location.search).get("empresa_ficha");
+  });
   const [publicArtigoId, setPublicArtigoId] = useState<string | null>(() => {
     return new URLSearchParams(window.location.search).get("artigo");
   });
@@ -399,6 +404,7 @@ export default function App() {
       setPublicEventoId(p.get("evento"));
       setPublicContratoId(p.get("contrato"));
       setPublicPropostaId(p.get("proposta"));
+      setPublicFichaEmpresaId(p.get("ficha_empresa") || p.get("empresa_ficha"));
       setPublicArtigoId(p.get("artigo"));
       const v = p.get("view");
       if (
@@ -499,6 +505,7 @@ export default function App() {
     setPublicEventoId(null);
     setPublicContratoId(null);
     setPublicPropostaId(null);
+    setPublicFichaEmpresaId(null);
     setPublicArtigoId(null);
     setCurrentView("landing");
   };
@@ -561,6 +568,16 @@ export default function App() {
     return (
       <PropostaLandingView
         propostaId={publicPropostaId}
+        onBack={handleBackFromPublicProfile}
+        onGoHome={handleGoToLanding}
+      />
+    );
+  }
+
+  if (publicFichaEmpresaId) {
+    return (
+      <FichaEmpresaLandingView
+        empresaId={publicFichaEmpresaId}
         onBack={handleBackFromPublicProfile}
         onGoHome={handleGoToLanding}
       />
@@ -802,7 +819,6 @@ function LandingPage({
                 <div className="flex items-center justify-between pb-3 border-b border-soft">
                   <div className="flex items-center gap-2">
                     <span className="font-serif text-base font-bold text-forest">Menu</span>
-                    <span className="text-[10px] uppercase tracking-wider text-forest/40 font-bold bg-warm px-2 py-0.5 rounded-full">Navegação</span>
                   </div>
                   <button
                     onClick={() => setIsMenuOpen(false)}
@@ -920,6 +936,22 @@ function LandingPage({
           />
 
           <div className="max-w-xl flex flex-col items-center lg:items-start text-center lg:text-left mb-6 lg:mb-0 relative z-10">
+            {/* Efeito Visual de Iluminação de Fundo & Acolhimento (Luz Solar + Anéis Sutis) */}
+            <div 
+              className="absolute -top-10 -left-10 sm:-left-20 w-80 sm:w-[520px] h-80 sm:h-[520px] bg-gradient-to-br from-sun/35 via-amber-200/20 to-transparent rounded-full blur-[95px] pointer-events-none -z-10" 
+            />
+            <div 
+              className="absolute top-1/4 left-1/6 w-52 sm:w-72 h-52 sm:h-72 bg-sun/25 rounded-full blur-[75px] pointer-events-none -z-10 animate-pulse"
+              style={{ animationDuration: '6s' }}
+            />
+            <div 
+              className="absolute -bottom-10 -left-6 w-60 sm:w-80 h-60 sm:h-80 bg-forest/8 rounded-full blur-[85px] pointer-events-none -z-10" 
+            />
+
+            {/* Anéis Orgânicos Concêntricos Sutis (simbolizando ondas de acolhimento e presença) */}
+            <div className="absolute -top-8 -left-8 sm:-left-16 w-72 sm:w-[440px] h-72 sm:h-[440px] rounded-full border border-sun/30 pointer-events-none -z-10 opacity-70" />
+            <div className="absolute -top-16 -left-16 sm:-left-28 w-96 sm:w-[560px] h-96 sm:h-[560px] rounded-full border border-forest/15 pointer-events-none -z-10 opacity-50" />
+
             <div className="mb-4 px-3 py-1 bg-sun-light text-forest text-[10px] font-bold uppercase tracking-[0.2em] w-fit rounded shadow-2xs">
               Valores Acessíveis e Benefício Corporativo
             </div>
@@ -1265,17 +1297,14 @@ function LandingPage({
                 viewport={{ once: true, margin: "-50px" }}
                 transition={{ duration: 0.6 }}
                 onClick={() => onNavigate("empresa")}
-                className="w-full h-full relative min-h-[500px] p-8 sm:p-12 text-white rounded-[40px] overflow-hidden shadow-2xl shadow-forest/20 flex flex-col justify-between cursor-pointer border-2 border-forest-dark/30 group-hover:border-sun/60 transition-all duration-500 hover:-translate-y-2 hover:shadow-2xl hover:shadow-forest/30"
+                className="w-full h-full relative min-h-[500px] p-8 sm:p-12 text-white rounded-[40px] overflow-hidden shadow-2xl shadow-forest/20 flex flex-col justify-between cursor-pointer transition-all duration-500 hover:-translate-y-2 hover:shadow-2xl hover:shadow-forest/30 bg-[#0d2218]"
               >
-                {/* Foto de Fundo Fixa com Mínima Transparência (z-0 direto, sem película e sem ficar atrás de fundos escuros) */}
-                <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
-                  <img
-                    src="https://images.unsplash.com/photo-1600880292203-757bb62b4baf?auto=format&fit=crop&w=1200&q=85"
-                    alt="Equipe em ambiente corporativo saudável e acolhedor"
-                    className="w-full h-full object-cover object-center opacity-95 group-hover:scale-105 transition-transform duration-700 ease-out"
-                    referrerPolicy="no-referrer"
-                  />
-                </div>
+                {/* Foto de Fundo Fixa Otimizada com Lazy Loading e Blur Placeholder */}
+                <BlurImageBackground
+                  src="https://images.unsplash.com/photo-1600880292203-757bb62b4baf?auto=format&fit=crop&w=1200&q=85"
+                  alt="Equipe em ambiente corporativo saudável e acolhedor"
+                  targetOpacity="opacity-85"
+                />
 
                 <div className="flex flex-col gap-4 relative z-10 flex-1">
                   {/* Badge */}
@@ -1328,17 +1357,14 @@ function LandingPage({
                 viewport={{ once: true, margin: "-50px" }}
                 transition={{ duration: 0.6, delay: 0.2 }}
                 onClick={() => onNavigate("profissional")}
-                className="w-full h-full relative min-h-[500px] p-8 sm:p-12 text-white rounded-[40px] overflow-hidden shadow-2xl shadow-forest/20 flex flex-col justify-between cursor-pointer border-2 border-forest-dark/30 group-hover:border-sun/60 transition-all duration-500 hover:-translate-y-2 hover:shadow-2xl hover:shadow-forest/30"
+                className="w-full h-full relative min-h-[500px] p-8 sm:p-12 text-white rounded-[40px] overflow-hidden shadow-2xl shadow-forest/20 flex flex-col justify-between cursor-pointer transition-all duration-500 hover:-translate-y-2 hover:shadow-2xl hover:shadow-forest/30 bg-[#0d2218]"
               >
-                {/* Foto de Fundo Fixa com Mínima Transparência (z-0 direto, sem película e sem ficar atrás de fundos escuros) */}
-                <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
-                  <img
-                    src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=1200&q=85"
-                    alt="Psicóloga profissional em consultório acolhedor"
-                    className="w-full h-full object-cover object-center opacity-95 group-hover:scale-105 transition-transform duration-700 ease-out"
-                    referrerPolicy="no-referrer"
-                  />
-                </div>
+                {/* Foto de Fundo Fixa Otimizada com Lazy Loading e Blur Placeholder */}
+                <BlurImageBackground
+                  src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=1200&q=85"
+                  alt="Psicóloga profissional em consultório acolhedor"
+                  targetOpacity="opacity-85"
+                />
 
                 <div className="flex flex-col gap-4 relative z-10 flex-1">
                   {/* Badge */}
@@ -1426,17 +1452,14 @@ function LandingPage({
             {/* Depth of Field & Glow Aura Dourada/Esmeralda no hover */}
             <div className="absolute -inset-2 bg-gradient-to-r from-sun via-amber-400/40 to-forest rounded-[46px] blur-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-600 pointer-events-none -z-10" />
 
-            <div className="w-full relative min-h-[480px] flex flex-col md:flex-row items-center justify-between gap-8 p-8 sm:p-12 rounded-[40px] overflow-hidden shadow-2xl shadow-forest/20 border-2 border-forest-dark/30 group-hover:border-sun/60 transition-all duration-500 hover:-translate-y-2 hover:shadow-2xl hover:shadow-forest/30">
+            <div className="w-full relative min-h-[480px] flex flex-col md:flex-row items-center justify-between gap-8 p-8 sm:p-12 rounded-[40px] overflow-hidden shadow-2xl shadow-forest/20 transition-all duration-500 hover:-translate-y-2 hover:shadow-2xl hover:shadow-forest/30 bg-[#0d2218]">
               
-              {/* Foto de Fundo Fixa com Mínima Transparência (z-0 direto, sem película escura e sem ficar oculta atrás de fundos) */}
-              <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
-                <img
-                  src="https://images.unsplash.com/photo-1455390582262-044cdead277a?auto=format&fit=crop&w=1400&q=85"
-                  alt="Escrita e redação de artigos sobre saúde mental"
-                  className="w-full h-full object-cover object-center opacity-95 group-hover:scale-105 transition-transform duration-700 ease-out"
-                  referrerPolicy="no-referrer"
-                />
-              </div>
+              {/* Foto de Fundo Fixa Otimizada com Lazy Loading e Blur Placeholder */}
+              <BlurImageBackground
+                src="https://images.unsplash.com/photo-1455390582262-044cdead277a?auto=format&fit=crop&w=1400&q=85"
+                alt="Escrita e redação de artigos sobre saúde mental"
+                targetOpacity="opacity-85"
+              />
 
               {/* Coluna da esquerda: Título, Descrição e Botão com alto contraste e legibilidade impecável */}
               <div className="flex flex-col gap-5 max-w-xl w-full relative z-10">

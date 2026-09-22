@@ -134,7 +134,11 @@ export function DoacaoView({ onNavigate }: { onNavigate: (view: 'landing' | 'aco
                 </div>
               </div>
               <div className="w-full lg:w-1/2 flex justify-center lg:justify-end">
-                <img src={doacaoHero} alt="Ilustração de solidariedade" className="w-full max-w-lg object-contain rounded-3xl mix-blend-multiply" referrerPolicy="no-referrer" />
+                <div className="relative overflow-hidden rounded-3xl max-w-lg w-full group">
+                  <img src={doacaoHero} alt="Ilustração de solidariedade" className="w-full max-w-lg object-contain rounded-3xl mix-blend-multiply transition-all duration-700 group-hover:scale-[1.03]" referrerPolicy="no-referrer" />
+                  {/* Esmaecimento no pé da imagem */}
+                  <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-warm/80 via-warm/25 to-transparent pointer-events-none z-1 group-hover:opacity-40 transition-opacity duration-500" />
+                </div>
               </div>
             </div>
           </section>

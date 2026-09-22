@@ -55,6 +55,8 @@ export function CampanhaPrevencaoBanner({ onNavigateAcolhimento }: CampanhaPreve
             />
             {/* Película sutil para garantir leitura da tipografia */}
             <div className="absolute inset-0 bg-gradient-to-b from-black/55 via-black/45 to-black/55" />
+            {/* Esmaecimento no pé do banner */}
+            <div className="absolute inset-x-0 bottom-0 h-6 bg-gradient-to-t from-black/60 to-transparent pointer-events-none" />
           </div>
 
           {/* Botão de Fechar no canto superior direito */}

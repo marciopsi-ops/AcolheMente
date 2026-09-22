@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { User, Tag, Clock, Share2, ArrowRight, Check } from "lucide-react";
 import { ArtigoBlog } from "../types/blog";
+import { BlurImageBackground } from "./BlurImageBackground";
 
 interface BlogCardProps {
   artigo: ArtigoBlog;
@@ -49,17 +50,14 @@ export function BlogCard({ artigo, onRead, onSelectTag }: BlogCardProps) {
 
       <article
         onClick={() => onRead(artigo)}
-        className="w-full relative min-h-[420px] rounded-[28px] overflow-hidden shadow-xl shadow-forest/20 flex flex-col justify-between cursor-pointer border-2 border-forest-dark/30 group-hover:border-sun/60 transition-all duration-500 hover:-translate-y-2 hover:shadow-2xl hover:shadow-forest/30 h-full"
+        className="w-full relative min-h-[420px] rounded-[28px] overflow-hidden shadow-xl shadow-forest/20 flex flex-col justify-between cursor-pointer transition-all duration-500 hover:-translate-y-2 hover:shadow-2xl hover:shadow-forest/30 h-full bg-[#0d2218]"
       >
-        {/* Foto de Fundo Fixa com Mínima Transparência (z-0 direto, sem película e sem ficar atrás de fundos) */}
-        <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
-          <img
-            src={capaImage}
-            alt={artigo.titulo}
-            className="w-full h-full object-cover object-center opacity-95 group-hover:scale-105 transition-transform duration-700 ease-out"
-            referrerPolicy="no-referrer"
-          />
-        </div>
+        {/* Foto de Fundo Fixa Otimizada com Lazy Loading e Blur Placeholder */}
+        <BlurImageBackground
+          src={capaImage}
+          alt={artigo.titulo}
+          targetOpacity="opacity-85"
+        />
 
         {/* Top Media / Tag banner */}
         <div className="p-6 pb-3 flex flex-col gap-3 relative z-10">

@@ -197,7 +197,7 @@ export function ProfissionaisCarousel() {
           <span>Nosso Corpo Clínico</span>
         </div>
         <h2 className="font-serif text-3xl md:text-4xl text-forest">
-          Profissionais no AcolheMente
+          Conheça alguns de nossos profissionais
         </h2>
         <p className="text-forest/75 text-sm md:text-base max-w-xl leading-relaxed">
           Pessoas reais dedicadas a promover saúde mental e acolhimento ético e humano.
@@ -234,15 +234,19 @@ export function ProfissionaisCarousel() {
                 <div className="p-1 rounded-full bg-white/80 backdrop-blur-md border border-white/90 shadow-md group-hover/card:border-sun/60 transition-all duration-300 shrink-0 mb-3 relative">
                   <div className="w-28 h-28 sm:w-32 sm:h-32 rounded-full overflow-hidden shadow-inner bg-warm/80 flex items-center justify-center relative">
                     {prof.foto && !hasError ? (
-                      <img
-                        src={prof.foto}
-                        alt={prof.name}
-                        referrerPolicy="no-referrer"
-                        onError={() =>
-                          setImageErrors((prev) => ({ ...prev, [itemKey]: true }))
-                        }
-                        className="w-full h-full object-cover group-hover/card:scale-105 transition-transform duration-500"
-                      />
+                      <>
+                        <img
+                          src={prof.foto}
+                          alt={prof.name}
+                          referrerPolicy="no-referrer"
+                          onError={() =>
+                            setImageErrors((prev) => ({ ...prev, [itemKey]: true }))
+                          }
+                          className="w-full h-full object-cover group-hover/card:scale-105 transition-transform duration-500"
+                        />
+                        {/* Esmaecimento no pé da foto */}
+                        <div className="absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-white/90 via-white/40 to-transparent pointer-events-none" />
+                      </>
                     ) : (
                       <div className="w-full h-full bg-forest/10 flex items-center justify-center text-forest/60">
                         <User className="w-12 h-12 stroke-[1.5]" />
@@ -314,13 +318,17 @@ export function ProfissionaisCarousel() {
 
             {/* Foto no Modal com anel de vidro ampliado */}
             <div className="p-1 rounded-full bg-white/90 backdrop-blur-md border border-white shadow-lg mb-3 shrink-0">
-              <div className="w-28 h-28 sm:w-32 sm:h-32 rounded-full overflow-hidden shadow-inner bg-warm/80 flex items-center justify-center">
+              <div className="w-28 h-28 sm:w-32 sm:h-32 rounded-full overflow-hidden shadow-inner bg-warm/80 flex items-center justify-center relative">
                 {selectedProfModal.foto ? (
-                  <img
-                    src={selectedProfModal.foto}
-                    alt={selectedProfModal.name}
-                    className="w-full h-full object-cover"
-                  />
+                  <>
+                    <img
+                      src={selectedProfModal.foto}
+                      alt={selectedProfModal.name}
+                      className="w-full h-full object-cover"
+                    />
+                    {/* Esmaecimento no pé da foto */}
+                    <div className="absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-white/90 via-white/40 to-transparent pointer-events-none" />
+                  </>
                 ) : (
                   <User className="w-12 h-12 text-forest/60" />
                 )}

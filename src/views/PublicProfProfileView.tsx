@@ -254,7 +254,11 @@ export function PublicProfProfileView({
         <div className="md:col-span-1 bg-white p-6 sm:p-8 rounded-[2rem] border border-soft shadow-sm flex flex-col items-center text-center gap-6 h-fit">
           <div className="w-40 h-40 sm:w-48 sm:h-48 rounded-full overflow-hidden border-4 border-sun shadow-md relative bg-forest/10 flex-shrink-0 flex items-center justify-center">
             {prof.photoUrl ? (
-              <img src={prof.photoUrl} alt={prof.name} className="w-full h-full object-cover" />
+              <>
+                <img src={prof.photoUrl} alt={prof.name} className="w-full h-full object-cover" />
+                {/* Esmaecimento no pé da foto */}
+                <div className="absolute inset-x-0 bottom-0 h-10 sm:h-12 bg-gradient-to-t from-white/90 via-white/40 to-transparent pointer-events-none" />
+              </>
             ) : (
               <User className="w-20 h-20 text-forest/70" />
             )}

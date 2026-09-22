@@ -78,9 +78,14 @@ export const PatientNotificationModal: React.FC<PatientNotificationModalProps> =
   useEffect(() => {
     if (isOpen) {
       if (initialMode) setMode(initialMode);
-      if (initialTemplateId) setSelectedTemplateId(initialTemplateId);
+      const isEmpresa = Boolean(target?.nomeEmpresa || target?.razaoSocial || target?.cnpj);
+      if (isEmpresa && (!initialTemplateId || initialTemplateId === "proposta")) {
+        setSelectedTemplateId("ficha_empresa");
+      } else if (initialTemplateId) {
+        setSelectedTemplateId(initialTemplateId);
+      }
     }
-  }, [isOpen, initialMode, initialTemplateId]);
+  }, [isOpen, initialMode, initialTemplateId, target]);
 
   // Form Content
   const [subject, setSubject] = useState<string>("");
@@ -174,7 +179,11 @@ export const PatientNotificationModal: React.FC<PatientNotificationModalProps> =
     if (!rawText) return "";
     let res = rawText;
 
-    const patientName = target?.nome || target?.name || target?.nomeContato || "Paciente";
+    const isEmpresa = Boolean(target?.nomeEmpresa || target?.razaoSocial || target?.cnpj);
+    const empresaNome = target?.razaoSocial || target?.nomeEmpresa || target?.empresa || "Empresa Conveniada";
+    const patientName = isEmpresa
+      ? (target?.nomeResponsavel || target?.contatoNome || target?.nome || target?.name || "Responsável")
+      : (target?.nome || target?.name || target?.nomeContato || "Paciente");
     const firstName = patientName.trim().split(" ")[0];
     const profName = assignedProfessional?.name || target?.profissionalNome || "Profissional AcolheMente";
     const profCrp = assignedProfessional?.crp || target?.profissionalCrp || "Sob Supervisão";
@@ -183,6 +192,7 @@ export const PatientNotificationModal: React.FC<PatientNotificationModalProps> =
     const origin = typeof window !== "undefined" ? window.location.origin : "https://acolhemente.com.br";
     const linkProposta = target?.id ? `${origin}/?proposta=${target.id}` : `${origin}/?proposta=demo`;
     const linkContrato = target?.id ? `${origin}/?contrato=${target.id}` : `${origin}/?contrato=demo`;
+    const linkFichaEmpresa = target?.id ? `${origin}/?ficha_empresa=${target.id}` : `${origin}/?ficha_empresa=demo`;
     const linkPerfilProf = assignedProfessional?.uid
       ? `${origin}/?view=profissionais#${assignedProfessional.uid}`
       : `${origin}/?view=profissionais`;
@@ -211,10 +221,22 @@ export const PatientNotificationModal: React.FC<PatientNotificationModalProps> =
       "[LINK_PROPOSTA]": linkProposta,
       "{link_contrato}": linkContrato,
       "[LINK_CONTRATO]": linkContrato,
+      "{link_ficha}": linkFichaEmpresa,
+      "[LINK_FICHA]": linkFichaEmpresa,
+      "{link_ficha_empresa}": linkFichaEmpresa,
+      "[LINK_FICHA_EMPRESA]": linkFichaEmpresa,
       "{link_perfil_profissional}": linkPerfilProf,
       "[LINK_PERFIL_PROFISSIONAL]": linkPerfilProf,
-      "{empresa}": target?.empresa || "Empresa Conveniada",
-      "[EMPRESA]": target?.empresa || "Empresa Conveniada",
+      "{empresa}": empresaNome,
+      "[EMPRESA]": empresaNome,
+      "{nomeEmpresa}": empresaNome,
+      "[NOME_EMPRESA]": empresaNome,
+      "{cnpj}": target?.cnpj || "",
+      "[CNPJ]": target?.cnpj || "",
+      "{valores_acertados}": target?.valoresDefinidos || target?.valoresAcertados || "Conforme acordado",
+      "[VALORES_ACERTADOS]": target?.valoresDefinidos || target?.valoresAcertados || "Conforme acordado",
+      "{forma_pagamento}": target?.formaPagamento || "Boleto / Faturamento",
+      "[FORMA_PAGAMENTO]": target?.formaPagamento || "Boleto / Faturamento",
       "{plataforma}": "Projeto AcolheMente Saúde",
       "[PLATAFORMA]": "Projeto AcolheMente Saúde",
       "{data}": new Date().toLocaleDateString("pt-BR"),
@@ -231,6 +253,39 @@ export const PatientNotificationModal: React.FC<PatientNotificationModalProps> =
 
   // Base Built-in Quick Templates
   const builtInTemplates: QuickTemplate[] = useMemo(() => {
+    const isEmpresa = Boolean(target?.nomeEmpresa || target?.razaoSocial || target?.cnpj);
+    if (isEmpresa) {
+      return [
+        {
+          id: "ficha_empresa",
+          name: "🏢 Ficha de Bordo Cadastral e Colaboradores",
+          category: "operacional",
+          subject: "AcolheMente - Ficha de Bordo Cadastral da Empresa",
+          body: `Olá *{primeiro_nome}*! Tudo bem? 🌿\n\nNós do *Projeto AcolheMente Saúde* gostaríamos de solicitar o preenchimento e conferência da Ficha de Bordo da sua empresa *{empresa}*.\n\n👉 Acesse o link exclusivo da Ficha de Bordo para cadastrar/conferir dados e a planilha de colaboradores e dependentes:\n{link_ficha_empresa}\n\nFicamos à total disposição para tirar qualquer dúvida! ✨`,
+        },
+        {
+          id: "contrato_empresa",
+          name: "✍️ Contrato Corporativo de Prestação de Serviços",
+          category: "operacional",
+          subject: "AcolheMente - Contrato de Parceria Corporativa",
+          body: `Olá *{primeiro_nome}*! 👋\n\nSegue o link seguro para a leitura e assinatura digital do Contrato Corporativo de Saúde Mental da empresa *{empresa}* junto ao Projeto AcolheMente:\n\n{link_contrato}\n\nA formalização garante o início imediato dos atendimentos para seus colaboradores!\n\nQualquer dúvida, conte conosco!`,
+        },
+        {
+          id: "faturamento_empresa",
+          name: "💳 Faturamento / Emissão de Nota Fiscal",
+          category: "operacional",
+          subject: "AcolheMente - Faturamento e Nota Fiscal",
+          body: `Olá *{primeiro_nome}*! Tudo bem?\n\nEntramos em contato referente ao ciclo de faturamento dos serviços de saúde mental da empresa *{empresa}*.\n\nValores acordados: *{valores_acertados}* ({forma_pagamento}).\n\nFavor nos enviar o comprovante de pagamento ou confirmar o recebimento da Nota Fiscal emitida.\n\nAgradecemos a parceria!`,
+        },
+        {
+          id: "boas_vindas_empresa",
+          name: "🎉 Boas-Vindas & Benefício Corporativo",
+          category: "operacional",
+          subject: "AcolheMente - Boas-Vindas ao Convênio de Saúde Mental",
+          body: `Olá *{primeiro_nome}*! Tudo pronto para cuidarmos da saúde mental da sua equipe! 🌿\n\nA parceria da *{empresa}* com o *Projeto AcolheMente Saúde* está oficialmente ativa.\n\nLembramos que o link da Ficha de Bordo pode ser atualizado com novos colaboradores ou dependentes a qualquer momento:\n{link_ficha_empresa}\n\nConte sempre com a gente!`,
+        },
+      ];
+    }
     return [
       {
         id: "proposta",

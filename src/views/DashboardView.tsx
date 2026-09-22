@@ -160,6 +160,7 @@ import { ProfissionalBlogView } from "../components/ProfissionalBlogView";
 import { NotificationRulesManager } from "../components/NotificationRulesManager";
 import { PatientNotificationModal } from "../components/PatientNotificationModal";
 import { RedeProfissionalView } from "../components/RedeProfissionalView";
+import { EmpresaColaboradoresSpreadsheet, ColaboradorItem } from "../components/EmpresaColaboradoresSpreadsheet";
 
 const safeLocalStorage = {
   getItem: (key: string): string | null => {
@@ -564,25 +565,35 @@ interface ProfissionalLead {
 interface EmpresaLead {
   id: string;
   nomeEmpresa: string;
+  razaoSocial?: string;
   cnpj: string;
   ramoAtividade: string;
   local: string;
   colaboradores: string;
+  quantidadeVidas?: string;
   contatoNome: string;
   contatoDepartamento: string;
+  nomeResponsavel?: string;
+  cpfResponsavel?: string;
   email: string;
   telefone: string;
   createdAt?: any;
   status?: string;
   ativo?: boolean;
   [key: string]: any;
-  // Dashboard fields
+  // Dashboard / Ficha de Bordo fields
   registrosDeReunioes?: string;
   servicosOferecidos?: string;
+  produtosContratados?: string;
   contratoAssinado?: boolean;
   valoresAcertados?: string;
+  valoresDefinidos?: string;
+  formaPagamento?: string;
   emissaoNf?: string;
   notificacao?: string;
+  fichaPreenchidaPelaEmpresa?: boolean;
+  fichaPreenchidaEm?: any;
+  colaboradoresList?: ColaboradorItem[];
 }
 
 const COLUMNS = [
@@ -948,6 +959,9 @@ export function DashboardView({
   const [freqModalTargetCard, setFreqModalTargetCard] = useState<Acolhimento | null>(null);
   const [freqModalValue, setFreqModalValue] = useState("");
   const [freqModalMotivo, setFreqModalMotivo] = useState("");
+
+  // Ficha de Bordo da Empresa Tabs State
+  const [empresaModalTab, setEmpresaModalTab] = useState<"empresa" | "colaboradores">("empresa");
 
   // Photo Crop Modal State & Handlers
   const [photoCropModalOpen, setPhotoCropModalOpen] = useState(false);
@@ -5166,13 +5180,13 @@ export function DashboardView({
   };
 
   const notificarTarget =
-    (activeTab === "kanban" || activeTab === "pacientesAcolhidos") && selectedCard
-      ? selectedCard
-      : activeTab === "profissionais" && selectedProfissional
-        ? selectedProfissional
-        : activeTab === "empresas" && selectedEmpresa
-          ? selectedEmpresa
-          : selectedCard || selectedEmpresa || selectedProfissional;
+    selectedEmpresa
+      ? selectedEmpresa
+      : (activeTab === "kanban" || activeTab === "pacientesAcolhidos") && selectedCard
+        ? selectedCard
+        : activeTab === "profissionais" && selectedProfissional
+          ? selectedProfissional
+          : selectedCard || selectedProfissional || selectedEmpresa;
 
   const processNotificationTemplate = (msg: string, target: any) => {
     let processedMsg = msg;
@@ -13091,6 +13105,9 @@ export function DashboardView({
             if (selectedCard && selectedCard.id === notificarTarget.id) {
               setSelectedCard((prev: any) => (prev ? { ...prev, ...updatedFields } : null));
             }
+            if (selectedEmpresa && selectedEmpresa.id === notificarTarget.id) {
+              setSelectedEmpresa((prev: any) => (prev ? { ...prev, ...updatedFields } : null));
+            }
           }}
         />
       )}
@@ -13287,159 +13304,506 @@ export function DashboardView({
 
       {/* Empresa Details Modal */}
       {selectedEmpresa && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-forest/20 backdrop-blur-sm animate-in fade-in py-4">
-          <div className="bg-white rounded-3xl w-full max-w-5xl max-h-[95vh] flex flex-col shadow-2xl border border-soft overflow-hidden animate-in zoom-in-95">
-            <div className="px-6 py-4 flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-soft bg-warm/50 gap-2">
-              <div className="flex flex-col">
-                <h3 className="font-serif text-2xl text-forest">
-                  Ficha de Bordo
-                </h3>
-                <span className="text-sm font-semibold uppercase tracking-wider text-forest/60">
-                  {selectedEmpresa.nomeEmpresa}
-                </span>
-                <div className="flex flex-col sm:flex-row gap-2 sm:gap-4 text-[11px] uppercase tracking-wider font-semibold text-forest/50 mt-1">
-                  {selectedEmpresa.createdAt && (
-                    <span>
-                      Entrada: {formatDate(selectedEmpresa.createdAt)}
-                    </span>
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-1 sm:px-4 bg-forest/25 backdrop-blur-sm animate-in fade-in py-1 sm:py-3">
+          <div className="bg-white rounded-2xl sm:rounded-3xl w-full max-w-[98vw] 2xl:max-w-[1550px] h-[96vh] sm:h-[95vh] flex flex-col shadow-2xl border border-soft overflow-hidden animate-in zoom-in-95">
+            {/* Header */}
+            <div className="px-3 sm:px-6 py-2.5 sm:py-4 flex flex-col border-b border-soft bg-gradient-to-r from-warm/60 via-white to-warm/40 gap-2.5 shrink-0">
+              <div className="flex justify-between items-start sm:items-center gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="p-2 sm:p-2.5 bg-forest text-white rounded-xl shadow-xs shrink-0">
+                    <Building2 className="w-4 h-4 sm:w-5 sm:h-5 text-sun" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                      <h3 className="font-serif text-lg sm:text-2xl text-forest font-semibold truncate max-w-[200px] sm:max-w-none">
+                        {selectedEmpresa.razaoSocial || selectedEmpresa.nomeEmpresa || "Empresa sem nome"}
+                      </h3>
+                      {selectedEmpresa.nomeEmpresa && selectedEmpresa.razaoSocial && selectedEmpresa.nomeEmpresa !== selectedEmpresa.razaoSocial && (
+                        <span className="text-xs text-forest/60 font-medium hidden md:inline">
+                          ({selectedEmpresa.nomeEmpresa})
+                        </span>
+                      )}
+                      <span
+                        className={`text-[9px] sm:text-[10px] font-extrabold uppercase px-2 sm:px-2.5 py-0.5 rounded-full border ${
+                          selectedEmpresa.ativo === false
+                            ? "bg-slate-100 text-slate-600 border-slate-200"
+                            : "bg-emerald-100 text-emerald-800 border-emerald-200"
+                        }`}
+                      >
+                        {selectedEmpresa.ativo === false ? "Inativo" : "Ativo"}
+                      </span>
+                      {selectedEmpresa.cnpj && (
+                        <span className="text-[9px] sm:text-[10px] font-mono font-bold px-2 sm:px-2.5 py-0.5 rounded-full bg-forest/5 text-forest border border-forest/15">
+                          CNPJ: {selectedEmpresa.cnpj}
+                        </span>
+                      )}
+                      {(selectedEmpresa.quantidadeVidas || selectedEmpresa.colaboradores) && (
+                        <span className="text-[9px] sm:text-[10px] font-bold px-2 sm:px-2.5 py-0.5 rounded-full bg-sun/30 text-forest border border-sun/50">
+                          {selectedEmpresa.quantidadeVidas || selectedEmpresa.colaboradores} vidas contratadas
+                        </span>
+                      )}
+                      {selectedEmpresa.contratoAssinado && (
+                        <span className="text-[9px] sm:text-[10px] font-extrabold uppercase px-2 sm:px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300 flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Contrato Assinado
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-[10px] sm:text-[11px] font-semibold text-forest/60 mt-0.5">
+                      {selectedEmpresa.createdAt && (
+                        <span className="flex items-center gap-1">
+                          <Clock className="w-3 h-3 text-forest/40" /> Entrada: {formatDate(selectedEmpresa.createdAt)}
+                        </span>
+                      )}
+                      {(selectedEmpresa.nomeResponsavel || selectedEmpresa.contatoNome) && (
+                        <span className="flex items-center gap-1">
+                          <User className="w-3 h-3 text-forest/40" /> Responsável: {selectedEmpresa.nomeResponsavel || selectedEmpresa.contatoNome}
+                        </span>
+                      )}
+                      {selectedEmpresa.email && (
+                        <span className="flex items-center gap-1">
+                          <Mail className="w-3 h-3 text-forest/40" /> {selectedEmpresa.email}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {selectedEmpresa.telefone && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const rawPhone = (selectedEmpresa.telefone || "").replace(/\D/g, "");
+                        const phoneParam = rawPhone ? `phone=${rawPhone.length === 10 || rawPhone.length === 11 ? `55${rawPhone}` : rawPhone}&` : "";
+                        const link = `${window.location.origin}/?ficha_empresa=${selectedEmpresa.id}`;
+                        const nome = selectedEmpresa.nomeEmpresa || selectedEmpresa.razaoSocial || "sua empresa";
+                        const msg = `Olá! Tudo bem? Segue o link da Ficha de Bordo da ${nome} na plataforma AcolheMente para conferir e preencher dados cadastrais e planilha de colaboradores: ${link}`;
+                        window.open(`https://api.whatsapp.com/send?${phoneParam}text=${encodeURIComponent(msg)}`, "_blank");
+                      }}
+                      className="flex items-center gap-1.5 font-bold text-[11px] sm:text-xs px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-xl bg-[#25D366] hover:bg-[#20b858] text-white shadow-2xs transition-all hover:scale-105 shrink-0 cursor-pointer"
+                      title="Conversar com a empresa no WhatsApp"
+                    >
+                      <Phone className="w-3.5 h-3.5 text-white" />
+                      <span className="hidden sm:inline">WhatsApp</span>
+                    </button>
                   )}
+
+                  <button
+                    onClick={() => setSelectedEmpresa(null)}
+                    className="p-1 sm:p-1.5 text-forest/50 hover:text-red-500 rounded-full hover:bg-red-50 transition-colors"
+                    title="Fechar Ficha"
+                  >
+                    <XCircle className="w-5 h-5 sm:w-6 sm:h-6" />
+                  </button>
                 </div>
               </div>
-              <button
-                onClick={() => setSelectedEmpresa(null)}
-                className="p-2 text-forest/70 hover:text-red-500 rounded-full hover:bg-white transition-colors self-end sm:self-auto"
-              >
-                <XCircle className="w-6 h-6" />
-              </button>
             </div>
 
             {/* Action Bar */}
-            <div className="flex flex-wrap items-center gap-4 py-3 px-6 bg-white border-b border-soft">
-              <button
-                onClick={() => {
-                  const tpl =
-                    templates.find((t) => t.id === "pagamento") || templates[0];
-                  setNotificacaoType(tpl.id);
-                  setNotificacaoName(tpl.name);
-                  setNotificacaoMsg(
-                    processNotificationTemplate(tpl.msg, selectedEmpresa),
-                  );
-                  setShowNotificarModal(true);
-                }}
-                className="flex items-center gap-2 text-emerald-600 font-semibold text-sm hover:bg-emerald-50 px-3 py-1.5 rounded-lg transition-colors"
-              >
-                <Send className="w-4 h-4" /> Notificar
-              </button>
-              <button
-                onClick={() =>
-                  handleUpdateEmpresaProperty(
-                    selectedEmpresa.id,
-                    "ativo",
-                    selectedEmpresa.ativo === false ? true : false,
-                  )
-                }
-                className={`flex items-center gap-2 ${selectedEmpresa.ativo === false ? "text-slate-500 hover:bg-slate-50" : "text-red-500 hover:bg-red-50"} font-semibold text-sm px-3 py-1.5 rounded-lg transition-colors`}
-              >
-                <Trash2 className="w-4 h-4" />{" "}
-                {selectedEmpresa.ativo === false ? "Ativar" : "Inativar"}
-              </button>
-
-              <div className="flex items-center gap-4 ml-4">
+            <div className="flex flex-wrap items-center justify-between gap-2 px-3 sm:px-6 py-2 bg-white border-b border-soft shrink-0">
+              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
                 <button
                   onClick={() => {
-                    const link = `https://forms.gle/exemplo_empresa`;
-                    window.open(
-                      `https://wa.me/?text=${encodeURIComponent(`Olá! Por favor, preencha a ficha complementar de cadastro empresarial no link a seguir: ${link}`)}`,
-                      "_blank",
-                    );
+                    setNotificarInitialMode("templates");
+                    setNotificarInitialTemplateId("ficha_empresa");
+                    setShowNotificarModal(true);
                   }}
-                  className="text-xs text-forest underline hover:text-sun-dark transition-colors"
+                  className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] sm:text-xs px-3 py-1.5 rounded-xl border border-emerald-500/80 transition-all shadow-2xs whitespace-nowrap cursor-pointer"
+                  title="Disparar notificação via WhatsApp e E-mail para a empresa com templates prontos"
                 >
-                  Ficha Complementar
+                  <Send className="w-3.5 h-3.5 text-sun" /> Notificar Empresa (Whats/E-mail)
                 </button>
-                <div className="w-px h-4 bg-soft"></div>
+
+                <button
+                  onClick={() => {
+                    const link = `${window.location.origin}/?contrato=${selectedEmpresa.id}`;
+                    navigator.clipboard.writeText(link);
+                    showToast("Link do contrato corporativo copiado com sucesso!", "success");
+                  }}
+                  className="flex items-center gap-1 bg-white hover:bg-warm text-forest font-semibold text-[11px] sm:text-xs px-2.5 sm:px-3 py-1.5 rounded-xl border border-soft transition-colors shadow-2xs whitespace-nowrap"
+                  title="Copiar link seguro para assinatura digital do contrato"
+                >
+                  <Copy className="w-3.5 h-3.5 text-forest/60" /> Link Contrato
+                </button>
+
                 <button
                   onClick={() => {
                     setContratoText(
-                      `CONTRATO DE PRESTAÇÃO DE SERVIÇOS TIPO CORPORATIVO\n\nCONTRATANTE: ${selectedEmpresa.nomeEmpresa}, sob o CNPJ [INSERIR CNPJ], através de seu responsável ${selectedEmpresa.nomeContato}.\n\nCONTRATADA: Projeto AcolheMente Saúde...\n\n(Edite as cláusulas abaixo)`,
+                      `CONTRATO DE PRESTAÇÃO DE SERVIÇOS TIPO CORPORATIVO\n\nCONTRATANTE: ${selectedEmpresa.razaoSocial || selectedEmpresa.nomeEmpresa}, sob o CNPJ ${selectedEmpresa.cnpj || "[INSERIR CNPJ]"}, através de seu responsável ${selectedEmpresa.nomeResponsavel || selectedEmpresa.contatoNome || "[RESPONSÁVEL]"}.\n\nCONTRATADA: Projeto AcolheMente Saúde...\n\n(Edite as cláusulas abaixo)`,
                     );
                     setShowContratoModal(true);
                   }}
-                  className="text-xs text-forest underline hover:text-sun-dark transition-colors"
+                  className="hidden md:flex items-center gap-1 text-xs font-medium text-forest/70 hover:text-forest px-2.5 py-1.5 rounded-lg hover:bg-warm transition-colors whitespace-nowrap"
+                  title="Visualizar ou personalizar a minuta do contrato"
                 >
-                  Editar Contrato
+                  <FileText className="w-3.5 h-3.5 text-forest/60" /> Minuta Contrato
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleUpdateEmpresaProperty(
+                      selectedEmpresa.id,
+                      "contratoAssinado",
+                      !selectedEmpresa.contratoAssinado,
+                    )
+                  }
+                  className="flex items-center gap-1.5 px-2.5 py-1 bg-warm/50 hover:bg-warm border border-soft rounded-xl text-[11px] sm:text-xs font-bold whitespace-nowrap cursor-pointer transition-colors"
+                  title="Clique para alternar o status do contrato"
+                >
+                  <div className={`w-2 h-2 rounded-full ${selectedEmpresa.contratoAssinado ? "bg-green-500 animate-pulse" : "bg-amber-500"}`}></div>
+                  <span className={selectedEmpresa.contratoAssinado ? "text-green-700" : "text-amber-700"}>
+                    Contrato: {selectedEmpresa.contratoAssinado ? "Assinado" : "Pendente"}
+                  </span>
+                </button>
+              </div>
+
+              <div className="flex items-center gap-1.5 sm:gap-2 ml-auto">
+                <button
+                  onClick={() =>
+                    handleUpdateEmpresaProperty(
+                      selectedEmpresa.id,
+                      "ativo",
+                      selectedEmpresa.ativo === false ? true : false,
+                    )
+                  }
+                  className={`flex items-center gap-1.5 font-bold text-xs px-3 py-1.5 rounded-xl border transition-all shadow-2xs whitespace-nowrap ${
+                    selectedEmpresa.ativo === false
+                      ? "bg-slate-100 text-slate-700 border-slate-300 hover:bg-slate-200"
+                      : "bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100"
+                  }`}
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>{selectedEmpresa.ativo === false ? "Empresa Inativa (Ativar)" : "Empresa Ativa"}</span>
                 </button>
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-6 lg:p-8 space-y-6">
+            {/* Link Exposto da Ficha Complementar (Copiar e Colar) */}
+            <div className="px-3 sm:px-6 py-2.5 bg-emerald-50/80 border-b border-emerald-200/90 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shrink-0">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-xl bg-emerald-100 border border-emerald-300/80 flex items-center justify-center text-emerald-800 shrink-0">
+                  <Link2 className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs font-bold text-emerald-950 flex items-center gap-2">
+                    <span>Link Exposto da Ficha Complementar</span>
+                    <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-emerald-200/80 text-emerald-900 border border-emerald-300">
+                      Copiar e Colar
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-emerald-900/80 truncate">
+                    Compartilhe este link direto com a empresa para preenchimento de dados complementares e planilha de colaboradores:
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 w-full md:w-auto shrink-0">
+                <div className="relative flex-1 md:w-96">
+                  <input
+                    type="text"
+                    readOnly
+                    value={`${window.location.origin}/?ficha_empresa=${selectedEmpresa.id}`}
+                    onClick={(e) => (e.target as HTMLInputElement).select()}
+                    className="w-full bg-white border border-emerald-300 text-emerald-950 px-3 py-1.5 rounded-xl text-xs font-mono select-all shadow-2xs focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const link = `${window.location.origin}/?ficha_empresa=${selectedEmpresa.id}`;
+                    navigator.clipboard.writeText(link);
+                    showToast("Link da Ficha Complementar copiado para a área de transferência!", "success");
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer shrink-0"
+                  title="Copiar Link para a área de transferência"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>Copiar Link</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const link = `${window.location.origin}/?ficha_empresa=${selectedEmpresa.id}`;
+                    window.open(link, "_blank");
+                  }}
+                  className="p-1.5 bg-white hover:bg-emerald-100 text-emerald-800 rounded-xl border border-emerald-200 text-xs transition-colors shrink-0"
+                  title="Abrir Ficha em nova aba"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Abas Principais: Dados da Empresa vs. Colaboradores e Dependentes */}
+            <div className="px-3 sm:px-6 pt-2 bg-warm/30 border-b border-soft flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setEmpresaModalTab("empresa")}
+                className={`flex items-center gap-2 px-4 py-2.5 border-b-2 font-bold text-xs sm:text-sm transition-all cursor-pointer ${
+                  empresaModalTab === "empresa"
+                    ? "border-forest text-forest bg-white rounded-t-xl shadow-2xs"
+                    : "border-transparent text-forest/60 hover:text-forest hover:bg-white/50 rounded-t-xl"
+                }`}
+              >
+                <Building2 className="w-4 h-4 text-sun-dark" />
+                <span>Dados da Empresa</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setEmpresaModalTab("colaboradores")}
+                className={`flex items-center gap-2 px-4 py-2.5 border-b-2 font-bold text-xs sm:text-sm transition-all cursor-pointer ${
+                  empresaModalTab === "colaboradores"
+                    ? "border-forest text-forest bg-white rounded-t-xl shadow-2xs"
+                    : "border-transparent text-forest/60 hover:text-forest hover:bg-white/50 rounded-t-xl"
+                }`}
+              >
+                <Users className="w-4 h-4 text-emerald-600" />
+                <span>Dados dos Colaboradores e Dependentes</span>
+                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-200">
+                  {(selectedEmpresa.colaboradoresList || []).length} vidas
+                </span>
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-6 custom-scrollbar bg-warm/10">
+              {empresaModalTab === "empresa" ? (
+                <>
+                  {/* Badge indicando se foi preenchida pela própria empresa */}
+                  {selectedEmpresa.fichaPreenchidaPelaEmpresa && (
+                    <div className="flex items-center gap-2 p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs font-medium">
+                      <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span>
+                        Ficha cadastral confirmada/preenchida pela própria empresa através do link externo.
+                      </span>
+                    </div>
+                  )}
+
+              {/* 1. DADOS CADASTRAIS (Razão Social & CNPJ) */}
               <section className="bg-warm/30 p-5 rounded-2xl border border-soft">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-3 flex items-center gap-2">
-                  <Briefcase className="w-4 h-4" /> Dados de Contato e
-                  Identificação
+                  <Building2 className="w-4 h-4 text-sun-dark" /> Dados Cadastrais da Empresa
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="flex flex-col gap-1 md:col-span-1">
+                    <label className="text-[10px] font-semibold uppercase text-forest/70 ml-2">
+                      Razão Social
+                    </label>
+                    <DebouncedInput
+                      className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark"
+                      placeholder="Razão Social oficial (PJ)"
+                      value={selectedEmpresa.razaoSocial || selectedEmpresa.nomeEmpresa || ""}
+                      onChange={(val) =>
+                        handleUpdateEmpresaProperty(
+                          selectedEmpresa.id,
+                          "razaoSocial",
+                          val,
+                        )
+                      }
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1 md:col-span-1">
+                    <label className="text-[10px] font-semibold uppercase text-forest/70 ml-2">
+                      Nome Fantasia / Comercial
+                    </label>
+                    <DebouncedInput
+                      className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark"
+                      placeholder="Nome fantasia da empresa"
+                      value={selectedEmpresa.nomeEmpresa || ""}
+                      onChange={(val) =>
+                        handleUpdateEmpresaProperty(
+                          selectedEmpresa.id,
+                          "nomeEmpresa",
+                          val,
+                        )
+                      }
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1 md:col-span-1">
+                    <label className="text-[10px] font-semibold uppercase text-forest/70 ml-2">
+                      CNPJ
+                    </label>
+                    <DebouncedInput
+                      className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark"
+                      placeholder="00.000.000/0001-00"
+                      value={selectedEmpresa.cnpj || ""}
+                      onChange={(val) =>
+                        handleUpdateEmpresaProperty(
+                          selectedEmpresa.id,
+                          "cnpj",
+                          val,
+                        )
+                      }
+                    />
+                  </div>
+                </div>
+              </section>
+
+              {/* 2. RESPONSÁVEL E CONTATO */}
+              <section className="bg-warm/30 p-5 rounded-2xl border border-soft">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-3 flex items-center gap-2">
+                  <UserCheck className="w-4 h-4 text-sun-dark" /> Responsável Legal e Contato Principal
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-semibold uppercase text-forest/70 ml-2">
+                      Nome do Responsável
+                    </label>
+                    <DebouncedInput
+                      className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark"
+                      placeholder="Nome completo do responsável"
+                      value={selectedEmpresa.nomeResponsavel || selectedEmpresa.contatoNome || ""}
+                      onChange={(val) => {
+                        handleUpdateEmpresaProperty(
+                          selectedEmpresa.id,
+                          "nomeResponsavel",
+                          val,
+                        );
+                        handleUpdateEmpresaProperty(
+                          selectedEmpresa.id,
+                          "contatoNome",
+                          val,
+                        );
+                      }}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-semibold uppercase text-forest/70 ml-2">
+                      CPF do Responsável
+                    </label>
+                    <DebouncedInput
+                      className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark"
+                      placeholder="000.000.000-00"
+                      value={selectedEmpresa.cpfResponsavel || ""}
+                      onChange={(val) =>
+                        handleUpdateEmpresaProperty(
+                          selectedEmpresa.id,
+                          "cpfResponsavel",
+                          val,
+                        )
+                      }
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-semibold uppercase text-forest/70 ml-2">
+                      E-mail Principal
+                    </label>
+                    <DebouncedInput
+                      type="email"
+                      className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark"
+                      placeholder="email@empresa.com.br"
+                      value={selectedEmpresa.email || ""}
+                      onChange={(val) =>
+                        handleUpdateEmpresaProperty(
+                          selectedEmpresa.id,
+                          "email",
+                          val,
+                        )
+                      }
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-semibold uppercase text-forest/70 ml-2">
+                      Telefone
+                    </label>
+                    <DebouncedInput
+                      className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark"
+                      placeholder="(11) 99999-9999"
+                      value={selectedEmpresa.telefone || ""}
+                      onChange={(val) =>
+                        handleUpdateEmpresaProperty(
+                          selectedEmpresa.id,
+                          "telefone",
+                          val,
+                        )
+                      }
+                    />
+                  </div>
+                </div>
+              </section>
+
+              {/* 3. ESCOPO: QUANTIDADE DE VIDAS E PRODUTOS CONTRATADOS */}
+              <section className="bg-warm/30 p-5 rounded-2xl border border-soft">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-3 flex items-center gap-2">
+                  <Users className="w-4 h-4 text-sun-dark" /> Quantidade de Vidas & Produtos Contratados
                 </h4>
                 <div className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="flex flex-col gap-1">
-                      <label className="text-[10px] font-semibold uppercase text-forest/70/60 ml-2">
-                        CNPJ
-                      </label>
-                      <DebouncedInput
-                        className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark"
-                        value={selectedEmpresa.cnpj || ""}
-                        onChange={(val) =>
-                          handleUpdateEmpresaProperty(
-                            selectedEmpresa.id,
-                            "cnpj",
-                            val,
-                          )
-                        }
-                      />
-                    </div>
-                    <div className="flex flex-col gap-1"></div>
+                  <div className="flex flex-col gap-1 max-w-sm">
+                    <label className="text-[10px] font-semibold uppercase text-forest/70 ml-2">
+                      Quantidade de Vidas
+                    </label>
+                    <DebouncedInput
+                      className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark"
+                      placeholder="Ex: 150 colaboradores"
+                      value={selectedEmpresa.quantidadeVidas || selectedEmpresa.colaboradores || ""}
+                      onChange={(val) => {
+                        handleUpdateEmpresaProperty(
+                          selectedEmpresa.id,
+                          "quantidadeVidas",
+                          val,
+                        );
+                        handleUpdateEmpresaProperty(
+                          selectedEmpresa.id,
+                          "colaboradores",
+                          val,
+                        );
+                      }}
+                    />
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="flex flex-col gap-1">
-                      <label className="text-[10px] font-semibold uppercase text-forest/70/60 ml-2">
-                        Telefone
-                      </label>
-                      <DebouncedInput
-                        className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark"
-                        value={selectedEmpresa.telefone || ""}
-                        onChange={(val) =>
-                          handleUpdateEmpresaProperty(
-                            selectedEmpresa.id,
-                            "telefone",
-                            val,
-                          )
-                        }
-                      />
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      <label className="text-[10px] font-semibold uppercase text-forest/70/60 ml-2">
-                        E-mail
-                      </label>
-                      <DebouncedInput
-                        type="email"
-                        className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark"
-                        value={selectedEmpresa.email || ""}
-                        onChange={(val) =>
-                          handleUpdateEmpresaProperty(
-                            selectedEmpresa.id,
-                            "email",
-                            val,
-                          )
-                        }
-                      />
+
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-semibold uppercase text-forest/70 ml-2">
+                      Produtos Contratados
+                    </label>
+                    <DebouncedTextArea
+                      className="w-full text-sm bg-white border border-soft px-4 py-3 rounded-2xl focus:outline-none focus:border-sun-dark resize-none h-28"
+                      placeholder="Descreva os produtos e serviços acordados com a empresa..."
+                      value={selectedEmpresa.produtosContratados || selectedEmpresa.servicosOferecidos || ""}
+                      onChange={(val) => {
+                        handleUpdateEmpresaProperty(
+                          selectedEmpresa.id,
+                          "produtosContratados",
+                          val,
+                        );
+                        handleUpdateEmpresaProperty(
+                          selectedEmpresa.id,
+                          "servicosOferecidos",
+                          val,
+                        );
+                      }}
+                    />
+                    <div className="flex flex-wrap gap-1.5 mt-1">
+                      {[
+                        "Acolhimento Psicológico Online",
+                        "Palestras & Treinamentos NR-1",
+                        "Plantão de Apoio Emocional",
+                        "Diagnóstico Psicossocial",
+                        "Canal Confidencial",
+                      ].map((item) => (
+                        <button
+                          key={item}
+                          type="button"
+                          onClick={() => {
+                            const current = selectedEmpresa.produtosContratados || selectedEmpresa.servicosOferecidos || "";
+                            const updated = current ? `${current}\n• ${item}` : `• ${item}`;
+                            handleUpdateEmpresaProperty(selectedEmpresa.id, "produtosContratados", updated);
+                            handleUpdateEmpresaProperty(selectedEmpresa.id, "servicosOferecidos", updated);
+                          }}
+                          className="text-[11px] bg-white border border-soft hover:border-sun-dark px-2.5 py-1 rounded-lg text-forest/70 transition-colors"
+                        >
+                          + {item}
+                        </button>
+                      ))}
                     </div>
                   </div>
                 </div>
               </section>
 
+              {/* 4. CONDIÇÕES COMERCIAIS & FINANCEIRO */}
               <section className="bg-warm/30 p-5 rounded-2xl border border-soft">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-3 flex items-center gap-2">
-                  <Briefcase className="w-4 h-4" /> Status Contratual e
-                  Comercial
+                  <CreditCard className="w-4 h-4 text-sun-dark" /> Valores Definidos & Forma de Pagamento
                 </h4>
                 <div className="space-y-4">
                   <div className="flex items-center gap-3 bg-white p-3 rounded-xl border border-soft">
@@ -13466,59 +13830,76 @@ export function DashboardView({
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="flex flex-col gap-1">
-                      <label className="text-[10px] font-semibold uppercase text-forest/70/60 ml-2">
-                        Valores Acertados
+                      <label className="text-[10px] font-semibold uppercase text-forest/70 ml-2">
+                        Valores Definidos
                       </label>
                       <DebouncedInput
                         className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark"
-                        placeholder="Ex: Ref. R$ 5k/mês"
-                        value={selectedEmpresa.valoresAcertados || ""}
-                        onChange={(val) =>
+                        placeholder="Ex: R$ 35,00 por vida/mês ou R$ 4.500,00 mensal"
+                        value={selectedEmpresa.valoresDefinidos || selectedEmpresa.valoresAcertados || ""}
+                        onChange={(val) => {
+                          handleUpdateEmpresaProperty(
+                            selectedEmpresa.id,
+                            "valoresDefinidos",
+                            val,
+                          );
                           handleUpdateEmpresaProperty(
                             selectedEmpresa.id,
                             "valoresAcertados",
                             val,
-                          )
-                        }
+                          );
+                        }}
                       />
                     </div>
                     <div className="flex flex-col gap-1">
-                      <label className="text-[10px] font-semibold uppercase text-forest/70/60 ml-2">
-                        Emissão de NF (Data/Modo)
+                      <label className="text-[10px] font-semibold uppercase text-forest/70 ml-2">
+                        Forma de Pagamento
                       </label>
                       <DebouncedInput
                         className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark"
-                        placeholder="Ex: Todo dia 05"
-                        value={selectedEmpresa.emissaoNf || ""}
+                        placeholder="Ex: Boleto Bancário Mensal, Faturamento 30 dias (NF), PIX..."
+                        value={selectedEmpresa.formaPagamento || ""}
                         onChange={(val) =>
                           handleUpdateEmpresaProperty(
                             selectedEmpresa.id,
-                            "emissaoNf",
+                            "formaPagamento",
                             val,
                           )
                         }
                       />
+                      <div className="flex flex-wrap gap-1.5 mt-1">
+                        {["Boleto Bancário", "Faturamento NF (30 dias)", "PIX Corporativo (PJ)", "Cartão Corporativo"].map((opt) => (
+                          <button
+                            key={opt}
+                            type="button"
+                            onClick={() => handleUpdateEmpresaProperty(selectedEmpresa.id, "formaPagamento", opt)}
+                            className="text-[11px] bg-white border border-soft hover:border-sun-dark px-2 py-0.5 rounded-lg text-forest/70 transition-colors"
+                          >
+                            {opt}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   </div>
-                </div>
-              </section>
 
-              <section>
-                <h4 className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-3 flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4" /> Serviços Oferecidos
-                </h4>
-                <DebouncedTextArea
-                  className="w-full text-sm bg-warm/50 border border-soft px-4 py-3 rounded-2xl focus:outline-none focus:border-sun-dark resize-none h-24"
-                  placeholder="Liste os serviços, convênios ou palestras acordadas..."
-                  value={selectedEmpresa.servicosOferecidos || ""}
-                  onChange={(val) =>
-                    handleUpdateEmpresaProperty(
-                      selectedEmpresa.id,
-                      "servicosOferecidos",
-                      val,
-                    )
-                  }
-                />
+                  <div className="flex flex-col gap-1 max-w-sm">
+                    <label className="text-[10px] font-semibold uppercase text-forest/70 ml-2">
+                      Emissão de NF (Data/Modo)
+                    </label>
+                    <DebouncedInput
+                      className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark"
+                      placeholder="Ex: Todo dia 05"
+                      value={selectedEmpresa.emissaoNf || ""}
+                      onChange={(val) =>
+                        handleUpdateEmpresaProperty(
+                          selectedEmpresa.id,
+                          "emissaoNf",
+                          val,
+                        )
+                      }
+                    />
+                  </div>
+                </div>
               </section>
 
               <section>
@@ -13566,16 +13947,45 @@ export function DashboardView({
                   }
                 />
               </section>
-            </div>
+            </>
+          ) : (
+            /* Aba de Colaboradores e Dependentes em Formato de Planilha */
+            <EmpresaColaboradoresSpreadsheet
+              empresaId={selectedEmpresa.id}
+              empresaNome={selectedEmpresa.razaoSocial || selectedEmpresa.nomeEmpresa}
+              quantidadeVidasContratadas={selectedEmpresa.quantidadeVidas || selectedEmpresa.colaboradores}
+              colaboradores={selectedEmpresa.colaboradoresList || []}
+              onChangeColaboradores={(newList) =>
+                handleUpdateEmpresaProperty(selectedEmpresa.id, "colaboradoresList", newList)
+              }
+              onShowToast={showToast}
+            />
+          )}
+        </div>
 
-            <div className="p-6 border-t border-soft bg-warm flex justify-end">
-              <button
-                onClick={() => setSelectedEmpresa(null)}
-                className="px-6 py-2 bg-sun-dark text-forest rounded-full text-sm font-semibold hover:bg-sun-dark-dark transition-colors"
-              >
-                Fechar Ficha
-              </button>
-            </div>
+        <div className="p-4 sm:p-5 border-t border-soft bg-warm/60 flex items-center justify-between shrink-0">
+          <div className="text-xs text-forest/70 font-medium">
+            {empresaModalTab === "colaboradores" ? (
+              <span>
+                Total de colaboradores e dependentes:{" "}
+                <strong className="text-forest font-bold">{(selectedEmpresa.colaboradoresList || []).length}</strong>
+                {selectedEmpresa.quantidadeVidas || selectedEmpresa.colaboradores
+                  ? ` / ${selectedEmpresa.quantidadeVidas || selectedEmpresa.colaboradores} vidas contratadas`
+                  : ""}
+              </span>
+            ) : (
+              <span>
+                CNPJ: <strong className="font-mono text-forest">{selectedEmpresa.cnpj || "Não informado"}</strong>
+              </span>
+            )}
+          </div>
+          <button
+            onClick={() => setSelectedEmpresa(null)}
+            className="px-6 py-2 bg-forest hover:bg-forest/90 text-white rounded-xl text-xs sm:text-sm font-semibold shadow-xs transition-colors cursor-pointer"
+          >
+            Fechar Ficha
+          </button>
+        </div>
           </div>
         </div>
       )}

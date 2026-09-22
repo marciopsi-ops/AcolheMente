@@ -649,7 +649,11 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
                     </p>
                   </div>
                   <div className="w-full lg:w-1/2 flex flex-col gap-6 items-center lg:items-end animate-in fade-in slide-in-from-right-4 duration-500">
-                    <img src={pacienteHero} alt="Ilustração de acolhimento" className="w-full max-w-lg object-contain rounded-3xl mix-blend-multiply" referrerPolicy="no-referrer" />
+                    <div className="relative overflow-hidden rounded-3xl max-w-lg w-full group">
+                      <img src={pacienteHero} alt="Ilustração de acolhimento" className="w-full max-w-lg object-contain rounded-3xl mix-blend-multiply transition-all duration-700 group-hover:scale-[1.03]" referrerPolicy="no-referrer" />
+                      {/* Esmaecimento no pé da imagem */}
+                      <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-warm/80 via-warm/25 to-transparent pointer-events-none z-1 group-hover:opacity-40 transition-opacity duration-500" />
+                    </div>
                     
                     {/* Benefit Cards with Glassmorphism and Hover Auras */}
                     <div className="w-full max-w-lg grid grid-cols-1 sm:grid-cols-2 gap-4 mt-2">

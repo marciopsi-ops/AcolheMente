@@ -286,7 +286,11 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
                 </p>
               </div>
               <div className="w-full lg:w-1/2 flex justify-center lg:justify-end">
-                <img src={psicologoHero} alt="Psicóloga e Terapeuta AcolheMente" className="w-full max-w-lg object-cover aspect-[4/3] rounded-3xl shadow-sm border border-soft" referrerPolicy="no-referrer" />
+                <div className="relative overflow-hidden rounded-3xl max-w-lg w-full group">
+                  <img src={psicologoHero} alt="Psicóloga e Terapeuta AcolheMente" className="w-full object-cover aspect-[4/3] rounded-3xl shadow-sm border border-soft transition-all duration-700 group-hover:scale-[1.02]" referrerPolicy="no-referrer" />
+                  {/* Esmaecimento no pé da imagem */}
+                  <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-warm/90 via-warm/30 to-transparent pointer-events-none z-1 group-hover:opacity-40 transition-opacity duration-500" />
+                </div>
               </div>
             </div>
             
