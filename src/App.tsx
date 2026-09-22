@@ -24,6 +24,14 @@ import {
   ChevronUp,
   Menu,
   BookOpen,
+  Star,
+  Clock,
+  UserCheck,
+  Building2,
+  Users,
+  BarChart3,
+  ShieldCheck,
+  CalendarCheck,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { motion } from "motion/react";
@@ -49,6 +57,151 @@ import { CampanhaPrevencaoBanner } from "./components/CampanhaPrevencaoBanner";
 
 import homeHero from "./assets/images/home_hero_photo_parda_1781024318036.png";
 import logoImage from "./assets/images/logo_acolhe.jpeg";
+
+/**
+ * Ícone da letra grega Psi (Ψ) - Símbolo universal da Psicologia
+ * Desenhado no mesmo grid (24x24), espessura de traço (stroke-2) e terminações arredondadas dos ícones Lucide.
+ */
+function PsiIcon({ className = "w-6 h-6" }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      {/* Eixo central vertical */}
+      <path d="M12 3v18" />
+      {/* Taça curva característica do Psi */}
+      <path d="M5 8v2a7 7 0 0 0 14 0V8" />
+      {/* Base de apoio horizontal */}
+      <path d="M9 21h6" />
+    </svg>
+  );
+}
+
+const JORNADAS_DATA = {
+  paciente: {
+    id: "paciente" as const,
+    badge: "Para quem busca acolhimento",
+    tituloAba: "Paciente",
+    subtitulo: "Acolhimento Individual",
+    descricao: "Conexão direta ao psicólogo ideal com acolhimento humanizado, horários flexíveis e sessões com valor acessível ou subsídio corporativo.",
+    linhaCor: "border-sun/60",
+    ctaText: "Iniciar Triagem como Paciente",
+    ctaView: "acolhimento" as const,
+    passos: [
+      {
+        num: "01",
+        titulo: "Triagem ou Código da Empresa",
+        descricao: "Preencha a triagem inicial rápida para valor social acessível ou insira o código fornecido pela sua empresa parceira.",
+        icon: ClipboardList,
+        iconBg: "bg-sun text-forest border-sun",
+        badgeBg: "bg-sun/30 text-amber-950 font-bold",
+        cardBg: "bg-warm/80 border-white",
+      },
+      {
+        num: "02",
+        titulo: "Pareamento Clínico e Proposta",
+        descricao: "A nossa equipe técnica analisa suas preferências e necessidades para direcioná-lo com assertividade ao psicólogo ideal.",
+        icon: SearchCheck,
+        iconBg: "bg-forest/10 text-forest border-forest/20",
+        badgeBg: "bg-forest/10 text-forest font-bold",
+        cardBg: "bg-warm/80 border-white",
+      },
+      {
+        num: "03",
+        titulo: "Início do Acolhimento",
+        descricao: "Conecte-se com o seu psicólogo e dê início à sua jornada terapêutica em um ambiente seguro, ético e sigiloso.",
+        icon: MessageCircleHeart,
+        iconBg: "bg-sun text-forest border-sun",
+        badgeBg: "bg-sun/30 text-amber-950 font-bold",
+        cardBg: "bg-warm/75 backdrop-blur-xs border-white/90",
+      },
+    ],
+  },
+  empresa: {
+    id: "empresa" as const,
+    badge: "Para organizações e RHs",
+    tituloAba: "Empresa (NR-1)",
+    subtitulo: "Saúde Mental Corporativa",
+    descricao: "Programa de saúde mental para equipes em conformidade com as diretrizes psicossociais da NR-1, reduzindo absenteísmo e cuidando de pessoas.",
+    linhaCor: "border-forest/40",
+    ctaText: "Ver Soluções para Empresas",
+    ctaView: "empresa" as const,
+    passos: [
+      {
+        num: "01",
+        titulo: "Diagnóstico & Ativação do Plano",
+        descricao: "Mapeamos a estrutura e demandas da sua organização para ativar o benefício corporativo sob medida, sem complicações.",
+        icon: Building2,
+        iconBg: "bg-forest text-white border-forest",
+        badgeBg: "bg-forest/10 text-forest font-bold",
+        cardBg: "bg-forest/[0.04] backdrop-blur-xs border-forest/15",
+      },
+      {
+        num: "02",
+        titulo: "Distribuição Segura aos Colaboradores",
+        descricao: "Sua equipe recebe códigos de acesso confidenciais para agendamento direto na plataforma, com total privacidade e sigilo ético (LGPD).",
+        icon: Users,
+        iconBg: "bg-sun text-forest border-sun",
+        badgeBg: "bg-sun/30 text-amber-950 font-bold",
+        cardBg: "bg-forest/[0.04] backdrop-blur-xs border-forest/15",
+      },
+      {
+        num: "03",
+        titulo: "Relatórios de Clima e Conformidade NR-1",
+        descricao: "O RH acompanha indicadores anônimos de adesão, bem-estar coletivo e respaldo documental para conformidade legal.",
+        icon: BarChart3,
+        iconBg: "bg-forest text-white border-forest",
+        badgeBg: "bg-forest/10 text-forest font-bold",
+        cardBg: "bg-forest/[0.04] backdrop-blur-xs border-forest/15",
+      },
+    ],
+  },
+  terapeuta: {
+    id: "terapeuta" as const,
+    badge: "Para psicólogos e terapeutas",
+    tituloAba: "Psicólogo / Terapeuta",
+    subtitulo: "Rede Credenciada",
+    descricao: "Integre uma rede acolhedora com encaminhamentos alinhados à sua abordagem, ferramentas de prontuário e gestão financeira segura.",
+    linhaCor: "border-sun-dark/50",
+    ctaText: "Quero me Credenciar",
+    ctaView: "profissional" as const,
+    passos: [
+      {
+        num: "01",
+        titulo: "Cadastro e Verificação de CRP",
+        descricao: "Envie suas informações profissionais, número de CRP ativo e linhas teóricas para validação técnica da nossa coordenação.",
+        icon: PsiIcon,
+        iconBg: "bg-sun text-forest border-sun",
+        badgeBg: "bg-sun/30 text-amber-950 font-bold",
+        cardBg: "bg-warm/80 backdrop-blur-xs border-soft/80",
+      },
+      {
+        num: "02",
+        titulo: "Prontuário Digital & Rede Interprofissional",
+        descricao: "Acesse prontuário seguro e faça parte de uma rede ativa que conecta profissionais a profissionais — compartilhando encaminhamentos, discussões de casos éticas e troca de serviços em saúde mental.",
+        icon: Users,
+        iconBg: "bg-forest/10 text-forest border-forest/20",
+        badgeBg: "bg-forest/10 text-forest font-bold",
+        cardBg: "bg-warm/80 backdrop-blur-xs border-soft/80",
+      },
+      {
+        num: "03",
+        titulo: "Pacientes na sua Agenda",
+        descricao: "Receba pacientes compatíveis com seu perfil terapêutico e disponibilidade, com total autonomia sobre seus agendamentos e pagamentos.",
+        icon: CalendarCheck,
+        iconBg: "bg-sun-dark text-forest border-sun-dark",
+        badgeBg: "bg-sun/30 text-amber-950 font-bold",
+        cardBg: "bg-warm/80 backdrop-blur-xs border-soft/80",
+      },
+    ],
+  },
+};
 
 const COMPANY_LOGOS = [
   { icon: Activity, name: "VitaTech Health" },
@@ -234,6 +387,8 @@ export default function App() {
 
   const [user, setUser] = useState<any>(null);
   const [doacoesAtivas, setDoacoesAtivas] = useState(true);
+  const [carrosselEmpresasAtivo, setCarrosselEmpresasAtivo] = useState(true);
+  const [metricasAtivas, setMetricasAtivas] = useState(true);
 
   // Synchronize browser history / popstate
   useEffect(() => {
@@ -281,20 +436,28 @@ export default function App() {
   ]);
 
   useEffect(() => {
-    const fetchConfigs = async () => {
-      try {
-        const snap = await getDoc(doc(db, "configuracoes", "master"));
+    let unsub: (() => void) | undefined;
+    try {
+      unsub = onSnapshot(doc(db, "configuracoes", "master"), (snap) => {
         if (snap.exists()) {
           const data = snap.data();
           if (data.doacoesAtivas !== undefined) {
             setDoacoesAtivas(!!data.doacoesAtivas);
           }
+          if (data.carrosselEmpresasAtivo !== undefined) {
+            setCarrosselEmpresasAtivo(!!data.carrosselEmpresasAtivo);
+          }
+          if (data.metricasAtivas !== undefined) {
+            setMetricasAtivas(!!data.metricasAtivas);
+          }
         }
-      } catch (err) {
-        console.error("Error fetching configs in App.tsx", err);
-      }
+      });
+    } catch (err) {
+      console.error("Error listening to configs in App.tsx", err);
+    }
+    return () => {
+      if (unsub) unsub();
     };
-    fetchConfigs();
   }, []);
 
   useEffect(() => {
@@ -415,6 +578,8 @@ export default function App() {
           setCurrentView("blog");
         }}
         doacoesAtivas={doacoesAtivas}
+        carrosselEmpresasAtivo={carrosselEmpresasAtivo}
+        metricasAtivas={metricasAtivas}
       />
     );
   } else if (currentView === "acolhimento") {
@@ -538,6 +703,8 @@ function LandingPage({
   onNavigate,
   onSelectArtigo,
   doacoesAtivas = true,
+  carrosselEmpresasAtivo = true,
+  metricasAtivas = true,
 }: {
   onNavigate: (
     view:
@@ -552,8 +719,11 @@ function LandingPage({
   ) => void;
   onSelectArtigo?: (artigoId: string) => void;
   doacoesAtivas?: boolean;
+  carrosselEmpresasAtivo?: boolean;
+  metricasAtivas?: boolean;
 }) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [jornadaPublico, setJornadaPublico] = useState<"paciente" | "empresa" | "terapeuta">("paciente");
   const [artigosPublicados, setArtigosPublicados] = useState<ArtigoBlog[]>([]);
   const [loadingArtigos, setLoadingArtigos] = useState(true);
 
@@ -738,10 +908,19 @@ function LandingPage({
       <main className="flex-1 flex flex-col items-center">
         <section
           id="projeto"
-          className="flex flex-col lg:flex-row gap-6 md:gap-8 px-6 md:px-12 py-8 lg:py-12 max-w-[1440px] w-full justify-between items-center scroll-mt-24"
+          className="relative flex flex-col lg:flex-row gap-6 md:gap-8 px-6 md:px-12 py-8 lg:py-12 max-w-[1440px] w-full justify-between items-center scroll-mt-24 overflow-hidden lg:overflow-visible"
         >
-          <div className="max-w-xl flex flex-col items-center lg:items-start text-center lg:text-left mb-6 lg:mb-0">
-            <div className="mb-4 px-3 py-1 bg-sun-light text-forest text-[10px] font-bold uppercase tracking-[0.2em] w-fit rounded">
+          {/* Depth of Field & Glow Auras: Esferas de luz suave que criam profundidade 3D */}
+          <div 
+            className="absolute right-2 sm:right-12 top-1/2 -translate-y-1/2 w-72 sm:w-96 lg:w-[480px] h-72 sm:h-96 lg:h-[480px] bg-sun/35 rounded-full blur-[90px] pointer-events-none -z-10 animate-pulse"
+            style={{ animationDuration: '7s' }}
+          />
+          <div 
+            className="absolute left-0 sm:left-8 top-1/4 w-60 sm:w-80 h-60 sm:h-80 bg-forest/8 rounded-full blur-[80px] pointer-events-none -z-10"
+          />
+
+          <div className="max-w-xl flex flex-col items-center lg:items-start text-center lg:text-left mb-6 lg:mb-0 relative z-10">
+            <div className="mb-4 px-3 py-1 bg-sun-light text-forest text-[10px] font-bold uppercase tracking-[0.2em] w-fit rounded shadow-2xs">
               Valores Acessíveis e Benefício Corporativo
             </div>
 
@@ -751,339 +930,603 @@ function LandingPage({
               <span className="italic">acessível e na palma da mão.</span>
             </h1>
 
-            <p className="text-lg md:text-xl text-forest/80 max-w-xl leading-relaxed">
+            <p className="text-lg md:text-xl text-forest/80 max-w-xl leading-relaxed mb-6">
               Uma ponte humanizada entre psicoterapeutas e quem busca
               acolhimento. Do particular, com valores acessíveis, ao benefício
               para empresas.
             </p>
+
+            {/* Glassmorphism: Painel translúcido com desfoque de fundo e borda sutil */}
+            <div className="flex flex-wrap items-center justify-center lg:justify-start gap-4 py-3 px-5 bg-white/75 backdrop-blur-md border border-white/80 rounded-2xl shadow-md shadow-forest/5 transition-all hover:bg-white/85">
+              {/* Avaliação & Prova Social */}
+              <div className="flex items-center gap-2.5">
+                <div className="flex flex-col text-left">
+                  <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-0.5 text-amber-500">
+                      {[...Array(5)].map((_, i) => (
+                        <Star key={i} className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                      ))}
+                    </div>
+                    <span className="text-xs font-bold text-forest tracking-tight">
+                      100+ vidas acolhidas
+                    </span>
+                  </div>
+                  <span className="text-[11px] text-forest/70 font-medium leading-tight mt-0.5">
+                    Iniciando nossa trajetória e crescendo com você
+                  </span>
+                </div>
+              </div>
+
+              {/* Divisor vertical discreto */}
+              <div className="hidden sm:block h-6 w-px bg-soft"></div>
+
+              {/* Tempo de resposta */}
+              <div className="flex items-center gap-2 text-xs text-forest/90">
+                <div className="w-5 h-5 rounded-full bg-forest/10 flex items-center justify-center shrink-0">
+                  <Clock className="w-3 h-3 text-forest" />
+                </div>
+                <span>
+                  Resposta média em até <strong className="font-bold text-forest">24 horas</strong>
+                </span>
+              </div>
+            </div>
           </div>
-          <div className="w-full lg:w-1/2 flex justify-center lg:justify-end">
-            <img
-              src={homeHero}
-              alt="Ilustração de acolhimento"
-              className="w-full max-w-lg object-contain rounded-3xl mix-blend-multiply"
-              referrerPolicy="no-referrer"
-            />
+
+          <div className="w-full lg:w-1/2 flex justify-center lg:justify-end relative z-10">
+            <div className="relative max-w-lg w-full group">
+              {/* Gradient Scrim: suaviza sutilmente a imagem na base mantendo nitidez total e clareamento vivo ao passar o mouse */}
+              <div className="relative overflow-hidden rounded-[32px]">
+                <img
+                  src={homeHero}
+                  alt="Ilustração de acolhimento"
+                  className="w-full object-contain rounded-[32px] mix-blend-multiply transition-all duration-700 group-hover:scale-[1.03] group-hover:brightness-105"
+                  referrerPolicy="no-referrer"
+                />
+
+                {/* Scrim Gradiente Inferior suave que se dissipa no hover */}
+                <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-warm/80 via-warm/25 to-transparent pointer-events-none z-1 group-hover:opacity-40 transition-opacity duration-500" />
+              </div>
+
+              {/* Badge Flutuante com Glassmorphism refinado: Especialistas & CRP Verificado */}
+              <motion.div
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6, delay: 0.2 }}
+                className="absolute -bottom-3 left-4 sm:left-6 bg-white/90 backdrop-blur-lg px-4 py-3 rounded-2xl border border-white/90 shadow-xl shadow-forest/10 flex items-center gap-3 z-10 transition-all hover:bg-white hover:scale-[1.02]"
+              >
+                <div className="w-10 h-10 rounded-xl bg-forest/10 text-forest flex items-center justify-center shrink-0">
+                  <UserCheck className="w-5 h-5 text-forest" />
+                </div>
+                <div className="text-left">
+                  <span className="text-[11px] font-semibold text-forest/70 block leading-tight">
+                    50+ Especialistas
+                  </span>
+                  <span className="text-xs sm:text-sm font-bold text-forest tracking-tight block">
+                    CRP Ativo e Verificado
+                  </span>
+                </div>
+              </motion.div>
+            </div>
           </div>
         </section>
 
-        {/* Jornada Section integrata aqui */}
-        <section id="jornada" className="w-full px-6 md:px-12 flex flex-col items-center scroll-mt-24">
+        {/* Qual o seu objetivo hoje? (Segmentação dos 3 Públicos dos Prints) */}
+        <section className="w-full px-6 md:px-12 py-8 max-w-[1440px] flex flex-col items-center relative">
+          <div className="w-full max-w-[1200px]">
+            <div className="text-center mb-6">
+              <span className="text-[11px] md:text-xs font-bold uppercase tracking-[0.25em] text-forest/80">
+                Qual o seu objetivo hoje?
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 lg:gap-6">
+              {/* Card 1: Paciente */}
+              <div className="relative group">
+                {/* Glow Aura sutil no hover */}
+                <div className="absolute -inset-1 bg-gradient-to-r from-sun/70 via-amber-300/50 to-sun/70 rounded-3xl blur-md opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none -z-10" />
+                <motion.button
+                  type="button"
+                  whileHover={{ y: -4 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => onNavigate("acolhimento")}
+                  className="w-full h-full p-6 sm:p-7 bg-sun hover:bg-sun-dark text-forest rounded-2xl border border-sun-dark/40 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col items-center text-center cursor-pointer"
+                >
+                  <div className="w-13 h-13 rounded-2xl bg-white/90 backdrop-blur-md border border-white/70 group-hover:bg-forest text-forest group-hover:text-white flex items-center justify-center shrink-0 transition-all duration-300 shadow-2xs mb-4">
+                    <User className="w-6 h-6" />
+                  </div>
+                  <h3 className="text-base sm:text-lg font-bold text-forest tracking-tight leading-snug group-hover:text-forest">
+                    Quero Fazer Terapia
+                  </h3>
+                  <p className="text-xs sm:text-sm text-forest/90 group-hover:text-forest font-medium mt-1.5 leading-relaxed transition-colors">
+                    Atendimento individual com valor acessível ou benefício corporativo.
+                  </p>
+                </motion.button>
+              </div>
+
+              {/* Card 2: Empresa (NR1) */}
+              <div className="relative group">
+                {/* Glow Aura sutil no hover */}
+                <div className="absolute -inset-1 bg-gradient-to-r from-forest/35 via-sun/40 to-forest/35 rounded-3xl blur-md opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none -z-10" />
+                <motion.button
+                  type="button"
+                  whileHover={{ y: -4 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => onNavigate("empresa")}
+                  className="w-full h-full p-6 sm:p-7 bg-sun hover:bg-sun-dark text-forest rounded-2xl border border-sun-dark/40 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col items-center text-center cursor-pointer"
+                >
+                  <div className="w-13 h-13 rounded-2xl bg-white/90 backdrop-blur-md border border-white/70 group-hover:bg-forest text-forest group-hover:text-white flex items-center justify-center shrink-0 transition-all duration-300 shadow-2xs mb-4">
+                    <Building2 className="w-6 h-6" />
+                  </div>
+                  <h3 className="text-base sm:text-lg font-bold text-forest tracking-tight leading-snug group-hover:text-forest">
+                    Sou Empresa (NR1)
+                  </h3>
+                  <p className="text-xs sm:text-sm text-forest/90 group-hover:text-forest font-medium mt-1.5 leading-relaxed transition-colors">
+                    Programa de saúde mental para colaboradores.
+                  </p>
+                </motion.button>
+              </div>
+
+              {/* Card 3: Terapeuta / Psicólogo */}
+              <div className="relative group">
+                {/* Glow Aura sutil no hover */}
+                <div className="absolute -inset-1 bg-gradient-to-r from-sun/70 via-amber-300/50 to-forest/30 rounded-3xl blur-md opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none -z-10" />
+                <motion.button
+                  type="button"
+                  whileHover={{ y: -4 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => onNavigate("profissional")}
+                  className="w-full h-full p-6 sm:p-7 bg-sun hover:bg-sun-dark text-forest rounded-2xl border border-sun-dark/40 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col items-center text-center cursor-pointer"
+                >
+                  <div className="w-13 h-13 rounded-2xl bg-white/90 backdrop-blur-md border border-white/70 group-hover:bg-forest text-forest group-hover:text-white flex items-center justify-center shrink-0 transition-all duration-300 shadow-2xs mb-4">
+                    <PsiIcon className="w-6 h-6" />
+                  </div>
+                  <h3 className="text-base sm:text-lg font-bold text-forest tracking-tight leading-snug group-hover:text-forest">
+                    Sou Psicólogo(a) ou Terapeuta
+                  </h3>
+                  <p className="text-xs sm:text-sm text-forest/90 group-hover:text-forest font-medium mt-1.5 leading-relaxed transition-colors">
+                    Faça parte da nossa rede credenciada.
+                  </p>
+                </motion.button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Jornada Section integrada aqui */}
+        <section id="jornada" className="w-full px-4 sm:px-6 md:px-12 flex flex-col items-center scroll-mt-24">
           <motion.div 
             initial={{ opacity: 0, y: 30 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true, margin: "-50px" }}
             transition={{ duration: 0.6 }}
-            className="w-full max-w-[1200px] flex flex-col items-center mb-6 bg-white p-6 md:p-10 rounded-[40px] border border-soft shadow-sm"
+            className="w-full max-w-[1200px] flex flex-col items-center mb-6 bg-white/90 backdrop-blur-md p-5 sm:p-8 md:p-10 rounded-[32px] sm:rounded-[40px] border border-white/80 shadow-xl shadow-forest/5 relative overflow-hidden"
           >
-            <div className="flex items-center gap-4 mb-4">
-              <Map className="w-8 h-8 text-forest" />
-              <h2 className="font-serif text-3xl md:text-4xl text-forest text-center">
+            {/* Ambient Glow Auras internas criando profundidade de campo suave */}
+            <div className="absolute -top-20 -right-20 w-80 h-80 bg-sun/20 rounded-full blur-3xl pointer-events-none -z-0" />
+            <div className="absolute -bottom-20 -left-20 w-80 h-80 bg-forest/5 rounded-full blur-3xl pointer-events-none -z-0" />
+
+            <div className="flex items-center gap-3 sm:gap-4 mb-3 relative z-10">
+              <Map className="w-7 h-7 sm:w-8 sm:h-8 text-forest" />
+              <h2 className="font-serif text-2xl sm:text-3xl md:text-4xl text-forest text-center">
                 A sua jornada
               </h2>
             </div>
-            <p className="text-forest/80 text-center max-w-lg mb-8">
-              Um caminho estruturado para conectar você ao profissional ideal,
-              garantindo cuidado seguro e acolhedor, seja pelo valor acessível
-              ou através da sua empresa parceira.
+            <p className="text-forest/80 text-center max-w-lg mb-6 text-sm sm:text-base leading-relaxed relative z-10">
+              Um caminho estruturado e acolhedor para cada perfil. Passe o mouse ou clique para explorar a jornada:
             </p>
 
-            <div className="relative max-w-[800px] w-full mx-auto">
-              {/* Vertical Path Line */}
-              <div className="hidden md:block absolute left-[3.5rem] top-8 bottom-8 w-0.5 border-dashed border-l-2 border-sun/50 z-0"></div>
-
-              <div className="flex flex-col gap-6 md:gap-8 relative z-10 w-full">
-                {/* Step 1 */}
-                <motion.div 
-                  initial={{ opacity: 0, x: -30 }}
-                  whileInView={{ opacity: 1, x: 0 }}
-                  viewport={{ once: true, margin: "-50px" }}
-                  transition={{ duration: 0.5, delay: 0.1 }}
-                  className="bg-warm/80 p-6 md:p-8 rounded-[32px] border border-white shadow-xl shadow-forest/5 flex flex-col md:flex-row items-center md:items-start gap-6 relative group hover:-translate-y-1 transition-transform duration-300"
-                >
-                  <div className="w-16 h-16 shrink-0 bg-sun rounded-full flex items-center justify-center shadow-sm text-forest border border-sun group-hover:scale-110 transition-transform">
-                    <ClipboardList className="w-8 h-8" />
-                  </div>
-                  <div className="text-center md:text-left flex-1 md:pt-2">
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-forest/60">
-                      Passo 01
-                    </span>
-                    <h3 className="text-xl font-semibold text-forest mt-1 mb-2">
-                      Triagem ou Código
-                    </h3>
-                    <p className="text-forest/80 text-sm md:text-base leading-relaxed">
-                      Preencha a triagem inicial para valor acessível, ou
-                      informe o código fornecido pela sua empresa parceira.
-                    </p>
-                  </div>
-                </motion.div>
-
-                {/* Step 2 */}
-                <motion.div 
-                  initial={{ opacity: 0, x: -30 }}
-                  whileInView={{ opacity: 1, x: 0 }}
-                  viewport={{ once: true, margin: "-50px" }}
-                  transition={{ duration: 0.5, delay: 0.3 }}
-                  className="bg-warm/80 p-6 md:p-8 rounded-[32px] border border-white shadow-xl shadow-forest/5 flex flex-col md:flex-row items-center md:items-start gap-6 relative group hover:-translate-y-1 transition-transform duration-300"
-                >
-                  <div className="w-16 h-16 shrink-0 bg-sun rounded-full flex items-center justify-center shadow-sm text-forest border border-sun group-hover:scale-110 transition-transform">
-                    <SearchCheck className="w-8 h-8" />
-                  </div>
-                  <div className="text-center md:text-left flex-1 md:pt-2">
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-forest/60">
-                      Passo 02
-                    </span>
-                    <h3 className="text-xl font-semibold text-forest mt-1 mb-2">
-                      Análise e Proposta
-                    </h3>
-                    <p className="text-forest/80 text-sm md:text-base leading-relaxed">
-                      A nossa equipe técnica analisa os dados ou seu convênio
-                      para direcioná-lo ao profissional ideal.
-                    </p>
-                  </div>
-                </motion.div>
-
-                {/* Step 3 */}
-                <motion.div 
-                  initial={{ opacity: 0, x: -30 }}
-                  whileInView={{ opacity: 1, x: 0 }}
-                  viewport={{ once: true, margin: "-50px" }}
-                  transition={{ duration: 0.5, delay: 0.5 }}
-                  className="bg-warm/80 p-6 md:p-8 rounded-[32px] border border-white shadow-xl shadow-forest/5 flex flex-col md:flex-row items-center md:items-start gap-6 relative group hover:-translate-y-1 transition-transform duration-300"
-                >
-                  <div className="w-16 h-16 shrink-0 bg-sun rounded-full flex items-center justify-center shadow-sm text-forest border border-sun group-hover:scale-110 transition-transform">
-                    <MessageCircleHeart className="w-8 h-8" />
-                  </div>
-                  <div className="text-center md:text-left flex-1 md:pt-2">
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-forest/60">
-                      Passo 03
-                    </span>
-                    <h3 className="text-xl font-semibold text-forest mt-1 mb-2">
-                      Acolhimento
-                    </h3>
-                    <p className="text-forest/80 text-sm md:text-base leading-relaxed">
-                      Conecte-se com o seu psicólogo e inicie o seu processo de
-                      cuidado num ambiente seguro.
-                    </p>
-                  </div>
-                </motion.div>
+            {/* 3 Abas com Glassmorphism: Paciente | Empresa | Psicólogo/Terapeuta */}
+            <div className="w-full max-w-xl mx-auto mb-6 sm:mb-8 relative z-10">
+              <div className="grid grid-cols-3 gap-1 p-1 sm:p-1.5 bg-warm/80 backdrop-blur-md rounded-2xl sm:rounded-full border border-white/80 shadow-inner">
+                {(["paciente", "empresa", "terapeuta"] as const).map((tabKey) => {
+                  const item = JORNADAS_DATA[tabKey];
+                  const isActive = jornadaPublico === tabKey;
+                  return (
+                    <button
+                      key={tabKey}
+                      type="button"
+                      onMouseEnter={() => setJornadaPublico(tabKey)}
+                      onClick={() => setJornadaPublico(tabKey)}
+                      className={`py-2 sm:py-2.5 px-2 sm:px-4 rounded-xl sm:rounded-full text-xs sm:text-sm font-bold transition-all duration-200 cursor-pointer text-center flex items-center justify-center gap-1.5 sm:gap-2 leading-tight ${
+                        isActive
+                          ? tabKey === "empresa"
+                            ? "bg-forest text-white shadow-xs"
+                            : tabKey === "terapeuta"
+                            ? "bg-sun-dark text-forest shadow-xs"
+                            : "bg-sun text-forest shadow-xs"
+                          : "text-forest/70 hover:text-forest hover:bg-white/60"
+                      }`}
+                    >
+                      {tabKey === "paciente" && <User className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />}
+                      {tabKey === "empresa" && <Building2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />}
+                      {tabKey === "terapeuta" && <PsiIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />}
+                      <span className="truncate">{item.tituloAba}</span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
+
+            {/* Conteúdo Dinâmico da Aba Selecionada */}
+            {(() => {
+              const activeJornada = JORNADAS_DATA[jornadaPublico];
+              return (
+                <div className="w-full max-w-[840px] mx-auto relative z-10">
+                  <div className="text-center max-w-xl mx-auto mb-8 px-2">
+                    <span className="inline-block px-3.5 py-1 bg-white/80 backdrop-blur-xs border border-white/90 rounded-full text-[11px] font-bold text-forest/80 uppercase tracking-wider mb-2 shadow-2xs">
+                      {activeJornada.badge}
+                    </span>
+                    <p className="text-forest/85 text-xs sm:text-sm md:text-base leading-relaxed">
+                      {activeJornada.descricao}
+                    </p>
+                  </div>
+
+                  <div className="relative w-full mx-auto">
+                    {/* Linha vertical conectora (desktop) */}
+                    <div className={`hidden md:block absolute left-[3.5rem] top-8 bottom-8 w-0.5 border-dashed border-l-2 ${activeJornada.linhaCor} z-0 transition-colors duration-300`}></div>
+
+                    {/* Coluna com os 3 passos com acabamento Glassmorphism e hover suave */}
+                    <motion.div
+                      key={jornadaPublico}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.3 }}
+                      className="flex flex-col gap-4 sm:gap-6 md:gap-7 relative z-10 w-full"
+                    >
+                      {activeJornada.passos.map((passo, idx) => {
+                        const StepIcon = passo.icon;
+                        return (
+                          <div
+                            key={idx}
+                            className={`${passo.cardBg} p-5 sm:p-7 md:p-8 rounded-[28px] md:rounded-[32px] border shadow-md shadow-forest/5 flex flex-col sm:flex-row items-center sm:items-start gap-4 sm:gap-6 relative group hover:-translate-y-1 hover:shadow-xl hover:shadow-forest/10 transition-all duration-300`}
+                          >
+                            <div className={`w-14 h-14 sm:w-16 sm:h-16 shrink-0 ${passo.iconBg} rounded-2xl sm:rounded-full flex items-center justify-center shadow-xs border group-hover:scale-105 transition-transform duration-300`}>
+                              <StepIcon className="w-7 h-7 sm:w-8 sm:h-8" />
+                            </div>
+                            <div className="text-center sm:text-left flex-1 sm:pt-1">
+                              <span className={`inline-block text-[10px] uppercase tracking-widest px-2.5 py-0.5 rounded-md ${passo.badgeBg} mb-1.5`}>
+                                Passo {passo.num}
+                              </span>
+                              <h3 className="text-lg sm:text-xl font-semibold text-forest mb-1.5 tracking-tight">
+                                {passo.titulo}
+                              </h3>
+                              <p className="text-forest/80 text-xs sm:text-sm md:text-base leading-relaxed">
+                                {passo.descricao}
+                              </p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </motion.div>
+
+                    {/* Botão de Ação Imediata da Aba Ativa com Aura de Luz */}
+                    <div className="mt-8 flex justify-center">
+                      <div className="relative group">
+                        <div className="absolute -inset-1 bg-forest/20 rounded-full blur-md opacity-0 group-hover:opacity-100 transition-opacity duration-300 -z-10" />
+                        <button
+                          type="button"
+                          onClick={() => onNavigate(activeJornada.ctaView)}
+                          className="px-6 sm:px-8 py-3 sm:py-3.5 bg-forest hover:bg-forest/90 text-white font-bold text-xs sm:text-sm rounded-full transition-all shadow-md shadow-forest/15 hover:shadow-xl hover:shadow-forest/25 flex items-center gap-2 cursor-pointer"
+                        >
+                          <span>{activeJornada.ctaText}</span>
+                          <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
           </motion.div>
 
           {/* Stats */}
-          <div className="mt-8 mb-12 flex flex-wrap justify-center gap-8 sm:gap-16 border-t border-soft pt-12 w-full max-w-4xl mx-auto">
-            <div className="flex flex-col items-center">
-              <span className="font-serif text-3xl md:text-5xl font-semibold text-sun-dark">
-                150+
-              </span>
-              <span className="text-[10px] uppercase tracking-[0.2em] font-bold mt-2 text-forest/70">
-                Profissionais
-              </span>
+          {metricasAtivas && (
+            <div className="mt-8 mb-12 flex flex-wrap justify-center gap-8 sm:gap-16 border-t border-soft pt-12 w-full max-w-4xl mx-auto">
+              <div className="flex flex-col items-center">
+                <span className="font-serif text-3xl md:text-5xl font-semibold text-sun-dark">
+                  50+
+                </span>
+                <span className="text-[10px] uppercase tracking-[0.2em] font-bold mt-2 text-forest/70">
+                  Profissionais
+                </span>
+              </div>
+              <div className="flex flex-col items-center">
+                <span className="font-serif text-3xl md:text-5xl font-semibold text-sun-dark">
+                  100+
+                </span>
+                <span className="text-[10px] uppercase tracking-[0.2em] font-bold mt-2 text-forest/70">
+                  Vidas Acolhidas
+                </span>
+              </div>
+              <div className="flex flex-col items-center">
+                <span className="font-serif text-3xl md:text-5xl font-semibold text-sun-dark">
+                  24h
+                </span>
+                <span className="text-[10px] uppercase tracking-[0.2em] font-bold mt-2 text-forest/70">
+                  Resposta Média
+                </span>
+              </div>
             </div>
-            <div className="flex flex-col items-center">
-              <span className="font-serif text-3xl md:text-5xl font-semibold text-sun-dark">
-                4.2k
-              </span>
-              <span className="text-[10px] uppercase tracking-[0.2em] font-bold mt-2 text-forest/70">
-                Vidas Acolhidas
-              </span>
-            </div>
-            <div className="flex flex-col items-center">
-              <span className="font-serif text-3xl md:text-5xl font-semibold text-sun-dark">
-                24h
-              </span>
-              <span className="text-[10px] uppercase tracking-[0.2em] font-bold mt-2 text-forest/70">
-                Resposta Média
-              </span>
-            </div>
-          </div>
+          )}
         </section>
 
-        {/* Corporate Benefit and Professional Features Section */}
-        <section className="w-full bg-warm pb-16 flex flex-col items-center overflow-hidden">
-          <div className="w-full max-w-[1440px] px-6 md:px-12 grid grid-cols-1 md:grid-cols-2 gap-8">
-            <motion.div
-              initial={{ opacity: 0, x: -40 }}
-              whileInView={{ opacity: 1, x: 0 }}
-              viewport={{ once: true, margin: "-50px" }}
-              transition={{ duration: 0.6 }}
-              onClick={() => onNavigate("empresa")}
-              className="w-full relative p-12 bg-sun text-forest rounded-[40px] shadow-xl shadow-sun/20 flex flex-col gap-6 justify-between group cursor-pointer hover:-translate-y-1 transition-transform duration-300"
-            >
-              <div className="flex flex-col gap-4">
-                <div className="w-16 h-16 bg-forest/10 rounded-2xl flex items-center justify-center text-forest">
-                  <Briefcase className="w-8 h-8" />
-                </div>
-                <h3 className="font-serif text-3xl font-medium">
-                  Saúde Mental e Compliance (NR1)
-                </h3>
-                <p className="text-base text-forest/80 leading-relaxed">
-                  Antecipe-se às exigências da NR1 implementando um programa
-                  efetivo de prevenção aos riscos psicossociais. Mais do que um
-                  benefício, um cuidado estratégico que protege sua empresa e
-                  transforma o ambiente de trabalho.
-                </p>
-              </div>
+        {/* Corporate Benefit and Professional Features Section with Photo Backgrounds & Cinematic Effects */}
+        <section className="w-full bg-warm pt-10 sm:pt-16 pb-20 flex flex-col items-center overflow-visible">
+          <div className="w-full max-w-[1440px] px-6 md:px-12 grid grid-cols-1 md:grid-cols-2 gap-8 items-stretch">
+            
+            {/* Card 1: Saúde Mental e Compliance (NR1) */}
+            <div className="relative group h-full flex flex-col">
+              {/* Depth of Field & Glow Aura que acende e ganha vida no hover */}
+              <div className="absolute -inset-2 bg-gradient-to-r from-sun via-amber-400/40 to-forest rounded-[46px] blur-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-600 pointer-events-none -z-10" />
 
-              <div className="flex items-center gap-4 mt-4">
-                <span className="text-sm font-bold uppercase tracking-wider underline underline-offset-4 decoration-forest/30 group-hover:decoration-forest transition-all">
-                  Sou Empresa
-                </span>
-                <div className="w-12 h-12 rounded-full border border-forest/20 flex items-center justify-center group-hover:bg-forest group-hover:text-sun transition-colors">
-                  <ArrowRight className="w-5 h-5" />
+              <motion.div
+                initial={{ opacity: 0, x: -30 }}
+                whileInView={{ opacity: 1, x: 0 }}
+                viewport={{ once: true, margin: "-50px" }}
+                transition={{ duration: 0.6 }}
+                onClick={() => onNavigate("empresa")}
+                className="w-full h-full relative min-h-[500px] p-8 sm:p-12 text-white rounded-[40px] overflow-hidden shadow-2xl shadow-forest/20 flex flex-col justify-between cursor-pointer border-2 border-forest-dark/30 group-hover:border-sun/60 transition-all duration-500 hover:-translate-y-2 hover:shadow-2xl hover:shadow-forest/30"
+              >
+                {/* Foto de Fundo Fixa com Mínima Transparência (z-0 direto, sem película e sem ficar atrás de fundos escuros) */}
+                <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
+                  <img
+                    src="https://images.unsplash.com/photo-1600880292203-757bb62b4baf?auto=format&fit=crop&w=1200&q=85"
+                    alt="Equipe em ambiente corporativo saudável e acolhedor"
+                    className="w-full h-full object-cover object-center opacity-95 group-hover:scale-105 transition-transform duration-700 ease-out"
+                    referrerPolicy="no-referrer"
+                  />
                 </div>
-              </div>
-            </motion.div>
 
-            <motion.div
-              initial={{ opacity: 0, x: 40 }}
-              whileInView={{ opacity: 1, x: 0 }}
-              viewport={{ once: true, margin: "-50px" }}
-              transition={{ duration: 0.6, delay: 0.2 }}
-              onClick={() => onNavigate("profissional")}
-              className="w-full relative p-12 bg-white text-forest rounded-[40px] border border-soft shadow-xl shadow-forest/5 flex flex-col gap-6 justify-between group cursor-pointer hover:-translate-y-1 transition-transform duration-300"
-            >
-              <div className="flex flex-col gap-4">
-                <div className="w-16 h-16 bg-sun-light rounded-2xl flex items-center justify-center text-forest">
-                  <HeartHandshake className="w-8 h-8" />
-                </div>
-                <h3 className="font-serif text-3xl font-medium">
-                  Faça parte da nossa rede
-                </h3>
-                <p className="text-base text-forest/80 leading-relaxed">
-                  Engaje-se em um projeto com um propósito acessível e humano.
-                  Se você compreende que terapia não é um privilégio, junte-se a
-                  nós para oferecer acolhimento acessível adaptando sua
-                  disponibilidade de horas.
-                </p>
-              </div>
+                <div className="flex flex-col gap-4 relative z-10 flex-1">
+                  {/* Badge */}
+                  <div className="w-fit px-4 py-1.5 rounded-full bg-black/50 backdrop-blur-md border border-white/25 text-sun group-hover:bg-sun group-hover:text-forest group-hover:border-sun font-bold text-xs uppercase tracking-wider shadow-md transition-all duration-300 flex items-center gap-2">
+                    <Briefcase className="w-3.5 h-3.5 text-sun group-hover:text-forest transition-colors" />
+                    <span>Programa Corporativo</span>
+                  </div>
 
-              <div className="flex items-center gap-4 mt-4">
-                <span className="text-sm font-bold uppercase tracking-wider text-forest underline underline-offset-4 decoration-forest/30 group-hover:decoration-forest transition-all">
-                  SOU PSICÓLOGO/ TERAPEUTA
-                </span>
-                <div className="w-12 h-12 rounded-full border border-soft flex items-center justify-center text-forest group-hover:bg-sun group-hover:text-forest transition-colors">
-                  <ArrowRight className="w-5 h-5" />
+                  {/* Ícone Container */}
+                  <div className="w-16 h-16 bg-black/40 backdrop-blur-md border border-white/20 rounded-2xl flex items-center justify-center text-sun shadow-xl group-hover:bg-sun group-hover:text-forest group-hover:border-sun group-hover:scale-105 transition-all duration-300">
+                    <Briefcase className="w-8 h-8" />
+                  </div>
+
+                  {/* Título com altura mínima harmonizada e sombra suave */}
+                  <div className="min-h-[72px] sm:min-h-[84px] flex items-center">
+                    <h3 className="font-serif text-3xl sm:text-4xl font-bold text-white tracking-tight leading-snug group-hover:text-amber-200 transition-colors duration-300 drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]">
+                      Saúde Mental e Compliance (NR1)
+                    </h3>
+                  </div>
+
+                  {/* Parágrafo com Alto Contraste Natural */}
+                  <p className="text-base sm:text-[17px] text-white group-hover:text-white font-normal leading-relaxed max-w-xl transition-colors duration-300 drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)]">
+                    Antecipe-se às exigências da NR1 implementando um programa
+                    efetivo de prevenção aos riscos psicossociais. Mais do que um
+                    benefício, um cuidado estratégico que protege sua empresa e
+                    transforma o ambiente de trabalho.
+                  </p>
                 </div>
-              </div>
-            </motion.div>
+
+                {/* Rodapé com Destaque Dourado */}
+                <div className="flex items-center justify-between pt-6 border-t border-white/20 group-hover:border-sun/40 relative z-10 transition-colors duration-300 mt-6">
+                  <span className="text-sm sm:text-base font-bold uppercase tracking-wider text-sun group-hover:text-white transition-colors drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
+                    Sou Empresa
+                  </span>
+                  <div className="w-12 h-12 rounded-full bg-black/50 backdrop-blur-md border border-white/25 flex items-center justify-center text-white group-hover:bg-sun group-hover:text-forest group-hover:scale-110 transition-all shadow-lg">
+                    <ArrowRight className="w-5 h-5 group-hover:translate-x-0.5 transition-transform" />
+                  </div>
+                </div>
+              </motion.div>
+            </div>
+
+            {/* Card 2: Faça parte da nossa rede */}
+            <div className="relative group h-full flex flex-col">
+              {/* Depth of Field & Glow Aura Esmeralda/Solar que ganha vida no hover */}
+              <div className="absolute -inset-2 bg-gradient-to-r from-emerald-500/40 via-sun/40 to-forest rounded-[46px] blur-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-600 pointer-events-none -z-10" />
+
+              <motion.div
+                initial={{ opacity: 0, x: 30 }}
+                whileInView={{ opacity: 1, x: 0 }}
+                viewport={{ once: true, margin: "-50px" }}
+                transition={{ duration: 0.6, delay: 0.2 }}
+                onClick={() => onNavigate("profissional")}
+                className="w-full h-full relative min-h-[500px] p-8 sm:p-12 text-white rounded-[40px] overflow-hidden shadow-2xl shadow-forest/20 flex flex-col justify-between cursor-pointer border-2 border-forest-dark/30 group-hover:border-sun/60 transition-all duration-500 hover:-translate-y-2 hover:shadow-2xl hover:shadow-forest/30"
+              >
+                {/* Foto de Fundo Fixa com Mínima Transparência (z-0 direto, sem película e sem ficar atrás de fundos escuros) */}
+                <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
+                  <img
+                    src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=1200&q=85"
+                    alt="Psicóloga profissional em consultório acolhedor"
+                    className="w-full h-full object-cover object-center opacity-95 group-hover:scale-105 transition-transform duration-700 ease-out"
+                    referrerPolicy="no-referrer"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-4 relative z-10 flex-1">
+                  {/* Badge */}
+                  <div className="w-fit px-4 py-1.5 rounded-full bg-black/50 backdrop-blur-md border border-white/25 text-sun group-hover:bg-sun group-hover:text-forest group-hover:border-sun font-bold text-xs uppercase tracking-wider shadow-md transition-all duration-300 flex items-center gap-2">
+                    <HeartHandshake className="w-3.5 h-3.5 text-sun group-hover:text-forest transition-colors" />
+                    <span>Rede Credenciada</span>
+                  </div>
+
+                  {/* Ícone Container */}
+                  <div className="w-16 h-16 bg-black/40 backdrop-blur-md border border-white/20 rounded-2xl flex items-center justify-center text-sun shadow-xl group-hover:bg-sun group-hover:text-forest group-hover:border-sun group-hover:scale-105 transition-all duration-300">
+                    <HeartHandshake className="w-8 h-8" />
+                  </div>
+
+                  {/* Título com altura mínima harmonizada e sombra suave */}
+                  <div className="min-h-[72px] sm:min-h-[84px] flex items-center">
+                    <h3 className="font-serif text-3xl sm:text-4xl font-bold text-white tracking-tight leading-snug group-hover:text-amber-200 transition-colors duration-300 drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]">
+                      Faça parte da nossa rede
+                    </h3>
+                  </div>
+
+                  {/* Parágrafo com Alto Contraste Natural */}
+                  <p className="text-base sm:text-[17px] text-white group-hover:text-white font-normal leading-relaxed max-w-xl transition-colors duration-300 drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)]">
+                    Engaje-se em um projeto com um propósito acessível e humano.
+                    Se você compreende que terapia não é um privilégio, junte-se a
+                    nós para oferecer acolhimento acessível adaptando sua
+                    disponibilidade de horas.
+                  </p>
+                </div>
+
+                {/* Rodapé com Destaque Dourado */}
+                <div className="flex items-center justify-between pt-6 border-t border-white/20 group-hover:border-sun/40 relative z-10 transition-colors duration-300 mt-6">
+                  <span className="text-sm sm:text-base font-bold uppercase tracking-wider text-sun group-hover:text-white transition-colors drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
+                    Sou Psicólogo / Terapeuta
+                  </span>
+                  <div className="w-12 h-12 rounded-full bg-black/50 backdrop-blur-md border border-white/25 flex items-center justify-center text-white group-hover:bg-sun group-hover:text-forest group-hover:scale-110 transition-all shadow-lg">
+                    <ArrowRight className="w-5 h-5 group-hover:translate-x-0.5 transition-transform" />
+                  </div>
+                </div>
+              </motion.div>
+            </div>
+
           </div>
         </section>
 
         {/* Trusted By Carousel */}
-        <section className="w-full bg-white py-16 flex flex-col items-center overflow-hidden border-t border-soft">
-          <div className="w-full max-w-[1440px] px-6 md:px-12 mb-10 flex justify-center">
-            <h2 className="font-serif text-2xl md:text-3xl text-forest/70 text-center relative max-w-xl">
-              Empresas que confiam na AcolheMente
-              <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 w-12 h-1 bg-sun rounded-full" />
-            </h2>
-          </div>
-          
-          <div className="w-full relative flex overflow-x-hidden group">
-            <div className="absolute inset-y-0 left-0 w-32 bg-gradient-to-r from-white to-transparent z-10 pointer-events-none" />
-            <div className="absolute inset-y-0 right-0 w-32 bg-gradient-to-l from-white to-transparent z-10 pointer-events-none" />
+        {carrosselEmpresasAtivo && (
+          <section className="w-full bg-white py-16 flex flex-col items-center overflow-hidden border-t border-soft">
+            <div className="w-full max-w-[1440px] px-6 md:px-12 mb-10 flex justify-center">
+              <h2 className="font-serif text-2xl md:text-3xl text-forest/70 text-center relative max-w-xl">
+                Empresas que confiam na AcolheMente
+                <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 w-12 h-1 bg-sun rounded-full" />
+              </h2>
+            </div>
             
-            <motion.div
-              animate={{ x: ["0%", "-50%"] }}
-              transition={{
-                repeat: Infinity,
-                ease: "linear",
-                duration: 20,
-              }}
-              className="flex whitespace-nowrap min-w-max py-4"
-            >
-              {[...COMPANY_LOGOS, ...COMPANY_LOGOS, ...COMPANY_LOGOS].map((Logo, idx) => (
-                <div key={idx} className="flex items-center gap-3 px-12 opacity-60 grayscale hover:grayscale-0 hover:opacity-100 transition-all duration-300">
-                  <Logo.icon className="w-8 h-8 text-forest" />
-                  <span className="font-sans font-bold text-xl text-forest tracking-tighter">{Logo.name}</span>
-                </div>
-              ))}
-            </motion.div>
-          </div>
-        </section>
+            <div className="w-full relative flex overflow-x-hidden group">
+              <div className="absolute inset-y-0 left-0 w-32 bg-gradient-to-r from-white to-transparent z-10 pointer-events-none" />
+              <div className="absolute inset-y-0 right-0 w-32 bg-gradient-to-l from-white to-transparent z-10 pointer-events-none" />
+              
+              <motion.div
+                animate={{ x: ["0%", "-50%"] }}
+                transition={{
+                  repeat: Infinity,
+                  ease: "linear",
+                  duration: 20,
+                }}
+                className="flex whitespace-nowrap min-w-max py-4"
+              >
+                {[...COMPANY_LOGOS, ...COMPANY_LOGOS, ...COMPANY_LOGOS].map((Logo, idx) => (
+                  <div key={idx} className="flex items-center gap-3 px-12 opacity-60 grayscale hover:grayscale-0 hover:opacity-100 transition-all duration-300">
+                    <Logo.icon className="w-8 h-8 text-forest" />
+                    <span className="font-sans font-bold text-xl text-forest tracking-tighter">{Logo.name}</span>
+                  </div>
+                ))}
+              </motion.div>
+            </div>
+          </section>
+        )}
         
         {/* FAQ Section */}
         <FAQSection />
 
-        {/* Blog & Conhecimento Aberto Section */}
-        <section className="w-full bg-[#FAF8F2] py-16 px-6 md:px-12 flex flex-col items-center border-t border-soft">
-          <div className="w-full max-w-[1200px] flex flex-col md:flex-row items-center justify-between gap-8 bg-white p-8 md:p-12 rounded-[40px] border border-soft shadow-xs">
-            <div className="flex flex-col gap-4 max-w-xl w-full">
-              <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-                <span className="inline-flex items-center px-3 py-1 bg-sun/40 text-forest text-xs font-bold uppercase tracking-wider rounded-full whitespace-nowrap">
-                  Espaço Aberto de Leitura
-                </span>
-                <span className="text-xs text-forest/50 font-medium">Acesso Livre</span>
-              </div>
-              <h2 className="font-serif text-2xl sm:text-3xl md:text-4xl text-forest font-semibold leading-tight tracking-tight">
-                Blog AcolheMente: Artigos & Conhecimento
-              </h2>
-              <p className="text-forest/75 text-sm md:text-base leading-relaxed">
-                Textos, reflexões e orientações elaborados por psicólogos e especialistas sobre saúde mental, relações, manejo da ansiedade e bem-estar no trabalho.
-              </p>
-              <div className="flex items-center gap-3 pt-2 flex-wrap">
-                <button
-                  onClick={() => onNavigate("blog")}
-                  className="px-6 py-3 bg-forest hover:bg-forest/90 text-white rounded-full font-bold text-xs uppercase tracking-wider shadow-md hover:shadow-lg transition-all flex items-center gap-2 cursor-pointer"
-                >
-                  Explorar Todos os Artigos
-                  <ArrowRight className="w-4 h-4 text-sun" />
-                </button>
-              </div>
-            </div>
+        {/* Blog & Conhecimento Aberto Section com Imagem de Escrita/Redação e Efeitos de Legibilidade */}
+        <section className="w-full bg-warm/70 py-16 px-6 md:px-12 flex flex-col items-center border-t border-soft/80 overflow-visible">
+          <div className="w-full max-w-[1200px] relative group">
+            {/* Depth of Field & Glow Aura Dourada/Esmeralda no hover */}
+            <div className="absolute -inset-2 bg-gradient-to-r from-sun via-amber-400/40 to-forest rounded-[46px] blur-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-600 pointer-events-none -z-10" />
 
-            <div className="w-full md:w-auto flex flex-col gap-3 min-w-[280px] max-w-md">
-              {artigosPublicados.length > 0 ? (
-                artigosPublicados.slice(0, 2).map((artigo) => (
-                  <div
-                    key={artigo.id}
-                    onClick={() => {
-                      if (onSelectArtigo && artigo.id) {
-                        onSelectArtigo(artigo.id);
-                      } else {
-                        try {
-                          const url = new URL(window.location.href);
-                          url.searchParams.set("artigo", artigo.id || "");
-                          window.history.pushState({}, "", url.toString());
-                        } catch (e) {}
-                        onNavigate("blog");
-                      }
-                    }}
-                    className="bg-warm/40 hover:bg-warm/70 p-4 rounded-2xl border border-soft transition-all cursor-pointer flex flex-col gap-1.5 group"
+            <div className="w-full relative min-h-[480px] flex flex-col md:flex-row items-center justify-between gap-8 p-8 sm:p-12 rounded-[40px] overflow-hidden shadow-2xl shadow-forest/20 border-2 border-forest-dark/30 group-hover:border-sun/60 transition-all duration-500 hover:-translate-y-2 hover:shadow-2xl hover:shadow-forest/30">
+              
+              {/* Foto de Fundo Fixa com Mínima Transparência (z-0 direto, sem película escura e sem ficar oculta atrás de fundos) */}
+              <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
+                <img
+                  src="https://images.unsplash.com/photo-1455390582262-044cdead277a?auto=format&fit=crop&w=1400&q=85"
+                  alt="Escrita e redação de artigos sobre saúde mental"
+                  className="w-full h-full object-cover object-center opacity-95 group-hover:scale-105 transition-transform duration-700 ease-out"
+                  referrerPolicy="no-referrer"
+                />
+              </div>
+
+              {/* Coluna da esquerda: Título, Descrição e Botão com alto contraste e legibilidade impecável */}
+              <div className="flex flex-col gap-5 max-w-xl w-full relative z-10">
+                <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                  <div className="w-fit px-4 py-1.5 rounded-full bg-black/40 backdrop-blur-md border border-white/25 text-sun group-hover:bg-sun group-hover:text-forest group-hover:border-sun font-bold text-xs uppercase tracking-wider shadow-md transition-all duration-300 flex items-center gap-2">
+                    <BookOpen className="w-3.5 h-3.5 text-sun group-hover:text-forest transition-colors" />
+                    <span>Espaço Aberto de Leitura</span>
+                  </div>
+                  <span className="text-xs text-white font-medium bg-black/40 backdrop-blur-md px-3 py-1 rounded-full border border-white/20">
+                    Acesso Livre
+                  </span>
+                </div>
+
+                {/* Ícone Container */}
+                <div className="w-16 h-16 bg-black/30 backdrop-blur-md border border-white/20 rounded-2xl flex items-center justify-center text-sun shadow-xl group-hover:bg-sun group-hover:text-forest group-hover:border-sun group-hover:scale-105 transition-all duration-300">
+                  <BookOpen className="w-8 h-8" />
+                </div>
+
+                <h3 className="font-serif text-3xl sm:text-4xl font-bold text-white tracking-tight leading-snug group-hover:text-amber-200 transition-colors duration-300 drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
+                  Blog AcolheMente: Artigos & Conhecimento
+                </h3>
+
+                <p className="text-base sm:text-[17px] text-white group-hover:text-white font-normal leading-relaxed max-w-xl transition-colors duration-300 drop-shadow-[0_1px_3px_rgba(0,0,0,0.7)]">
+                  Textos, reflexões e orientações elaborados por psicólogos e especialistas sobre saúde mental, relações, manejo da ansiedade e bem-estar no trabalho.
+                </p>
+
+                <div className="flex items-center gap-3 pt-2 flex-wrap">
+                  <button
+                    onClick={() => onNavigate("blog")}
+                    className="px-6 py-3.5 bg-sun hover:bg-sun-dark text-forest rounded-full font-bold text-xs uppercase tracking-wider shadow-lg hover:shadow-xl transition-all flex items-center gap-2 cursor-pointer hover:scale-105 active:scale-95"
                   >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-[10px] font-bold uppercase text-sun-dark">
-                        {artigo.categoria || "Saúde Mental"}
-                      </span>
-                      <span className="text-[10px] text-forest/50">
-                        {artigo.tempoLeitura || "3 min de leitura"}
+                    Explorar Todos os Artigos
+                    <ArrowRight className="w-4 h-4 text-forest" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Coluna da direita: Prévia de artigos recentes com vidro translúcido (Glassmorphism) */}
+              <div className="w-full md:w-auto flex flex-col gap-3 min-w-[280px] max-w-md relative z-10">
+                {artigosPublicados.length > 0 ? (
+                  artigosPublicados.slice(0, 2).map((artigo) => (
+                    <div
+                      key={artigo.id}
+                      onClick={() => {
+                        if (onSelectArtigo && artigo.id) {
+                          onSelectArtigo(artigo.id);
+                        } else {
+                          try {
+                            const url = new URL(window.location.href);
+                            url.searchParams.set("artigo", artigo.id || "");
+                            window.history.pushState({}, "", url.toString());
+                          } catch (e) {}
+                          onNavigate("blog");
+                        }
+                      }}
+                      className="bg-black/50 hover:bg-black/70 backdrop-blur-md p-5 rounded-2xl border border-white/20 hover:border-sun/60 transition-all cursor-pointer flex flex-col gap-2 group/item shadow-lg"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[10px] font-bold uppercase text-sun tracking-wider">
+                          {artigo.categoria || "Saúde Mental"}
+                        </span>
+                        <span className="text-[10px] text-white/70">
+                          {artigo.tempoLeitura || "3 min de leitura"}
+                        </span>
+                      </div>
+                      <h4 className="font-serif font-bold text-sm sm:text-base text-white group-hover/item:text-amber-200 transition-colors line-clamp-2 leading-snug">
+                        {artigo.titulo}
+                      </h4>
+                      <span className="text-[11px] text-white/75">
+                        {artigo.autorNome}
+                        {artigo.autorProfissao ? ` • ${artigo.autorProfissao}` : ""}
                       </span>
                     </div>
-                    <h4 className="font-serif font-bold text-sm text-forest group-hover:text-forest/80 transition-colors line-clamp-2">
-                      {artigo.titulo}
-                    </h4>
-                    <span className="text-[11px] text-forest/60">
-                      {artigo.autorNome}
-                      {artigo.autorProfissao ? ` • ${artigo.autorProfissao}` : ""}
-                    </span>
+                  ))
+                ) : (
+                  <div className="bg-black/50 backdrop-blur-md p-6 rounded-2xl border border-white/20 text-center flex flex-col items-center justify-center gap-3 shadow-lg">
+                    <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-sun border border-white/20">
+                      <BookOpen className="w-5 h-5" />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <h4 className="font-serif font-bold text-sm text-white">
+                        Novos artigos em breve
+                      </h4>
+                      <p className="text-xs text-white/75 max-w-[240px] leading-relaxed">
+                        Nossos psicólogos e terapeutas parceiros estão elaborando artigos sobre saúde mental e autocuidado.
+                      </p>
+                    </div>
                   </div>
-                ))
-              ) : (
-                <div className="bg-warm/30 p-6 rounded-2xl border border-soft text-center flex flex-col items-center justify-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center shadow-xs text-forest/60">
-                    <BookOpen className="w-5 h-5" />
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <h4 className="font-serif font-bold text-sm text-forest">
-                      Novos artigos em breve
-                    </h4>
-                    <p className="text-xs text-forest/60 max-w-[240px] leading-relaxed">
-                      Nossos psicólogos e terapeutas parceiros estão elaborando artigos sobre saúde mental e autocuidado.
-                    </p>
-                  </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           </div>
         </section>

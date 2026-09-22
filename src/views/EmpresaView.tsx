@@ -180,40 +180,56 @@ export function EmpresaView({ onNavigate }: { onNavigate: (view: 'landing' | 'ac
                   Antecipe-se às exigências da <strong>NR1</strong> implementando um programa efetivo de prevenção aos riscos psicossociais e <strong>evite multas e passivos trabalhistas</strong> por não conformidade. Mais do que um benefício (como um "Gympass da Mente"), é um cuidado estratégico que garante apoio emocional e psicológico à sua equipe, blindando a empresa e valorizando as pessoas.
                 </p>
                 <div className="flex flex-wrap items-center gap-4 mt-4">
-                  <a
-                    href={getWhatsAppUrl()}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="px-6 py-3.5 bg-[#25D366] hover:bg-[#1ebd5b] text-white rounded-full font-semibold shadow-md transition-all flex items-center gap-2 text-sm cursor-pointer"
-                  >
-                    <MessageCircle className="w-5 h-5" />
-                    Falar com Consultor via WhatsApp
-                  </a>
+                  <div className="relative group">
+                    <div className="absolute -inset-1 bg-gradient-to-r from-[#25D366]/40 to-emerald-400/40 rounded-full blur-md opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
+                    <a
+                      href={getWhatsAppUrl()}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="relative px-7 py-3.5 bg-[#25D366] hover:bg-[#1ebd5b] text-white rounded-full font-semibold shadow-lg shadow-[#25D366]/20 transition-all flex items-center gap-2.5 text-sm cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
+                    >
+                      <MessageCircle className="w-5 h-5" />
+                      Falar com Consultor via WhatsApp
+                    </a>
+                  </div>
                 </div>
               </div>
               <div className="w-full lg:w-1/2 flex justify-center lg:justify-end">
                  <img src={empresaHero} alt="Ilustração Empresa e RH" className="w-full max-w-lg object-contain rounded-3xl mix-blend-multiply" referrerPolicy="no-referrer" />
               </div>
-            </div>            <div className="w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-8">
-              <div className="bg-white p-6 rounded-3xl border border-soft flex flex-col gap-3 shadow-sm shadow-sun-dark/5">
-                <Building2 className="w-8 h-8 text-sun-dark" />
+            </div>
+
+            <div className="w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-8">
+              <div className="bg-white/90 backdrop-blur-md p-6 rounded-3xl border border-white/80 flex flex-col gap-3 shadow-lg shadow-forest/5 hover:shadow-xl hover:border-sun/40 hover:-translate-y-1 transition-all duration-300 group">
+                <div className="w-12 h-12 rounded-2xl bg-sun/15 border border-sun/30 flex items-center justify-center text-sun-dark group-hover:bg-sun group-hover:text-forest transition-colors duration-300">
+                  <Building2 className="w-6 h-6" />
+                </div>
                 <h3 className="font-semibold text-lg text-forest">Adequação à NR1</h3>
-                <p className="text-sm text-forest/70">Mapeamento e prevenção ativa contra os riscos psicossociais no trabalho.</p>
+                <p className="text-sm text-forest/75 leading-relaxed">Mapeamento e prevenção ativa contra os riscos psicossociais no trabalho.</p>
               </div>
-              <div className="bg-white p-6 rounded-3xl border border-soft flex flex-col gap-3 shadow-sm shadow-sun-dark/5">
-                <TrendingUp className="w-8 h-8 text-sun-dark" />
+
+              <div className="bg-white/90 backdrop-blur-md p-6 rounded-3xl border border-white/80 flex flex-col gap-3 shadow-lg shadow-forest/5 hover:shadow-xl hover:border-sun/40 hover:-translate-y-1 transition-all duration-300 group">
+                <div className="w-12 h-12 rounded-2xl bg-sun/15 border border-sun/30 flex items-center justify-center text-sun-dark group-hover:bg-sun group-hover:text-forest transition-colors duration-300">
+                  <TrendingUp className="w-6 h-6" />
+                </div>
                 <h3 className="font-semibold text-lg text-forest">Absenteísmo Zero</h3>
-                <p className="text-sm text-forest/70">O bem-estar mental reduz faltas, afastamentos e impulsiona a produtividade.</p>
+                <p className="text-sm text-forest/75 leading-relaxed">O bem-estar mental reduz faltas, afastamentos e impulsiona a produtividade.</p>
               </div>
-              <div className="bg-white p-6 rounded-3xl border border-soft flex flex-col gap-3 shadow-sm shadow-sun-dark/5">
-                <HeartHandshake className="w-8 h-8 text-sun-dark" />
+
+              <div className="bg-white/90 backdrop-blur-md p-6 rounded-3xl border border-white/80 flex flex-col gap-3 shadow-lg shadow-forest/5 hover:shadow-xl hover:border-sun/40 hover:-translate-y-1 transition-all duration-300 group">
+                <div className="w-12 h-12 rounded-2xl bg-sun/15 border border-sun/30 flex items-center justify-center text-sun-dark group-hover:bg-sun group-hover:text-forest transition-colors duration-300">
+                  <HeartHandshake className="w-6 h-6" />
+                </div>
                 <h3 className="font-semibold text-lg text-forest">Retenção de Talentos</h3>
-                <p className="text-sm text-forest/70">Equipes cuidadas e seguras têm maior satisfação e menor rotatividade.</p>
+                <p className="text-sm text-forest/75 leading-relaxed">Equipes cuidadas e seguras têm maior satisfação e menor rotatividade.</p>
               </div>
-              <div className="bg-white p-6 rounded-3xl border border-soft flex flex-col gap-3 shadow-sm shadow-sun-dark/5">
-                <Briefcase className="w-8 h-8 text-sun-dark" />
+
+              <div className="bg-white/90 backdrop-blur-md p-6 rounded-3xl border border-white/80 flex flex-col gap-3 shadow-lg shadow-forest/5 hover:shadow-xl hover:border-sun/40 hover:-translate-y-1 transition-all duration-300 group">
+                <div className="w-12 h-12 rounded-2xl bg-sun/15 border border-sun/30 flex items-center justify-center text-sun-dark group-hover:bg-sun group-hover:text-forest transition-colors duration-300">
+                  <Briefcase className="w-6 h-6" />
+                </div>
                 <h3 className="font-semibold text-lg text-forest">Carga Otimizada</h3>
-                <p className="text-sm text-forest/70">Planos flexíveis com excelente custo-benefício para subsidiar sua operação.</p>
+                <p className="text-sm text-forest/75 leading-relaxed">Planos flexíveis com excelente custo-benefício para subsidiar sua operação.</p>
               </div>
             </div>
           </div>
@@ -234,14 +250,14 @@ export function EmpresaView({ onNavigate }: { onNavigate: (view: 'landing' | 'ac
               </p>
             </div>
 
-            {/* Mapa Mental Visual / Linha do Tempo */}
+            {/* Mapa Mental Visual / Linha do Tempo com Glassmorphism & Hover Glow */}
             <div className="relative w-full grid grid-cols-1 md:grid-cols-4 gap-6">
               {/* Passo 1 */}
-              <div className="bg-white p-6 rounded-3xl border border-soft flex flex-col gap-4 relative shadow-sm hover:shadow-md transition-all">
-                <div className="absolute top-4 right-4 text-xs font-mono font-bold text-sun-dark bg-sun-light/50 px-2 py-0.5 rounded-full">
+              <div className="bg-white/90 backdrop-blur-md p-6 rounded-3xl border border-soft hover:border-sun/50 flex flex-col gap-4 relative shadow-md shadow-forest/5 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group">
+                <div className="absolute top-4 right-4 text-xs font-mono font-bold text-sun-dark bg-sun-light/70 px-2 py-0.5 rounded-full border border-sun/30">
                   Passo 1
                 </div>
-                <div className="w-10 h-10 bg-warm/50 text-forest rounded-2xl flex items-center justify-center font-bold">
+                <div className="w-10 h-10 bg-warm/70 text-forest rounded-2xl flex items-center justify-center font-bold group-hover:bg-sun/20 transition-colors">
                   <Building2 className="w-5 h-5 text-forest" />
                 </div>
                 <div>
@@ -253,11 +269,11 @@ export function EmpresaView({ onNavigate }: { onNavigate: (view: 'landing' | 'ac
               </div>
 
               {/* Passo 2 */}
-              <div className="bg-white p-6 rounded-3xl border border-soft flex flex-col gap-4 relative shadow-sm hover:shadow-md transition-all">
-                <div className="absolute top-4 right-4 text-xs font-mono font-bold text-sun-dark bg-sun-light/50 px-2 py-0.5 rounded-full">
+              <div className="bg-white/90 backdrop-blur-md p-6 rounded-3xl border border-soft hover:border-sun/50 flex flex-col gap-4 relative shadow-md shadow-forest/5 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group">
+                <div className="absolute top-4 right-4 text-xs font-mono font-bold text-sun-dark bg-sun-light/70 px-2 py-0.5 rounded-full border border-sun/30">
                   Passo 2
                 </div>
-                <div className="w-10 h-10 bg-warm/50 text-forest rounded-2xl flex items-center justify-center font-bold">
+                <div className="w-10 h-10 bg-warm/70 text-forest rounded-2xl flex items-center justify-center font-bold group-hover:bg-sun/20 transition-colors">
                   <Sparkles className="w-5 h-5 text-forest" />
                 </div>
                 <div>
@@ -269,11 +285,11 @@ export function EmpresaView({ onNavigate }: { onNavigate: (view: 'landing' | 'ac
               </div>
 
               {/* Passo 3 */}
-              <div className="bg-white p-6 rounded-3xl border border-soft flex flex-col gap-4 relative shadow-sm hover:shadow-md transition-all">
-                <div className="absolute top-4 right-4 text-xs font-mono font-bold text-sun-dark bg-sun-light/50 px-2 py-0.5 rounded-full">
+              <div className="bg-white/90 backdrop-blur-md p-6 rounded-3xl border border-soft hover:border-sun/50 flex flex-col gap-4 relative shadow-md shadow-forest/5 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group">
+                <div className="absolute top-4 right-4 text-xs font-mono font-bold text-sun-dark bg-sun-light/70 px-2 py-0.5 rounded-full border border-sun/30">
                   Passo 3
                 </div>
-                <div className="w-10 h-10 bg-warm/50 text-forest rounded-2xl flex items-center justify-center font-bold">
+                <div className="w-10 h-10 bg-warm/70 text-forest rounded-2xl flex items-center justify-center font-bold group-hover:bg-sun/20 transition-colors">
                   <UserCheck className="w-5 h-5 text-forest" />
                 </div>
                 <div>
@@ -284,16 +300,16 @@ export function EmpresaView({ onNavigate }: { onNavigate: (view: 'landing' | 'ac
                 </div>
               </div>
 
-              {/* Passo 4 - Destaque do benefício financeiro / valor social */}
-              <div className="bg-emerald-50 p-6 rounded-3xl border border-emerald-100 flex flex-col gap-4 relative shadow-sm hover:shadow-md transition-all">
-                <div className="absolute top-4 right-4 text-xs font-mono font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+              {/* Passo 4 - Destaque do benefício financeiro / valor social com Glassmorphism Esmeralda */}
+              <div className="bg-emerald-50/90 backdrop-blur-md p-6 rounded-3xl border border-emerald-200/80 flex flex-col gap-4 relative shadow-md shadow-emerald-700/10 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group">
+                <div className="absolute top-4 right-4 text-xs font-mono font-bold text-emerald-800 bg-emerald-100/90 border border-emerald-300/60 px-2 py-0.5 rounded-full">
                   Passo 4
                 </div>
-                <div className="w-10 h-10 bg-emerald-100 text-emerald-800 rounded-2xl flex items-center justify-center font-bold">
+                <div className="w-10 h-10 bg-emerald-100 text-emerald-800 rounded-2xl flex items-center justify-center font-bold shadow-xs">
                   <Coins className="w-5 h-5 text-emerald-700" />
                 </div>
                 <div>
-                  <h4 className="font-bold text-base text-emerald-900 mb-1">Acesso Subsidiado</h4>
+                  <h4 className="font-bold text-base text-emerald-950 mb-1">Acesso Subsidiado</h4>
                   <p className="text-xs text-emerald-800 leading-relaxed font-medium">
                     O profissional da triagem encaminha o paciente ao psicólogo especialista, cobrando do colaborador um <strong>valor de tarifa acessível imbatível</strong>, drasticamente menor que no mercado clínico comum.
                   </p>
@@ -302,7 +318,7 @@ export function EmpresaView({ onNavigate }: { onNavigate: (view: 'landing' | 'ac
             </div>
 
             {/* Aviso em Destaque */}
-            <div className="mt-8 p-5 bg-white border border-soft rounded-2xl max-w-2xl w-full flex flex-col sm:flex-row items-center gap-4 text-center sm:text-left shadow-sm">
+            <div className="mt-8 p-5 bg-white/90 backdrop-blur-md border border-soft rounded-2xl max-w-2xl w-full flex flex-col sm:flex-row items-center gap-4 text-center sm:text-left shadow-sm">
               <div className="p-3 bg-sun-light rounded-full text-forest shrink-0">
                 <Sparkles className="w-5 h-5" />
               </div>
@@ -313,9 +329,11 @@ export function EmpresaView({ onNavigate }: { onNavigate: (view: 'landing' | 'ac
           </div>
         </section>
 
-        {/* Form Section */}
+        {/* Form Section with Glassmorphism and Depth */}
         <section className="w-full px-6 md:px-12 py-16 flex justify-center relative -mt-10">
-          <div className="max-w-2xl w-full bg-white rounded-3xl shadow-xl shadow-forest/5 p-8 md:p-12 border border-soft">
+          <div className="max-w-2xl w-full bg-white/95 backdrop-blur-md rounded-[36px] shadow-2xl shadow-forest/10 p-8 md:p-12 border border-white/80 relative overflow-hidden">
+            {/* Subtle internal glow accent */}
+            <div className="absolute top-0 right-0 w-64 h-64 bg-sun/10 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20" />
             {isSuccess ? (
               <div className="flex flex-col items-center text-center py-10 animate-in zoom-in-95 duration-500">
                 <div className="w-20 h-20 bg-sun-dark-light/30 rounded-full flex items-center justify-center mb-6">
@@ -531,19 +549,22 @@ export function EmpresaView({ onNavigate }: { onNavigate: (view: 'landing' | 'ac
                       <button 
                         type="button" 
                         onClick={handleBack}
-                        className="flex-1 py-4 px-6 border border-soft text-forest hover:bg-forest/5 rounded-full font-semibold transition-all text-center"
+                        className="flex-1 py-4 px-6 border border-soft text-forest hover:bg-forest/5 rounded-full font-semibold transition-all text-center cursor-pointer active:scale-[0.99]"
                       >
                         Voltar
                       </button>
                     )}
                     
-                    <button 
-                      disabled={isSubmitting}
-                      type="submit" 
-                      className="flex-1 py-4 px-6 bg-forest text-white rounded-full font-semibold shadow-md hover:bg-forest/90 transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
-                    >
-                      {step < 3 ? "Avançar" : (isSubmitting ? "Enviando..." : "Solicitar Proposta")}
-                    </button>
+                    <div className="flex-1 relative group">
+                      <div className="absolute -inset-1 bg-gradient-to-r from-forest/30 via-sun/20 to-forest/30 rounded-full blur-md opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
+                      <button 
+                        disabled={isSubmitting}
+                        type="submit" 
+                        className="w-full relative py-4 px-6 bg-forest text-white rounded-full font-semibold shadow-lg shadow-forest/15 hover:bg-forest/90 transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer hover:scale-[1.01] active:scale-[0.99]"
+                      >
+                        {step < 3 ? "Avançar" : (isSubmitting ? "Enviando..." : "Solicitar Proposta")}
+                      </button>
+                    </div>
                   </div>
 
                   <p className="text-center text-[11px] text-forest/70/60 uppercase tracking-widest font-semibold mt-2">

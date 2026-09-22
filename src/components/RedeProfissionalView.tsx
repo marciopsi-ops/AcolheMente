@@ -829,7 +829,7 @@ export function RedeProfissionalView({
   };
 
   return (
-    <div className="space-y-4 sm:space-y-6 animate-in fade-in duration-300 pb-16">
+    <div className="w-full max-w-full min-w-0 space-y-4 sm:space-y-6 animate-in fade-in duration-300 pb-16">
       {/* Cabeçalho da Aba Otimizado para Telas Pequenas */}
       {!isBannerMinimized ? (
         <div className="bg-white rounded-2xl sm:rounded-3xl p-3.5 sm:p-5 md:p-6 border border-soft shadow-xs transition-all">
@@ -990,7 +990,7 @@ export function RedeProfissionalView({
         )}
 
         {/* Chips de Especialidades / Abordagens Rápidas */}
-        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-0.5">
+        <div className="w-full max-w-full min-w-0 flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-0.5">
           <span className="text-[10px] sm:text-[11px] font-bold text-forest/70 uppercase tracking-wider whitespace-nowrap mr-1 flex items-center gap-1">
             <Layers className="w-3 h-3 text-emerald-700" />
             Filtros Rápidos:

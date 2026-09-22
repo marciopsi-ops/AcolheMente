@@ -102,12 +102,62 @@
         "createdAt": { "type": "timestamp" }
       },
       "required": ["triggerId", "triggerName", "status", "scheduledFor", "createdAt"]
+    },
+    "TriagemCorporativa": {
+      "title": "TriagemCorporativa",
+      "description": "Fichas de bordo geradas no fluxo corporativo quando o colaborador solicita acolhimento.",
+      "type": "object",
+      "properties": {
+        "colaboradorNome": { "type": "string" },
+        "colaboradorWhatsapp": { "type": "string" },
+        "empresaId": { "type": "string" },
+        "empresaNome": { "type": "string" },
+        "cargoId": { "type": "string" },
+        "cargoNome": { "type": "string" },
+        "beneficiarioTipo": { "type": "string", "enum": ["titular", "dependente"] },
+        "dependenteInfo": { "type": "string" },
+        "dependenteParentesco": { "type": "string" },
+        "servicoId": { "type": "string" },
+        "servicoNome": { "type": "string" },
+        "turnoPreferencia": { "type": "string" },
+        "queixa": { "type": "string" },
+        "valorSessao": { "type": "number" },
+        "frequenciaRecomendada": { "type": "string" },
+        "profissionalId": { "type": "string" },
+        "profissionalNome": { "type": "string" },
+        "status": { "type": "string", "enum": ["solicitacao_servico", "paciente", "alta", "interrupcao"] },
+        "createdAt": { "type": "timestamp" }
+      },
+      "required": ["colaboradorNome", "colaboradorWhatsapp", "empresaId", "servicoId", "profissionalId", "status", "createdAt"]
+    },
+    "AuditoriaGestao": {
+      "title": "AuditoriaGestao",
+      "description": "Registros de ações de apoio de acesso e auditoria de credenciais.",
+      "type": "object",
+      "properties": {
+        "tipo": { "type": "string" },
+        "usuarioAlvoUid": { "type": "string" },
+        "usuarioAlvoEmail": { "type": "string" },
+        "usuarioAlvoNome": { "type": "string" },
+        "emailAnterior": { "type": "string" },
+        "emailNovo": { "type": "string" },
+        "justificativa": { "type": "string" },
+        "executadoPorUid": { "type": "string" },
+        "executadoPorEmail": { "type": "string" },
+        "executadoPorNome": { "type": "string" },
+        "data": { "type": "timestamp" }
+      },
+      "required": ["tipo", "usuarioAlvoUid", "executadoPorUid", "data"]
     }
   },
   "firestore": {
     "acolhimentos": {
       "schema": { "$ref": "#/entities/Acolhimento" },
       "description": "Coleção de registros de acolhimento (público mas seguro para criação)."
+    },
+    "triagem_corporativa": {
+      "schema": { "$ref": "#/entities/TriagemCorporativa" },
+      "description": "Fichas de bordo corporativas para fluxo de acolhimento conveniado."
     },
     "servicos_profissionais": {
       "schema": { "$ref": "#/entities/ServicoProfissional" },
@@ -124,6 +174,10 @@
     "notificacoes_agendadas": {
       "schema": { "$ref": "#/entities/NotificacaoAgendada" },
       "description": "Fila de mensagens agendadas para envio posterior."
+    },
+    "auditoria_gestao": {
+      "schema": { "$ref": "#/entities/AuditoriaGestao" },
+      "description": "Logs e trilha de auditoria para ações de apoio e segurança de acesso."
     }
   }
 }

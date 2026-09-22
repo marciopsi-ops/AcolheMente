@@ -13,10 +13,21 @@ import {
   MessageCircle,
   Save,
   Loader2,
-  CheckCircle2
+  CheckCircle2,
+  DollarSign,
+  Plus,
+  Layers,
+  Calendar,
+  Briefcase
 } from "lucide-react";
 import { doc, updateDoc } from "firebase/firestore";
 import { db } from "../lib/firebase";
+import { 
+  CargoEmpresa, 
+  ServicoCorporativoConfig, 
+  DEFAULT_CARGOS_EMPRESA, 
+  DEFAULT_SERVICOS_CORPORATIVOS 
+} from "../types/corporativo";
 
 interface EmpresaBeneficioManagerProps {
   empresa: {
@@ -25,6 +36,10 @@ interface EmpresaBeneficioManagerProps {
     codigoAcesso?: string;
     logoUrl?: string;
     slogan?: string;
+    beneficioConfig?: {
+      cargos?: CargoEmpresa[];
+      servicos?: ServicoCorporativoConfig[];
+    };
     [key: string]: any;
   };
   onUpdateSuccess?: (updatedData: any) => void;
@@ -35,6 +50,23 @@ export function EmpresaBeneficioManager({ empresa, onUpdateSuccess }: EmpresaBen
   const [logoUrl, setLogoUrl] = useState(empresa.logoUrl || "");
   const [slogan, setSlogan] = useState(
     empresa.slogan || `Cuidando do bem-estar e da saúde mental da equipe ${empresa.nomeEmpresa || "parceira"} em parceria com a AcolheMente.`
+  );
+
+  // Cargos e Matriz de Serviços x Cargos
+  const [cargos, setCargos] = useState<CargoEmpresa[]>(
+    empresa.beneficioConfig?.cargos && empresa.beneficioConfig.cargos.length > 0
+      ? empresa.beneficioConfig.cargos
+      : DEFAULT_CARGOS_EMPRESA
+  );
+  const [servicos, setServicos] = useState<ServicoCorporativoConfig[]>(
+    empresa.beneficioConfig?.servicos && empresa.beneficioConfig.servicos.length > 0
+      ? empresa.beneficioConfig.servicos
+      : DEFAULT_SERVICOS_CORPORATIVOS
+  );
+
+  const [novoCargoNome, setNovoCargoNome] = useState("");
+  const [selectedServicoTab, setSelectedServicoTab] = useState<string>(
+    servicos[0]?.servicoId || "terapia_individual_adulto"
   );
 
   const [isSaving, setIsSaving] = useState(false);
@@ -92,6 +124,82 @@ export function EmpresaBeneficioManager({ empresa, onUpdateSuccess }: EmpresaBen
     setTimeout(() => setCopiedMsg(false), 2500);
   };
 
+  const handleAddCargo = () => {
+    const nome = novoCargoNome.trim();
+    if (!nome) return;
+    const id = nome
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]/g, "_");
+
+    if (cargos.some((c) => c.id === id || c.nome.toLowerCase() === nome.toLowerCase())) {
+      alert("Este cargo já está cadastrado.");
+      return;
+    }
+
+    const newCargo: CargoEmpresa = { id, nome };
+    setCargos((prev) => [...prev, newCargo]);
+    setNovoCargoNome("");
+
+    // Initialize default prices for this new cargo across all services
+    setServicos((prev) =>
+      prev.map((s) => ({
+        ...s,
+        precosPorCargo: {
+          ...s.precosPorCargo,
+          [id]: {
+            valorSessao: 80,
+            frequenciaRecomendada: "Semanal (4 sessões/mês)",
+            sessoesMesEstimadas: 4,
+          },
+        },
+      }))
+    );
+  };
+
+  const handleRemoveCargo = (cargoId: string) => {
+    if (cargos.length <= 1) {
+      alert("A empresa precisa ter ao menos um cargo cadastrado.");
+      return;
+    }
+    if (!confirm("Deseja remover este cargo da tabela de benefícios da empresa?")) return;
+
+    setCargos((prev) => prev.filter((c) => c.id !== cargoId));
+    setServicos((prev) =>
+      prev.map((s) => {
+        const copy = { ...s.precosPorCargo };
+        delete copy[cargoId];
+        return { ...s, precosPorCargo: copy };
+      })
+    );
+  };
+
+  const handleUpdatePreco = (
+    servicoId: string,
+    cargoId: string,
+    valorSessao: number,
+    frequenciaRecomendada: string,
+    sessoesMesEstimadas: number
+  ) => {
+    setServicos((prev) =>
+      prev.map((s) => {
+        if (s.servicoId !== servicoId) return s;
+        return {
+          ...s,
+          precosPorCargo: {
+            ...s.precosPorCargo,
+            [cargoId]: {
+              valorSessao,
+              frequenciaRecomendada,
+              sessoesMesEstimadas,
+            },
+          },
+        };
+      })
+    );
+  };
+
   const handleSave = async () => {
     if (!empresa.id) return;
     setIsSaving(true);
@@ -104,6 +212,10 @@ export function EmpresaBeneficioManager({ empresa, onUpdateSuccess }: EmpresaBen
         logoUrl: logoUrl.trim(),
         slogan: slogan.trim(),
         beneficioCorporativoAtivo: true,
+        beneficioConfig: {
+          cargos,
+          servicos,
+        },
       };
 
       await updateDoc(doc(db, "empresa_leads", empresa.id), updates);
@@ -296,7 +408,215 @@ export function EmpresaBeneficioManager({ empresa, onUpdateSuccess }: EmpresaBen
         </div>
       </div>
 
-      {/* 4. Divulgação para Colaboradores (WhatsApp / RH) */}
+      {/* 4. Matriz de Cargos e Faixas de Valor por Serviço (Personalizado por Empresa) */}
+      <div className="space-y-5 bg-white p-5 rounded-2xl border border-soft shadow-2xs">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-soft pb-3">
+          <div>
+            <h5 className="font-serif text-base font-bold text-forest flex items-center gap-2">
+              <DollarSign className="w-4 h-4 text-sun-dark" />
+              Faixas de Valor & Frequência por Cargo
+            </h5>
+            <p className="text-xs text-forest/70">
+              Personalize os valores de coparticipação e frequência sugerida para cada cargo e serviço oferecido pela empresa.
+            </p>
+          </div>
+          <span className="px-2.5 py-1 bg-sun-light/60 text-forest text-[11px] font-bold rounded-lg self-start sm:self-auto">
+            {cargos.length} cargos ativos
+          </span>
+        </div>
+
+        {/* Gestão de Cargos da Empresa */}
+        <div className="p-4 bg-warm/30 rounded-xl border border-soft space-y-3">
+          <label className="text-xs font-bold uppercase tracking-wider text-forest/80 flex items-center gap-1.5">
+            <Briefcase className="w-4 h-4 text-forest/60" /> Cargos / Níveis Cadastrados para esta Empresa:
+          </label>
+
+          <div className="flex flex-wrap gap-2 items-center">
+            {cargos.map((c) => (
+              <div
+                key={c.id}
+                className="px-3 py-1.5 bg-white border border-soft rounded-xl text-xs font-semibold text-forest flex items-center gap-2 shadow-2xs"
+              >
+                <span>{c.nome}</span>
+                {cargos.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveCargo(c.id)}
+                    title="Remover cargo"
+                    className="text-forest/40 hover:text-red-500 transition-colors cursor-pointer"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+
+          <div className="flex gap-2 pt-1 max-w-md">
+            <input
+              type="text"
+              value={novoCargoNome}
+              onChange={(e) => setNovoCargoNome(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleAddCargo()}
+              placeholder="Adicionar novo cargo (Ex: Estagiário, Especialista)..."
+              className="flex-1 text-xs px-3 py-2 bg-white border border-soft rounded-xl focus:outline-none focus:border-sun-dark text-forest"
+            />
+            <button
+              type="button"
+              onClick={handleAddCargo}
+              disabled={!novoCargoNome.trim()}
+              className="px-3.5 py-2 bg-forest text-white rounded-xl text-xs font-bold flex items-center gap-1.5 hover:bg-forest/90 disabled:opacity-40 transition-all cursor-pointer shrink-0"
+            >
+              <Plus className="w-3.5 h-3.5" /> Adicionar
+            </button>
+          </div>
+        </div>
+
+        {/* Abas dos Serviços */}
+        <div className="space-y-3">
+          <label className="text-xs font-bold uppercase tracking-wider text-forest/80 flex items-center gap-1.5">
+            <Layers className="w-4 h-4 text-forest/60" /> Selecione o Serviço para configurar a Tabela:
+          </label>
+
+          <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
+            {servicos.map((serv) => {
+              const isActive = selectedServicoTab === serv.servicoId;
+              return (
+                <button
+                  key={serv.servicoId}
+                  type="button"
+                  onClick={() => setSelectedServicoTab(serv.servicoId)}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+                    isActive
+                      ? "bg-forest text-white shadow-xs"
+                      : "bg-warm/60 text-forest/70 hover:bg-warm hover:text-forest border border-soft"
+                  }`}
+                >
+                  {serv.nome}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Tabela de Preços do Serviço Ativo */}
+          {(() => {
+            const currentServ = servicos.find((s) => s.servicoId === selectedServicoTab) || servicos[0];
+            if (!currentServ) return null;
+
+            return (
+              <div className="border border-soft rounded-xl overflow-hidden bg-white shadow-2xs">
+                <div className="p-3.5 bg-warm/20 border-b border-soft flex items-center justify-between">
+                  <div className="text-xs">
+                    <span className="font-bold text-forest">{currentServ.nome}</span>
+                    <span className="text-forest/60 ml-2 text-[11px]">— {currentServ.descricao}</span>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-warm/40 text-forest/80 font-bold uppercase tracking-wider border-b border-soft text-[10px]">
+                      <tr>
+                        <th className="py-2.5 px-4">Cargo / Função</th>
+                        <th className="py-2.5 px-4">Valor por Sessão</th>
+                        <th className="py-2.5 px-4">Frequência Recomendada</th>
+                        <th className="py-2.5 px-4">Sessões / Mês</th>
+                        <th className="py-2.5 px-4">Previsão Mensal</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-soft/60">
+                      {cargos.map((cargo) => {
+                        const precoInfo = currentServ.precosPorCargo[cargo.id] || {
+                          valorSessao: 80,
+                          frequenciaRecomendada: "Semanal (4 sessões/mês)",
+                          sessoesMesEstimadas: 4,
+                        };
+                        const totalMes = precoInfo.valorSessao * precoInfo.sessoesMesEstimadas;
+
+                        return (
+                          <tr key={cargo.id} className="hover:bg-warm/10 transition-colors">
+                            <td className="py-3 px-4 font-bold text-forest">
+                              {cargo.nome}
+                            </td>
+                            <td className="py-3 px-4">
+                              <div className="flex items-center gap-1">
+                                <span className="text-forest/60 font-medium">R$</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="5"
+                                  value={precoInfo.valorSessao}
+                                  onChange={(e) => {
+                                    const val = Math.max(0, Number(e.target.value) || 0);
+                                    handleUpdatePreco(
+                                      currentServ.servicoId,
+                                      cargo.id,
+                                      val,
+                                      precoInfo.frequenciaRecomendada,
+                                      precoInfo.sessoesMesEstimadas
+                                    );
+                                  }}
+                                  className="w-20 px-2 py-1 border border-soft rounded-lg bg-white font-bold text-forest text-xs focus:outline-none focus:border-sun-dark"
+                                />
+                              </div>
+                            </td>
+                            <td className="py-3 px-4">
+                              <select
+                                value={precoInfo.frequenciaRecomendada}
+                                onChange={(e) => {
+                                  const freq = e.target.value;
+                                  const sessoes = freq.toLowerCase().includes("quinzenal") ? 2 : 4;
+                                  handleUpdatePreco(
+                                    currentServ.servicoId,
+                                    cargo.id,
+                                    precoInfo.valorSessao,
+                                    freq,
+                                    sessoes
+                                  );
+                                }}
+                                className="px-2 py-1 border border-soft rounded-lg bg-white text-forest text-xs focus:outline-none focus:border-sun-dark cursor-pointer font-medium"
+                              >
+                                <option value="Semanal (4 sessões/mês)">Semanal (4 sessões/mês)</option>
+                                <option value="Quinzenal (2 sessões/mês)">Quinzenal (2 sessões/mês)</option>
+                                <option value="Conforme indicação clínica">Conforme indicação clínica</option>
+                              </select>
+                            </td>
+                            <td className="py-3 px-4">
+                              <input
+                                type="number"
+                                min="1"
+                                max="10"
+                                value={precoInfo.sessoesMesEstimadas}
+                                onChange={(e) => {
+                                  const sessoes = Math.max(1, Number(e.target.value) || 1);
+                                  handleUpdatePreco(
+                                    currentServ.servicoId,
+                                    cargo.id,
+                                    precoInfo.valorSessao,
+                                    precoInfo.frequenciaRecomendada,
+                                    sessoes
+                                  );
+                                }}
+                                className="w-14 px-2 py-1 border border-soft rounded-lg bg-white font-bold text-forest text-xs text-center focus:outline-none focus:border-sun-dark"
+                              />
+                            </td>
+                            <td className="py-3 px-4 font-bold text-forest">
+                              <span className="px-2.5 py-1 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-lg text-xs">
+                                R$ {totalMes.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}/mês
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      </div>
+
+      {/* 5. Divulgação para Colaboradores (WhatsApp / RH) */}
       <div className="p-4 bg-emerald-50/50 rounded-2xl border border-emerald-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div className="space-y-1">
           <h5 className="font-bold text-xs text-emerald-950 flex items-center gap-2">

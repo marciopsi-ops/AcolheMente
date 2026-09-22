@@ -9,6 +9,7 @@ import { EventosServicosView } from "./EventosServicosView";
 import { ComplianceModal } from "../components/ComplianceModal";
 import { BackupManager } from "../components/BackupManager";
 import { EmpresaBeneficioManager } from "../components/EmpresaBeneficioManager";
+import { TriagemCorporativaKanban } from "../components/TriagemCorporativaKanban";
 import { EvolutionDiagnosticModal } from "../components/EvolutionDiagnosticModal";
 import {
   Activity,
@@ -23,6 +24,8 @@ import {
   Check,
   Circle,
   Clock,
+  Globe,
+  EyeOff,
   Grip,
   XCircle,
   Search,
@@ -47,13 +50,16 @@ import {
   BarChart2,
   RefreshCw,
   Building2,
+  Key,
   Link2,
   Copy,
   DollarSign,
   X,
   UserPlus,
   Heart,
+  Shield,
   ShieldAlert,
+  Stethoscope,
   MessageCircle,
   Share2,
   Star,
@@ -119,6 +125,13 @@ import {
   User as FirebaseUser,
   getAuth,
   updatePassword,
+  sendPasswordResetEmail,
+  updateEmail,
+  verifyBeforeUpdateEmail,
+  reauthenticateWithCredential,
+  reauthenticateWithPopup,
+  EmailAuthProvider,
+  linkWithCredential,
 } from "firebase/auth";
 import {
   doc,
@@ -812,6 +825,7 @@ export function DashboardView({
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [activeRoleView, setActiveRoleView] = useState<Role | null>(null);
+  const [showRoleSelectionModal, setShowRoleSelectionModal] = useState(false);
   const [loadingObj, setLoadingObj] = useState(true);
 
   const currentRole = activeRoleView || profile?.role || "profissional";
@@ -840,6 +854,7 @@ export function DashboardView({
       perfil: "Configurações de Perfil",
       pagamentosProfissional: "Gerenciar Meus Pagamentos",
       redeProfissional: "Rede de Conexão",
+      triagemCorporativa: "Triagem Corporativa",
     };
     return [
       { label: "Painel", onClick: () => onNavigate("landing") },
@@ -871,6 +886,7 @@ export function DashboardView({
     | "gestaoArtigos"
     | "artigosProfissional"
     | "redeProfissional"
+    | "triagemCorporativa"
   >("kanban");
 
   // Search
@@ -886,8 +902,12 @@ export function DashboardView({
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
-  const [role, setRole] = useState<Role>("master");
+  const [role, setRole] = useState<Role>("profissional");
   const [authError, setAuthError] = useState("");
+  const [showForgotPasswordModal, setShowForgotPasswordModal] = useState(false);
+  const [forgotPasswordEmail, setForgotPasswordEmail] = useState("");
+  const [forgotPasswordStatus, setForgotPasswordStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [forgotPasswordMsg, setForgotPasswordMsg] = useState("");
 
   // Password Reset Flow
   const [newPasswordForReset, setNewPasswordForReset] = useState("");
@@ -1419,6 +1439,8 @@ export function DashboardView({
     urlContratoPrestacao: "",
     doacoesAtivas: true,
     carrosselProfissionaisAtivo: true,
+    carrosselEmpresasAtivo: true,
+    metricasAtivas: true,
     taxaAssociativaMensal: "29,90",
     stripeEnabled: true,
     stripePublicKey: "",
@@ -1507,6 +1529,43 @@ export function DashboardView({
     );
     return () => unsubscribe();
   }, []);
+
+  // Monitoramento em tempo real de novas solicitações corporativas
+  const [solicitacoesCorpCount, setSolicitacoesCorpCount] = useState(0);
+
+  useEffect(() => {
+    try {
+      const q = query(
+        collection(db, "triagem_corporativa"),
+        where("status", "==", "solicitacao_servico")
+      );
+      const unsubscribe = onSnapshot(
+        q,
+        (snapshot) => {
+          if (currentRole === "profissional" && profile?.uid) {
+            const count = snapshot.docs.filter((d) => {
+              const data = d.data();
+              return (
+                data.profissionalId === profile.uid ||
+                (data.profissionalNome &&
+                  profile.name &&
+                  data.profissionalNome.trim().toLowerCase() === profile.name.trim().toLowerCase())
+              );
+            }).length;
+            setSolicitacoesCorpCount(count);
+          } else {
+            setSolicitacoesCorpCount(snapshot.size);
+          }
+        },
+        (err) => {
+          console.warn("Monitoramento triagem_corporativa:", err);
+        }
+      );
+      return () => unsubscribe();
+    } catch (err) {
+      console.warn("Erro ao configurar snapshot triagem_corporativa:", err);
+    }
+  }, [currentRole, profile?.uid, profile?.name]);
 
   useEffect(() => {
     if (!selectedProfissional) {
@@ -1767,15 +1826,35 @@ export function DashboardView({
             ];
           }
 
-          if (currentUserProfile?.role === "profissional") {
-            setActiveTab("pacientes");
-            const hasSeenTour = safeLocalStorage.getItem("elo_tour_seen");
-            if (!hasSeenTour) {
-              setShowTourModal(true);
+          const userAvailableRoles = currentUserProfile.roles as Role[];
+          const hasMultipleRoles = userAvailableRoles.length > 1;
+
+          // Se tiver 2 ou mais níveis de acesso, abre modal para o usuário escolher seu painel
+          if (hasMultipleRoles) {
+            setShowRoleSelectionModal(true);
+            // Default role enquanto escolhe
+            const initialRole = currentUserProfile.role || userAvailableRoles[0] || "profissional";
+            setActiveRoleView(initialRole);
+            if (initialRole === "profissional") {
+              setActiveTab("pacientes");
+            } else {
+              setActiveTab("kanban");
+            }
+          } else {
+            setShowRoleSelectionModal(false);
+            const singleRole = currentUserProfile.role || userAvailableRoles[0] || "profissional";
+            setActiveRoleView(singleRole);
+            if (singleRole === "profissional") {
+              setActiveTab("pacientes");
+              const hasSeenTour = safeLocalStorage.getItem("elo_tour_seen");
+              if (!hasSeenTour) {
+                setShowTourModal(true);
+              }
+            } else {
+              setActiveTab("kanban");
             }
           }
           setProfile(currentUserProfile);
-          setActiveRoleView(currentUserProfile.role);
         }
 
         unsubConfig = onSnapshot(
@@ -2065,8 +2144,24 @@ export function DashboardView({
     }
   };
 
-  const handleUpdateConfiguracoesProperty = (field: string, value: any) => {
+  const handleUpdateConfiguracoesProperty = async (
+    field: string,
+    value: any,
+    autoPersist = false,
+  ) => {
     setGlobalConfigs((prev) => ({ ...prev, [field]: value }));
+    if (autoPersist) {
+      try {
+        await setDoc(
+          doc(db, "configuracoes", "master"),
+          { [field]: value },
+          { merge: true },
+        );
+        showToast("Configuração atualizada com sucesso!", "success");
+      } catch (err) {
+        console.error("Erro ao persistir configuração rápida:", err);
+      }
+    }
   };
 
   const handleCheckWhatsappStatus = async () => {
@@ -2308,13 +2403,40 @@ export function DashboardView({
     }
   };
 
+  const handleSendForgotPasswordEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!forgotPasswordEmail || !forgotPasswordEmail.includes("@")) {
+      setForgotPasswordStatus("error");
+      setForgotPasswordMsg("Por favor, digite um e-mail válido.");
+      return;
+    }
+    setForgotPasswordStatus("loading");
+    setForgotPasswordMsg("");
+    try {
+      await sendPasswordResetEmail(auth, forgotPasswordEmail.trim());
+      setForgotPasswordStatus("success");
+      setForgotPasswordMsg(
+        `Um e-mail de redefinição foi enviado para ${forgotPasswordEmail.trim()}. Verifique sua caixa de entrada e a pasta de spam.`
+      );
+    } catch (err: any) {
+      console.error("Erro ao enviar email de redefinição:", err);
+      setForgotPasswordStatus("error");
+      if (err.code === "auth/user-not-found") {
+        setForgotPasswordMsg("Não encontramos nenhuma conta com este e-mail.");
+      } else if (err.code === "auth/invalid-email") {
+        setForgotPasswordMsg("Formato de e-mail inválido.");
+      } else {
+        setForgotPasswordMsg(err.message || "Erro ao solicitar redefinição de senha.");
+      }
+    }
+  };
+
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError("");
     try {
       if (isLogin) {
         const cred = await signInWithEmailAndPassword(auth, email, password);
-        // Ensure email/name are saved in DB if not already present
         const userRef = doc(db, "users", cred.user.uid);
         const snap = await getDoc(userRef);
         if (snap.exists()) {
@@ -2322,7 +2444,7 @@ export function DashboardView({
           if (d.role === "profissional" && d.ativo === false) {
             await signOut(auth);
             setAuthError(
-              "Sua conta está inativa. Entre em contato com o suporte.",
+              "Sua conta está inativa. Entre em contato com a coordenação.",
             );
             return;
           }
@@ -2333,25 +2455,41 @@ export function DashboardView({
             });
           }
         } else {
-          // Document is missing (maybe due to previous rule failure), create it as profissional
-          await setDoc(userRef, {
-            role: "profissional",
-            name: cred.user.displayName || email.split("@")[0],
-            email: cred.user.email || email,
-            requirePasswordChange: false,
-            createdAt: new Date(),
-          });
+          // Documento não existe pelo UID - checar por email se foi pré-cadastrado com outro UID
+          const emailQuery = query(
+            collection(db, "users"),
+            where("email", "==", (cred.user.email || email).toLowerCase().trim())
+          );
+          const emailSnap = await getDocs(emailQuery);
+          if (!emailSnap.empty) {
+            const existingDoc = emailSnap.docs[0];
+            const existingData = existingDoc.data();
+            // Migra para o UID atual do Auth
+            await setDoc(userRef, {
+              ...existingData,
+              email: cred.user.email || email,
+            });
+          } else {
+            // Conta não autorizada
+            await signOut(auth);
+            setAuthError(
+              "Acesso não autorizado. Sua conta não possui perfil registrado na plataforma. Entre em contato com a coordenação."
+            );
+            return;
+          }
         }
       } else {
+        // Bloqueio de auto-registro como master/triagem
         const cred = await createUserWithEmailAndPassword(
           auth,
           email,
           password,
         );
         await setDoc(doc(db, "users", cred.user.uid), {
-          role,
+          role: "profissional",
           name,
           email: cred.user.email || email,
+          createdAt: new Date(),
         });
       }
     } catch (err: any) {
@@ -2379,28 +2517,75 @@ export function DashboardView({
     try {
       const provider = new GoogleAuthProvider();
       const result = await signInWithPopup(auth, provider);
+      const googleEmail = (result.user.email || "").toLowerCase().trim();
+      
+      if (!googleEmail) {
+        await signOut(auth);
+        setAuthError("Não foi possível obter o e-mail da sua conta Google.");
+        return;
+      }
+
       const userRef = doc(db, "users", result.user.uid);
       const snap = await getDoc(userRef);
-      if (!snap.exists()) {
-        await setDoc(userRef, {
-          role: role || "profissional",
-          name: result.user.displayName || "Usuário",
-          email: result.user.email || "",
-        });
-      } else {
+
+      if (snap.exists()) {
         const d = snap.data();
         if (d.role === "profissional" && d.ativo === false) {
           await signOut(auth);
           setAuthError(
-            "Sua conta está inativa. Entre em contato com o suporte.",
+            "Sua conta está inativa. Entre em contato com a coordenação.",
           );
           return;
         }
         if (!d.email || (!d.name && result.user.displayName)) {
           await updateDoc(userRef, {
-            email: result.user.email || "",
+            email: googleEmail,
             name: d.name || result.user.displayName || "Usuário",
           });
+        }
+      } else {
+        // Busca na coleção users se este e-mail já foi pré-cadastrado pela Gestão
+        const emailQuery = query(
+          collection(db, "users"),
+          where("email", "==", googleEmail)
+        );
+        const emailSnap = await getDocs(emailQuery);
+
+        if (emailSnap.empty) {
+          // BARRAGEM DE SEGURANÇA: Usuário desconhecido não pode se auto-cadastrar nem acessar
+          await signOut(auth);
+          setAuthError(
+            `Acesso não autorizado. O e-mail (${googleEmail}) não possui cadastro prévio na plataforma. Se você é um profissional ou gestor, solicite seu acesso à coordenação.`
+          );
+          return;
+        }
+
+        // Se o e-mail já existia pré-cadastrado com outro ID (ex: gerado provisoriamente), migra/vincula ao UID do Google
+        const preDoc = emailSnap.docs[0];
+        const preData = preDoc.data();
+        
+        if (preData.role === "profissional" && preData.ativo === false) {
+          await signOut(auth);
+          setAuthError(
+            "Sua conta está inativa. Entre em contato com a coordenação.",
+          );
+          return;
+        }
+
+        await setDoc(userRef, {
+          ...preData,
+          email: googleEmail,
+          name: preData.name || result.user.displayName || "Usuário",
+          googleLinked: true,
+          updatedAt: serverTimestamp(),
+        });
+
+        if (preDoc.id !== result.user.uid) {
+          try {
+            await deleteDoc(doc(db, "users", preDoc.id));
+          } catch (e) {
+            console.warn("Erro ao remover documento anterior pré-cadastrado:", e);
+          }
         }
       }
     } catch (err: any) {
@@ -2416,6 +2601,8 @@ export function DashboardView({
         setAuthError(
           "Este e-mail já está vinculado a outra forma de login (como senha). Por favor, use a opção correspondente ou vincule as contas.",
         );
+      } else if (err.code === "auth/popup-closed-by-user") {
+        // Usuário fechou o pop-up, não exibe erro alarmante
       } else {
         setAuthError(err.message || "Erro de autenticação com Google.");
       }
@@ -2487,6 +2674,351 @@ export function DashboardView({
   } | null>(null);
   const [motivoDevolucao, setMotivoDevolucao] = useState("");
   const [motivoDevolucaoOutro, setMotivoDevolucaoOutro] = useState("");
+
+  // Estados para Gestão de E-mail e Autenticação do Usuário
+  const [showChangeEmailModal, setShowChangeEmailModal] = useState(false);
+  const [newEmailInput, setNewEmailInput] = useState("");
+  const [confirmEmailInput, setConfirmEmailInput] = useState("");
+  const [currentPasswordInput, setCurrentPasswordInput] = useState("");
+  const [showPasswordInModal, setShowPasswordInModal] = useState(false);
+  const [isChangingEmail, setIsChangingEmail] = useState(false);
+  const [changeEmailError, setChangeEmailError] = useState("");
+  const [changeEmailSuccess, setChangeEmailSuccess] = useState("");
+
+  const [showCreatePasswordModal, setShowCreatePasswordModal] = useState(false);
+  const [newDirectPassword, setNewDirectPassword] = useState("");
+  const [confirmDirectPassword, setConfirmDirectPassword] = useState("");
+  const [isCreatingDirectPassword, setIsCreatingDirectPassword] = useState(false);
+  const [directPasswordError, setDirectPasswordError] = useState("");
+
+  const [showAccountDetailsModal, setShowAccountDetailsModal] = useState(false);
+
+  // Estados para Apoio de Acesso na Gestão
+  const [selectedUserForApoio, setSelectedUserForApoio] = useState<UserProfile | null>(null);
+  const [showApoioModal, setShowApoioModal] = useState(false);
+  const [apoioActiveTab, setApoioActiveTab] = useState<"senha" | "email" | "diagnostico">("senha");
+  const [isSendingResetFromApoio, setIsSendingResetFromApoio] = useState(false);
+  const [apoioNewEmail, setApoioNewEmail] = useState("");
+  const [apoioJustificativa, setApoioJustificativa] = useState("");
+  const [isUpdatingEmailFromApoio, setIsUpdatingEmailFromApoio] = useState(false);
+  const [apoioSuccessMessage, setApoioSuccessMessage] = useState("");
+  const [apoioErrorMessage, setApoioErrorMessage] = useState("");
+
+  const handleUserChangeEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setChangeEmailError("");
+    setChangeEmailSuccess("");
+
+    const newEmailClean = newEmailInput.trim().toLowerCase();
+    const confirmEmailClean = confirmEmailInput.trim().toLowerCase();
+
+    if (!newEmailClean || !newEmailClean.includes("@") || !newEmailClean.includes(".")) {
+      setChangeEmailError("Por favor, informe um endereço de e-mail válido.");
+      return;
+    }
+    if (newEmailClean !== confirmEmailClean) {
+      setChangeEmailError("A confirmação do novo e-mail não confere.");
+      return;
+    }
+    const currentEmail = (auth.currentUser?.email || profile?.email || "").toLowerCase().trim();
+    if (newEmailClean === currentEmail) {
+      setChangeEmailError("O novo e-mail deve ser diferente do e-mail cadastrado atualmente.");
+      return;
+    }
+    if (!auth.currentUser) {
+      setChangeEmailError("Sessão não identificada. Por favor, recarregue a página.");
+      return;
+    }
+
+    setIsChangingEmail(true);
+    try {
+      const isGoogleAuth = auth.currentUser.providerData.some(
+        (p) => p.providerId === "google.com"
+      );
+      const hasPassword = auth.currentUser.providerData.some(
+        (p) => p.providerId === "password"
+      );
+
+      // Reautenticação necessária pelo Firebase Auth
+      if (hasPassword) {
+        if (!currentPasswordInput) {
+          setChangeEmailError("Digite sua senha atual para confirmar a alteração com segurança.");
+          setIsChangingEmail(false);
+          return;
+        }
+        const cred = EmailAuthProvider.credential(
+          auth.currentUser.email || currentEmail,
+          currentPasswordInput
+        );
+        await reauthenticateWithCredential(auth.currentUser, cred);
+      } else if (isGoogleAuth) {
+        const googleProvider = new GoogleAuthProvider();
+        await reauthenticateWithPopup(auth.currentUser, googleProvider);
+      }
+
+      // Executa a atualização no Firebase Auth
+      let updatedDirectly = false;
+      try {
+        if (typeof verifyBeforeUpdateEmail === "function") {
+          await verifyBeforeUpdateEmail(auth.currentUser, newEmailClean);
+        } else {
+          await updateEmail(auth.currentUser, newEmailClean);
+          updatedDirectly = true;
+        }
+      } catch (authErr: any) {
+        console.warn("verifyBeforeUpdateEmail error, fallback to updateEmail:", authErr);
+        try {
+          await updateEmail(auth.currentUser, newEmailClean);
+          updatedDirectly = true;
+        } catch (directErr: any) {
+          throw directErr;
+        }
+      }
+
+      // Atualiza o documento no Firestore
+      const userRef = doc(db, "users", auth.currentUser.uid);
+      await updateDoc(userRef, {
+        email: newEmailClean,
+        emailUpdatedAt: serverTimestamp(),
+      });
+
+      // Atualiza estado local
+      if (profile) {
+        setProfile({ ...profile, email: newEmailClean });
+      }
+
+      // Registra auditoria
+      try {
+        await addDoc(collection(db, "auditoria_gestao"), {
+          tipo: "usuario_alterou_proprio_email",
+          usuarioAlvoUid: auth.currentUser.uid,
+          usuarioAlvoNome: profile?.name || "Usuário",
+          emailAnterior: currentEmail,
+          emailNovo: newEmailClean,
+          executadoPorUid: auth.currentUser.uid,
+          executadoPorEmail: currentEmail,
+          data: serverTimestamp(),
+        });
+      } catch (auditErr) {
+        console.warn("Log auditoria opcional:", auditErr);
+      }
+
+      setChangeEmailSuccess(
+        updatedDirectly
+          ? "E-mail de acesso atualizado com sucesso no seu perfil e no login!"
+          : `E-mail atualizado no seu perfil! Um link de confirmação foi enviado para ${newEmailClean}.`
+      );
+      showToast("E-mail de acesso atualizado com sucesso!", "success");
+
+      setTimeout(() => {
+        setShowChangeEmailModal(false);
+        setNewEmailInput("");
+        setConfirmEmailInput("");
+        setCurrentPasswordInput("");
+        setChangeEmailSuccess("");
+      }, 2500);
+    } catch (err: any) {
+      console.error("Erro ao alterar e-mail:", err);
+      if (err.code === "auth/wrong-password") {
+        setChangeEmailError("Senha atual incorreta.");
+      } else if (err.code === "auth/email-already-in-use") {
+        setChangeEmailError("Este endereço de e-mail já está sendo utilizado em outra conta.");
+      } else if (err.code === "auth/requires-recent-login") {
+        setChangeEmailError("Por segurança, esta operação requer login recente. Saia e faça login novamente para continuar.");
+      } else if (err.code === "auth/invalid-email") {
+        setChangeEmailError("Formato de e-mail inválido.");
+      } else {
+        setChangeEmailError(err.message || "Não foi possível concluir a alteração de e-mail.");
+      }
+    } finally {
+      setIsChangingEmail(false);
+    }
+  };
+
+  const handleCreateDirectPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setDirectPasswordError("");
+    if (newDirectPassword.length < 6) {
+      setDirectPasswordError("A senha deve ter pelo menos 6 caracteres.");
+      return;
+    }
+    if (newDirectPassword !== confirmDirectPassword) {
+      setDirectPasswordError("As senhas digitadas não coincidem.");
+      return;
+    }
+    const targetEmail = auth.currentUser?.email || profile?.email;
+    if (!auth.currentUser || !targetEmail) {
+      setDirectPasswordError("E-mail da conta não localizado.");
+      return;
+    }
+
+    setIsCreatingDirectPassword(true);
+    try {
+      const cred = EmailAuthProvider.credential(targetEmail, newDirectPassword);
+      await linkWithCredential(auth.currentUser, cred);
+      showToast("Senha de acesso direto criada com sucesso! Agora você pode entrar com Google ou com sua senha.", "success");
+      setShowCreatePasswordModal(false);
+      setNewDirectPassword("");
+      setConfirmDirectPassword("");
+    } catch (err: any) {
+      console.error("Erro ao vincular senha direta:", err);
+      if (err.code === "auth/provider-already-linked") {
+        setDirectPasswordError("Sua conta já possui uma senha vinculada.");
+      } else if (err.code === "auth/requires-recent-login") {
+        setDirectPasswordError("Por segurança, faça login novamente com o Google para autorizar o vínculo da senha.");
+      } else {
+        setDirectPasswordError(err.message || "Erro ao vincular senha direta.");
+      }
+    } finally {
+      setIsCreatingDirectPassword(false);
+    }
+  };
+
+  const handleUserSelfResetPassword = async () => {
+    const targetEmail = profile?.email || auth.currentUser?.email;
+    if (!targetEmail) {
+      showToast("E-mail não localizado.", "error");
+      return;
+    }
+    try {
+      await sendPasswordResetEmail(auth, targetEmail);
+      showToast(`Link de redefinição de senha enviado para ${targetEmail}!`, "success");
+    } catch (err: any) {
+      console.error("Erro ao enviar reset de senha:", err);
+      showToast(err.message || "Erro ao disparar e-mail de redefinição.", "error");
+    }
+  };
+
+  const handleSendResetFromApoio = async () => {
+    if (!selectedUserForApoio?.email) {
+      setApoioErrorMessage("Este usuário não possui um endereço de e-mail cadastrado.");
+      return;
+    }
+    setIsSendingResetFromApoio(true);
+    setApoioErrorMessage("");
+    setApoioSuccessMessage("");
+    try {
+      await sendPasswordResetEmail(auth, selectedUserForApoio.email);
+
+      // Registrar auditoria
+      try {
+        await addDoc(collection(db, "auditoria_gestao"), {
+          tipo: "apoio_redefinicao_senha",
+          usuarioAlvoUid: selectedUserForApoio.uid || "",
+          usuarioAlvoEmail: selectedUserForApoio.email,
+          usuarioAlvoNome: selectedUserForApoio.name || "Usuário",
+          executadoPorUid: auth.currentUser?.uid || "",
+          executadoPorEmail: auth.currentUser?.email || "",
+          executadoPorNome: profile?.name || "Gestor",
+          data: serverTimestamp(),
+        });
+      } catch (auditErr) {
+        console.warn("Log auditoria:", auditErr);
+      }
+
+      setApoioSuccessMessage(
+        `Link oficial de redefinição de senha enviado com sucesso para ${selectedUserForApoio.email}! O usuário receberá as instruções diretamente em sua caixa de entrada, mantendo total privacidade e autonomia.`
+      );
+      showToast("Link de redefinição enviado com sucesso!", "success");
+    } catch (err: any) {
+      console.error("Erro no apoio de senha:", err);
+      setApoioErrorMessage(err.message || "Erro ao disparar e-mail de redefinição.");
+    } finally {
+      setIsSendingResetFromApoio(false);
+    }
+  };
+
+  const handleUpdateEmailFromApoio = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedUserForApoio?.uid) return;
+    const novoEmailClean = apoioNewEmail.trim().toLowerCase();
+    if (!novoEmailClean || !novoEmailClean.includes("@") || !novoEmailClean.includes(".")) {
+      setApoioErrorMessage("Informe um novo endereço de e-mail válido.");
+      return;
+    }
+    if (novoEmailClean === (selectedUserForApoio.email || "").toLowerCase().trim()) {
+      setApoioErrorMessage("O novo e-mail deve ser diferente do e-mail atual do usuário.");
+      return;
+    }
+    if (!apoioJustificativa.trim()) {
+      setApoioErrorMessage("Informe a justificativa ou protocolo de suporte desta alteração assistida (requisito de compliance e LGPD).");
+      return;
+    }
+
+    setIsUpdatingEmailFromApoio(true);
+    setApoioErrorMessage("");
+    setApoioSuccessMessage("");
+
+    try {
+      const userRef = doc(db, "users", selectedUserForApoio.uid);
+      await updateDoc(userRef, {
+        email: novoEmailClean,
+        emailAlteradoPorGestao: {
+          data: serverTimestamp(),
+          executadoPorUid: auth.currentUser?.uid || "",
+          executadoPorEmail: auth.currentUser?.email || "",
+          emailAnterior: selectedUserForApoio.email || "",
+          justificativa: apoioJustificativa.trim(),
+        },
+      });
+
+      // Atualizar lista de usuários localmente
+      setAllUsers((prev) =>
+        prev.map((usr) =>
+          usr.uid === selectedUserForApoio.uid
+            ? { ...usr, email: novoEmailClean }
+            : usr
+        )
+      );
+
+      // Tenta enviar o link para definir a senha no novo e-mail
+      let resetSent = false;
+      try {
+        await sendPasswordResetEmail(auth, novoEmailClean);
+        resetSent = true;
+      } catch (resetErr) {
+        console.info("Aviso ao enviar reset para novo e-mail:", resetErr);
+      }
+
+      // Registrar auditoria
+      try {
+        await addDoc(collection(db, "auditoria_gestao"), {
+          tipo: "apoio_alteracao_email_assistida",
+          usuarioAlvoUid: selectedUserForApoio.uid,
+          usuarioAlvoNome: selectedUserForApoio.name || "Usuário",
+          emailAnterior: selectedUserForApoio.email || "",
+          emailNovo: novoEmailClean,
+          justificativa: apoioJustificativa.trim(),
+          executadoPorUid: auth.currentUser?.uid || "",
+          executadoPorEmail: auth.currentUser?.email || "",
+          executadoPorNome: profile?.name || "Gestor",
+          data: serverTimestamp(),
+        });
+      } catch (auditErr) {
+        console.warn("Log auditoria:", auditErr);
+      }
+
+      setSelectedUserForApoio({
+        ...selectedUserForApoio,
+        email: novoEmailClean,
+      });
+
+      setApoioSuccessMessage(
+        `E-mail de cadastro atualizado com sucesso para ${novoEmailClean}! O UID (${selectedUserForApoio.uid}) e todos os prontuários e históricos do usuário permanecem 100% preservados. ${
+          resetSent
+            ? "Enviamos também um link de acesso/definição de senha para o novo endereço."
+            : ""
+        }`
+      );
+      showToast("E-mail do usuário atualizado com sucesso!", "success");
+      setApoioJustificativa("");
+    } catch (err: any) {
+      console.error("Erro ao alterar e-mail no apoio:", err);
+      setApoioErrorMessage(err.message || "Erro ao atualizar e-mail.");
+    } finally {
+      setIsUpdatingEmailFromApoio(false);
+    }
+  };
 
   const handleRolesChange = async (userId: string, newRoles: Role[]) => {
     const isUserMaster = profile?.roles
@@ -4046,9 +4578,23 @@ export function DashboardView({
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-forest/70 mb-1">
-                Senha
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-semibold uppercase tracking-wider text-forest/70">
+                  Senha
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setForgotPasswordEmail(email);
+                    setForgotPasswordStatus("idle");
+                    setForgotPasswordMsg("");
+                    setShowForgotPasswordModal(true);
+                  }}
+                  className="text-xs text-forest/70 hover:text-forest underline transition-colors"
+                >
+                  Esqueci minha senha
+                </button>
+              </div>
               <input
                 required
                 type="password"
@@ -4099,6 +4645,98 @@ export function DashboardView({
             Entrar com Google
           </button>
         </div>
+
+        {/* Modal Esqueci Minha Senha */}
+        {showForgotPasswordModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
+            <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl border border-soft relative animate-in fade-in zoom-in-95 duration-150">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowForgotPasswordModal(false);
+                  setForgotPasswordStatus("idle");
+                  setForgotPasswordMsg("");
+                }}
+                className="absolute top-6 right-6 text-forest/70 hover:text-forest p-1 rounded-full hover:bg-warm transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mb-4">
+                <Key className="w-6 h-6" />
+              </div>
+
+              <h3 className="text-xl font-serif font-semibold text-forest mb-2">
+                Recuperar Senha
+              </h3>
+              <p className="text-sm text-forest/70 mb-6">
+                Informe o e-mail cadastrado na plataforma. Enviaremos as instruções oficiais para redefinir sua senha com segurança.
+              </p>
+
+              {forgotPasswordStatus === "success" ? (
+                <div className="space-y-4">
+                  <div className="p-4 bg-emerald-50 text-emerald-800 rounded-xl text-sm border border-emerald-200">
+                    <p className="font-medium">{forgotPasswordMsg}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowForgotPasswordModal(false);
+                      setForgotPasswordStatus("idle");
+                      setForgotPasswordMsg("");
+                    }}
+                    className="w-full py-3 bg-sun-dark text-forest rounded-full font-semibold hover:bg-sun-dark-dark transition-all text-sm"
+                  >
+                    Voltar para o Login
+                  </button>
+                </div>
+              ) : (
+                <form onSubmit={handleSendForgotPasswordEmail} className="space-y-4">
+                  {forgotPasswordStatus === "error" && (
+                    <div className="p-3 bg-red-50 text-red-600 rounded-xl text-xs border border-red-200">
+                      {forgotPasswordMsg}
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-forest/70 mb-1">
+                      Seu E-mail
+                    </label>
+                    <input
+                      type="email"
+                      required
+                      placeholder="exemplo@email.com"
+                      value={forgotPasswordEmail}
+                      onChange={(e) => setForgotPasswordEmail(e.target.value)}
+                      className="w-full px-4 py-2.5 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark text-sm"
+                    />
+                  </div>
+
+                  <div className="flex gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowForgotPasswordModal(false);
+                        setForgotPasswordStatus("idle");
+                        setForgotPasswordMsg("");
+                      }}
+                      className="flex-1 py-2.5 px-4 border border-soft text-forest/70 rounded-full font-medium text-sm hover:bg-warm transition-colors"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={forgotPasswordStatus === "loading"}
+                      className="flex-1 py-2.5 px-4 bg-sun-dark text-forest rounded-full font-semibold text-sm hover:bg-sun-dark-dark transition-all disabled:opacity-50"
+                    >
+                      {forgotPasswordStatus === "loading" ? "Enviando..." : "Enviar Link"}
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -4777,6 +5415,18 @@ export function DashboardView({
                 </span>
               )}
             </button>
+            <button
+              onClick={() => setActiveTab("triagemCorporativa")}
+              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "triagemCorporativa" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70 hover:text-forest"}`}
+            >
+              <Building2 className="w-3.5 h-3.5 text-emerald-700" />
+              <span>Triagem Corporativa</span>
+              {solicitacoesCorpCount > 0 && (
+                <span className="bg-emerald-600 text-white text-[10px] min-w-4 h-4 px-1 flex items-center justify-center rounded-full font-bold ml-1">
+                  {solicitacoesCorpCount}
+                </span>
+              )}
+            </button>
             {currentRole === "master" && (
               <button
                 onClick={() => setActiveTab("doacoes")}
@@ -4913,6 +5563,18 @@ export function DashboardView({
               Meus Pacientes
             </button>
             <button
+              onClick={() => setActiveTab("triagemCorporativa")}
+              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "triagemCorporativa" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70 hover:text-forest"}`}
+            >
+              <Building2 className="w-3.5 h-3.5 text-emerald-700" />
+              <span>Acolhimento Corporativo</span>
+              {solicitacoesCorpCount > 0 && (
+                <span className="bg-emerald-600 text-white text-[10px] min-w-4 h-4 px-1 flex items-center justify-center rounded-full font-bold ml-1">
+                  {solicitacoesCorpCount}
+                </span>
+              )}
+            </button>
+            <button
               onClick={() => setActiveTab("redeProfissional")}
               className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "redeProfissional" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70/70 hover:text-forest/70"}`}
             >
@@ -5027,6 +5689,14 @@ export function DashboardView({
                       : "Psicólogo"}
                 </button>
               ))}
+              <button
+                type="button"
+                onClick={() => setShowRoleSelectionModal(true)}
+                className="p-1 text-forest/60 hover:text-forest hover:bg-forest/10 rounded-full transition-colors"
+                title="Mudar painel ou ver opções de acesso"
+              >
+                <ChevronDown className="w-3.5 h-3.5" />
+              </button>
             </div>
           )}
           <button
@@ -5037,10 +5707,15 @@ export function DashboardView({
             <BookOpen className="w-3.5 h-3.5 text-forest/70" />
             <span>Blog Público</span>
           </button>
-          <div className="flex items-center gap-2 text-xs sm:text-sm text-forest font-medium bg-warm px-3 py-1.5 rounded-full border border-soft max-w-[120px] sm:max-w-none truncate">
+          <button
+            type="button"
+            onClick={() => setShowAccountDetailsModal(true)}
+            className="flex items-center gap-2 text-xs sm:text-sm text-forest font-medium bg-warm hover:bg-forest/10 px-3 py-1.5 rounded-full border border-soft max-w-[130px] sm:max-w-none truncate transition-all cursor-pointer shadow-2xs"
+            title="Minha Conta, E-mail de Acesso e Credenciais"
+          >
             <User className="w-4 h-4 text-forest/70 shrink-0" />
             <span className="truncate">{profile.name}</span>
-          </div>
+          </button>
           <button
             onClick={() => signOut(auth)}
             className="p-2 text-forest/70/70 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors shrink-0"
@@ -5580,6 +6255,7 @@ export function DashboardView({
                           handleUpdateConfiguracoesProperty(
                             "doacoesAtivas",
                             !globalConfigs.doacoesAtivas,
+                            true,
                           )
                         }
                         className={`w-14 h-8 rounded-full transition-colors relative flex items-center shrink-0 ${
@@ -5609,6 +6285,7 @@ export function DashboardView({
                             globalConfigs.carrosselProfissionaisAtivo === undefined
                               ? false
                               : !globalConfigs.carrosselProfissionaisAtivo,
+                            true,
                           )
                         }
                         className={`w-14 h-8 rounded-full transition-colors relative flex items-center shrink-0 ${
@@ -5618,6 +6295,66 @@ export function DashboardView({
                         <span
                           className={`w-6 h-6 bg-white rounded-full absolute shadow-md transition-all ${
                             (globalConfigs.carrosselProfissionaisAtivo ?? true) ? "left-7" : "left-1"
+                          }`}
+                        />
+                      </button>
+                    </div>
+
+                    <div className="flex items-center justify-between p-4 bg-white border border-soft rounded-xl mt-3">
+                      <div className="flex flex-col gap-1 pr-4">
+                        <span className="text-sm font-bold text-forest">Carrossel de Empresas na Home</span>
+                        <span className="text-xs text-forest/65">
+                          Exibe o carrossel contínuo &ldquo;Empresas que confiam na AcolheMente&rdquo; com os logotipos das empresas parceiras na landing page.
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleUpdateConfiguracoesProperty(
+                            "carrosselEmpresasAtivo",
+                            globalConfigs.carrosselEmpresasAtivo === undefined
+                              ? false
+                              : !globalConfigs.carrosselEmpresasAtivo,
+                            true,
+                          )
+                        }
+                        className={`w-14 h-8 rounded-full transition-colors relative flex items-center shrink-0 ${
+                          (globalConfigs.carrosselEmpresasAtivo ?? true) ? "bg-forest" : "bg-forest/15"
+                        }`}
+                      >
+                        <span
+                          className={`w-6 h-6 bg-white rounded-full absolute shadow-md transition-all ${
+                            (globalConfigs.carrosselEmpresasAtivo ?? true) ? "left-7" : "left-1"
+                          }`}
+                        />
+                      </button>
+                    </div>
+
+                    <div className="flex items-center justify-between p-4 bg-white border border-soft rounded-xl mt-3">
+                      <div className="flex flex-col gap-1 pr-4">
+                        <span className="text-sm font-bold text-forest">Métricas e Estatísticas na Home</span>
+                        <span className="text-xs text-forest/65">
+                          Exibe a barra com números de impacto (Profissionais, Vidas Acolhidas e Resposta Média) na seção &ldquo;A sua jornada&rdquo; da landing page.
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleUpdateConfiguracoesProperty(
+                            "metricasAtivas",
+                            globalConfigs.metricasAtivas === undefined
+                              ? false
+                              : !globalConfigs.metricasAtivas,
+                            true,
+                          )
+                        }
+                        className={`w-14 h-8 rounded-full transition-colors relative flex items-center shrink-0 ${
+                          (globalConfigs.metricasAtivas ?? true) ? "bg-forest" : "bg-forest/15"
+                        }`}
+                      >
+                        <span
+                          className={`w-6 h-6 bg-white rounded-full absolute shadow-md transition-all ${
+                            (globalConfigs.metricasAtivas ?? true) ? "left-7" : "left-1"
                           }`}
                         />
                       </button>
@@ -7557,16 +8294,77 @@ export function DashboardView({
                       className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors text-sm text-forest"
                     />
                   </div>
-                  <div>
-                    <label className="text-xs uppercase font-bold tracking-wider text-forest/60">
-                      E-mail (Login)
-                    </label>
-                    <input
-                      type="email"
-                      value={profile.email || ""}
-                      disabled
-                      className="w-full mt-2 px-4 py-3 bg-warm/80 border border-soft rounded-xl text-forest/40 cursor-not-allowed text-sm"
-                    />
+                  <div className="bg-warm/40 p-4 rounded-2xl border border-soft/80 flex flex-col justify-between gap-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <label className="text-xs uppercase font-bold tracking-wider text-forest/70 flex items-center gap-1.5">
+                        <Mail className="w-3.5 h-3.5 text-forest/60" />
+                        <span>E-mail de Acesso (Login)</span>
+                      </label>
+                      {auth.currentUser?.providerData.some((p) => p.providerId === "google.com") ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200" title="Conta conectada via Google">
+                          <Globe className="w-3 h-3" /> Google
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200" title="Conta com E-mail e Senha">
+                          <Lock className="w-2.5 h-2.5" /> E-mail / Senha
+                        </span>
+                      )}
+                    </div>
+                    <div>
+                      <input
+                        type="email"
+                        value={profile.email || ""}
+                        disabled
+                        className="w-full px-3.5 py-2.5 bg-white border border-soft rounded-xl text-forest font-medium text-sm select-all cursor-default shadow-xs"
+                      />
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewEmailInput("");
+                          setConfirmEmailInput("");
+                          setCurrentPasswordInput("");
+                          setChangeEmailError("");
+                          setChangeEmailSuccess("");
+                          setShowChangeEmailModal(true);
+                        }}
+                        className="px-3 py-1.5 bg-forest hover:bg-forest/90 text-white text-xs font-semibold rounded-lg shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                        <span>Alterar E-mail</span>
+                      </button>
+                      
+                      {auth.currentUser?.providerData.some((p) => p.providerId === "password") ? (
+                        <button
+                          type="button"
+                          onClick={handleUserSelfResetPassword}
+                          className="px-3 py-1.5 bg-white hover:bg-warm text-forest text-xs font-semibold rounded-lg border border-soft transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                          title="Enviar link de redefinição de senha para seu e-mail"
+                        >
+                          <Key className="w-3.5 h-3.5 text-forest/70" />
+                          <span>Redefinir Senha</span>
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNewDirectPassword("");
+                            setConfirmDirectPassword("");
+                            setDirectPasswordError("");
+                            setShowCreatePasswordModal(true);
+                          }}
+                          className="px-3 py-1.5 bg-white hover:bg-warm text-forest text-xs font-semibold rounded-lg border border-soft transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                          title="Criar uma senha para login tradicional na plataforma"
+                        >
+                          <Lock className="w-3.5 h-3.5 text-forest/70" />
+                          <span>Criar Senha Direta</span>
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-forest/55 leading-snug">
+                      Seus atendimentos e prontuários estão salvos sob seu identificador permanente (UID). A troca do e-mail não afeta nenhum dado clínico.
+                    </p>
                   </div>
                   <div>
                     <label className="text-xs uppercase font-bold tracking-wider text-forest/60">
@@ -8495,6 +9293,21 @@ export function DashboardView({
           formatDateSafely={formatDateSafely}
           formatDateTimeSafely={formatDateTimeSafely}
         />
+      ) : activeTab === "triagemCorporativa" ? (
+        <div className="flex-1 overflow-y-auto bg-warm p-4 sm:p-6 lg:p-8">
+          <div className="max-w-7xl mx-auto">
+            <TriagemCorporativaKanban
+              currentRole={currentRole}
+              currentUserProfile={profile}
+              onOpenWhatsApp={(phone, text) => {
+                const raw = phone.replace(/\D/g, "");
+                const full = raw.startsWith("55") ? raw : `55${raw}`;
+                const url = `https://wa.me/${full}${text ? `?text=${encodeURIComponent(text)}` : ""}`;
+                window.open(url, "_blank");
+              }}
+            />
+          </div>
+        </div>
       ) : activeTab === "kanban" || activeTab === "pacientesAcolhidos" ? (
         <div className="flex-1 flex flex-col h-full bg-warm overflow-hidden">
           <div className="flex flex-wrap justify-between items-center gap-3 px-6 pt-6 pb-2 shrink-0">
@@ -10324,6 +11137,25 @@ export function DashboardView({
                         );
                       })}
                     </div>
+
+                    {/* Botão de Apoio de Acesso na Gestão */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedUserForApoio(u);
+                        setApoioNewEmail(u.email || "");
+                        setApoioJustificativa("");
+                        setApoioSuccessMessage("");
+                        setApoioErrorMessage("");
+                        setApoioActiveTab("senha");
+                        setShowApoioModal(true);
+                      }}
+                      className="w-full mt-3 py-2 px-3 bg-warm hover:bg-forest/10 text-forest text-xs font-semibold rounded-xl border border-soft transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
+                      title="Apoio de Acesso: Redefinição de senha, alteração de e-mail assistida e diagnóstico técnico"
+                    >
+                      <Key className="w-3.5 h-3.5 text-sun-dark" />
+                      <span>Apoio de Acesso</span>
+                    </button>
                   </div>
                 </div>
               ))}
@@ -15589,6 +16421,820 @@ export function DashboardView({
         }}
         title="Enquadramento do Perfil do Profissional"
       />
+
+      {/* Modal de Escolha de Perfil de Acesso (Multi-Perfil) */}
+      {showRoleSelectionModal && profile?.roles && profile.roles.length > 1 && (
+        <div className="fixed inset-0 bg-forest/50 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-lg rounded-3xl p-6 sm:p-8 shadow-2xl border border-soft animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex flex-col items-center text-center gap-2 mb-6">
+              <div className="w-14 h-14 rounded-2xl bg-sun/30 flex items-center justify-center text-forest mb-1">
+                <Shield className="w-7 h-7" />
+              </div>
+              <h3 className="font-serif text-2xl font-bold text-forest">
+                Selecione o Painel de Acesso
+              </h3>
+              <p className="text-xs sm:text-sm text-forest/70 max-w-sm">
+                Olá, <strong>{profile.name}</strong>! Você possui múltiplos níveis de acesso cadastrados. Escolha qual painel deseja acessar neste momento:
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 mb-6">
+              {profile.roles.includes("master") && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveRoleView("master");
+                    setActiveTab("kanban");
+                    setShowRoleSelectionModal(false);
+                  }}
+                  className={`p-4 rounded-2xl border text-left flex items-center justify-between transition-all group cursor-pointer ${
+                    currentRole === "master"
+                      ? "bg-forest/5 border-forest shadow-sm"
+                      : "bg-warm/30 border-soft hover:bg-warm hover:border-forest/30"
+                  }`}
+                >
+                  <div className="flex items-center gap-3.5">
+                    <div className="w-11 h-11 rounded-xl bg-sun flex items-center justify-center text-forest shrink-0 group-hover:scale-105 transition-transform">
+                      <Shield className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-serif font-bold text-forest text-base">Painel de Gestão</span>
+                        <span className="text-[10px] font-bold uppercase tracking-wider bg-forest/10 text-forest px-2 py-0.5 rounded-full">
+                          Master
+                        </span>
+                      </div>
+                      <p className="text-xs text-forest/70 mt-0.5">
+                        Controle executivo, relatórios, configurações e permissões gerais.
+                      </p>
+                    </div>
+                  </div>
+                  <ArrowRight className="w-5 h-5 text-forest/40 group-hover:text-forest group-hover:translate-x-1 transition-all shrink-0 ml-2" />
+                </button>
+              )}
+
+              {profile.roles.includes("triagem") && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveRoleView("triagem");
+                    setActiveTab("kanban");
+                    setShowRoleSelectionModal(false);
+                  }}
+                  className={`p-4 rounded-2xl border text-left flex items-center justify-between transition-all group cursor-pointer ${
+                    currentRole === "triagem"
+                      ? "bg-forest/5 border-forest shadow-sm"
+                      : "bg-warm/30 border-soft hover:bg-warm hover:border-forest/30"
+                  }`}
+                >
+                  <div className="flex items-center gap-3.5">
+                    <div className="w-11 h-11 rounded-xl bg-forest/10 flex items-center justify-center text-forest shrink-0 group-hover:scale-105 transition-transform">
+                      <ClipboardList className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-serif font-bold text-forest text-base">Equipe de Triagem</span>
+                        <span className="text-[10px] font-bold uppercase tracking-wider bg-sun/30 text-forest px-2 py-0.5 rounded-full">
+                          Triagem
+                        </span>
+                      </div>
+                      <p className="text-xs text-forest/70 mt-0.5">
+                        Acolhimentos, esteira de pacientes e direcionamento de casos.
+                      </p>
+                    </div>
+                  </div>
+                  <ArrowRight className="w-5 h-5 text-forest/40 group-hover:text-forest group-hover:translate-x-1 transition-all shrink-0 ml-2" />
+                </button>
+              )}
+
+              {profile.roles.includes("profissional") && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveRoleView("profissional");
+                    setActiveTab("pacientes");
+                    setShowRoleSelectionModal(false);
+                  }}
+                  className={`p-4 rounded-2xl border text-left flex items-center justify-between transition-all group cursor-pointer ${
+                    currentRole === "profissional"
+                      ? "bg-forest/5 border-forest shadow-sm"
+                      : "bg-warm/30 border-soft hover:bg-warm hover:border-forest/30"
+                  }`}
+                >
+                  <div className="flex items-center gap-3.5">
+                    <div className="w-11 h-11 rounded-xl bg-sun-light flex items-center justify-center text-forest shrink-0 group-hover:scale-105 transition-transform">
+                      <Stethoscope className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-serif font-bold text-forest text-base">Painel do Profissional</span>
+                        <span className="text-[10px] font-bold uppercase tracking-wider bg-forest/10 text-forest px-2 py-0.5 rounded-full">
+                          Clínico
+                        </span>
+                      </div>
+                      <p className="text-xs text-forest/70 mt-0.5">
+                        Meus pacientes, prontuários, esteira clínica e meu perfil público.
+                      </p>
+                    </div>
+                  </div>
+                  <ArrowRight className="w-5 h-5 text-forest/40 group-hover:text-forest group-hover:translate-x-1 transition-all shrink-0 ml-2" />
+                </button>
+              )}
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 border-t border-soft">
+              <span className="text-[11px] text-forest/50 text-center sm:text-left">
+                Você pode alternar de painel a qualquer momento pela barra superior.
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowRoleSelectionModal(false)}
+                className="px-5 py-2 text-xs font-semibold text-forest/70 hover:text-forest hover:bg-warm rounded-full transition-colors w-full sm:w-auto text-center"
+              >
+                Continuar no atual
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal 1: Dados da Conta & Credenciais (ao clicar no pill do usuário no topo) */}
+      {showAccountDetailsModal && (
+        <div className="fixed inset-0 bg-forest/50 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-lg rounded-3xl p-6 sm:p-8 shadow-2xl border border-soft animate-in fade-in zoom-in-95 duration-200 flex flex-col gap-6">
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-warm flex items-center justify-center text-forest">
+                  <User className="w-6 h-6 text-forest/80" />
+                </div>
+                <div>
+                  <h3 className="font-serif font-bold text-xl text-forest">
+                    Minha Conta & Acesso
+                  </h3>
+                  <p className="text-xs text-forest/60">
+                    Credenciais e identificador permanente na plataforma
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAccountDetailsModal(false)}
+                className="p-2 text-forest/40 hover:text-forest hover:bg-warm rounded-full transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-3">
+              <div className="p-3.5 bg-warm/50 rounded-2xl border border-soft flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-forest/50 block">
+                    Nome Cadastrado
+                  </span>
+                  <span className="text-sm font-semibold text-forest">
+                    {profile?.name}
+                  </span>
+                </div>
+                <span className="text-xs font-semibold px-2.5 py-1 bg-white rounded-full border border-soft text-forest/80">
+                  {currentRole === "master" ? "Gestão Master" : currentRole === "triagem" ? "Gestão Triagem" : "Profissional Clínico"}
+                </span>
+              </div>
+
+              <div className="p-3.5 bg-warm/50 rounded-2xl border border-soft flex items-center justify-between">
+                <div className="truncate pr-2">
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-forest/50 block">
+                    E-mail de Login
+                  </span>
+                  <span className="text-sm font-medium text-forest truncate block">
+                    {profile?.email || auth.currentUser?.email}
+                  </span>
+                </div>
+                {auth.currentUser?.providerData.some((p) => p.providerId === "google.com") ? (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200 shrink-0">
+                    <Globe className="w-3 h-3" /> Google
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0">
+                    <Lock className="w-3 h-3" /> E-mail / Senha
+                  </span>
+                )}
+              </div>
+
+              <div className="p-3.5 bg-warm/50 rounded-2xl border border-soft flex items-center justify-between">
+                <div className="truncate pr-2">
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-forest/50 block">
+                    Identificador Permanente (UID)
+                  </span>
+                  <span className="text-xs font-mono text-forest/70 truncate block">
+                    {auth.currentUser?.uid}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (auth.currentUser?.uid) {
+                      navigator.clipboard.writeText(auth.currentUser.uid);
+                      showToast("UID copiado!", "success");
+                    }
+                  }}
+                  className="p-1.5 text-forest/60 hover:text-forest hover:bg-white rounded-lg transition-colors border border-soft/60 cursor-pointer shrink-0"
+                  title="Copiar UID"
+                >
+                  <Copy className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-3 bg-sun/10 rounded-2xl border border-sun/30 flex items-start gap-2.5 text-xs text-forest/80 leading-relaxed">
+              <Shield className="w-4 h-4 text-sun-dark shrink-0 mt-0.5" />
+              <span>
+                Todas as suas fichas, prontuários e configurações estão vinculados ao seu <strong>UID</strong>. Você pode alterar seu e-mail de acesso sem nenhum risco aos seus dados.
+              </span>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-2 pt-2 border-t border-soft">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAccountDetailsModal(false);
+                  setNewEmailInput("");
+                  setConfirmEmailInput("");
+                  setCurrentPasswordInput("");
+                  setChangeEmailError("");
+                  setChangeEmailSuccess("");
+                  setShowChangeEmailModal(true);
+                }}
+                className="flex-1 py-2.5 px-4 bg-forest hover:bg-forest/90 text-white text-xs font-semibold rounded-xl shadow-xs transition-colors flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Edit3 className="w-4 h-4" />
+                <span>Alterar E-mail</span>
+              </button>
+
+              {auth.currentUser?.providerData.some((p) => p.providerId === "password") ? (
+                <button
+                  type="button"
+                  onClick={handleUserSelfResetPassword}
+                  className="flex-1 py-2.5 px-4 bg-warm hover:bg-forest/10 text-forest text-xs font-semibold rounded-xl border border-soft transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Key className="w-4 h-4 text-forest/70" />
+                  <span>Redefinir Senha</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAccountDetailsModal(false);
+                    setNewDirectPassword("");
+                    setConfirmDirectPassword("");
+                    setDirectPasswordError("");
+                    setShowCreatePasswordModal(true);
+                  }}
+                  className="flex-1 py-2.5 px-4 bg-warm hover:bg-forest/10 text-forest text-xs font-semibold rounded-xl border border-soft transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Lock className="w-4 h-4 text-forest/70" />
+                  <span>Criar Senha Direta</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal 2: Alteração de E-mail pelo Próprio Usuário (Self-Service) */}
+      {showChangeEmailModal && (
+        <div className="fixed inset-0 bg-forest/50 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-lg rounded-3xl p-6 sm:p-8 shadow-2xl border border-soft animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-start justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-sun-light flex items-center justify-center text-forest">
+                  <Mail className="w-6 h-6 text-sun-dark" />
+                </div>
+                <div>
+                  <h3 className="font-serif font-bold text-xl text-forest">
+                    Alterar E-mail de Acesso
+                  </h3>
+                  <p className="text-xs text-forest/60">
+                    Atualize seu e-mail de login com segurança e autonomia
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowChangeEmailModal(false)}
+                className="p-2 text-forest/40 hover:text-forest hover:bg-warm rounded-full transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleUserChangeEmail} className="flex flex-col gap-4">
+              <div>
+                <label className="text-xs uppercase font-bold tracking-wider text-forest/60 block mb-1">
+                  E-mail Atual
+                </label>
+                <input
+                  type="text"
+                  disabled
+                  value={profile?.email || auth.currentUser?.email || ""}
+                  className="w-full px-4 py-2.5 bg-warm/80 border border-soft rounded-xl text-forest/60 text-sm cursor-not-allowed"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs uppercase font-bold tracking-wider text-forest/80 block mb-1">
+                  Novo E-mail de Login *
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={newEmailInput}
+                  onChange={(e) => setNewEmailInput(e.target.value)}
+                  placeholder="exemplo@novodominio.com"
+                  className="w-full px-4 py-2.5 bg-white border border-soft rounded-xl text-forest text-sm focus:outline-none focus:border-sun-dark focus:ring-1 focus:ring-sun-dark"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs uppercase font-bold tracking-wider text-forest/80 block mb-1">
+                  Confirmar Novo E-mail *
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={confirmEmailInput}
+                  onChange={(e) => setConfirmEmailInput(e.target.value)}
+                  placeholder="Repita o novo e-mail"
+                  className="w-full px-4 py-2.5 bg-white border border-soft rounded-xl text-forest text-sm focus:outline-none focus:border-sun-dark focus:ring-1 focus:ring-sun-dark"
+                />
+              </div>
+
+              {auth.currentUser?.providerData.some((p) => p.providerId === "password") ? (
+                <div>
+                  <label className="text-xs uppercase font-bold tracking-wider text-forest/80 block mb-1">
+                    Sua Senha Atual (Confirmação de Segurança) *
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showPasswordInModal ? "text" : "password"}
+                      required
+                      value={currentPasswordInput}
+                      onChange={(e) => setCurrentPasswordInput(e.target.value)}
+                      placeholder="Digite sua senha atual"
+                      className="w-full px-4 py-2.5 pr-10 bg-white border border-soft rounded-xl text-forest text-sm focus:outline-none focus:border-sun-dark focus:ring-1 focus:ring-sun-dark"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPasswordInModal(!showPasswordInModal)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-forest/40 hover:text-forest"
+                    >
+                      {showPasswordInModal ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3 bg-blue-50 rounded-xl border border-blue-200 text-xs text-blue-800 flex items-center gap-2">
+                  <Globe className="w-4 h-4 shrink-0 text-blue-600" />
+                  <span>
+                    Como sua conta está vinculada ao Google, uma confirmação com sua conta Google será solicitada para prosseguir.
+                  </span>
+                </div>
+              )}
+
+              {changeEmailError && (
+                <div className="p-3 bg-red-50 rounded-xl border border-red-200 text-xs text-red-700 flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>{changeEmailError}</span>
+                </div>
+              )}
+
+              {changeEmailSuccess && (
+                <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 text-xs text-emerald-800 flex items-start gap-2">
+                  <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600" />
+                  <span>{changeEmailSuccess}</span>
+                </div>
+              )}
+
+              <div className="p-3 bg-warm/60 rounded-xl border border-soft text-[11px] text-forest/60 flex items-start gap-2">
+                <Info className="w-4 h-4 text-forest/50 shrink-0 mt-0.5" />
+                <span>
+                  Ao salvar, seu novo e-mail será associado ao seu perfil e seu identificador (UID) continuará o mesmo.
+                </span>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-soft mt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowChangeEmailModal(false)}
+                  disabled={isChangingEmail}
+                  className="px-4 py-2 text-xs font-semibold text-forest/70 hover:text-forest hover:bg-warm rounded-xl transition-colors cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={isChangingEmail}
+                  className="px-5 py-2.5 bg-forest hover:bg-forest/90 text-white text-xs font-semibold rounded-xl shadow-xs transition-colors flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {isChangingEmail ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Atualizando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4" />
+                      <span>Salvar Novo E-mail</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal 3: Criar Senha Direta (para quem entrou com Google e quer senha alternativa) */}
+      {showCreatePasswordModal && (
+        <div className="fixed inset-0 bg-forest/50 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-md rounded-3xl p-6 sm:p-8 shadow-2xl border border-soft animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-start justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-warm flex items-center justify-center text-forest">
+                  <Lock className="w-6 h-6 text-forest" />
+                </div>
+                <div>
+                  <h3 className="font-serif font-bold text-xl text-forest">
+                    Criar Senha Direta
+                  </h3>
+                  <p className="text-xs text-forest/60">
+                    Defina uma senha para entrar sem precisar do Google
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCreatePasswordModal(false)}
+                className="p-2 text-forest/40 hover:text-forest hover:bg-warm rounded-full transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateDirectPassword} className="flex flex-col gap-4">
+              <div>
+                <label className="text-xs uppercase font-bold tracking-wider text-forest/80 block mb-1">
+                  Nova Senha (Mínimo 6 caracteres) *
+                </label>
+                <input
+                  type="password"
+                  required
+                  value={newDirectPassword}
+                  onChange={(e) => setNewDirectPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full px-4 py-2.5 bg-white border border-soft rounded-xl text-forest text-sm focus:outline-none focus:border-sun-dark focus:ring-1 focus:ring-sun-dark"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs uppercase font-bold tracking-wider text-forest/80 block mb-1">
+                  Confirmar Nova Senha *
+                </label>
+                <input
+                  type="password"
+                  required
+                  value={confirmDirectPassword}
+                  onChange={(e) => setConfirmDirectPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full px-4 py-2.5 bg-white border border-soft rounded-xl text-forest text-sm focus:outline-none focus:border-sun-dark focus:ring-1 focus:ring-sun-dark"
+                />
+              </div>
+
+              {directPasswordError && (
+                <div className="p-3 bg-red-50 rounded-xl border border-red-200 text-xs text-red-700 flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>{directPasswordError}</span>
+                </div>
+              )}
+
+              <p className="text-xs text-forest/60">
+                Após criar a senha, você continuará podendo acessar com o Google ou digitando seu e-mail e esta senha.
+              </p>
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-soft">
+                <button
+                  type="button"
+                  onClick={() => setShowCreatePasswordModal(false)}
+                  disabled={isCreatingDirectPassword}
+                  className="px-4 py-2 text-xs font-semibold text-forest/70 hover:text-forest hover:bg-warm rounded-xl transition-colors cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={isCreatingDirectPassword}
+                  className="px-5 py-2.5 bg-forest hover:bg-forest/90 text-white text-xs font-semibold rounded-xl shadow-xs transition-colors flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {isCreatingDirectPassword ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Vinculando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4" />
+                      <span>Vincular Senha</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal 4: Apoio de Acesso da Gestão (Painel Master/Triagem) */}
+      {showApoioModal && selectedUserForApoio && (
+        <div className="fixed inset-0 bg-forest/50 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-2xl rounded-3xl p-6 sm:p-8 shadow-2xl border border-soft animate-in fade-in zoom-in-95 duration-200 flex flex-col gap-6 max-h-[92vh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-sun-light flex items-center justify-center text-forest">
+                  <Key className="w-6 h-6 text-sun-dark" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-serif font-bold text-xl text-forest">
+                      Apoio de Acesso ao Usuário
+                    </h3>
+                    <span className="text-[10px] font-bold uppercase tracking-wider bg-forest/10 text-forest px-2 py-0.5 rounded-full">
+                      Gestão
+                    </span>
+                  </div>
+                  <p className="text-xs text-forest/70 mt-0.5">
+                    {selectedUserForApoio.name} • {selectedUserForApoio.email || "Sem e-mail"}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowApoioModal(false);
+                  setSelectedUserForApoio(null);
+                }}
+                className="p-2 text-forest/40 hover:text-forest hover:bg-warm rounded-full transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Identificador permanente */}
+            <div className="bg-warm/50 px-4 py-2.5 rounded-2xl border border-soft flex items-center justify-between text-xs">
+              <span className="text-forest/60">
+                UID Permanente: <strong className="font-mono text-forest">{selectedUserForApoio.uid}</strong>
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  if (selectedUserForApoio.uid) {
+                    navigator.clipboard.writeText(selectedUserForApoio.uid);
+                    showToast("UID copiado!", "success");
+                  }
+                }}
+                className="flex items-center gap-1 text-forest hover:text-forest/80 font-medium cursor-pointer"
+              >
+                <Copy className="w-3.5 h-3.5" />
+                <span>Copiar</span>
+              </button>
+            </div>
+
+            {/* Abas Internas */}
+            <div className="flex p-1 bg-warm/80 rounded-2xl border border-soft">
+              <button
+                type="button"
+                onClick={() => {
+                  setApoioActiveTab("senha");
+                  setApoioErrorMessage("");
+                  setApoioSuccessMessage("");
+                }}
+                className={`flex-1 py-2 text-xs font-semibold rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  apoioActiveTab === "senha"
+                    ? "bg-white text-forest shadow-xs"
+                    : "text-forest/60 hover:text-forest"
+                }`}
+              >
+                <Key className="w-3.5 h-3.5" />
+                <span>Redefinir Senha</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setApoioActiveTab("email");
+                  setApoioErrorMessage("");
+                  setApoioSuccessMessage("");
+                }}
+                className={`flex-1 py-2 text-xs font-semibold rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  apoioActiveTab === "email"
+                    ? "bg-white text-forest shadow-xs"
+                    : "text-forest/60 hover:text-forest"
+                }`}
+              >
+                <Mail className="w-3.5 h-3.5" />
+                <span>Alterar E-mail Assistida</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setApoioActiveTab("diagnostico");
+                  setApoioErrorMessage("");
+                  setApoioSuccessMessage("");
+                }}
+                className={`flex-1 py-2 text-xs font-semibold rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  apoioActiveTab === "diagnostico"
+                    ? "bg-white text-forest shadow-xs"
+                    : "text-forest/60 hover:text-forest"
+                }`}
+              >
+                <Info className="w-3.5 h-3.5" />
+                <span>Diagnóstico & WhatsApp</span>
+              </button>
+            </div>
+
+            {/* Alertas de Retorno */}
+            {apoioErrorMessage && (
+              <div className="p-3 bg-red-50 rounded-xl border border-red-200 text-xs text-red-700 flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>{apoioErrorMessage}</span>
+              </div>
+            )}
+
+            {apoioSuccessMessage && (
+              <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 text-xs text-emerald-800 flex items-start gap-2">
+                <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600" />
+                <span>{apoioSuccessMessage}</span>
+              </div>
+            )}
+
+            {/* Conteúdo Aba 1: Redefinir Senha */}
+            {apoioActiveTab === "senha" && (
+              <div className="flex flex-col gap-4">
+                <div className="p-4 bg-warm/30 rounded-2xl border border-soft flex flex-col gap-2">
+                  <div className="flex items-center gap-2 text-forest font-semibold text-sm">
+                    <Shield className="w-4 h-4 text-sun-dark" />
+                    <span>Princípio de Autonomia & LGPD</span>
+                  </div>
+                  <p className="text-xs text-forest/70 leading-relaxed">
+                    A gestão <strong>não define manualmente</strong> a senha do profissional. Ao clicar no botão abaixo, a plataforma dispara um e-mail oficial com um link temporário seguro para <strong>{selectedUserForApoio.email}</strong>.
+                  </p>
+                  <p className="text-xs text-forest/70 leading-relaxed">
+                    O profissional abre o link recebido e digita sua nova senha com privacidade absoluta.
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-between pt-2">
+                  <span className="text-xs text-forest/60">
+                    Destinatário: <strong className="text-forest">{selectedUserForApoio.email}</strong>
+                  </span>
+                  <button
+                    type="button"
+                    disabled={isSendingResetFromApoio || !selectedUserForApoio.email}
+                    onClick={handleSendResetFromApoio}
+                    className="px-5 py-2.5 bg-forest hover:bg-forest/90 text-white text-xs font-semibold rounded-xl shadow-xs transition-colors flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                  >
+                    {isSendingResetFromApoio ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Enviando Link...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Send className="w-4 h-4" />
+                        <span>Disparar Link de Redefinição</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Conteúdo Aba 2: Alterar E-mail Assistida */}
+            {apoioActiveTab === "email" && (
+              <form onSubmit={handleUpdateEmailFromApoio} className="flex flex-col gap-4">
+                <div className="p-3 bg-amber-50 rounded-2xl border border-amber-200 text-xs text-amber-900 leading-relaxed flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
+                  <div>
+                    <strong>Apoio para Perda de Acesso:</strong> Utilize este recurso quando o usuário não conseguir mais acessar a caixa de entrada anterior (ex: troca de provedor, demissão de empresa ou e-mail extinto). O prontuário clínico e todos os históricos permanecem vinculados ao UID ({selectedUserForApoio.uid?.slice(0, 8)}...).
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs uppercase font-bold tracking-wider text-forest/60 block mb-1">
+                    E-mail Atual Cadastrado
+                  </label>
+                  <input
+                    type="text"
+                    disabled
+                    value={selectedUserForApoio.email || ""}
+                    className="w-full px-4 py-2.5 bg-warm/80 border border-soft rounded-xl text-forest/60 text-sm cursor-not-allowed"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs uppercase font-bold tracking-wider text-forest/80 block mb-1">
+                    Novo E-mail do Usuário *
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    value={apoioNewEmail}
+                    onChange={(e) => setApoioNewEmail(e.target.value)}
+                    placeholder="novo.email@provedor.com"
+                    className="w-full px-4 py-2.5 bg-white border border-soft rounded-xl text-forest text-sm focus:outline-none focus:border-sun-dark focus:ring-1 focus:ring-sun-dark"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs uppercase font-bold tracking-wider text-forest/80 block mb-1">
+                    Justificativa / Protocolo de Solicitação (Obrigatório para Auditoria) *
+                  </label>
+                  <textarea
+                    required
+                    rows={2}
+                    value={apoioJustificativa}
+                    onChange={(e) => setApoioJustificativa(e.target.value)}
+                    placeholder="Ex: Solicitado pelo profissional via WhatsApp comercial após encerramento do domínio antigo."
+                    className="w-full px-4 py-2.5 bg-white border border-soft rounded-xl text-forest text-sm focus:outline-none focus:border-sun-dark focus:ring-1 focus:ring-sun-dark resize-none"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-3 pt-2">
+                  <button
+                    type="submit"
+                    disabled={isUpdatingEmailFromApoio}
+                    className="px-5 py-2.5 bg-forest hover:bg-forest/90 text-white text-xs font-semibold rounded-xl shadow-xs transition-colors flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                  >
+                    {isUpdatingEmailFromApoio ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Atualizando Cadastro...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-4 h-4" />
+                        <span>Confirmar Alteração de E-mail</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* Conteúdo Aba 3: Diagnóstico & Mensagem WhatsApp */}
+            {apoioActiveTab === "diagnostico" && (
+              <div className="flex flex-col gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  <div className="p-3 bg-warm/50 rounded-xl border border-soft">
+                    <span className="text-[10px] uppercase font-bold text-forest/50 block">Papel / Níveis</span>
+                    <span className="font-semibold text-forest">
+                      {selectedUserForApoio.roles?.join(", ") || selectedUserForApoio.role || "profissional"}
+                    </span>
+                  </div>
+                  <div className="p-3 bg-warm/50 rounded-xl border border-soft">
+                    <span className="text-[10px] uppercase font-bold text-forest/50 block">WhatsApp Cadastrado</span>
+                    <span className="font-semibold text-forest">
+                      {selectedUserForApoio.telefone || "Não cadastrado"}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-warm/40 rounded-2xl border border-soft flex flex-col gap-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs uppercase font-bold tracking-wider text-forest/80 flex items-center gap-1.5">
+                      <MessageCircle className="w-4 h-4 text-emerald-600" />
+                      <span>Mensagem Pronta de Orientação para o Usuário</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const msg = `Olá ${selectedUserForApoio.name}! \n\nPara acessar sua conta na plataforma com facilidade e autonomia:\n1. Acesse: ${window.location.origin}\n2. Seu e-mail cadastrado é: ${selectedUserForApoio.email}\n3. Caso não se lembre da senha, clique em "Esqueci minha senha" ou use o botão de login com Google.\n\nQualquer dúvida, estamos à disposição!`;
+                        navigator.clipboard.writeText(msg);
+                        showToast("Mensagem copiada para a área de transferência!", "success");
+                      }}
+                      className="text-xs font-semibold px-2.5 py-1 bg-white hover:bg-forest/10 rounded-lg border border-soft text-forest flex items-center gap-1 cursor-pointer transition-colors"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>Copiar Texto</span>
+                    </button>
+                  </div>
+                  <div className="p-3 bg-white rounded-xl border border-soft text-xs text-forest/80 font-mono whitespace-pre-wrap leading-relaxed">
+                    {`Olá ${selectedUserForApoio.name}!\n\nPara acessar sua conta na plataforma com facilidade e autonomia:\n1. Acesse: ${window.location.origin}\n2. Seu e-mail cadastrado é: ${selectedUserForApoio.email}\n3. Caso não se lembre da senha, clique em "Esqueci minha senha" ou use o login com Google.\n\nQualquer dúvida, estamos à disposição!`}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

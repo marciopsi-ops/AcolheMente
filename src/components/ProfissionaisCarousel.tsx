@@ -192,8 +192,8 @@ export function ProfissionaisCarousel() {
   return (
     <section className="w-full bg-warm/60 py-16 md:py-20 flex flex-col items-center border-t border-soft/60 overflow-hidden">
       <div className="w-full max-w-[1200px] px-6 md:px-12 mb-10 text-center flex flex-col items-center gap-3">
-        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-sun/20 border border-sun/40 text-forest text-xs font-semibold uppercase tracking-wider">
-          <HeartHandshake className="w-3.5 h-3.5 text-forest shrink-0" />
+        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/80 backdrop-blur-md border border-white/90 text-forest text-xs font-semibold uppercase tracking-wider shadow-xs">
+          <HeartHandshake className="w-3.5 h-3.5 text-sun-dark shrink-0" />
           <span>Nosso Corpo Clínico</span>
         </div>
         <h2 className="font-serif text-3xl md:text-4xl text-forest">
@@ -210,12 +210,12 @@ export function ProfissionaisCarousel() {
         onMouseEnter={() => setIsPaused(true)}
         onMouseLeave={() => setIsPaused(false)}
       >
-        {/* Sombreamento lateral em degradê para suavizar as bordas */}
+        {/* Sombreamento lateral em degradê com desfoque para suavizar as bordas */}
         <div className="absolute inset-y-0 left-0 w-12 sm:w-28 bg-gradient-to-r from-warm to-transparent z-10 pointer-events-none" />
         <div className="absolute inset-y-0 right-0 w-12 sm:w-28 bg-gradient-to-l from-warm to-transparent z-10 pointer-events-none" />
 
         <div
-          className="flex whitespace-nowrap gap-5 py-4 px-4 min-w-max animate-carousel-scroll"
+          className="flex whitespace-nowrap gap-5 py-6 px-4 min-w-max animate-carousel-scroll"
           style={{
             animationPlayState: isPaused ? "paused" : "running",
             animationDuration: `${Math.max(45, displayList.length * 8)}s`,
@@ -228,32 +228,34 @@ export function ProfissionaisCarousel() {
             return (
               <div
                 key={itemKey}
-                className="w-[270px] sm:w-[300px] min-h-[350px] sm:min-h-[380px] shrink-0 p-5 sm:p-6 rounded-2xl bg-white border border-soft/80 shadow-xs hover:shadow-md transition-all duration-300 flex flex-col items-center justify-between text-center overflow-hidden select-none box-border whitespace-normal"
+                className="w-[285px] sm:w-[315px] min-h-[400px] sm:min-h-[430px] shrink-0 p-6 sm:p-7 rounded-[28px] bg-white/75 backdrop-blur-xl border border-white/90 shadow-md shadow-forest/5 hover:shadow-2xl hover:shadow-sun/15 hover:bg-white/90 hover:border-sun/50 hover:-translate-y-1.5 transition-all duration-300 flex flex-col items-center justify-between text-center overflow-hidden select-none box-border whitespace-normal group/card relative"
               >
-                {/* 1. Foto com formato circular */}
-                <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-full overflow-hidden border-2 border-sun/60 shadow-inner bg-warm/80 flex items-center justify-center shrink-0 relative mb-1">
-                  {prof.foto && !hasError ? (
-                    <img
-                      src={prof.foto}
-                      alt={prof.name}
-                      referrerPolicy="no-referrer"
-                      onError={() =>
-                        setImageErrors((prev) => ({ ...prev, [itemKey]: true }))
-                      }
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <div className="w-full h-full bg-forest/10 flex items-center justify-center text-forest/60">
-                      <User className="w-10 h-10 stroke-[1.5]" />
-                    </div>
-                  )}
+                {/* 1. Foto com formato circular aumentada + Anel de Vidro (Glassmorphism) */}
+                <div className="p-1 rounded-full bg-white/80 backdrop-blur-md border border-white/90 shadow-md group-hover/card:border-sun/60 transition-all duration-300 shrink-0 mb-3 relative">
+                  <div className="w-28 h-28 sm:w-32 sm:h-32 rounded-full overflow-hidden shadow-inner bg-warm/80 flex items-center justify-center relative">
+                    {prof.foto && !hasError ? (
+                      <img
+                        src={prof.foto}
+                        alt={prof.name}
+                        referrerPolicy="no-referrer"
+                        onError={() =>
+                          setImageErrors((prev) => ({ ...prev, [itemKey]: true }))
+                        }
+                        className="w-full h-full object-cover group-hover/card:scale-105 transition-transform duration-500"
+                      />
+                    ) : (
+                      <div className="w-full h-full bg-forest/10 flex items-center justify-center text-forest/60">
+                        <User className="w-12 h-12 stroke-[1.5]" />
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* Container principal dos dados centralizados */}
-                <div className="w-full flex flex-col items-center justify-center my-auto gap-0.5">
+                <div className="w-full flex flex-col items-center justify-center my-auto gap-1">
                   {/* 2. Nome */}
                   <h3
-                    className="font-serif font-bold text-base text-forest w-full line-clamp-1 leading-tight px-1 text-center break-words"
+                    className="font-serif font-bold text-base sm:text-lg text-forest w-full line-clamp-1 leading-tight px-1 text-center break-words group-hover/card:text-forest"
                     title={prof.name}
                   >
                     {prof.name}
@@ -261,32 +263,32 @@ export function ProfissionaisCarousel() {
 
                   {/* 3. Profissão (Permite até 2 linhas caso não caiba em uma) */}
                   <p
-                    className="text-xs text-forest/75 font-semibold tracking-wide w-full line-clamp-2 min-h-[32px] flex items-center justify-center px-1 text-center leading-snug break-words"
+                    className="text-xs sm:text-[13px] text-forest/75 font-semibold tracking-wide w-full line-clamp-2 min-h-[34px] flex items-center justify-center px-1 text-center leading-snug break-words"
                     title={prof.profissao}
                   >
                     {prof.profissao}
                   </p>
 
-                  {/* 4. Registro (se houver) */}
+                  {/* 4. Registro com Efeito Vidro translúcido */}
                   {prof.crp ? (
-                    <span className="mt-1 text-[10px] font-semibold text-forest/70 bg-warm/90 px-3 py-0.5 rounded-full border border-soft/70 max-w-full truncate shrink-0">
+                    <span className="mt-1 text-[10px] sm:text-[11px] font-semibold text-forest/80 bg-forest/5 backdrop-blur-md px-3.5 py-0.5 rounded-full border border-forest/10 shadow-2xs max-w-full truncate shrink-0">
                       {prof.crp}
                     </span>
                   ) : null}
                 </div>
 
-                {/* 5. Frase editada em "Por que faço parte desse projeto" */}
+                {/* 5. Frase editada em "Por que faço parte desse projeto" com card de vidro interno */}
                 {prof.motivacaoProjeto ? (
-                  <div className="mt-3 pt-2.5 border-t border-soft/60 w-full flex flex-col items-center justify-center gap-1">
+                  <div className="mt-3.5 pt-3 border-t border-forest/10 w-full flex flex-col items-center justify-center gap-1.5 bg-white/50 backdrop-blur-sm p-3 rounded-2xl border border-white/60 shadow-2xs">
                     <span className="text-[9px] font-bold uppercase tracking-widest text-forest/50">
                       Por que faço parte
                     </span>
-                    <p className="text-xs text-forest/80 italic font-serif leading-tight px-1 text-center line-clamp-2 break-words">
+                    <p className="text-xs text-forest/85 italic font-serif leading-relaxed px-1 text-center line-clamp-2 break-words">
                       “{prof.motivacaoProjeto}”
                     </p>
                     <button
                       onClick={() => setSelectedProfModal(prof)}
-                      className="text-[11px] font-bold text-forest hover:text-sun-dark underline decoration-sun-dark/40 underline-offset-2 transition-colors mt-0.5 cursor-pointer"
+                      className="text-[11px] font-bold text-forest hover:text-sun-dark underline decoration-sun-dark/40 underline-offset-2 transition-colors cursor-pointer"
                     >
                       Ler mais
                     </button>
@@ -298,29 +300,31 @@ export function ProfissionaisCarousel() {
         </div>
       </div>
 
-      {/* Modal para leitura completa do depoimento do profissional */}
+      {/* Modal para leitura completa do depoimento do profissional com Efeito Vidro (Glassmorphism) */}
       {selectedProfModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-forest/60 backdrop-blur-xs animate-in fade-in duration-200">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-8 shadow-2xl border border-soft relative flex flex-col items-center text-center animate-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-forest/50 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="bg-white/90 backdrop-blur-2xl rounded-[32px] max-w-md w-full p-6 sm:p-8 shadow-2xl shadow-forest/20 border border-white/90 relative flex flex-col items-center text-center animate-in zoom-in-95 duration-200">
             <button
               onClick={() => setSelectedProfModal(null)}
-              className="absolute top-4 right-4 p-2 text-forest/60 hover:text-forest hover:bg-warm rounded-full transition-colors cursor-pointer"
+              className="absolute top-4 right-4 p-2 text-forest/60 hover:text-forest hover:bg-white/80 rounded-full transition-colors cursor-pointer"
               title="Fechar"
             >
               <X className="w-5 h-5" />
             </button>
 
-            {/* Foto no Modal */}
-            <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-full overflow-hidden border-2 border-sun/60 shadow-inner bg-warm/80 flex items-center justify-center shrink-0 mb-3">
-              {selectedProfModal.foto ? (
-                <img
-                  src={selectedProfModal.foto}
-                  alt={selectedProfModal.name}
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <User className="w-10 h-10 text-forest/60" />
-              )}
+            {/* Foto no Modal com anel de vidro ampliado */}
+            <div className="p-1 rounded-full bg-white/90 backdrop-blur-md border border-white shadow-lg mb-3 shrink-0">
+              <div className="w-28 h-28 sm:w-32 sm:h-32 rounded-full overflow-hidden shadow-inner bg-warm/80 flex items-center justify-center">
+                {selectedProfModal.foto ? (
+                  <img
+                    src={selectedProfModal.foto}
+                    alt={selectedProfModal.name}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <User className="w-12 h-12 text-forest/60" />
+                )}
+              </div>
             </div>
 
             <h3 className="font-serif font-bold text-lg sm:text-xl text-forest">
@@ -330,12 +334,12 @@ export function ProfissionaisCarousel() {
               {selectedProfModal.profissao}
             </p>
             {selectedProfModal.crp && (
-              <span className="mt-2 text-xs font-semibold text-forest/70 bg-warm px-3.5 py-1 rounded-full border border-soft">
+              <span className="mt-2 text-xs font-semibold text-forest/80 bg-forest/5 backdrop-blur-md px-4 py-1 rounded-full border border-forest/10 shadow-2xs">
                 {selectedProfModal.crp}
               </span>
             )}
 
-            <div className="mt-5 pt-4 border-t border-soft/80 w-full flex flex-col items-center gap-2 bg-warm/40 p-4 rounded-2xl">
+            <div className="mt-5 pt-4 border-t border-forest/10 w-full flex flex-col items-center gap-2 bg-white/60 backdrop-blur-md p-4 sm:p-5 rounded-2xl border border-white/70 shadow-2xs">
               <span className="text-[10px] font-bold uppercase tracking-widest text-forest/60 flex items-center gap-1.5">
                 <Quote className="w-3.5 h-3.5 text-sun-dark" /> Por que faço parte do projeto
               </span>
@@ -347,7 +351,7 @@ export function ProfissionaisCarousel() {
             <div className="flex items-center justify-center mt-6 w-full">
               <button
                 onClick={() => setSelectedProfModal(null)}
-                className="w-full sm:w-auto px-8 py-2.5 bg-forest text-white text-xs sm:text-sm font-semibold rounded-xl hover:bg-forest/90 transition-colors shadow-xs cursor-pointer"
+                className="w-full sm:w-auto px-8 py-2.5 bg-forest text-white text-xs sm:text-sm font-semibold rounded-xl hover:bg-forest/90 transition-colors shadow-sm cursor-pointer hover:scale-105 active:scale-95"
               >
                 Fechar
               </button>

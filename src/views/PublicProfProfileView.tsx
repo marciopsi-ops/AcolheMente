@@ -12,11 +12,13 @@ export function PublicProfProfileView({
   onBack,
   onGoHome,
   onReadArtigo,
+  hideMotivacaoProjeto,
 }: { 
   profUid: string; 
   onBack: () => void;
   onGoHome?: () => void;
   onReadArtigo?: (artigoId: string) => void;
+  hideMotivacaoProjeto?: boolean;
 }) {
   const [prof, setProf] = useState<any>(null);
   const [servicos, setServicos] = useState<any[]>([]);
@@ -395,7 +397,7 @@ export function PublicProfProfileView({
               <p className="text-sm text-forest/50 italic py-6">O profissional ainda não incluiu um mini-currículo.</p>
             )}
 
-            {prof.motivacaoProjeto && (
+            {!hideMotivacaoProjeto && prof.motivacaoProjeto && (
               <>
                 <div className="mt-4 flex items-center gap-3 border-b border-soft/60 pb-4">
                   <h2 className="font-serif text-xl sm:text-2xl font-semibold text-forest">Porque faço parte desse projeto?</h2>

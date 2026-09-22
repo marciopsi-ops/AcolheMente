@@ -50,10 +50,31 @@ service cloud.firestore {
       allow delete: if isSignedIn() && (isMaster() || isTriagem());
     }
 
+    // Triagem Corporativa (Fichas de Bordo do Benefício Corporativo)
+    match /triagem_corporativa/{fichaId} {
+      allow create, read, update: if true;
+      allow delete: if isSignedIn() && (isMaster() || isTriagem());
+    }
+
+    // Acessos e Logs Corporativos
+    match /beneficio_acessos/{acessoId} {
+      allow create, read, update: if true;
+      allow delete: if isSignedIn() && (isMaster() || isTriagem());
+    }
+
     // Usuários e Perfis da Plataforma
     match /users/{userId} {
       allow read: if true;
-      allow write: if isSignedIn() && (isUserDoc(userId) || isMaster() || isTriagem());
+      // Usuário comum pode atualizar apenas seu próprio perfil sem se autopromover para master ou triagem
+      allow create: if isSignedIn() && (
+        isMaster() ||
+        (isUserDoc(userId) && request.resource.data.role == 'profissional')
+      );
+      allow update: if isSignedIn() && (
+        isMaster() ||
+        (isUserDoc(userId) && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'roles']) || resource.data.role == request.resource.data.role))
+      );
+      allow delete: if isSignedIn() && isMaster();
     }
 
     // Leads Profissionais
@@ -136,6 +157,13 @@ service cloud.firestore {
       allow read: if true;
       allow create: if isSignedIn() && (isProfissional() || isMaster() || isTriagem());
       allow update, delete: if isSignedIn() && (isMaster() || isTriagem() || (resource.data.autorUid == request.auth.uid));
+    }
+
+    // Auditoria de Acessos e Gestão
+    match /auditoria_gestao/{auditId} {
+      allow create: if isSignedIn();
+      allow read: if isSignedIn() && (isMaster() || isTriagem());
+      allow update, delete: if false;
     }
   }
 }

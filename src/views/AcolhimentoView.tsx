@@ -621,10 +621,12 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
 
         {/* FLUXO CORPORATIVO DEDICADO */}
         {accessType === "Corporativo" ? (
-          <AcolhimentoCorporativoView 
-            onBackToSelection={() => setAccessType("Particular")}
-            onNavigate={onNavigate}
-          />
+          <div className="w-full max-w-full min-w-0">
+            <AcolhimentoCorporativoView 
+              onBackToSelection={() => setAccessType("Particular")}
+              onNavigate={onNavigate}
+            />
+          </div>
         ) : (
           /* FLUXO PARTICULAR CLÁSSICO */
           <>
@@ -649,10 +651,12 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
                   <div className="w-full lg:w-1/2 flex flex-col gap-6 items-center lg:items-end animate-in fade-in slide-in-from-right-4 duration-500">
                     <img src={pacienteHero} alt="Ilustração de acolhimento" className="w-full max-w-lg object-contain rounded-3xl mix-blend-multiply" referrerPolicy="no-referrer" />
                     
-                    {/* Benefit Cards */}
+                    {/* Benefit Cards with Glassmorphism and Hover Auras */}
                     <div className="w-full max-w-lg grid grid-cols-1 sm:grid-cols-2 gap-4 mt-2">
-                      <div className="p-4 bg-warm border border-soft rounded-2xl flex items-start gap-3">
-                        <Laptop className="w-5 h-5 text-forest shrink-0 mt-0.5" />
+                      <div className="p-4 bg-white/90 backdrop-blur-md border border-white/80 rounded-2xl flex items-start gap-3.5 shadow-sm hover:shadow-md hover:border-sun/40 hover:-translate-y-0.5 transition-all duration-300 group">
+                        <div className="w-9 h-9 rounded-xl bg-sun/15 border border-sun/30 flex items-center justify-center text-sun-dark group-hover:bg-sun group-hover:text-forest transition-colors duration-300 shrink-0">
+                          <Laptop className="w-4.5 h-4.5" />
+                        </div>
                         <div>
                           <h4 className="font-serif font-bold text-sm text-forest">Atendimento 100% Online</h4>
                           <p className="text-[11px] text-forest/70 mt-1 leading-relaxed">
@@ -661,8 +665,10 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
                         </div>
                       </div>
 
-                      <div className="p-4 bg-warm border border-soft rounded-2xl flex items-start gap-3">
-                        <ShieldCheck className="w-5 h-5 text-forest shrink-0 mt-0.5" />
+                      <div className="p-4 bg-white/90 backdrop-blur-md border border-white/80 rounded-2xl flex items-start gap-3.5 shadow-sm hover:shadow-md hover:border-sun/40 hover:-translate-y-0.5 transition-all duration-300 group">
+                        <div className="w-9 h-9 rounded-xl bg-sun/15 border border-sun/30 flex items-center justify-center text-sun-dark group-hover:bg-sun group-hover:text-forest transition-colors duration-300 shrink-0">
+                          <ShieldCheck className="w-4.5 h-4.5" />
+                        </div>
                         <div>
                           <h4 className="font-serif font-bold text-sm text-forest">Profissionais Experientes</h4>
                           <p className="text-[11px] text-forest/70 mt-1 leading-relaxed">
@@ -671,8 +677,10 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
                         </div>
                       </div>
 
-                      <div className="p-4 bg-warm border border-soft rounded-2xl flex items-start gap-3">
-                        <DollarSign className="w-5 h-5 text-forest shrink-0 mt-0.5" />
+                      <div className="p-4 bg-white/90 backdrop-blur-md border border-white/80 rounded-2xl flex items-start gap-3.5 shadow-sm hover:shadow-md hover:border-sun/40 hover:-translate-y-0.5 transition-all duration-300 group">
+                        <div className="w-9 h-9 rounded-xl bg-sun/15 border border-sun/30 flex items-center justify-center text-sun-dark group-hover:bg-sun group-hover:text-forest transition-colors duration-300 shrink-0">
+                          <DollarSign className="w-4.5 h-4.5" />
+                        </div>
                         <div>
                           <h4 className="font-serif font-bold text-sm text-forest">Investimento Coerente</h4>
                           <p className="text-[11px] text-forest/70 mt-1 leading-relaxed">
@@ -681,8 +689,10 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
                         </div>
                       </div>
 
-                      <div className="p-4 bg-warm border border-soft rounded-2xl flex items-start gap-3">
-                        <CheckCircle2 className="w-5 h-5 text-forest shrink-0 mt-0.5" />
+                      <div className="p-4 bg-white/90 backdrop-blur-md border border-white/80 rounded-2xl flex items-start gap-3.5 shadow-sm hover:shadow-md hover:border-sun/40 hover:-translate-y-0.5 transition-all duration-300 group">
+                        <div className="w-9 h-9 rounded-xl bg-sun/15 border border-sun/30 flex items-center justify-center text-sun-dark group-hover:bg-sun group-hover:text-forest transition-colors duration-300 shrink-0">
+                          <CheckCircle2 className="w-4.5 h-4.5" />
+                        </div>
                         <div>
                           <h4 className="font-serif font-bold text-sm text-forest">Acolhimento de Qualidade</h4>
                           <p className="text-[11px] text-forest/70 mt-1 leading-relaxed">
@@ -696,9 +706,11 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
               </div>
             </section>
 
-            {/* Form Section */}
+            {/* Form Section with Glassmorphism & Depth */}
             <section className="w-full px-6 md:px-12 py-16 flex justify-center relative -mt-10">
-              <div id="acolhimento-form-card" className="max-w-2xl w-full bg-white rounded-3xl shadow-xl shadow-forest/5 p-8 md:p-12 border border-soft relative z-10">
+              <div id="acolhimento-form-card" className="max-w-2xl w-full bg-white/95 backdrop-blur-md rounded-[36px] shadow-2xl shadow-forest/10 p-8 md:p-12 border border-white/80 relative z-10 overflow-hidden">
+                {/* Subtle ambient lighting inside the form */}
+                <div className="absolute top-0 right-0 w-64 h-64 bg-sun/10 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20" />
                 
                 {step === 5 ? (
                   <div className="flex flex-col items-center text-center animate-in fade-in slide-in-from-bottom-4 duration-700">
@@ -1204,27 +1216,30 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
                           type="button"
                           onClick={handleBack}
                           disabled={isSubmitting}
-                          className="px-6 py-3 border border-soft text-forest/70 rounded-full font-semibold hover:bg-warm transition-all disabled:opacity-50 cursor-pointer"
+                          className="px-6 py-3 border border-soft text-forest/70 rounded-full font-semibold hover:bg-warm transition-all disabled:opacity-50 cursor-pointer active:scale-[0.99]"
                         >
                           Voltar
                         </button>
                       )}
-                      <button 
-                        type="submit"
-                        disabled={isSubmitting}
-                        className="flex-1 px-8 py-3 bg-sun text-forest rounded-full font-semibold shadow-lg shadow-sun/20 transition-all hover:bg-sun-dark flex items-center justify-center disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer"
-                      >
-                        {isSubmitting ? (
-                          <span className="flex items-center gap-2">
-                            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                            Finalizando...
-                          </span>
-                        ) : step === 4 ? (
-                          "Finalizar Acolhimento"
-                        ) : (
-                          "Avançar"
-                        )}
-                      </button>
+                      <div className="flex-1 relative group">
+                        <div className="absolute -inset-1 bg-gradient-to-r from-sun/40 via-sun-dark/30 to-sun/40 rounded-full blur-md opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
+                        <button 
+                          type="submit"
+                          disabled={isSubmitting}
+                          className="w-full relative px-8 py-3.5 bg-sun text-forest rounded-full font-semibold shadow-lg shadow-sun/20 transition-all hover:bg-sun-dark flex items-center justify-center disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer hover:scale-[1.01] active:scale-[0.99]"
+                        >
+                          {isSubmitting ? (
+                            <span className="flex items-center gap-2">
+                              <div className="w-4 h-4 border-2 border-forest/30 border-t-forest rounded-full animate-spin" />
+                              Finalizando...
+                            </span>
+                          ) : step === 4 ? (
+                            "Finalizar Acolhimento"
+                          ) : (
+                            "Avançar"
+                          )}
+                        </button>
+                      </div>
                     </div>
                   </form>
                 </>

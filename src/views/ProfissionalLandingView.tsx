@@ -291,35 +291,52 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
             </div>
             
             <div className="w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-8">
-              <div className="bg-warm/50 p-6 rounded-3xl border border-soft flex flex-col gap-3">
-                <HeartHandshake className="w-8 h-8 text-sun-dark" />
+              <div className="bg-white/90 backdrop-blur-md p-6 rounded-3xl border border-white/80 flex flex-col gap-3 shadow-lg shadow-forest/5 hover:shadow-xl hover:border-sun/40 hover:-translate-y-1 transition-all duration-300 group">
+                <div className="w-12 h-12 rounded-2xl bg-sun/15 border border-sun/30 flex items-center justify-center text-sun-dark group-hover:bg-sun group-hover:text-forest transition-colors duration-300 shadow-xs">
+                  <HeartHandshake className="w-6 h-6" />
+                </div>
                 <h3 className="font-semibold text-lg text-forest">Apoio Real</h3>
-                <p className="text-sm text-forest/80">Faça a diferença na jornada de pessoas que relutam em buscar ajuda pelo obstáculo financeiro.</p>
+                <p className="text-sm text-forest/80 leading-relaxed">Faça a diferença na jornada de pessoas que relutam em buscar ajuda pelo obstáculo financeiro.</p>
               </div>
-              <div className="bg-warm/50 p-6 rounded-3xl border border-soft flex flex-col gap-3">
-                <Clock className="w-8 h-8 text-sun-dark" />
+
+              <div className="bg-white/90 backdrop-blur-md p-6 rounded-3xl border border-white/80 flex flex-col gap-3 shadow-lg shadow-forest/5 hover:shadow-xl hover:border-sun/40 hover:-translate-y-1 transition-all duration-300 group">
+                <div className="w-12 h-12 rounded-2xl bg-sun/15 border border-sun/30 flex items-center justify-center text-sun-dark group-hover:bg-sun group-hover:text-forest transition-colors duration-300 shadow-xs">
+                  <Clock className="w-6 h-6" />
+                </div>
                 <h3 className="font-semibold text-lg text-forest">Liberdade</h3>
-                <p className="text-sm text-forest/80">Escolha doar de 1 a 20 horas por mês. Sua disponibilidade constrói o tamanho da nossa rede de apoio.</p>
+                <p className="text-sm text-forest/80 leading-relaxed">Escolha doar de 1 a 20 horas por mês. Sua disponibilidade constrói o tamanho da nossa rede de apoio.</p>
               </div>
-              <div className="bg-warm/50 p-6 rounded-3xl border border-soft flex flex-col gap-3">
-                <PiggyBank className="w-8 h-8 text-sun-dark" />
+
+              <div className="bg-white/90 backdrop-blur-md p-6 rounded-3xl border border-white/80 flex flex-col gap-3 shadow-lg shadow-forest/5 hover:shadow-xl hover:border-sun/40 hover:-translate-y-1 transition-all duration-300 group">
+                <div className="w-12 h-12 rounded-2xl bg-sun/15 border border-sun/30 flex items-center justify-center text-sun-dark group-hover:bg-sun group-hover:text-forest transition-colors duration-300 shadow-xs">
+                  <PiggyBank className="w-6 h-6" />
+                </div>
                 <h3 className="font-semibold text-lg text-forest">Remuneração Justa</h3>
-                <p className="text-sm text-forest/80">Os atendimentos são remunerados. É um acordo mútuo para reduzir o valor de forma acessível, sem desvalorizar seu trabalho.</p>
+                <p className="text-sm text-forest/80 leading-relaxed">Os atendimentos são remunerados. É um acordo mútuo para reduzir o valor de forma acessível, sem desvalorizar seu trabalho.</p>
               </div>
-              <div className="bg-warm/50 p-6 rounded-3xl border border-soft flex flex-col gap-3">
-                <UserPlus className="w-8 h-8 text-sun-dark" />
+
+              <div className="bg-white/90 backdrop-blur-md p-6 rounded-3xl border border-white/80 flex flex-col gap-3 shadow-lg shadow-forest/5 hover:shadow-xl hover:border-sun/40 hover:-translate-y-1 transition-all duration-300 group">
+                <div className="w-12 h-12 rounded-2xl bg-sun/15 border border-sun/30 flex items-center justify-center text-sun-dark group-hover:bg-sun group-hover:text-forest transition-colors duration-300 shadow-xs">
+                  <UserPlus className="w-6 h-6" />
+                </div>
                 <h3 className="font-semibold text-lg text-forest">Ecossistema</h3>
-                <p className="text-sm text-forest/80">Os pacientes chegam através de empresas parceiras ou do nosso fundo solidário, já engajados para tratamento.</p>
+                <p className="text-sm text-forest/80 leading-relaxed">Os pacientes chegam através de empresas parceiras ou do nosso fundo solidário, já engajados para tratamento.</p>
               </div>
-              <div className="bg-warm/50 p-6 rounded-3xl border border-soft flex flex-col gap-3">
-                <Network className="w-8 h-8 text-sun-dark" />
+
+              <div className="bg-white/90 backdrop-blur-md p-6 rounded-3xl border border-white/80 flex flex-col gap-3 shadow-lg shadow-forest/5 hover:shadow-xl hover:border-sun/40 hover:-translate-y-1 transition-all duration-300 group">
+                <div className="w-12 h-12 rounded-2xl bg-sun/15 border border-sun/30 flex items-center justify-center text-sun-dark group-hover:bg-sun group-hover:text-forest transition-colors duration-300 shadow-xs">
+                  <Network className="w-6 h-6" />
+                </div>
                 <h3 className="font-semibold text-lg text-forest">Conexão entre Profissionais</h3>
-                <p className="text-sm text-forest/80">Ofereça e usufrua de serviços exclusivos na plataforma: supervisão, cursos, workshops e consultorias.</p>
+                <p className="text-sm text-forest/80 leading-relaxed">Ofereça e usufrua de serviços exclusivos na plataforma: supervisão, cursos, workshops e consultorias.</p>
               </div>
-              <div className="bg-warm/50 p-6 rounded-3xl border border-soft flex flex-col gap-3">
-                <BookOpen className="w-8 h-8 text-sun-dark" />
+
+              <div className="bg-white/90 backdrop-blur-md p-6 rounded-3xl border border-white/80 flex flex-col gap-3 shadow-lg shadow-forest/5 hover:shadow-xl hover:border-sun/40 hover:-translate-y-1 transition-all duration-300 group">
+                <div className="w-12 h-12 rounded-2xl bg-sun/15 border border-sun/30 flex items-center justify-center text-sun-dark group-hover:bg-sun group-hover:text-forest transition-colors duration-300 shadow-xs">
+                  <BookOpen className="w-6 h-6" />
+                </div>
                 <h3 className="font-semibold text-lg text-forest">Publicação de Artigos</h3>
-                <p className="text-sm text-forest/80">Publique conteúdos e artigos de sua autoria no Blog oficial do projeto, fortalecendo sua autoridade profissional e alcance.</p>
+                <p className="text-sm text-forest/80 leading-relaxed">Publique conteúdos e artigos de sua autoria no Blog oficial do projeto, fortalecendo sua autoridade profissional e alcance.</p>
               </div>
               <div className="col-span-1 sm:col-span-2 lg:col-span-3 bg-gradient-to-br from-forest via-[#1d3c2b] to-[#12281c] text-white p-8 md:p-10 rounded-3xl border-2 border-sun-dark/40 shadow-xl relative overflow-hidden group hover:border-sun-dark transition-all duration-300 my-2">
                 {/* Background glow accent */}
@@ -391,9 +408,11 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
           </div>
         </section>
 
-        {/* Form Section */}
+        {/* Form Section with Glassmorphism and Glow */}
         <section className="w-full px-6 md:px-12 py-16 flex justify-center relative -mt-10">
-          <div className="max-w-2xl w-full bg-white rounded-3xl shadow-xl shadow-forest/5 p-8 md:p-12 border border-soft">
+          <div className="max-w-2xl w-full bg-white/95 backdrop-blur-md rounded-[36px] shadow-2xl shadow-forest/10 p-8 md:p-12 border border-white/80 relative overflow-hidden">
+            {/* Subtle internal glow accent */}
+            <div className="absolute top-0 right-0 w-64 h-64 bg-sun/10 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20" />
             {isSuccess ? (
               <div className="flex flex-col items-center text-center py-6 animate-in zoom-in-95 duration-500">
                 <div className="w-20 h-20 bg-sun-light rounded-full flex items-center justify-center mb-4 border border-sun-dark/30 shadow-xs">
@@ -978,19 +997,22 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
                       <button 
                         type="button" 
                         onClick={handleBack}
-                        className="flex-1 py-4 px-6 border border-soft text-forest hover:bg-forest/5 rounded-full font-semibold transition-all text-center"
+                        className="flex-1 py-4 px-6 border border-soft text-forest hover:bg-forest/5 rounded-full font-semibold transition-all text-center cursor-pointer active:scale-[0.99]"
                       >
                         Voltar
                       </button>
                     )}
                     
-                    <button 
-                      disabled={isSubmitting}
-                      type="submit" 
-                      className="flex-1 py-4 px-6 bg-forest text-white rounded-full font-semibold shadow-md hover:bg-forest/90 transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
-                    >
-                      {step < 4 ? "Avançar" : (isSubmitting ? "Enviando..." : "Finalizar Cadastro")}
-                    </button>
+                    <div className="flex-1 relative group">
+                      <div className="absolute -inset-1 bg-gradient-to-r from-forest/30 via-sun/20 to-forest/30 rounded-full blur-md opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
+                      <button 
+                        disabled={isSubmitting}
+                        type="submit" 
+                        className="w-full relative py-4 px-6 bg-forest text-white rounded-full font-semibold shadow-lg shadow-forest/15 hover:bg-forest/90 transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer hover:scale-[1.01] active:scale-[0.99]"
+                      >
+                        {step < 4 ? "Avançar" : (isSubmitting ? "Enviando..." : "Finalizar Cadastro")}
+                      </button>
+                    </div>
                   </div>
                   
                   <p className="text-center text-[10px] text-forest/60 uppercase tracking-widest font-semibold mt-2">
