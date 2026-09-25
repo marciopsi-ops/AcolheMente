@@ -148,9 +148,35 @@
         "data": { "type": "timestamp" }
       },
       "required": ["tipo", "usuarioAlvoUid", "executadoPorUid", "data"]
+    },
+    "EmpresaLead": {
+      "title": "EmpresaLead",
+      "description": "Cadastro e ficha de bordo comercial de empresas parceiras, canais de benefícios e clientes conectadas.",
+      "type": "object",
+      "properties": {
+        "nomeEmpresa": { "type": "string" },
+        "razaoSocial": { "type": "string" },
+        "cnpj": { "type": "string" },
+        "categoria": { "type": "string", "enum": ["empresa_direta", "canal_parceiro", "empresa_conectada"] },
+        "canalAtivaColaboradoresProprios": { "type": "boolean" },
+        "empresaPaiId": { "type": "string" },
+        "empresaPaiNome": { "type": "string" },
+        "ramoAtividade": { "type": "string" },
+        "local": { "type": "string" },
+        "colaboradores": { "type": "string" },
+        "quantidadeVidas": { "type": "string" },
+        "email": { "type": "string" },
+        "telefone": { "type": "string" },
+        "createdAt": { "type": "timestamp" }
+      },
+      "required": ["nomeEmpresa", "cnpj", "createdAt"]
     }
   },
   "firestore": {
+    "empresa_leads": {
+      "schema": { "$ref": "#/entities/EmpresaLead" },
+      "description": "Controle corporativo de empresas clientes diretas, canais de benefícios e empresas conectadas."
+    },
     "acolhimentos": {
       "schema": { "$ref": "#/entities/Acolhimento" },
       "description": "Coleção de registros de acolhimento (público mas seguro para criação)."

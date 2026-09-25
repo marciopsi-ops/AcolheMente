@@ -1,3 +1,124 @@
+export type CategoriaEmpresa = "empresa_direta" | "canal_parceiro" | "empresa_conectada";
+
+export const CATEGORIAS_EMPRESA_CONFIG: {
+  id: CategoriaEmpresa;
+  label: string;
+  badgeLabel: string;
+  badgeBg: string;
+  badgeText: string;
+  badgeBorder: string;
+  descricao: string;
+}[] = [
+  {
+    id: "empresa_direta",
+    label: "Empresa Cliente Direta",
+    badgeLabel: "Cliente Direta",
+    badgeBg: "bg-blue-100",
+    badgeText: "text-blue-900",
+    badgeBorder: "border-blue-200",
+    descricao: "Possui colaboradores próprios com acesso ao acolhimento psicológico na plataforma.",
+  },
+  {
+    id: "canal_parceiro",
+    label: "Canal de Benefícios (Parceiro Comercial)",
+    badgeLabel: "Canal Parceiro",
+    badgeBg: "bg-purple-100",
+    badgeText: "text-purple-900",
+    badgeBorder: "border-purple-300",
+    descricao: "Parceiro comercial/plataforma que intermedeia e conecta outras empresas à rede.",
+  },
+  {
+    id: "empresa_conectada",
+    label: "Empresa Conectada (Cliente via Canal)",
+    badgeLabel: "Empresa Conectada",
+    badgeBg: "bg-emerald-100",
+    badgeText: "text-emerald-900",
+    badgeBorder: "border-emerald-200",
+    descricao: "Empresa parceira trazida e vinculada sob a gestão de um Canal de Benefícios pai.",
+  },
+];
+
+export function sanitizeCategorias(cats: CategoriaEmpresa[]): CategoriaEmpresa[] {
+  if (!cats || cats.length === 0) return ["empresa_direta"];
+  // Regra 1: Empresa Conectada é mutuamente exclusiva com Canal de Benefícios e Empresa Direta
+  if (cats.includes("empresa_conectada")) {
+    return ["empresa_conectada"];
+  }
+  // Cliente Direta e Canal de Benefícios podem coexistir
+  const valid = cats.filter((c) => c === "empresa_direta" || c === "canal_parceiro");
+  return valid.length > 0 ? Array.from(new Set(valid)) : ["empresa_direta"];
+}
+
+export function getEmpresaCategorias(empresa: {
+  categorias?: CategoriaEmpresa[];
+  categoria?: CategoriaEmpresa;
+  canalAtivaColaboradoresProprios?: boolean;
+} | null | undefined): CategoriaEmpresa[] {
+  if (!empresa) return ["empresa_direta"];
+  if (Array.isArray(empresa.categorias) && empresa.categorias.length > 0) {
+    return sanitizeCategorias(empresa.categorias);
+  }
+  if (empresa.categoria) {
+    if (empresa.categoria === "canal_parceiro" && empresa.canalAtivaColaboradoresProprios) {
+      return ["canal_parceiro", "empresa_direta"];
+    }
+    return sanitizeCategorias([empresa.categoria]);
+  }
+  return ["empresa_direta"];
+}
+
+export function getIncompatibleCategorias(targetCat: CategoriaEmpresa): CategoriaEmpresa[] {
+  if (targetCat === "empresa_conectada") {
+    return ["empresa_direta", "canal_parceiro"];
+  }
+  if (targetCat === "empresa_direta" || targetCat === "canal_parceiro") {
+    return ["empresa_conectada"];
+  }
+  return [];
+}
+
+export function resolveNextCategorias(
+  currentCats: CategoriaEmpresa[],
+  targetCat: CategoriaEmpresa
+): { nextCats: CategoriaEmpresa[]; removedIncompatible: CategoriaEmpresa[] } {
+  const isCurrentlyActive = currentCats.includes(targetCat);
+
+  if (isCurrentlyActive) {
+    // Desmarcando a categoria
+    if (currentCats.length <= 1) {
+      return { nextCats: currentCats, removedIncompatible: [] };
+    }
+    const filtered = currentCats.filter((c) => c !== targetCat);
+    return { nextCats: sanitizeCategorias(filtered), removedIncompatible: [] };
+  }
+
+  // Marcando a categoria
+  if (targetCat === "empresa_conectada") {
+    // Substitui qualquer outra categoria
+    const removed = currentCats.filter((c) => c !== "empresa_conectada");
+    return { nextCats: ["empresa_conectada"], removedIncompatible: removed };
+  }
+
+  // Marcando empresa_direta ou canal_parceiro
+  const withoutIncompatible = currentCats.filter((c) => c !== "empresa_conectada");
+  const removed = currentCats.filter((c) => c === "empresa_conectada");
+  const next = Array.from(new Set([...withoutIncompatible, targetCat]));
+  return { nextCats: sanitizeCategorias(next), removedIncompatible: removed };
+}
+
+export function hasEmpresaCategoria(
+  empresa: any,
+  cat: CategoriaEmpresa
+): boolean {
+  return getEmpresaCategorias(empresa).includes(cat);
+}
+
+export interface RegraPrecoCanal {
+  valorTitularMensal?: number; // Ex: R$ 2,00
+  valorDependenteMensal?: number; // Ex: R$ 1,00
+  diaCorteMensal?: number; // Ex: 30
+}
+
 export interface CargoEmpresa {
   id: string;
   nome: string;
@@ -134,4 +255,57 @@ export interface FichaBordoCorporativa {
   motivoDesfecho?: string;
   observacoesTriagem?: string;
   historico?: HistoricoFichaCorporativa[];
+}
+
+export interface ServicoAdicionalItem {
+  id: string;
+  descricao: string;
+  quantidade: number;
+  valorUnitario: number;
+  data: string;
+  tipo?: "servico" | "desconto" | "ajuste";
+  observacao?: string;
+}
+
+export type StatusFatura = "previsto" | "faturado" | "pago" | "cancelado";
+
+export interface FaturaHistoricoItem {
+  id: string;
+  competencia: string; // Ex: "09/2026"
+  mes: number;
+  ano: number;
+  quantidadeVidasFechamento: number;
+  quantidadeTitulares?: number;
+  quantidadeDependentes?: number;
+  valorPorVida: number;
+  subtotalVidas: number;
+  servicosAdicionais: ServicoAdicionalItem[];
+  totalServicosAdicionais: number;
+  descontosAjustes?: number;
+  valorTotal: number;
+  status: StatusFatura;
+  dataFechamento?: string;
+  dataVencimento: string;
+  dataPagamento?: string;
+  comprovanteUrl?: string;
+  observacoes?: string;
+  fechadoPor?: string;
+}
+
+export interface FaturamentoConfig {
+  modeloCobranca?: "por_vida" | "franquia_excedente" | "fixo_mensal";
+  valorPorVida?: number;
+  valorTitular?: number;
+  valorDependente?: number;
+  franquiaMinimaVidas?: number;
+  valorFixoMensal?: number;
+  diaVencimento?: number; // Ex: 10
+  chavePix?: string;
+  tipoChavePix?: "cnpj" | "email" | "telefone" | "aleatoria";
+  favorecidoPix?: string;
+  bancoNome?: string;
+  bancoAgencia?: string;
+  bancoConta?: string;
+  servicosAdicionaisMesAtual?: ServicoAdicionalItem[];
+  historicoFaturas?: FaturaHistoricoItem[];
 }

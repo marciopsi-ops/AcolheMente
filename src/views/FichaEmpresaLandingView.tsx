@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { Breadcrumbs } from "../components/Breadcrumbs";
 import { EmpresaColaboradoresSpreadsheet, ColaboradorEmpresa } from "../components/EmpresaColaboradoresSpreadsheet";
+import { CategoriaEmpresa, getEmpresaCategorias, hasEmpresaCategoria } from "../types/corporativo";
 
 interface FichaEmpresaLandingViewProps {
   empresaId: string;
@@ -75,6 +76,8 @@ export function FichaEmpresaLandingView({
   });
 
   const [nomeEmpresaExibicao, setNomeEmpresaExibicao] = useState("");
+  const [empresaCategorias, setEmpresaCategorias] = useState<CategoriaEmpresa[]>(["empresa_direta"]);
+  const [empresaPaiNome, setEmpresaPaiNome] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: "instant" });
@@ -88,6 +91,8 @@ export function FichaEmpresaLandingView({
         if (docSnap.exists()) {
           const d = docSnap.data();
           setNomeEmpresaExibicao(d.nomeEmpresa || d.razaoSocial || "Empresa Parceira");
+          setEmpresaCategorias(getEmpresaCategorias(d as any));
+          setEmpresaPaiNome(d.empresaPaiNome);
           if (Array.isArray(d.colaboradoresList)) {
             setColaboradoresList(d.colaboradoresList);
           }
@@ -311,14 +316,28 @@ export function FichaEmpresaLandingView({
               </p>
             </div>
 
-            <div className="bg-warm/60 border border-soft rounded-2xl p-4 shrink-0 flex flex-col gap-1 min-w-[220px]">
-              <span className="text-[10px] uppercase font-bold tracking-wider text-forest/60">
-                Empresa Parceira
-              </span>
+            <div className="bg-warm/60 border border-soft rounded-2xl p-4 shrink-0 flex flex-col gap-1.5 min-w-[240px]">
+              <div className="flex flex-wrap items-center gap-1.5">
+                {empresaCategorias.includes("empresa_direta") && (
+                  <span className="text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200">
+                    Cliente Direta
+                  </span>
+                )}
+                {empresaCategorias.includes("canal_parceiro") && (
+                  <span className="text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-purple-100 text-purple-900 border border-purple-300">
+                    Canal Parceiro
+                  </span>
+                )}
+                {empresaCategorias.includes("empresa_conectada") && (
+                  <span className="text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300">
+                    Conectada {empresaPaiNome ? `(${empresaPaiNome})` : ""}
+                  </span>
+                )}
+              </div>
               <span className="text-base font-bold text-forest line-clamp-1">
                 {nomeEmpresaExibicao}
               </span>
-              <div className="flex items-center gap-1.5 text-xs text-emerald-700 font-semibold mt-1">
+              <div className="flex items-center gap-1.5 text-xs text-emerald-700 font-semibold">
                 <ShieldCheck className="w-4 h-4 text-emerald-600" />
                 <span>Ambiente Seguro & LGPD</span>
               </div>

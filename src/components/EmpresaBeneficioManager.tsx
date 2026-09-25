@@ -114,8 +114,11 @@ export function EmpresaBeneficioManager({ empresa, onUpdateSuccess }: EmpresaBen
   };
 
   const getColaboradorShareMessage = () => {
-    const corporateLink = `${window.location.origin}/?view=acolhimento&via=corporativo`;
-    return `Olá, time! 🎉\n\nÉ com muita alegria que informamos que a ${empresa.nomeEmpresa || "nossa empresa"} firmou parceria oficial com o Projeto AcolheMente para oferecer apoio psicológico e cuidado à saúde mental de todos os nossos colaboradores!\n\n🔑 Seu Código de Acesso Corporativo: *${codigoAcesso || "SEU-CODIGO"}*\n\n🔗 Link direto de Acolhimento Corporativo:\n${corporateLink}\n\nComo iniciar seu acolhimento de forma 100% sigilosa e online:\n1. Acesse o link corporativo acima\n2. Digite o código da nossa empresa (*${codigoAcesso || "SEU-CODIGO"}*)\n3. Preencha o formulário rápido de acolhimento!\n\nCuidar da sua mente é uma prioridade para nós! 💚`;
+    const code = codigoAcesso || empresa.codigoAcesso || "";
+    const corporateLink = code 
+      ? `${window.location.origin}/?view=acolhimento&via=corporativo&convenio=${encodeURIComponent(code)}`
+      : `${window.location.origin}/?view=acolhimento&via=corporativo`;
+    return `Olá, time! 🎉\n\nÉ com muita alegria que informamos que a ${empresa.nomeEmpresa || "nossa empresa"} firmou parceria oficial com o Projeto AcolheMente para oferecer apoio psicológico e cuidado à saúde mental de todos os nossos colaboradores!\n\n🔑 Seu Código de Acesso Corporativo: *${code || "SEU-CODIGO"}*\n\n🔗 Link direto de Acolhimento Corporativo:\n${corporateLink}\n\nComo iniciar seu acolhimento de forma 100% sigilosa e online:\n1. Acesse o link corporativo acima (já com o código do convênio pré-preenchido)\n2. Escolha o profissional e serviço desejado\n3. Inicie seu atendimento com sigilo ético absoluto!\n\nCuidar da sua mente é uma prioridade para nós! 💚`;
   };
 
   const handleCopyShareMessage = () => {

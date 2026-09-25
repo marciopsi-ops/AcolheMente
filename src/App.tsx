@@ -49,6 +49,7 @@ import { ProfissionalLandingView } from "./views/ProfissionalLandingView";
 import { ContratoLandingView } from "./views/ContratoLandingView";
 import { PropostaLandingView } from "./views/PropostaLandingView";
 import { FichaEmpresaLandingView } from "./views/FichaEmpresaLandingView";
+import { PortalEmpresaView } from "./views/PortalEmpresaView";
 import { BlogView } from "./views/BlogView";
 
 import { Footer } from "./components/Footer";
@@ -356,6 +357,13 @@ export default function App() {
   const [publicFichaEmpresaId, setPublicFichaEmpresaId] = useState<string | null>(() => {
     return new URLSearchParams(window.location.search).get("ficha_empresa") || new URLSearchParams(window.location.search).get("empresa_ficha");
   });
+  const [publicPortalEmpresaId, setPublicPortalEmpresaId] = useState<string | null>(() => {
+    return (
+      new URLSearchParams(window.location.search).get("portal_empresa") ||
+      new URLSearchParams(window.location.search).get("portal_rh") ||
+      new URLSearchParams(window.location.search).get("empresa_portal")
+    );
+  });
   const [publicArtigoId, setPublicArtigoId] = useState<string | null>(() => {
     return new URLSearchParams(window.location.search).get("artigo");
   });
@@ -405,6 +413,7 @@ export default function App() {
       setPublicContratoId(p.get("contrato"));
       setPublicPropostaId(p.get("proposta"));
       setPublicFichaEmpresaId(p.get("ficha_empresa") || p.get("empresa_ficha"));
+      setPublicPortalEmpresaId(p.get("portal_empresa") || p.get("portal_rh") || p.get("empresa_portal"));
       setPublicArtigoId(p.get("artigo"));
       const v = p.get("view");
       if (
@@ -506,6 +515,7 @@ export default function App() {
     setPublicContratoId(null);
     setPublicPropostaId(null);
     setPublicFichaEmpresaId(null);
+    setPublicPortalEmpresaId(null);
     setPublicArtigoId(null);
     setCurrentView("landing");
   };
@@ -514,6 +524,16 @@ export default function App() {
     window.scrollTo({ top: 0, left: 0, behavior: "instant" });
     handleGoToLanding();
   };
+
+  if (publicPortalEmpresaId) {
+    return (
+      <PortalEmpresaView
+        empresaId={publicPortalEmpresaId}
+        onBack={handleBackFromPublicProfile}
+        onGoHome={handleGoToLanding}
+      />
+    );
+  }
 
   if (publicArtigoId || currentView === "blog") {
     return (

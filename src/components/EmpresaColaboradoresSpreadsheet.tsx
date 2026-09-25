@@ -24,6 +24,8 @@ export interface ColaboradorItem {
   tipo: "titular" | "dependente";
   nomeCompleto: string;
   cpf: string;
+  cargo?: string;
+  faixaSalarial?: string;
   dataNascimento: string;
   nomeMae: string;
   dataAdmissao: string;
@@ -32,6 +34,10 @@ export interface ColaboradorItem {
   titularVinculado?: string; // Nome ou CPF do titular (se dependente)
   parentesco?: string; // Cônjuge, Filho(a), etc
   observacoes?: string;
+  status?: string;
+  desligado?: boolean;
+  dataDesligamento?: string;
+  motivoDesligamento?: string;
 }
 
 export type ColaboradorEmpresa = ColaboradorItem;
@@ -89,6 +95,8 @@ export const EmpresaColaboradoresSpreadsheet: React.FC<EmpresaColaboradoresSprea
       return (
         (item.nomeCompleto || "").toLowerCase().includes(term) ||
         (item.cpf || "").toLowerCase().includes(term) ||
+        (item.cargo || "").toLowerCase().includes(term) ||
+        (item.faixaSalarial || "").toLowerCase().includes(term) ||
         (item.email || "").toLowerCase().includes(term) ||
         (item.telefone || "").toLowerCase().includes(term) ||
         (item.nomeMae || "").toLowerCase().includes(term) ||
@@ -140,6 +148,8 @@ export const EmpresaColaboradoresSpreadsheet: React.FC<EmpresaColaboradoresSprea
       tipo,
       nomeCompleto: "",
       cpf: "",
+      cargo: "",
+      faixaSalarial: "",
       dataNascimento: "",
       nomeMae: "",
       dataAdmissao: tipo === "titular" ? new Date().toISOString().split("T")[0] : "",
@@ -187,6 +197,8 @@ export const EmpresaColaboradoresSpreadsheet: React.FC<EmpresaColaboradoresSprea
       "Tipo",
       "Nome Completo",
       "CPF",
+      "Cargo",
+      "Faixa Salarial",
       "Data de Nascimento",
       "Nome da Mãe",
       "Data de Admissão",
@@ -200,6 +212,8 @@ export const EmpresaColaboradoresSpreadsheet: React.FC<EmpresaColaboradoresSprea
       c.tipo === "dependente" ? "Dependente" : "Titular",
       `"${(c.nomeCompleto || "").replace(/"/g, '""')}"`,
       `"${c.cpf || ""}"`,
+      `"${(c.cargo || "").replace(/"/g, '""')}"`,
+      `"${(c.faixaSalarial || "").replace(/"/g, '""')}"`,
       `"${c.dataNascimento || ""}"`,
       `"${(c.nomeMae || "").replace(/"/g, '""')}"`,
       `"${c.dataAdmissao || ""}"`,
@@ -477,12 +491,14 @@ export const EmpresaColaboradoresSpreadsheet: React.FC<EmpresaColaboradoresSprea
               <tr className="bg-forest text-white text-[11px] font-bold uppercase tracking-wider sticky top-0 z-10 select-none">
                 <th className="py-2.5 px-3 w-12 text-center border-r border-forest/40">#</th>
                 <th className="py-2.5 px-3 w-28 border-r border-forest/40">Tipo</th>
-                <th className="py-2.5 px-3 w-64 border-r border-forest/40">Nome Completo *</th>
+                <th className="py-2.5 px-3 w-60 border-r border-forest/40">Nome Completo *</th>
                 <th className="py-2.5 px-3 w-36 border-r border-forest/40">CPF</th>
+                <th className="py-2.5 px-3 w-40 border-r border-forest/40">Cargo (Titular)</th>
+                <th className="py-2.5 px-3 w-36 border-r border-forest/40">Faixa Salarial</th>
                 <th className="py-2.5 px-3 w-32 border-r border-forest/40">Nascimento</th>
-                <th className="py-2.5 px-3 w-56 border-r border-forest/40">Nome da Mãe</th>
+                <th className="py-2.5 px-3 w-52 border-r border-forest/40">Nome da Mãe</th>
                 <th className="py-2.5 px-3 w-32 border-r border-forest/40">Admissão</th>
-                <th className="py-2.5 px-3 w-56 border-r border-forest/40">E-mail</th>
+                <th className="py-2.5 px-3 w-52 border-r border-forest/40">E-mail</th>
                 <th className="py-2.5 px-3 w-36 border-r border-forest/40">Telefone</th>
                 <th className="py-2.5 px-3 w-44 border-r border-forest/40">Titular / Parentesco</th>
                 {!readOnly && <th className="py-2.5 px-3 w-20 text-center">Ações</th>}
@@ -492,7 +508,7 @@ export const EmpresaColaboradoresSpreadsheet: React.FC<EmpresaColaboradoresSprea
               {filteredList.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={readOnly ? 10 : 11}
+                    colSpan={readOnly ? 12 : 13}
                     className="py-12 text-center text-forest/60 space-y-3"
                   >
                     <FileSpreadsheet className="w-10 h-10 text-forest/20 mx-auto" />
@@ -581,6 +597,34 @@ export const EmpresaColaboradoresSpreadsheet: React.FC<EmpresaColaboradoresSprea
                           placeholder="000.000.000-00"
                           maxLength={14}
                           className="w-full bg-transparent px-2 py-1 rounded border border-transparent hover:border-soft focus:border-sun-dark focus:bg-white focus:outline-none text-xs font-mono"
+                        />
+                      </td>
+
+                      {/* Cargo (Titular) */}
+                      <td className="py-1 px-2 border-r border-soft">
+                        <input
+                          type="text"
+                          disabled={readOnly || isDependente}
+                          value={isDependente ? "-" : item.cargo || ""}
+                          onChange={(e) => handleCellChange(item.id, "cargo", e.target.value)}
+                          placeholder={isDependente ? "N/A" : "Ex: Analista, Gerente..."}
+                          className={`w-full bg-transparent px-2 py-1 rounded border border-transparent hover:border-soft focus:border-sun-dark focus:bg-white focus:outline-none text-xs ${
+                            isDependente ? "text-forest/30 italic" : "text-forest font-medium"
+                          }`}
+                        />
+                      </td>
+
+                      {/* Faixa Salarial (Titular) */}
+                      <td className="py-1 px-2 border-r border-soft">
+                        <input
+                          type="text"
+                          disabled={readOnly || isDependente}
+                          value={isDependente ? "-" : item.faixaSalarial || ""}
+                          onChange={(e) => handleCellChange(item.id, "faixaSalarial", e.target.value)}
+                          placeholder={isDependente ? "N/A" : "Ex: R$ 3k - 5k"}
+                          className={`w-full bg-transparent px-2 py-1 rounded border border-transparent hover:border-soft focus:border-sun-dark focus:bg-white focus:outline-none text-xs ${
+                            isDependente ? "text-forest/30 italic" : "text-forest"
+                          }`}
                         />
                       </td>
 

@@ -12,6 +12,19 @@ import { EmpresaBeneficioManager } from "../components/EmpresaBeneficioManager";
 import { TriagemCorporativaKanban } from "../components/TriagemCorporativaKanban";
 import { EvolutionDiagnosticModal } from "../components/EvolutionDiagnosticModal";
 import {
+  CategoriaEmpresa,
+  CATEGORIAS_EMPRESA_CONFIG,
+  getEmpresaCategorias,
+  hasEmpresaCategoria,
+  resolveNextCategorias,
+  getIncompatibleCategorias,
+  sanitizeCategorias,
+  FaturamentoConfig,
+  FaturaHistoricoItem,
+  ServicoAdicionalItem,
+  StatusFatura,
+} from "../types/corporativo";
+import {
   Activity,
   ArrowLeft,
   ArrowRight,
@@ -48,6 +61,7 @@ import {
   CheckSquare,
   Plus,
   BarChart2,
+  BarChart3,
   RefreshCw,
   Building2,
   Key,
@@ -79,6 +93,8 @@ import {
   Loader2,
   ClipboardList,
   MessageSquare,
+  Settings,
+  Receipt,
   Calculator,
   UserX,
   Compass,
@@ -594,6 +610,25 @@ interface EmpresaLead {
   fichaPreenchidaPelaEmpresa?: boolean;
   fichaPreenchidaEm?: any;
   colaboradoresList?: ColaboradorItem[];
+  // Hierarquia e Categoria de Empresas (B2B Multi-Canal)
+  categoria?: CategoriaEmpresa;
+  categorias?: CategoriaEmpresa[];
+  canalAtivaColaboradoresProprios?: boolean; // Se for canal_parceiro e também for cliente direta
+  empresaPaiId?: string; // ID do canal parceiro quando for empresa_conectada
+  empresaPaiNome?: string; // Cache visual do nome do canal parceiro
+  regraPrecoCanal?: {
+    valorTitularMensal?: number; // Ex: 2.00
+    valorDependenteMensal?: number; // Ex: 1.00
+    diaCorteMensal?: number; // Ex: 30
+  };
+  // Faturamento & Mensalidade Corporativa
+  faturamentoConfig?: FaturamentoConfig;
+  servicosAdicionaisMesAtual?: ServicoAdicionalItem[];
+  historicoFaturas?: FaturaHistoricoItem[];
+  valorPorVida?: number;
+  diaVencimento?: number;
+  chavePix?: string;
+  favorecidoPix?: string;
 }
 
 const COLUMNS = [
@@ -961,7 +996,98 @@ export function DashboardView({
   const [freqModalMotivo, setFreqModalMotivo] = useState("");
 
   // Ficha de Bordo da Empresa Tabs State
-  const [empresaModalTab, setEmpresaModalTab] = useState<"empresa" | "colaboradores">("empresa");
+  const [empresaModalTab, setEmpresaModalTab] = useState<"empresa" | "colaboradores" | "faturamento" | "carteira">("empresa");
+  const [novoServicoAdminForm, setNovoServicoAdminForm] = useState<Partial<ServicoAdicionalItem>>({
+    descricao: "",
+    quantidade: 1,
+    valorUnitario: 0,
+    tipo: "servico",
+    data: new Date().toISOString().split("T")[0],
+  });
+  const [isAddingServicoAdmin, setIsAddingServicoAdmin] = useState(false);
+  const [empresaFilterCategoria, setEmpresaFilterCategoria] = useState<"todas" | "empresa_direta" | "canal_parceiro" | "empresa_conectada">("todas");
+  const [showNovaEmpresaModal, setShowNovaEmpresaModal] = useState(false);
+  const [isSubmittingNovaEmpresa, setIsSubmittingNovaEmpresa] = useState(false);
+  const [novaEmpresaForm, setNovaEmpresaForm] = useState({
+    nomeEmpresa: "",
+    cnpj: "",
+    ramoAtividade: "Tecnologia",
+    local: "",
+    colaboradores: "1 a 10",
+    contatoNome: "",
+    contatoDepartamento: "RH",
+    email: "",
+    telefone: "",
+    categoria: "empresa_direta" as CategoriaEmpresa,
+  });
+
+  const handleCriarEmpresaManual = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!novaEmpresaForm.nomeEmpresa || !novaEmpresaForm.cnpj || !novaEmpresaForm.email) {
+      showToast("Preencha os campos obrigatórios da empresa.", "error");
+      return;
+    }
+    setIsSubmittingNovaEmpresa(true);
+    try {
+      const docRef = await addDoc(collection(db, "empresa_leads"), {
+        ...novaEmpresaForm,
+        razaoSocial: novaEmpresaForm.nomeEmpresa,
+        categorias: [novaEmpresaForm.categoria],
+        categoria: novaEmpresaForm.categoria,
+        contratoAssinado: false,
+        ativo: true,
+        colaboradoresList: [],
+        createdAt: serverTimestamp(),
+      });
+
+      const novaEmpresaObj: EmpresaLead = {
+        id: docRef.id,
+        ...novaEmpresaForm,
+        razaoSocial: novaEmpresaForm.nomeEmpresa,
+        categorias: [novaEmpresaForm.categoria],
+        categoria: novaEmpresaForm.categoria,
+        contratoAssinado: false,
+        ativo: true,
+        colaboradoresList: [],
+        createdAt: new Date(),
+      };
+
+      setEmpresasLeads((prev) => [novaEmpresaObj, ...prev]);
+      setShowNovaEmpresaModal(false);
+      setNovaEmpresaForm({
+        nomeEmpresa: "",
+        cnpj: "",
+        ramoAtividade: "Tecnologia",
+        local: "",
+        colaboradores: "1 a 10",
+        contatoNome: "",
+        contatoDepartamento: "RH",
+        email: "",
+        telefone: "",
+        categoria: "empresa_direta",
+      });
+      showToast("Nova empresa cadastrada manualmente com sucesso!", "success");
+    } catch (err) {
+      console.error("Erro ao criar empresa manual:", err);
+      showToast("Erro ao cadastrar empresa no banco de dados.", "error");
+    } finally {
+      setIsSubmittingNovaEmpresa(false);
+    }
+  };
+
+  // Modal de Confirmação de Alteração de Categorias da Empresa
+  const [confirmCategoriaModal, setConfirmCategoriaModal] = useState<{
+    type: "toggle_category" | "change_pai";
+    targetCategory?: CategoriaEmpresa;
+    targetPaiId?: string;
+    targetPaiNome?: string;
+    currentCats: CategoriaEmpresa[];
+    nextCats: CategoriaEmpresa[];
+    title: string;
+    description: string;
+    warning?: string;
+    actionPayload: Record<string, any>;
+  } | null>(null);
 
   // Photo Crop Modal State & Handlers
   const [photoCropModalOpen, setPhotoCropModalOpen] = useState(false);
@@ -1613,23 +1739,48 @@ export function DashboardView({
 
   // ...
 
-  const handleUpdateEmpresaProperty = async (
+  const handleUpdateEmpresaProperties = async (
+    id: string,
+    updatesMap: Record<string, any>,
+  ) => {
+    try {
+      // 1. Sanitiza valores para não conter undefined
+      const sanitized: Record<string, any> = {};
+      for (const [key, val] of Object.entries(updatesMap)) {
+        if (val === undefined) {
+          sanitized[key] = "";
+        } else if (typeof val === "object" && val !== null) {
+          sanitized[key] = JSON.parse(
+            JSON.stringify(val, (_k, v) => (v === undefined ? null : v))
+          );
+        } else {
+          sanitized[key] = val;
+        }
+      }
+
+      // 2. Atualização SÍNCRONA e imediata no estado local (0ms de atraso visual)
+      setSelectedEmpresa((prev) => (prev && prev.id === id ? { ...prev, ...sanitized } : prev));
+      setEmpresasLeads((prev) =>
+        prev.map((emp) => (emp.id === id ? { ...emp, ...sanitized } : emp))
+      );
+
+      // 3. Persistência assíncrona no Firestore em lote
+      const updates: any = { ...sanitized, updatedAt: serverTimestamp() };
+      if ("status" in sanitized) updates.statusUpdatedAt = serverTimestamp();
+      if ("ativo" in sanitized) updates.ativoUpdatedAt = serverTimestamp();
+      await updateDoc(doc(db, "empresa_leads", id), updates);
+    } catch (error) {
+      console.error("Erro ao atualizar empresa:", error);
+      showToast("Erro ao sincronizar alteração da empresa.", "error");
+    }
+  };
+
+  const handleUpdateEmpresaProperty = (
     id: string,
     property: string,
     value: any,
   ) => {
-    try {
-      if (selectedEmpresa && selectedEmpresa.id === id) {
-        setSelectedEmpresa({ ...selectedEmpresa, [property]: value });
-      }
-      const updates: any = { [property]: value, updatedAt: serverTimestamp() };
-      if (property === "status") updates.statusUpdatedAt = serverTimestamp();
-      if (property === "ativo") updates.ativoUpdatedAt = serverTimestamp();
-      await updateDoc(doc(db, "empresa_leads", id), updates);
-    } catch (error) {
-      console.error(error);
-      alert("Erro ao salvar ficha de bordo da empresa.");
-    }
+    return handleUpdateEmpresaProperties(id, { [property]: value });
   };
 
   const handleUpdateProfissionalProperty = async (
@@ -5900,9 +6051,9 @@ export function DashboardView({
       activeTab === "estatisticas" ? (
         <div className="flex-1 overflow-auto p-6 md:p-8 flex flex-col gap-8 slide-up">
           <div className="max-w-7xl w-full mx-auto space-y-8">
-            <h2 className="font-serif text-3xl text-forest bg-white px-8 py-6 rounded-[2rem] shadow-sm border border-soft flex items-center gap-4">
-              <BarChart2 className="w-8 h-8 text-forest/70" />
-              Controle da Plataforma
+            <h2 className="font-serif text-lg text-forest bg-white px-5 py-3 rounded-2xl shadow-xs border border-soft flex items-center gap-2.5">
+              <BarChart2 className="w-5 h-5 text-forest/70" />
+              <span>Controle da Plataforma</span>
             </h2>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -9324,50 +9475,50 @@ export function DashboardView({
         </div>
       ) : activeTab === "kanban" || activeTab === "pacientesAcolhidos" ? (
         <div className="flex-1 flex flex-col h-full bg-warm overflow-hidden">
-          <div className="flex flex-wrap justify-between items-center gap-3 px-6 pt-6 pb-2 shrink-0">
-            <div className="flex items-center gap-3">
-              <h2 className="font-serif text-2xl text-forest flex items-center gap-2">
+          <div className="flex flex-wrap justify-between items-center gap-2.5 px-4 sm:px-6 pt-4 pb-1.5 shrink-0">
+            <div className="flex items-center gap-2.5">
+              <h2 className="font-serif text-lg sm:text-xl font-bold text-forest">
                 {activeTab === "kanban" ? "Triagem" : "Pacientes"}
               </h2>
               {isMasterOrTriagem && (
                 <button
                   type="button"
                   onClick={() => setShowNovoPacienteModal(true)}
-                  className="px-3.5 py-2 bg-forest text-white hover:bg-forest/90 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center gap-2 transition-all shadow-sm hover:scale-[1.02] active:scale-[0.98]"
+                  className="px-2.5 py-1 bg-forest text-white hover:bg-forest/90 rounded-lg font-semibold text-[11px] flex items-center gap-1.5 transition-all shadow-2xs hover:scale-102 active:scale-98 cursor-pointer"
                   title="Cadastrar paciente manualmente na triagem"
                 >
-                  <UserPlus className="w-4 h-4 text-sun" />
-                  <span>Incluir Paciente (Manual)</span>
+                  <UserPlus className="w-3.5 h-3.5 text-sun" />
+                  <span>Incluir Paciente</span>
                 </button>
               )}
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {/* Seletor de Ordenação por Entrada / Cadastro */}
-              <div className="bg-white border border-soft rounded-full p-1 flex items-center shadow-xs">
+              <div className="bg-white border border-soft rounded-lg p-0.5 flex items-center shadow-2xs">
                 <button
                   type="button"
                   onClick={() => setPatientSortOrder("fifo")}
-                  className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                  className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-all flex items-center gap-1 cursor-pointer ${
                     patientSortOrder === "fifo"
-                      ? "bg-sun text-forest shadow-xs font-bold"
+                      ? "bg-sun text-forest shadow-2xs font-bold"
                       : "text-forest/60 hover:text-forest"
                   }`}
-                  title="Organizar por Ordem de Cadastro / Entrada na Plataforma (Mais antigos no topo)"
+                  title="Organizar por Ordem de Cadastro (FIFO)"
                 >
-                  <Clock className="w-3.5 h-3.5 text-amber-700" />
-                  <span>Ordem de Entrada (FIFO)</span>
+                  <Clock className="w-3 h-3 text-amber-700" />
+                  <span>Entrada (FIFO)</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setPatientSortOrder("recent")}
-                  className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                  className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-all flex items-center gap-1 cursor-pointer ${
                     patientSortOrder === "recent"
-                      ? "bg-sun text-forest shadow-xs font-bold"
+                      ? "bg-sun text-forest shadow-2xs font-bold"
                       : "text-forest/60 hover:text-forest"
                   }`}
                   title="Organizar por Mais Recentes primeiro"
                 >
-                  <ArrowUpDown className="w-3.5 h-3.5" />
+                  <ArrowUpDown className="w-3 h-3" />
                   <span>Mais Recentes</span>
                 </button>
               </div>
@@ -10064,7 +10215,7 @@ export function DashboardView({
                             }
 
                             return (
-                              <tr key={lead.id} className="hover:bg-warm/15 transition-colors">
+                              <tr key={`table-lead-${lead.id}`} className="hover:bg-warm/15 transition-colors">
                                 <td className="px-4 py-2 border-r border-soft/30 text-center font-bold text-forest/70 bg-warm/5">
                                   #{orderIndex}
                                 </td>
@@ -10172,7 +10323,7 @@ export function DashboardView({
               ) : (
                 filteredLeads.map((lead) => (
                   <div
-                    key={lead.id}
+                    key={`card-lead-${lead.id}`}
                     className="bg-white p-6 rounded-[2rem] shadow-md border border-soft flex flex-col gap-5 group hover:shadow-lg transition-all duration-300 relative"
                   >
                     {/* Header Row */}
@@ -10873,23 +11024,123 @@ export function DashboardView({
       ) : activeTab === "empresas" ? (
         <div className="flex-1 overflow-auto p-6 md:p-8 flex items-start flex-col gap-8 slide-up">
           <div className="w-full flex flex-col gap-4">
-            <h2 className="font-serif text-2xl text-forest bg-white px-6 py-4 rounded-2xl shadow-sm border border-soft flex items-center gap-3">
-              <Briefcase className="w-6 h-6 text-forest/70" />
-              Gestão Comercial de Empresas
-            </h2>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-white px-4 sm:px-5 py-3 rounded-2xl shadow-xs border border-soft">
+              <div className="flex items-center justify-between gap-2 w-full sm:w-auto">
+                <h2 className="font-serif text-base sm:text-lg font-bold text-forest flex items-center gap-2">
+                  <Briefcase className="w-4 h-4 sm:w-5 sm:h-5 text-forest/70" />
+                  <span>Gestão Comercial de Empresas</span>
+                </h2>
+                <button
+                  type="button"
+                  onClick={() => setShowNovaEmpresaModal(true)}
+                  className="sm:hidden px-3 py-1.5 bg-forest text-white hover:bg-forest/90 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-2xs cursor-pointer shrink-0"
+                  title="Inclusão Manual de Empresa"
+                >
+                  <Plus className="w-4 h-4 text-sun" />
+                  <span>+ Nova</span>
+                </button>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-2 w-full sm:w-auto">
+                <button
+                  type="button"
+                  onClick={() => setEmpresaFilterCategoria("todas")}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                    empresaFilterCategoria === "todas"
+                      ? "bg-forest text-white shadow-2xs"
+                      : "bg-warm/60 text-forest/70 hover:bg-warm hover:text-forest"
+                  }`}
+                >
+                  Todas ({empresasLeads.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEmpresaFilterCategoria("empresa_direta")}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    empresaFilterCategoria === "empresa_direta"
+                      ? "bg-blue-600 text-white shadow-2xs"
+                      : "bg-blue-50 text-blue-800 hover:bg-blue-100 border border-blue-200"
+                  }`}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                  Diretas ({empresasLeads.filter((e) => hasEmpresaCategoria(e, "empresa_direta")).length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEmpresaFilterCategoria("canal_parceiro")}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    empresaFilterCategoria === "canal_parceiro"
+                      ? "bg-purple-600 text-white shadow-2xs"
+                      : "bg-purple-50 text-purple-800 hover:bg-purple-100 border border-purple-200"
+                  }`}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-purple-500"></span>
+                  Canais ({empresasLeads.filter((e) => hasEmpresaCategoria(e, "canal_parceiro")).length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowNovaEmpresaModal(true)}
+                  className="hidden sm:flex px-3.5 py-1.5 bg-forest text-white hover:bg-forest/90 rounded-xl text-xs font-bold items-center gap-1.5 shadow-2xs cursor-pointer shrink-0"
+                  title="Inclusão Manual de Nova Empresa"
+                >
+                  <Plus className="w-4 h-4 text-sun" />
+                  <span>+ Inclusão Manual</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Botão Flutuante (FAB) Otimizado para Telas Pequenas e Apertadas */}
+            <div className="fixed bottom-6 right-6 z-40 sm:hidden">
+              <button
+                type="button"
+                onClick={() => setShowNovaEmpresaModal(true)}
+                className="px-4 py-3 bg-forest text-white hover:bg-forest/90 rounded-2xl shadow-xl flex items-center gap-2 text-xs font-bold transition-all cursor-pointer ring-4 ring-sun/30"
+                title="Inclusão Manual de Nova Empresa"
+              >
+                <Plus className="w-4 h-4 text-sun" />
+                <span>+ Nova Empresa</span>
+              </button>
+            </div>
+
             <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-              {empresasLeads.length === 0 ? (
-                <div className="col-span-full text-center p-8 bg-white/50 border border-dashed border-soft rounded-2xl text-forest/70/70 text-sm">
-                  Nenhum contato de empresa registrado até o momento.
+              {empresasLeads.filter((lead) => {
+                if (empresaFilterCategoria === "todas") return true;
+                return hasEmpresaCategoria(lead, empresaFilterCategoria);
+              }).length === 0 ? (
+                <div className="col-span-full text-center p-8 bg-white/50 border border-dashed border-soft rounded-2xl text-forest/70 text-sm">
+                  Nenhuma empresa encontrada com este filtro.
                 </div>
               ) : (
-                empresasLeads.map((lead) => (
+                empresasLeads
+                  .filter((lead) => {
+                    if (empresaFilterCategoria === "todas") return true;
+                    return hasEmpresaCategoria(lead, empresaFilterCategoria);
+                  })
+                  .map((lead) => (
                   <div
-                    key={lead.id}
+                    key={`empresa-card-${lead.id}`}
                     className="bg-white p-6 rounded-2xl shadow-sm border border-soft flex flex-col gap-4 group hover:shadow-md transition-shadow"
                   >
                     <div className="flex items-start justify-between">
                       <div className="flex flex-col gap-1">
+                        <div className="flex flex-wrap items-center gap-1.5 mb-1">
+                          {/* Badges de Categoria */}
+                          {hasEmpresaCategoria(lead, "empresa_direta") && (
+                            <span className="text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200">
+                              Cliente Direta
+                            </span>
+                          )}
+                          {hasEmpresaCategoria(lead, "canal_parceiro") && (
+                            <span className="text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-purple-100 text-purple-900 border border-purple-300">
+                              Canal Parceiro
+                            </span>
+                          )}
+                          {hasEmpresaCategoria(lead, "empresa_conectada") && (
+                            <span className="text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-200">
+                              Conectada {lead.empresaPaiNome ? `(${lead.empresaPaiNome})` : ""}
+                            </span>
+                          )}
+                        </div>
                         <h4 className="font-semibold text-lg text-forest">
                           {lead.nomeEmpresa}
                         </h4>
@@ -10897,7 +11148,7 @@ export function DashboardView({
                           CNPJ: {lead.cnpj}
                         </span>
                       </div>
-                      <div className="text-[10px] text-forest/70/80 font-bold bg-warm px-2 py-1 rounded-md whitespace-nowrap">
+                      <div className="text-[10px] text-forest/70 font-bold bg-warm px-2 py-1 rounded-md whitespace-nowrap">
                         {lead.createdAt
                           ? formatDateSafely(lead.createdAt, "")
                           : ""}
@@ -10912,10 +11163,26 @@ export function DashboardView({
                         <Briefcase className="w-4 h-4 text-forest/60" /> Ramo:{" "}
                         {lead.ramoAtividade}
                       </span>
-                      <span className="flex items-center gap-3 font-medium">
-                        <Users className="w-4 h-4 text-forest/60" /> Colabs:{" "}
-                        {lead.colaboradores}
-                      </span>
+                      <div className="flex flex-col gap-1.5">
+                        {hasEmpresaCategoria(lead, "canal_parceiro") && (
+                          <span className="flex items-center gap-3 font-medium text-purple-900">
+                            <Building2 className="w-4 h-4 text-purple-600 shrink-0" />
+                            Empresas no Canal: {empresasLeads.filter((e) => e.empresaPaiId === lead.id).length}
+                          </span>
+                        )}
+                        {hasEmpresaCategoria(lead, "empresa_direta") && (
+                          <span className="flex items-center gap-3 font-medium">
+                            <Users className="w-4 h-4 text-forest/60 shrink-0" />
+                            Colabs Próprios: {lead.colaboradoresList?.length || lead.colaboradores || "0"}
+                          </span>
+                        )}
+                        {!hasEmpresaCategoria(lead, "canal_parceiro") && !hasEmpresaCategoria(lead, "empresa_direta") && (
+                          <span className="flex items-center gap-3 font-medium">
+                            <Users className="w-4 h-4 text-forest/60 shrink-0" />
+                            Colaboradores: {lead.colaboradores || "0"}
+                          </span>
+                        )}
+                      </div>
                       <div className="h-px w-full bg-soft/50 my-1"></div>
                       <span className="flex items-center gap-3 font-medium text-forest">
                         <User className="w-4 h-4 text-forest/60" />{" "}
@@ -10941,13 +11208,26 @@ export function DashboardView({
                       </a>
                     </div>
 
-                    <button
-                      onClick={() => setSelectedEmpresa(lead)}
-                      className="mt-2 w-full py-2 bg-sun text-forest font-medium rounded-xl hover:bg-sun-dark transition-colors flex items-center justify-center gap-2"
-                    >
-                      <FileText className="w-4 h-4" />
-                      Ficha de Bordo
-                    </button>
+                    <div className="grid grid-cols-2 gap-2 mt-2">
+                      <button
+                        onClick={() => setSelectedEmpresa(lead)}
+                        className="w-full py-2 bg-sun text-forest font-semibold text-xs rounded-xl hover:bg-sun-dark transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <FileText className="w-3.5 h-3.5" />
+                        <span>Ficha de Bordo</span>
+                      </button>
+
+                      <a
+                        href={`/?portal_empresa=${lead.id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full py-2 bg-forest text-white font-semibold text-xs rounded-xl hover:bg-forest/90 transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
+                        title="Abrir página dedicada do RH com indicadores, turnover e upload de colaboradores"
+                      >
+                        <BarChart3 className="w-3.5 h-3.5 text-sun" />
+                        <span>Portal do RH</span>
+                      </a>
+                    </div>
                   </div>
                 ))
               )}
@@ -13306,69 +13586,54 @@ export function DashboardView({
       {selectedEmpresa && (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-1 sm:px-4 bg-forest/25 backdrop-blur-sm animate-in fade-in py-1 sm:py-3">
           <div className="bg-white rounded-2xl sm:rounded-3xl w-full max-w-[98vw] 2xl:max-w-[1550px] h-[96vh] sm:h-[95vh] flex flex-col shadow-2xl border border-soft overflow-hidden animate-in zoom-in-95">
-            {/* Header */}
-            <div className="px-3 sm:px-6 py-2.5 sm:py-4 flex flex-col border-b border-soft bg-gradient-to-r from-warm/60 via-white to-warm/40 gap-2.5 shrink-0">
-              <div className="flex justify-between items-start sm:items-center gap-2">
-                <div className="flex items-center gap-2 min-w-0">
-                  <div className="p-2 sm:p-2.5 bg-forest text-white rounded-xl shadow-xs shrink-0">
+            {/* Header Compacto & Otimizado */}
+            <div className="px-4 sm:px-6 py-2.5 sm:py-3 bg-gradient-to-r from-warm/70 via-white to-warm/40 border-b border-soft shrink-0 flex flex-col gap-2 shadow-2xs">
+              {/* Linha 1: Título da Empresa, Badges Principais e Ações Rápidas */}
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                  <div className="p-2 bg-forest text-white rounded-xl shadow-xs shrink-0">
                     <Building2 className="w-4 h-4 sm:w-5 sm:h-5 text-sun" />
                   </div>
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-                      <h3 className="font-serif text-lg sm:text-2xl text-forest font-semibold truncate max-w-[200px] sm:max-w-none">
-                        {selectedEmpresa.razaoSocial || selectedEmpresa.nomeEmpresa || "Empresa sem nome"}
-                      </h3>
-                      {selectedEmpresa.nomeEmpresa && selectedEmpresa.razaoSocial && selectedEmpresa.nomeEmpresa !== selectedEmpresa.razaoSocial && (
-                        <span className="text-xs text-forest/60 font-medium hidden md:inline">
-                          ({selectedEmpresa.nomeEmpresa})
-                        </span>
-                      )}
-                      <span
-                        className={`text-[9px] sm:text-[10px] font-extrabold uppercase px-2 sm:px-2.5 py-0.5 rounded-full border ${
-                          selectedEmpresa.ativo === false
-                            ? "bg-slate-100 text-slate-600 border-slate-200"
-                            : "bg-emerald-100 text-emerald-800 border-emerald-200"
-                        }`}
-                      >
-                        {selectedEmpresa.ativo === false ? "Inativo" : "Ativo"}
+                  <div className="min-w-0 flex items-center gap-2 flex-wrap">
+                    <h3 className="font-serif text-base sm:text-xl text-forest font-bold truncate max-w-[280px] sm:max-w-md" title={selectedEmpresa.razaoSocial || selectedEmpresa.nomeEmpresa}>
+                      {selectedEmpresa.razaoSocial || selectedEmpresa.nomeEmpresa || "Empresa sem nome"}
+                    </h3>
+                    {selectedEmpresa.cnpj && (
+                      <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-forest/5 text-forest/80 border border-forest/15 shrink-0">
+                        CNPJ: {selectedEmpresa.cnpj}
                       </span>
-                      {selectedEmpresa.cnpj && (
-                        <span className="text-[9px] sm:text-[10px] font-mono font-bold px-2 sm:px-2.5 py-0.5 rounded-full bg-forest/5 text-forest border border-forest/15">
-                          CNPJ: {selectedEmpresa.cnpj}
+                    )}
+                    {(selectedEmpresa.quantidadeVidas || selectedEmpresa.colaboradores) && (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-sun/30 text-forest border border-sun/50 shrink-0">
+                        {selectedEmpresa.quantidadeVidas || selectedEmpresa.colaboradores} vidas
+                      </span>
+                    )}
+                    {/* Badges de Categorias */}
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {hasEmpresaCategoria(selectedEmpresa, "empresa_direta") && (
+                        <span className="text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-blue-100 text-blue-900 border border-blue-200 flex items-center gap-1 shadow-2xs">
+                          <span className="w-1.5 h-1.5 rounded-full bg-blue-600"></span>
+                          Cliente Direta
                         </span>
                       )}
-                      {(selectedEmpresa.quantidadeVidas || selectedEmpresa.colaboradores) && (
-                        <span className="text-[9px] sm:text-[10px] font-bold px-2 sm:px-2.5 py-0.5 rounded-full bg-sun/30 text-forest border border-sun/50">
-                          {selectedEmpresa.quantidadeVidas || selectedEmpresa.colaboradores} vidas contratadas
+                      {hasEmpresaCategoria(selectedEmpresa, "canal_parceiro") && (
+                        <span className="text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-purple-100 text-purple-900 border border-purple-300 flex items-center gap-1 shadow-2xs">
+                          <span className="w-1.5 h-1.5 rounded-full bg-purple-600"></span>
+                          Canal Parceiro
                         </span>
                       )}
-                      {selectedEmpresa.contratoAssinado && (
-                        <span className="text-[9px] sm:text-[10px] font-extrabold uppercase px-2 sm:px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300 flex items-center gap-1">
-                          <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Contrato Assinado
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-[10px] sm:text-[11px] font-semibold text-forest/60 mt-0.5">
-                      {selectedEmpresa.createdAt && (
-                        <span className="flex items-center gap-1">
-                          <Clock className="w-3 h-3 text-forest/40" /> Entrada: {formatDate(selectedEmpresa.createdAt)}
-                        </span>
-                      )}
-                      {(selectedEmpresa.nomeResponsavel || selectedEmpresa.contatoNome) && (
-                        <span className="flex items-center gap-1">
-                          <User className="w-3 h-3 text-forest/40" /> Responsável: {selectedEmpresa.nomeResponsavel || selectedEmpresa.contatoNome}
-                        </span>
-                      )}
-                      {selectedEmpresa.email && (
-                        <span className="flex items-center gap-1">
-                          <Mail className="w-3 h-3 text-forest/40" /> {selectedEmpresa.email}
+                      {hasEmpresaCategoria(selectedEmpresa, "empresa_conectada") && (
+                        <span className="text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300 flex items-center gap-1 shadow-2xs">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
+                          Conectada {selectedEmpresa.empresaPaiNome ? `(${selectedEmpresa.empresaPaiNome})` : ""}
                         </span>
                       )}
                     </div>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-1.5 shrink-0">
+                {/* Botões de Ação Topo Direito */}
+                <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
                   {selectedEmpresa.telefone && (
                     <button
                       type="button"
@@ -13377,10 +13642,10 @@ export function DashboardView({
                         const phoneParam = rawPhone ? `phone=${rawPhone.length === 10 || rawPhone.length === 11 ? `55${rawPhone}` : rawPhone}&` : "";
                         const link = `${window.location.origin}/?ficha_empresa=${selectedEmpresa.id}`;
                         const nome = selectedEmpresa.nomeEmpresa || selectedEmpresa.razaoSocial || "sua empresa";
-                        const msg = `Olá! Tudo bem? Segue o link da Ficha de Bordo da ${nome} na plataforma AcolheMente para conferir e preencher dados cadastrais e planilha de colaboradores: ${link}`;
+                        const msg = `Olá! Tudo bem? Segue o link da Ficha de Bordo da ${nome} na plataforma AcolheMente para conferir e preencher dados cadastrais e colaboradores: ${link}`;
                         window.open(`https://api.whatsapp.com/send?${phoneParam}text=${encodeURIComponent(msg)}`, "_blank");
                       }}
-                      className="flex items-center gap-1.5 font-bold text-[11px] sm:text-xs px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-xl bg-[#25D366] hover:bg-[#20b858] text-white shadow-2xs transition-all hover:scale-105 shrink-0 cursor-pointer"
+                      className="flex items-center gap-1.5 font-bold text-[11px] px-2.5 py-1 rounded-xl bg-[#25D366] hover:bg-[#20b858] text-white shadow-2xs transition-all hover:scale-102 cursor-pointer"
                       title="Conversar com a empresa no WhatsApp"
                     >
                       <Phone className="w-3.5 h-3.5 text-white" />
@@ -13389,182 +13654,254 @@ export function DashboardView({
                   )}
 
                   <button
+                    onClick={() => {
+                      setNotificarInitialMode("templates");
+                      setNotificarInitialTemplateId("ficha_empresa");
+                      setShowNotificarModal(true);
+                    }}
+                    className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] px-2.5 py-1 rounded-xl border border-emerald-500/80 transition-all shadow-2xs cursor-pointer"
+                    title="Notificar por WhatsApp / E-mail"
+                  >
+                    <Send className="w-3.5 h-3.5 text-sun" />
+                    <span className="hidden sm:inline">Notificar</span>
+                  </button>
+
+                  <button
                     onClick={() => setSelectedEmpresa(null)}
-                    className="p-1 sm:p-1.5 text-forest/50 hover:text-red-500 rounded-full hover:bg-red-50 transition-colors"
+                    className="p-1 text-forest/50 hover:text-red-500 rounded-full hover:bg-red-50 transition-colors"
                     title="Fechar Ficha"
                   >
                     <XCircle className="w-5 h-5 sm:w-6 sm:h-6" />
                   </button>
                 </div>
               </div>
-            </div>
 
-            {/* Action Bar */}
-            <div className="flex flex-wrap items-center justify-between gap-2 px-3 sm:px-6 py-2 bg-white border-b border-soft shrink-0">
-              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-                <button
-                  onClick={() => {
-                    setNotificarInitialMode("templates");
-                    setNotificarInitialTemplateId("ficha_empresa");
-                    setShowNotificarModal(true);
-                  }}
-                  className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] sm:text-xs px-3 py-1.5 rounded-xl border border-emerald-500/80 transition-all shadow-2xs whitespace-nowrap cursor-pointer"
-                  title="Disparar notificação via WhatsApp e E-mail para a empresa com templates prontos"
-                >
-                  <Send className="w-3.5 h-3.5 text-sun" /> Notificar Empresa (Whats/E-mail)
-                </button>
-
-                <button
-                  onClick={() => {
-                    const link = `${window.location.origin}/?contrato=${selectedEmpresa.id}`;
-                    navigator.clipboard.writeText(link);
-                    showToast("Link do contrato corporativo copiado com sucesso!", "success");
-                  }}
-                  className="flex items-center gap-1 bg-white hover:bg-warm text-forest font-semibold text-[11px] sm:text-xs px-2.5 sm:px-3 py-1.5 rounded-xl border border-soft transition-colors shadow-2xs whitespace-nowrap"
-                  title="Copiar link seguro para assinatura digital do contrato"
-                >
-                  <Copy className="w-3.5 h-3.5 text-forest/60" /> Link Contrato
-                </button>
-
-                <button
-                  onClick={() => {
-                    setContratoText(
-                      `CONTRATO DE PRESTAÇÃO DE SERVIÇOS TIPO CORPORATIVO\n\nCONTRATANTE: ${selectedEmpresa.razaoSocial || selectedEmpresa.nomeEmpresa}, sob o CNPJ ${selectedEmpresa.cnpj || "[INSERIR CNPJ]"}, através de seu responsável ${selectedEmpresa.nomeResponsavel || selectedEmpresa.contatoNome || "[RESPONSÁVEL]"}.\n\nCONTRATADA: Projeto AcolheMente Saúde...\n\n(Edite as cláusulas abaixo)`,
-                    );
-                    setShowContratoModal(true);
-                  }}
-                  className="hidden md:flex items-center gap-1 text-xs font-medium text-forest/70 hover:text-forest px-2.5 py-1.5 rounded-lg hover:bg-warm transition-colors whitespace-nowrap"
-                  title="Visualizar ou personalizar a minuta do contrato"
-                >
-                  <FileText className="w-3.5 h-3.5 text-forest/60" /> Minuta Contrato
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleUpdateEmpresaProperty(
-                      selectedEmpresa.id,
-                      "contratoAssinado",
-                      !selectedEmpresa.contratoAssinado,
-                    )
-                  }
-                  className="flex items-center gap-1.5 px-2.5 py-1 bg-warm/50 hover:bg-warm border border-soft rounded-xl text-[11px] sm:text-xs font-bold whitespace-nowrap cursor-pointer transition-colors"
-                  title="Clique para alternar o status do contrato"
-                >
-                  <div className={`w-2 h-2 rounded-full ${selectedEmpresa.contratoAssinado ? "bg-green-500 animate-pulse" : "bg-amber-500"}`}></div>
-                  <span className={selectedEmpresa.contratoAssinado ? "text-green-700" : "text-amber-700"}>
-                    Contrato: {selectedEmpresa.contratoAssinado ? "Assinado" : "Pendente"}
-                  </span>
-                </button>
-              </div>
-
-              <div className="flex items-center gap-1.5 sm:gap-2 ml-auto">
-                <button
-                  onClick={() =>
-                    handleUpdateEmpresaProperty(
-                      selectedEmpresa.id,
-                      "ativo",
-                      selectedEmpresa.ativo === false ? true : false,
-                    )
-                  }
-                  className={`flex items-center gap-1.5 font-bold text-xs px-3 py-1.5 rounded-xl border transition-all shadow-2xs whitespace-nowrap ${
-                    selectedEmpresa.ativo === false
-                      ? "bg-slate-100 text-slate-700 border-slate-300 hover:bg-slate-200"
-                      : "bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100"
-                  }`}
-                >
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>{selectedEmpresa.ativo === false ? "Empresa Inativa (Ativar)" : "Empresa Ativa"}</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Link Exposto da Ficha Complementar (Copiar e Colar) */}
-            <div className="px-3 sm:px-6 py-2.5 bg-emerald-50/80 border-b border-emerald-200/90 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shrink-0">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-8 h-8 rounded-xl bg-emerald-100 border border-emerald-300/80 flex items-center justify-center text-emerald-800 shrink-0">
-                  <Link2 className="w-4 h-4" />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-xs font-bold text-emerald-950 flex items-center gap-2">
-                    <span>Link Exposto da Ficha Complementar</span>
-                    <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-emerald-200/80 text-emerald-900 border border-emerald-300">
-                      Copiar e Colar
+              {/* Linha 2: Barra de Status, Metadados e Link da Ficha Integrado */}
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-soft/60 text-xs">
+                {/* Metadados Básicos */}
+                <div className="flex items-center gap-3 text-[11px] font-medium text-forest/70 flex-wrap">
+                  {(selectedEmpresa.nomeResponsavel || selectedEmpresa.contatoNome) && (
+                    <span className="flex items-center gap-1">
+                      <User className="w-3 h-3 text-forest/40" /> {selectedEmpresa.nomeResponsavel || selectedEmpresa.contatoNome}
                     </span>
-                  </div>
-                  <p className="text-[11px] text-emerald-900/80 truncate">
-                    Compartilhe este link direto com a empresa para preenchimento de dados complementares e planilha de colaboradores:
-                  </p>
+                  )}
+                  {selectedEmpresa.email && (
+                    <span className="hidden md:flex items-center gap-1">
+                      <Mail className="w-3 h-3 text-forest/40" /> {selectedEmpresa.email}
+                    </span>
+                  )}
+                  {selectedEmpresa.createdAt && (
+                    <span className="hidden lg:flex items-center gap-1">
+                      <Clock className="w-3 h-3 text-forest/40" /> {formatDate(selectedEmpresa.createdAt)}
+                    </span>
+                  )}
                 </div>
-              </div>
 
-              <div className="flex items-center gap-2 w-full md:w-auto shrink-0">
-                <div className="relative flex-1 md:w-96">
-                  <input
-                    type="text"
-                    readOnly
-                    value={`${window.location.origin}/?ficha_empresa=${selectedEmpresa.id}`}
-                    onClick={(e) => (e.target as HTMLInputElement).select()}
-                    className="w-full bg-white border border-emerald-300 text-emerald-950 px-3 py-1.5 rounded-xl text-xs font-mono select-all shadow-2xs focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
-                  />
+                {/* Ações e Links Compactos */}
+                <div className="flex items-center gap-2 flex-wrap ml-auto">
+                  {/* Contrato Status Toggle */}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleUpdateEmpresaProperty(
+                        selectedEmpresa.id,
+                        "contratoAssinado",
+                        !selectedEmpresa.contratoAssinado,
+                      )
+                    }
+                    className="flex items-center gap-1.5 px-2 py-0.5 bg-white border border-soft rounded-lg text-[10px] font-bold cursor-pointer hover:bg-warm transition-colors shadow-2xs"
+                    title="Alternar status do contrato"
+                  >
+                    <div className={`w-1.5 h-1.5 rounded-full ${selectedEmpresa.contratoAssinado ? "bg-emerald-500 animate-pulse" : "bg-amber-500"}`}></div>
+                    <span className={selectedEmpresa.contratoAssinado ? "text-emerald-800" : "text-amber-800"}>
+                      Contrato: {selectedEmpresa.contratoAssinado ? "Assinado" : "Pendente"}
+                    </span>
+                  </button>
+
+                  {/* Link Portal do RH & Indicadores */}
+                  <a
+                    href={`/?portal_empresa=${selectedEmpresa.id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1 bg-forest hover:bg-forest/90 text-white font-bold text-[10px] px-2 py-0.5 rounded-lg border border-forest transition-colors shadow-2xs"
+                    title="Abrir Portal do RH em nova aba"
+                  >
+                    <BarChart3 className="w-3 h-3 text-sun" /> Portal RH
+                  </a>
+
+                  <button
+                    onClick={() => {
+                      const link = `${window.location.origin}/?portal_empresa=${selectedEmpresa.id}`;
+                      const pinInfo = selectedEmpresa.pinAcessoRH ? ` (PIN de Acesso RH: ${selectedEmpresa.pinAcessoRH})` : "";
+                      navigator.clipboard.writeText(link);
+                      showToast(`Link do Portal do RH copiado!${pinInfo}`, "success");
+                    }}
+                    className="flex items-center gap-1 bg-white hover:bg-warm text-forest font-semibold text-[10px] px-2 py-0.5 rounded-lg border border-soft transition-colors shadow-2xs"
+                    title="Copiar Link de Acesso do RH"
+                  >
+                    <Copy className="w-3 h-3 text-forest/60" /> Copiar Link RH
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      const link = `${window.location.origin}/?contrato=${selectedEmpresa.id}`;
+                      navigator.clipboard.writeText(link);
+                      showToast("Link do contrato corporativo copiado com sucesso!", "success");
+                    }}
+                    className="flex items-center gap-1 bg-white hover:bg-warm text-forest font-semibold text-[10px] px-2 py-0.5 rounded-lg border border-soft transition-colors shadow-2xs"
+                    title="Copiar link do contrato"
+                  >
+                    <Copy className="w-3 h-3 text-forest/60" /> Link Contrato
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setContratoText(
+                        `CONTRATO DE PRESTAÇÃO DE SERVIÇOS TIPO CORPORATIVO\n\nCONTRATANTE: ${selectedEmpresa.razaoSocial || selectedEmpresa.nomeEmpresa}, sob o CNPJ ${selectedEmpresa.cnpj || "[INSERIR CNPJ]"}, através de seu responsável ${selectedEmpresa.nomeResponsavel || selectedEmpresa.contatoNome || "[RESPONSÁVEL]"}.\n\nCONTRATADA: Projeto AcolheMente Saúde...\n\n(Edite as cláusulas abaixo)`,
+                      );
+                      setShowContratoModal(true);
+                    }}
+                    className="hidden sm:flex items-center gap-1 text-[10px] font-medium text-forest/70 hover:text-forest px-2 py-0.5 rounded-lg hover:bg-warm transition-colors"
+                    title="Minuta do Contrato"
+                  >
+                    <FileText className="w-3 h-3 text-forest/60" /> Minuta
+                  </button>
+
+                  {/* Ativo / Inativo Toggle */}
+                  <button
+                    onClick={() =>
+                      handleUpdateEmpresaProperty(
+                        selectedEmpresa.id,
+                        "ativo",
+                        selectedEmpresa.ativo === false ? true : false,
+                      )
+                    }
+                    className={`flex items-center gap-1 font-bold text-[10px] px-2 py-0.5 rounded-lg border transition-all shadow-2xs ${
+                      selectedEmpresa.ativo === false
+                        ? "bg-slate-100 text-slate-700 border-slate-300"
+                        : "bg-emerald-50 text-emerald-800 border-emerald-300"
+                    }`}
+                  >
+                    <CheckCircle2 className="w-3 h-3" />
+                    <span>{selectedEmpresa.ativo === false ? "Inativa" : "Ativa"}</span>
+                  </button>
+
+                  {/* Ficha Externa Compact Bar */}
+                  <div className="flex items-center gap-1 bg-emerald-50/90 border border-emerald-200 px-1.5 py-0.5 rounded-lg">
+                    <span className="text-[10px] font-extrabold uppercase text-emerald-900 flex items-center gap-1">
+                      <Link2 className="w-3 h-3 text-emerald-700" /> Ficha Externa:
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const link = `${window.location.origin}/?ficha_empresa=${selectedEmpresa.id}`;
+                        navigator.clipboard.writeText(link);
+                        showToast("Link da Ficha de Bordo copiado!", "success");
+                      }}
+                      className="flex items-center gap-1 px-1.5 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-bold cursor-pointer shadow-2xs"
+                      title="Copiar Link da Ficha Externa"
+                    >
+                      <Copy className="w-2.5 h-2.5" /> Copiar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const link = `${window.location.origin}/?ficha_empresa=${selectedEmpresa.id}`;
+                        window.open(link, "_blank");
+                      }}
+                      className="p-0.5 text-emerald-800 hover:bg-emerald-200 rounded transition-colors"
+                      title="Abrir em nova aba"
+                    >
+                      <ExternalLink className="w-3 h-3" />
+                    </button>
+                  </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const link = `${window.location.origin}/?ficha_empresa=${selectedEmpresa.id}`;
-                    navigator.clipboard.writeText(link);
-                    showToast("Link da Ficha Complementar copiado para a área de transferência!", "success");
-                  }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer shrink-0"
-                  title="Copiar Link para a área de transferência"
-                >
-                  <Copy className="w-3.5 h-3.5" />
-                  <span>Copiar Link</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const link = `${window.location.origin}/?ficha_empresa=${selectedEmpresa.id}`;
-                    window.open(link, "_blank");
-                  }}
-                  className="p-1.5 bg-white hover:bg-emerald-100 text-emerald-800 rounded-xl border border-emerald-200 text-xs transition-colors shrink-0"
-                  title="Abrir Ficha em nova aba"
-                >
-                  <ExternalLink className="w-4 h-4" />
-                </button>
               </div>
             </div>
 
             {/* Abas Principais: Dados da Empresa vs. Colaboradores e Dependentes */}
-            <div className="px-3 sm:px-6 pt-2 bg-warm/30 border-b border-soft flex items-center gap-2 shrink-0">
+            <div className="px-2 sm:px-6 pt-1.5 sm:pt-2 bg-warm/30 border-b border-soft flex items-center gap-1.5 sm:gap-2 shrink-0 overflow-x-auto scrollbar-none">
               <button
                 type="button"
                 onClick={() => setEmpresaModalTab("empresa")}
-                className={`flex items-center gap-2 px-4 py-2.5 border-b-2 font-bold text-xs sm:text-sm transition-all cursor-pointer ${
+                className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 border-b-2 font-bold text-xs sm:text-sm transition-all cursor-pointer shrink-0 whitespace-nowrap ${
                   empresaModalTab === "empresa"
                     ? "border-forest text-forest bg-white rounded-t-xl shadow-2xs"
                     : "border-transparent text-forest/60 hover:text-forest hover:bg-white/50 rounded-t-xl"
                 }`}
               >
-                <Building2 className="w-4 h-4 text-sun-dark" />
+                <Building2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-sun-dark shrink-0" />
                 <span>Dados da Empresa</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setEmpresaModalTab("colaboradores")}
-                className={`flex items-center gap-2 px-4 py-2.5 border-b-2 font-bold text-xs sm:text-sm transition-all cursor-pointer ${
+                className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 border-b-2 font-bold text-xs sm:text-sm transition-all cursor-pointer shrink-0 whitespace-nowrap ${
                   empresaModalTab === "colaboradores"
                     ? "border-forest text-forest bg-white rounded-t-xl shadow-2xs"
                     : "border-transparent text-forest/60 hover:text-forest hover:bg-white/50 rounded-t-xl"
                 }`}
               >
-                <Users className="w-4 h-4 text-emerald-600" />
-                <span>Dados dos Colaboradores e Dependentes</span>
-                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-200">
+                <Users className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-600 shrink-0" />
+                <span>
+                  {hasEmpresaCategoria(selectedEmpresa, "canal_parceiro") ? (
+                    <>
+                      <span className="hidden md:inline">Colaboradores Próprios (Internos)</span>
+                      <span className="md:hidden">Colabs Próprios</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="hidden md:inline">Dados dos Colaboradores e Dependentes</span>
+                      <span className="md:hidden">Colaboradores</span>
+                    </>
+                  )}
+                </span>
+                <span className="text-[9px] sm:text-[10px] font-extrabold px-1.5 sm:px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-200 shrink-0">
                   {(selectedEmpresa.colaboradoresList || []).length} vidas
                 </span>
               </button>
+
+              <button
+                type="button"
+                onClick={() => setEmpresaModalTab("faturamento")}
+                className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 border-b-2 font-bold text-xs sm:text-sm transition-all cursor-pointer shrink-0 whitespace-nowrap ${
+                  empresaModalTab === "faturamento"
+                    ? "border-forest text-forest bg-white rounded-t-xl shadow-2xs"
+                    : "border-transparent text-forest/60 hover:text-forest hover:bg-white/50 rounded-t-xl"
+                }`}
+              >
+                <DollarSign className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-700 shrink-0" />
+                <span>Faturamento & Contrato</span>
+                <span className="text-[9px] sm:text-[10px] font-extrabold px-1.5 sm:px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 shrink-0">
+                  R$ {(
+                    ((selectedEmpresa.colaboradoresList || []).filter((c) => c.status !== "inativo" && c.status !== "desligado").length || 1) *
+                    (selectedEmpresa.faturamentoConfig?.valorPorVida || selectedEmpresa.valorPorVida || 18)
+                  ).toFixed(2)}
+                </span>
+              </button>
+
+              {/* Se for Canal de Benefícios, adiciona aba de Carteira de Empresas */}
+              {hasEmpresaCategoria(selectedEmpresa, "canal_parceiro") && (
+                <button
+                  type="button"
+                  onClick={() => setEmpresaModalTab("carteira")}
+                  className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 border-b-2 font-bold text-xs sm:text-sm transition-all cursor-pointer shrink-0 whitespace-nowrap ${
+                    empresaModalTab === "carteira"
+                      ? "border-forest text-forest bg-white rounded-t-xl shadow-2xs"
+                      : "border-transparent text-forest/60 hover:text-forest hover:bg-white/50 rounded-t-xl"
+                  }`}
+                >
+                  <Building2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-purple-600 shrink-0" />
+                  <span>
+                    <span className="hidden md:inline">Empresas Conectadas ao Canal</span>
+                    <span className="md:hidden">Empresas no Canal</span>
+                  </span>
+                  <span className="text-[9px] sm:text-[10px] font-extrabold px-1.5 sm:px-2 py-0.5 rounded-full bg-purple-100 text-purple-900 border border-purple-200 shrink-0">
+                    {empresasLeads.filter((e) => e.empresaPaiId === selectedEmpresa.id).length} emp
+                  </span>
+                </button>
+              )}
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-6 custom-scrollbar bg-warm/10">
@@ -13579,6 +13916,322 @@ export function DashboardView({
                       </span>
                     </div>
                   )}
+
+                  {/* 0. CATEGORIAS & MODELO B2B MULTI-CANAL */}
+                  <section className="bg-gradient-to-br from-warm/60 to-warm/30 p-4 sm:p-5 rounded-2xl border border-soft shadow-xs">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3 pb-3 border-b border-soft">
+                      <div>
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-forest flex items-center gap-2">
+                          <Building2 className="w-4 h-4 text-sun-dark" /> Categorias & Modelo de Parceria B2B
+                        </h4>
+                        <p className="text-[11px] text-forest/70 mt-0.5">
+                          Configure os papéis corporativos desta empresa na plataforma.
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {hasEmpresaCategoria(selectedEmpresa, "empresa_direta") && (
+                          <span className="text-xs font-bold px-3 py-1 rounded-full bg-blue-100 text-blue-900 border border-blue-200 shadow-2xs">
+                            Cliente Direta
+                          </span>
+                        )}
+                        {hasEmpresaCategoria(selectedEmpresa, "canal_parceiro") && (
+                          <span className="text-xs font-bold px-3 py-1 rounded-full bg-purple-100 text-purple-900 border border-purple-200 shadow-2xs">
+                            Canal de Benefícios
+                          </span>
+                        )}
+                        {hasEmpresaCategoria(selectedEmpresa, "empresa_conectada") && (
+                          <span className="text-xs font-bold px-3 py-1 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-200 shadow-2xs">
+                            Empresa Conectada
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Guia das Regras de Negócio */}
+                    <div className="mb-3.5 p-2.5 bg-white/70 border border-forest/10 rounded-xl text-[11px] text-forest/80 flex items-start gap-2">
+                      <ShieldAlert className="w-4 h-4 text-forest/60 shrink-0 mt-0.5" />
+                      <div className="leading-snug">
+                        <strong className="text-forest">Regras de Exclusividade e Cumulatividade:</strong>
+                        <ul className="list-disc list-inside mt-0.5 space-y-0.5 text-forest/70">
+                          <li><strong>Cliente Direta</strong> e <strong>Canal de Benefícios</strong> podem ser combinados simultaneamente para empresas que possuem colaboradores próprios e também trazem parceiros.</li>
+                          <li>Uma <strong>Empresa Conectada</strong> (via Canal) é <strong>estritamente exclusiva</strong>: nunca pode ser simultaneamente Canal de Benefícios nem Cliente Direta.</li>
+                        </ul>
+                      </div>
+                    </div>
+
+                    {/* Cards de Multi-Seleção de Categorias com Regras */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      {CATEGORIAS_EMPRESA_CONFIG.map((catConfig) => {
+                        const isSelected = hasEmpresaCategoria(selectedEmpresa, catConfig.id);
+                        return (
+                          <div
+                            key={catConfig.id}
+                            onClick={() => {
+                              const activeCats = getEmpresaCategorias(selectedEmpresa);
+                              const isCurrentlySelected = activeCats.includes(catConfig.id);
+
+                              if (isCurrentlySelected && activeCats.length === 1) {
+                                showToast("A empresa deve possuir pelo menos uma categoria ativa.", "info");
+                                return;
+                              }
+
+                              const { nextCats, removedIncompatible } = resolveNextCategorias(activeCats, catConfig.id);
+
+                              let warning: string | undefined;
+                              let description = "";
+
+                              if (!isCurrentlySelected) {
+                                if (catConfig.id === "canal_parceiro") {
+                                  description = "Ao habilitar 'Canal de Benefícios', esta empresa poderá intermediar planos para uma carteira de empresas parceiras e definir regras de repasse financeiro.";
+                                } else if (catConfig.id === "empresa_conectada") {
+                                  description = "Ao habilitar 'Empresa Conectada', ela passa a ser gerenciada sob um Canal Parceiro responsável.";
+                                } else {
+                                  description = "Ao habilitar 'Cliente Direta', a empresa terá acolhimento direto aos seus colaboradores e dependentes próprios.";
+                                }
+
+                                if (removedIncompatible.length > 0) {
+                                  if (catConfig.id === "empresa_conectada") {
+                                    warning = "Regra de Exclusividade: Uma 'Empresa Conectada' nunca pode ser simultaneamente Canal de Benefícios ou Cliente Direta. Os papéis incompatíveis anteriores serão desativados automaticamente.";
+                                  } else {
+                                    warning = "Regra de Exclusividade: Uma empresa 'Cliente Direta' ou 'Canal de Benefícios' não pode ser Conectada via outro canal. O papel de 'Empresa Conectada' e o canal pai anterior serão desfeitos.";
+                                  }
+                                }
+                              } else {
+                                if (catConfig.id === "canal_parceiro") {
+                                  const filhasCount = empresasLeads.filter((e) => e.empresaPaiId === selectedEmpresa.id).length;
+                                  description = "Deseja remover a categoria 'Canal de Benefícios' desta empresa?";
+                                  if (filhasCount > 0) {
+                                    warning = `Atenção: Existem ${filhasCount} empresa(s) conectada(s) a este canal. Ao remover, a gestão de repasse do canal será desfeita.`;
+                                  }
+                                } else if (catConfig.id === "empresa_conectada") {
+                                  description = "Deseja remover a categoria 'Empresa Conectada' desta empresa?";
+                                  if (selectedEmpresa.empresaPaiNome) {
+                                    warning = `O vínculo com o canal parceiro "${selectedEmpresa.empresaPaiNome}" será desfeito.`;
+                                  }
+                                } else {
+                                  description = "Deseja remover a categoria 'Cliente Direta' desta empresa?";
+                                  const vidasCount = (selectedEmpresa.colaboradoresList || []).length;
+                                  if (vidasCount > 0) {
+                                    warning = `Atenção: Esta empresa possui ${vidasCount} colaborador(es) cadastrado(s).`;
+                                  }
+                                }
+                              }
+
+                              const actionPayload: Record<string, any> = {
+                                categorias: nextCats,
+                                categoria: nextCats[0],
+                              };
+                              if (!nextCats.includes("empresa_conectada")) {
+                                actionPayload.empresaPaiId = "";
+                                actionPayload.empresaPaiNome = "";
+                              }
+
+                              setConfirmCategoriaModal({
+                                type: "toggle_category",
+                                targetCategory: catConfig.id,
+                                currentCats: activeCats,
+                                nextCats,
+                                title: isCurrentlySelected ? `Remover: ${catConfig.label}` : `Adicionar: ${catConfig.label}`,
+                                description,
+                                warning,
+                                actionPayload,
+                              });
+                            }}
+                            className={`p-4 rounded-xl border transition-all cursor-pointer flex flex-col justify-between gap-3 ${
+                              isSelected
+                                ? catConfig.id === "empresa_direta"
+                                  ? "bg-blue-50/90 border-blue-400 shadow-xs"
+                                  : catConfig.id === "canal_parceiro"
+                                  ? "bg-purple-50/90 border-purple-400 shadow-xs"
+                                  : "bg-emerald-50/90 border-emerald-400 shadow-xs"
+                                : "bg-white/80 border-soft hover:bg-white hover:border-forest/30"
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex items-center gap-2">
+                                <span className={`w-3.5 h-3.5 rounded-md flex items-center justify-center border text-[10px] ${
+                                  isSelected
+                                    ? "bg-forest text-white border-forest"
+                                    : "bg-white border-forest/30"
+                                }`}>
+                                  {isSelected && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+                                </span>
+                                <span className="font-bold text-xs text-forest">
+                                  {catConfig.label}
+                                </span>
+                              </div>
+                              <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
+                                catConfig.id === "empresa_conectada"
+                                  ? "bg-emerald-100 text-emerald-900 border border-emerald-200"
+                                  : catConfig.id === "empresa_direta"
+                                  ? "bg-blue-100 text-blue-900 border border-blue-200"
+                                  : "bg-purple-100 text-purple-900 border border-purple-200"
+                              }`}>
+                                {catConfig.id === "empresa_conectada" ? "Exclusiva" : "Cumulativa"}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-forest/70 leading-snug">
+                              {catConfig.descricao}
+                            </p>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Configurações Adicionais Condicionais */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                      {/* Se tiver Canal Parceiro: Tabela de Repasse do Canal */}
+                      {hasEmpresaCategoria(selectedEmpresa, "canal_parceiro") && (
+                        <div className="bg-purple-50/50 p-4 rounded-xl border border-purple-200 md:col-span-2 flex flex-col gap-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold uppercase text-purple-950 flex items-center gap-2">
+                              <Building2 className="w-4 h-4 text-purple-700" />
+                              Tabela de Repasse & Regras do Canal de Benefícios
+                            </span>
+                            <span className="text-[10px] font-bold text-purple-800 bg-purple-100 px-2 py-0.5 rounded-md">
+                              Aplicável a todas as empresas conectadas a este canal
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            <div className="flex flex-col gap-1 bg-white p-3 rounded-lg border border-purple-100">
+                              <label className="text-[10px] font-bold uppercase text-forest/70">
+                                Repasse Titular / Vidas (R$)
+                              </label>
+                              <input
+                                type="number"
+                                step="0.10"
+                                min="0"
+                                placeholder="2.00"
+                                className="text-sm bg-white border border-soft px-3 py-1.5 rounded-lg font-semibold text-forest focus:outline-none focus:border-sun-dark"
+                                value={selectedEmpresa.regraPrecoCanal?.valorTitularMensal ?? ""}
+                                onChange={(e) => {
+                                  const val = parseFloat(e.target.value) || 0;
+                                  const currentRegra = selectedEmpresa.regraPrecoCanal || {};
+                                  handleUpdateEmpresaProperty(selectedEmpresa.id, "regraPrecoCanal", {
+                                    ...currentRegra,
+                                    valorTitularMensal: val,
+                                  });
+                                }}
+                              />
+                              <span className="text-[10px] text-forest/60">Custo base mensal por titular ativo</span>
+                            </div>
+
+                            <div className="flex flex-col gap-1 bg-white p-3 rounded-lg border border-purple-100">
+                              <label className="text-[10px] font-bold uppercase text-forest/70">
+                                Repasse Dependente (R$)
+                              </label>
+                              <input
+                                type="number"
+                                step="0.10"
+                                min="0"
+                                placeholder="1.00"
+                                className="text-sm bg-white border border-soft px-3 py-1.5 rounded-lg font-semibold text-forest focus:outline-none focus:border-sun-dark"
+                                value={selectedEmpresa.regraPrecoCanal?.valorDependenteMensal ?? ""}
+                                onChange={(e) => {
+                                  const val = parseFloat(e.target.value) || 0;
+                                  const currentRegra = selectedEmpresa.regraPrecoCanal || {};
+                                  handleUpdateEmpresaProperty(selectedEmpresa.id, "regraPrecoCanal", {
+                                    ...currentRegra,
+                                    valorDependenteMensal: val,
+                                  });
+                                }}
+                              />
+                              <span className="text-[10px] text-forest/60">Custo base mensal por dependente ativo</span>
+                            </div>
+
+                            <div className="flex flex-col gap-1 bg-white p-3 rounded-lg border border-purple-100">
+                              <label className="text-[10px] font-bold uppercase text-forest/70">
+                                Dia de Corte do Faturamento
+                              </label>
+                              <input
+                                type="number"
+                                min="1"
+                                max="31"
+                                placeholder="30"
+                                className="text-sm bg-white border border-soft px-3 py-1.5 rounded-lg font-semibold text-forest focus:outline-none focus:border-sun-dark"
+                                value={selectedEmpresa.regraPrecoCanal?.diaCorteMensal ?? 30}
+                                onChange={(e) => {
+                                  const val = parseInt(e.target.value, 10) || 30;
+                                  const currentRegra = selectedEmpresa.regraPrecoCanal || {};
+                                  handleUpdateEmpresaProperty(selectedEmpresa.id, "regraPrecoCanal", {
+                                    ...currentRegra,
+                                    diaCorteMensal: val,
+                                  });
+                                }}
+                              />
+                              <span className="text-[10px] text-forest/60">Dia do mês para cálculo do lote de vidas</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Se for Empresa Conectada: Atribuição ao Canal Parceiro Pai */}
+                      {hasEmpresaCategoria(selectedEmpresa, "empresa_conectada") && (
+                        <div className="flex flex-col gap-1.5 md:col-span-2 bg-emerald-50/60 p-4 rounded-xl border border-emerald-300">
+                          <label className="text-[11px] font-bold uppercase text-emerald-950 flex items-center gap-2">
+                            <Building2 className="w-4 h-4 text-emerald-700" />
+                            Vincular ao Canal de Benefícios Parceiro Responsável
+                          </label>
+                          <select
+                            className="text-sm bg-white border border-soft px-3 py-2.5 rounded-xl font-semibold text-forest focus:outline-none focus:border-sun-dark shadow-2xs cursor-pointer"
+                            value={selectedEmpresa.empresaPaiId || ""}
+                            onChange={(e) => {
+                              const newPaiId = e.target.value;
+                              const currentCats = getEmpresaCategorias(selectedEmpresa);
+                              if (newPaiId === (selectedEmpresa.empresaPaiId || "")) return;
+
+                              if (!newPaiId) {
+                                setConfirmCategoriaModal({
+                                  type: "change_pai",
+                                  currentCats,
+                                  nextCats: currentCats,
+                                  title: "Desvincular Canal de Benefícios",
+                                  description: "Deseja remover a vinculação desta empresa com o Canal Parceiro atual?",
+                                  warning: "A empresa deixará de ser gerenciada na carteira unificada do canal parceiro.",
+                                  actionPayload: {
+                                    empresaPaiId: "",
+                                    empresaPaiNome: "",
+                                  },
+                                });
+                              } else {
+                                const paiObj = empresasLeads.find((emp) => emp.id === newPaiId);
+                                const paiNome = paiObj ? paiObj.razaoSocial || paiObj.nomeEmpresa || "" : "";
+                                setConfirmCategoriaModal({
+                                  type: "change_pai",
+                                  targetPaiId: newPaiId,
+                                  targetPaiNome: paiNome,
+                                  currentCats,
+                                  nextCats: currentCats,
+                                  title: "Vincular a Canal de Benefícios",
+                                  description: `Deseja vincular esta empresa ao Canal Parceiro "${paiNome}"?`,
+                                  warning: "As vidas e faturamentos desta empresa passarão a constar sob a gestão integrada deste canal.",
+                                  actionPayload: {
+                                    empresaPaiId: newPaiId,
+                                    empresaPaiNome: paiNome,
+                                  },
+                                });
+                              }
+                            }}
+                          >
+                            <option value="">-- Selecione o Canal Parceiro Responsável --</option>
+                            {empresasLeads
+                              .filter((emp) => hasEmpresaCategoria(emp, "canal_parceiro") && emp.id !== selectedEmpresa.id)
+                              .map((canal) => (
+                                <option key={canal.id} value={canal.id}>
+                                  {canal.razaoSocial || canal.nomeEmpresa} (CNPJ: {canal.cnpj || "N/I"})
+                                </option>
+                              ))}
+                          </select>
+                          <span className="text-[10px] text-forest/70 mt-0.5">
+                            {selectedEmpresa.empresaPaiNome
+                              ? `Atribuída com sucesso ao canal: ${selectedEmpresa.empresaPaiNome}`
+                              : "Empresas conectadas devem estar vinculadas a um Canal de Benefícios para faturamento e gestão unificada."}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </section>
 
               {/* 1. DADOS CADASTRAIS (Razão Social & CNPJ) */}
               <section className="bg-warm/30 p-5 rounded-2xl border border-soft">
@@ -13948,7 +14601,7 @@ export function DashboardView({
                 />
               </section>
             </>
-          ) : (
+          ) : empresaModalTab === "colaboradores" ? (
             /* Aba de Colaboradores e Dependentes em Formato de Planilha */
             <EmpresaColaboradoresSpreadsheet
               empresaId={selectedEmpresa.id}
@@ -13960,6 +14613,636 @@ export function DashboardView({
               }
               onShowToast={showToast}
             />
+          ) : empresaModalTab === "faturamento" ? (
+            /* Aba de Gestão de Faturamento, Precificação e Fechamento de Mensalidade */
+            (() => {
+              const colabs = selectedEmpresa.colaboradoresList || [];
+              const vidasAtivas = colabs.filter((c) => c.status !== "inativo" && c.status !== "desligado").length || 0;
+              const precoPorVida = Number(selectedEmpresa.faturamentoConfig?.valorPorVida ?? selectedEmpresa.valorPorVida ?? 18);
+              const modeloCobranca = selectedEmpresa.faturamentoConfig?.modeloCobranca || "por_vida";
+              const diaVencimento = Number(selectedEmpresa.faturamentoConfig?.diaVencimento ?? selectedEmpresa.diaVencimento ?? 10);
+              const chavePix = selectedEmpresa.faturamentoConfig?.chavePix || selectedEmpresa.chavePix || "45.892.120/0001-34";
+              const favorecidoPix = selectedEmpresa.faturamentoConfig?.favorecidoPix || selectedEmpresa.favorecidoPix || "Rede AcolheMente Saúde Mental";
+              const servicosAtuais: ServicoAdicionalItem[] = selectedEmpresa.servicosAdicionaisMesAtual || selectedEmpresa.faturamentoConfig?.servicosAdicionaisMesAtual || [];
+              const historicoFaturas: FaturaHistoricoItem[] = selectedEmpresa.historicoFaturas || selectedEmpresa.faturamentoConfig?.historicoFaturas || [];
+
+              const subtotalVidas = vidasAtivas * precoPorVida;
+              const totalServicos = servicosAtuais.reduce((acc, s) => {
+                const qtd = Number(s.quantidade || 1);
+                const val = Number(s.valorUnitario || 0);
+                return acc + (s.tipo === "desconto" ? -(qtd * val) : qtd * val);
+              }, 0);
+              const valorTotalPrevisto = Math.max(0, subtotalVidas + totalServicos);
+
+              const now = new Date();
+              const meses = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+              const competenciaAtual = `${meses[now.getMonth()]}/${now.getFullYear()}`;
+
+              const handleSalvarParametrosFinanceiros = (campo: string, valor: any) => {
+                const currentConfig = selectedEmpresa.faturamentoConfig || {
+                  modeloCobranca: "por_vida",
+                  valorPorVida: 18,
+                  diaVencimento: 10,
+                  chavePix: "45.892.120/0001-34",
+                  favorecidoPix: "Rede AcolheMente Saúde Mental",
+                };
+                const newConfig = { ...currentConfig, [campo]: valor };
+                handleUpdateEmpresaProperties(selectedEmpresa.id, {
+                  faturamentoConfig: newConfig,
+                  [campo]: valor,
+                });
+                showToast("Parâmetros financeiros atualizados com sucesso!", "success");
+              };
+
+              const handleAddServicoAdmin = (e: React.FormEvent) => {
+                e.preventDefault();
+                if (!novoServicoAdminForm.descricao || !novoServicoAdminForm.valorUnitario) {
+                  showToast("Informe a descrição e o valor do serviço", "error");
+                  return;
+                }
+                const novoItem: ServicoAdicionalItem = {
+                  id: `serv_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+                  descricao: novoServicoAdminForm.descricao,
+                  quantidade: Number(novoServicoAdminForm.quantidade) || 1,
+                  valorUnitario: Number(novoServicoAdminForm.valorUnitario) || 0,
+                  tipo: novoServicoAdminForm.tipo || "servico",
+                  data: novoServicoAdminForm.data || new Date().toISOString().split("T")[0],
+                };
+                const novaLista = [...servicosAtuais, novoItem];
+                handleUpdateEmpresaProperties(selectedEmpresa.id, {
+                  servicosAdicionaisMesAtual: novaLista,
+                });
+                setNovoServicoAdminForm({
+                  descricao: "",
+                  quantidade: 1,
+                  valorUnitario: 0,
+                  tipo: "servico",
+                  data: new Date().toISOString().split("T")[0],
+                });
+                setIsAddingServicoAdmin(false);
+                showToast("Serviço adicional lançado para a fatura deste mês!", "success");
+              };
+
+              const handleRemoveServicoAdmin = (itemId: string) => {
+                const novaLista = servicosAtuais.filter((s) => s.id !== itemId);
+                handleUpdateEmpresaProperties(selectedEmpresa.id, {
+                  servicosAdicionaisMesAtual: novaLista,
+                });
+                showToast("Lançamento removido do mês atual.", "success");
+              };
+
+              const handleFecharFaturaAdmin = () => {
+                const mesNome = meses[now.getMonth()];
+                const anoNum = now.getFullYear();
+                const totalTit = colabs.filter((c) => c.status !== "inativo" && c.status !== "desligado" && c.tipo !== "dependente").length;
+                const totalDep = colabs.filter((c) => c.status !== "inativo" && c.status !== "desligado" && c.tipo === "dependente").length;
+
+                const novoSnapshot: FaturaHistoricoItem = {
+                  id: `fat_${anoNum}_${String(now.getMonth() + 1).padStart(2, "0")}_${Date.now()}`,
+                  competencia: `${mesNome}/${anoNum}`,
+                  mes: now.getMonth() + 1,
+                  ano: anoNum,
+                  dataFechamento: new Date().toISOString(),
+                  dataVencimento: `${String(diaVencimento).padStart(2, "0")}/${String(now.getMonth() + 1).padStart(2, "0")}/${anoNum}`,
+                  status: "faturado",
+                  quantidadeVidasFechamento: vidasAtivas,
+                  quantidadeTitulares: totalTit,
+                  quantidadeDependentes: totalDep,
+                  valorPorVida: precoPorVida,
+                  subtotalVidas: subtotalVidas,
+                  servicosAdicionais: [...servicosAtuais],
+                  totalServicosAdicionais: totalServicos,
+                  valorTotal: valorTotalPrevisto,
+                };
+
+                const novoHistorico = [novoSnapshot, ...historicoFaturas.filter((f) => f.competencia !== novoSnapshot.competencia)];
+                handleUpdateEmpresaProperties(selectedEmpresa.id, {
+                  historicoFaturas: novoHistorico,
+                  servicosAdicionaisMesAtual: [],
+                });
+                showToast(`Competência ${novoSnapshot.competencia} fechada e congelada no histórico!`, "success");
+              };
+
+              const handleAtualizarStatusFaturaAdmin = (faturaId: string, novoStatus: StatusFatura) => {
+                const novoHistorico = historicoFaturas.map((f) => (f.id === faturaId ? { ...f, status: novoStatus } : f));
+                handleUpdateEmpresaProperties(selectedEmpresa.id, {
+                  historicoFaturas: novoHistorico,
+                });
+                showToast(`Status da fatura atualizado para ${novoStatus.toUpperCase()}`, "success");
+              };
+
+              const handleExcluirFaturaHistoricoAdmin = (faturaId: string) => {
+                if (!confirm("Deseja realmente remover este registro de fatura do histórico?")) return;
+                const novoHistorico = historicoFaturas.filter((f) => f.id !== faturaId);
+                handleUpdateEmpresaProperties(selectedEmpresa.id, {
+                  historicoFaturas: novoHistorico,
+                });
+                showToast("Fatura removida do histórico.", "success");
+              };
+
+              return (
+                <div className="space-y-6">
+                  {/* Banner de Previsão de Faturamento do Mês Atual (Live Calculation) */}
+                  <div className="bg-gradient-to-r from-forest via-forest to-forest/90 text-white p-6 rounded-2xl border border-forest/60 shadow-md flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-sun text-forest">
+                          Cálculo Dinâmico (Ao Vivo)
+                        </span>
+                        <span className="text-xs text-white/80">Competência {competenciaAtual}</span>
+                      </div>
+                      <div className="flex items-baseline gap-3 mt-2">
+                        <h3 className="font-serif text-3xl font-extrabold text-white">
+                          R$ {valorTotalPrevisto.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                        </h3>
+                        <span className="text-xs text-white/70">
+                          ({vidasAtivas} vidas ativas × R$ {precoPorVida.toFixed(2)}
+                          {totalServicos !== 0 ? ` + R$ ${totalServicos.toFixed(2)} serviços extras` : ""})
+                        </span>
+                      </div>
+                      <p className="text-xs text-white/80 mt-1">
+                        Vencimento no dia <strong>{diaVencimento}</strong> de cada mês. Atualiza automaticamente com a folha.
+                      </p>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2.5 w-full lg:w-auto">
+                      <button
+                        type="button"
+                        onClick={() => setIsAddingServicoAdmin(!isAddingServicoAdmin)}
+                        className="px-3.5 py-2 bg-white/15 hover:bg-white/25 text-white font-bold text-xs rounded-xl border border-white/20 transition-all flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Plus className="w-4 h-4 text-sun" />
+                        <span>+ Lançar Evento/Extra</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleFecharFaturaAdmin}
+                        className="px-4 py-2 bg-sun hover:bg-sun-dark text-forest font-black text-xs rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
+                        title="Gera o snapshot imutável para a contabilidade e arquiva no histórico"
+                      >
+                        <Lock className="w-4 h-4 text-forest" />
+                        <span>Fechar & Congelar Mês</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Formulário de Adicionar Serviço Adicional (Admin) */}
+                  {isAddingServicoAdmin && (
+                    <form
+                      onSubmit={handleAddServicoAdmin}
+                      className="p-5 bg-white rounded-2xl border border-soft shadow-xs space-y-4 animate-in fade-in"
+                    >
+                      <div className="flex items-center justify-between pb-2 border-b border-soft">
+                        <h4 className="font-serif text-sm font-bold text-forest flex items-center gap-2">
+                          <Sparkles className="w-4 h-4 text-sun" />
+                          <span>Lançar Serviço Adicional / Desconto na Competência {competenciaAtual}</span>
+                        </h4>
+                        <button
+                          type="button"
+                          onClick={() => setIsAddingServicoAdmin(false)}
+                          className="p-1 hover:bg-warm rounded-lg text-forest/60"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                        <div className="md:col-span-2">
+                          <label className="block font-bold text-forest mb-1">Descrição do Serviço / Evento *</label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="Ex: Palestra SIPAT Presencial, Plantão Psicológico Extra..."
+                            value={novoServicoAdminForm.descricao || ""}
+                            onChange={(e) => setNovoServicoAdminForm({ ...novoServicoAdminForm, descricao: e.target.value })}
+                            className="w-full px-3 py-2 bg-warm/30 border border-soft focus:border-forest rounded-xl outline-none"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block font-bold text-forest mb-1">Tipo</label>
+                          <select
+                            value={novoServicoAdminForm.tipo || "servico"}
+                            onChange={(e) => setNovoServicoAdminForm({ ...novoServicoAdminForm, tipo: e.target.value as any })}
+                            className="w-full px-3 py-2 bg-warm/30 border border-soft focus:border-forest rounded-xl outline-none"
+                          >
+                            <option value="servico">Acordo / Serviço Extra (+)</option>
+                            <option value="desconto">Desconto / Abatimento (-)</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block font-bold text-forest mb-1">Data</label>
+                          <input
+                            type="date"
+                            value={novoServicoAdminForm.data || new Date().toISOString().split("T")[0]}
+                            onChange={(e) => setNovoServicoAdminForm({ ...novoServicoAdminForm, data: e.target.value })}
+                            className="w-full px-3 py-2 bg-warm/30 border border-soft focus:border-forest rounded-xl outline-none"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block font-bold text-forest mb-1">Quantidade</label>
+                          <input
+                            type="number"
+                            min="1"
+                            required
+                            value={novoServicoAdminForm.quantidade || 1}
+                            onChange={(e) => setNovoServicoAdminForm({ ...novoServicoAdminForm, quantidade: Number(e.target.value) })}
+                            className="w-full px-3 py-2 bg-warm/30 border border-soft focus:border-forest rounded-xl outline-none"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block font-bold text-forest mb-1">Valor Unitário (R$) *</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0.01"
+                            required
+                            placeholder="0.00"
+                            value={novoServicoAdminForm.valorUnitario || ""}
+                            onChange={(e) => setNovoServicoAdminForm({ ...novoServicoAdminForm, valorUnitario: Number(e.target.value) })}
+                            className="w-full px-3 py-2 bg-warm/30 border border-soft focus:border-forest rounded-xl outline-none font-mono"
+                          />
+                        </div>
+
+                        <div className="md:col-span-2 flex items-end justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setIsAddingServicoAdmin(false)}
+                            className="px-3 py-2 text-forest/70 hover:bg-warm rounded-xl font-semibold"
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            type="submit"
+                            className="px-4 py-2 bg-forest text-white font-bold rounded-xl shadow-2xs hover:bg-forest/90"
+                          >
+                            Confirmar Lançamento
+                          </button>
+                        </div>
+                      </div>
+                    </form>
+                  )}
+
+                  {/* Parâmetros Comerciais & Regras do Contrato */}
+                  <div className="bg-white p-6 rounded-2xl border border-soft shadow-xs space-y-4">
+                    <h4 className="font-serif text-sm sm:text-base font-bold text-forest flex items-center gap-2 pb-2 border-b border-soft">
+                      <Settings className="w-4 h-4 text-forest/70" />
+                      <span>Parâmetros Contratuais & Dados Financeiros</span>
+                    </h4>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-xs">
+                      <div>
+                        <label className="block font-bold text-forest mb-1">Modelo de Cobrança</label>
+                        <select
+                          value={modeloCobranca}
+                          onChange={(e) => handleSalvarParametrosFinanceiros("modeloCobranca", e.target.value)}
+                          className="w-full px-3 py-2 bg-warm/30 border border-soft focus:border-forest rounded-xl outline-none font-semibold text-forest"
+                        >
+                          <option value="por_vida">Preço por Vida Ativa (Padrão Corporativo)</option>
+                          <option value="fixo_mensal">Valor Fixo Mensal Pré-Fixado</option>
+                          <option value="franquia_excedente">Franquia Mínima + Excedente</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block font-bold text-forest mb-1">Valor por Vida Ativa (R$)</label>
+                        <div className="flex items-center gap-2">
+                          <span className="text-forest/60 font-bold">R$</span>
+                          <input
+                            type="number"
+                            step="0.50"
+                            min="0"
+                            value={precoPorVida}
+                            onChange={(e) => handleSalvarParametrosFinanceiros("valorPorVida", Number(e.target.value))}
+                            className="w-full px-3 py-2 bg-warm/30 border border-soft focus:border-forest rounded-xl outline-none font-bold text-forest font-mono"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block font-bold text-forest mb-1">Dia de Vencimento da Fatura</label>
+                        <div className="flex items-center gap-2">
+                          <span className="text-forest/60 font-bold">Dia</span>
+                          <input
+                            type="number"
+                            min="1"
+                            max="31"
+                            value={diaVencimento}
+                            onChange={(e) => handleSalvarParametrosFinanceiros("diaVencimento", Number(e.target.value))}
+                            className="w-full px-3 py-2 bg-warm/30 border border-soft focus:border-forest rounded-xl outline-none font-bold text-forest font-mono"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="sm:col-span-2">
+                        <label className="block font-bold text-forest mb-1">Chave PIX para Cobrança</label>
+                        <input
+                          type="text"
+                          value={chavePix}
+                          onChange={(e) => handleSalvarParametrosFinanceiros("chavePix", e.target.value)}
+                          className="w-full px-3 py-2 bg-warm/30 border border-soft focus:border-forest rounded-xl outline-none font-mono text-forest"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-bold text-forest mb-1">Nome do Favorecido PIX</label>
+                        <input
+                          type="text"
+                          value={favorecidoPix}
+                          onChange={(e) => handleSalvarParametrosFinanceiros("favorecidoPix", e.target.value)}
+                          className="w-full px-3 py-2 bg-warm/30 border border-soft focus:border-forest rounded-xl outline-none text-forest"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Lançamentos e Serviços Adicionais do Mês Atual */}
+                  <div className="bg-white p-6 rounded-2xl border border-soft shadow-xs space-y-4">
+                    <div className="flex items-center justify-between pb-2 border-b border-soft">
+                      <div>
+                        <h4 className="font-serif text-sm sm:text-base font-bold text-forest flex items-center gap-2">
+                          <Sparkles className="w-4 h-4 text-sun" />
+                          <span>Lançamentos Extras da Competência Vigente ({competenciaAtual})</span>
+                        </h4>
+                        <p className="text-[11px] text-forest/60">
+                          Estes itens serão somados ou deduzidos na fatura em tempo real.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setIsAddingServicoAdmin(true)}
+                        className="px-3 py-1.5 bg-warm hover:bg-forest hover:text-white text-forest text-xs font-bold rounded-xl border border-soft transition-all flex items-center gap-1 cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5" /> Adicionar
+                      </button>
+                    </div>
+
+                    {servicosAtuais.length === 0 ? (
+                      <div className="text-center p-6 bg-warm/30 rounded-xl border border-dashed border-soft text-forest/60 text-xs">
+                        Nenhum evento extra ou desconto lançado para a competência atual.
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs text-left">
+                          <thead className="bg-warm/60 font-bold text-[11px] uppercase text-forest/80 border-b border-soft">
+                            <tr>
+                              <th className="p-2.5">Descrição</th>
+                              <th className="p-2.5">Tipo</th>
+                              <th className="p-2.5">Data</th>
+                              <th className="p-2.5 text-center">Qtd</th>
+                              <th className="p-2.5 text-right">Valor Unit.</th>
+                              <th className="p-2.5 text-right">Subtotal</th>
+                              <th className="p-2.5 text-center">Ações</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-soft">
+                            {servicosAtuais.map((serv) => {
+                              const qtd = Number(serv.quantidade || 1);
+                              const val = Number(serv.valorUnitario || 0);
+                              const sub = serv.tipo === "desconto" ? -(qtd * val) : qtd * val;
+                              return (
+                                <tr key={serv.id} className="hover:bg-warm/20">
+                                  <td className="p-2.5 font-bold text-forest">{serv.descricao}</td>
+                                  <td className="p-2.5">
+                                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase ${
+                                      serv.tipo === "desconto" ? "bg-amber-100 text-amber-900" : "bg-purple-100 text-purple-900"
+                                    }`}>
+                                      {serv.tipo === "desconto" ? "Desconto" : "Serviço Extra"}
+                                    </span>
+                                  </td>
+                                  <td className="p-2.5 text-forest/70">{serv.data || "—"}</td>
+                                  <td className="p-2.5 text-center font-bold">{qtd}</td>
+                                  <td className="p-2.5 text-right font-mono">R$ {val.toFixed(2)}</td>
+                                  <td className={`p-2.5 text-right font-bold font-mono ${serv.tipo === "desconto" ? "text-amber-800" : "text-forest"}`}>
+                                    {serv.tipo === "desconto" ? "- " : ""}R$ {Math.abs(sub).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                                  </td>
+                                  <td className="p-2.5 text-center">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveServicoAdmin(serv.id)}
+                                      className="p-1 text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                                      title="Remover"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Histórico das Competências Fechadas (Snapshots Imutáveis) */}
+                  <div className="bg-white p-6 rounded-2xl border border-soft shadow-xs space-y-4">
+                    <div className="flex items-center justify-between pb-2 border-b border-soft">
+                      <div>
+                        <h4 className="font-serif text-sm sm:text-base font-bold text-forest flex items-center gap-2">
+                          <Receipt className="w-4 h-4 text-forest/70" />
+                          <span>Histórico de Faturas Fechadas (Snapshots Auditados)</span>
+                        </h4>
+                        <p className="text-[11px] text-forest/60">
+                          Registros congelados no momento do corte financeiro para auditoria contábil.
+                        </p>
+                      </div>
+                    </div>
+
+                    {historicoFaturas.length === 0 ? (
+                      <div className="text-center p-8 bg-warm/30 rounded-xl border border-dashed border-soft text-forest/60 text-xs">
+                        <p className="font-semibold">Nenhuma fatura fechada registrada ainda.</p>
+                        <p className="text-[11px] mt-1 text-forest/50">
+                          Ao clicar em <strong>"Fechar & Congelar Mês"</strong>, a fotografia deste período será armazenada aqui de forma imutável.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs text-left">
+                          <thead className="bg-warm/60 font-bold text-[11px] uppercase text-forest/80 border-b border-soft">
+                            <tr>
+                              <th className="p-3">Competência</th>
+                              <th className="p-3">Fechamento</th>
+                              <th className="p-3 text-center">Vidas Fechadas</th>
+                              <th className="p-3 text-right">Valor por Vida</th>
+                              <th className="p-3 text-right">Total Fatura</th>
+                              <th className="p-3 text-center">Vencimento</th>
+                              <th className="p-3 text-center">Status de Liquidação</th>
+                              <th className="p-3 text-center">Ações</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-soft">
+                            {historicoFaturas.map((fat) => (
+                              <tr key={fat.id} className="hover:bg-warm/20">
+                                <td className="p-3 font-bold text-forest">Competência {fat.competencia}</td>
+                                <td className="p-3 text-forest/70">
+                                  {fat.dataFechamento ? new Date(fat.dataFechamento).toLocaleDateString("pt-BR") : "—"}
+                                </td>
+                                <td className="p-3 text-center font-bold text-forest">{fat.quantidadeVidasFechamento} vidas</td>
+                                <td className="p-3 text-right font-mono">R$ {(fat.valorPorVida || 18).toFixed(2)}</td>
+                                <td className="p-3 text-right font-black font-mono text-forest">
+                                  R$ {fat.valorTotal.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                                </td>
+                                <td className="p-3 text-center font-semibold text-forest/80">{fat.dataVencimento}</td>
+                                <td className="p-3 text-center">
+                                  <select
+                                    value={fat.status}
+                                    onChange={(e) => handleAtualizarStatusFaturaAdmin(fat.id, e.target.value as StatusFatura)}
+                                    className={`px-2 py-1 rounded-lg text-[10px] font-extrabold uppercase outline-none cursor-pointer border ${
+                                      fat.status === "pago"
+                                        ? "bg-emerald-100 text-emerald-900 border-emerald-300"
+                                        : fat.status === "faturado"
+                                        ? "bg-amber-100 text-amber-900 border-amber-300"
+                                        : fat.status === "cancelado"
+                                        ? "bg-red-100 text-red-900 border-red-300"
+                                        : "bg-purple-100 text-purple-900 border-purple-300"
+                                    }`}
+                                  >
+                                    <option value="previsto">Previsto</option>
+                                    <option value="faturado">Faturado / Aberto</option>
+                                    <option value="pago">Liquidado / Pago ✅</option>
+                                    <option value="cancelado">Cancelado ❌</option>
+                                  </select>
+                                </td>
+                                <td className="p-3 text-center">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleExcluirFaturaHistoricoAdmin(fat.id)}
+                                    className="p-1 text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                                    title="Excluir Registro de Fechamento"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()
+          ) : (
+            /* Aba de Empresas Conectadas ao Canal de Benefícios */
+            <div className="space-y-6">
+              <div className="bg-white p-6 rounded-2xl border border-soft shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="p-2 rounded-xl bg-purple-100 text-purple-800">
+                      <Building2 className="w-5 h-5" />
+                    </span>
+                    <div>
+                      <h4 className="font-serif text-lg font-bold text-forest">
+                        Empresas Conectadas a {selectedEmpresa.razaoSocial || selectedEmpresa.nomeEmpresa}
+                      </h4>
+                      <p className="text-xs text-forest/70">
+                        Carteira de clientes B2B intermediados e atendidos sob este Canal de Benefícios.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="bg-purple-50 border border-purple-200 px-4 py-2 rounded-xl text-center">
+                    <span className="block text-[10px] font-bold uppercase text-purple-700">Total Empresas</span>
+                    <span className="text-lg font-extrabold text-purple-900">
+                      {empresasLeads.filter((e) => e.empresaPaiId === selectedEmpresa.id).length}
+                    </span>
+                  </div>
+                  <div className="bg-emerald-50 border border-emerald-200 px-4 py-2 rounded-xl text-center">
+                    <span className="block text-[10px] font-bold uppercase text-emerald-700">Total Vidas Ativas</span>
+                    <span className="text-lg font-extrabold text-emerald-900">
+                      {empresasLeads
+                        .filter((e) => e.empresaPaiId === selectedEmpresa.id)
+                        .reduce((acc, curr) => acc + (curr.colaboradoresList || []).length, 0)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Lista de Empresas Conectadas */}
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {empresasLeads.filter((e) => e.empresaPaiId === selectedEmpresa.id).length === 0 ? (
+                  <div className="col-span-full text-center p-12 bg-white/60 border border-dashed border-soft rounded-2xl text-forest/60 text-sm">
+                    <p className="font-semibold">Nenhuma empresa conectada a este Canal de Benefícios ainda.</p>
+                    <p className="text-xs text-forest/50 mt-1">
+                      Para conectar uma empresa, abra a Ficha de Bordo da empresa desejada, selecione a classificação <strong>"Empresa Conectada"</strong> e atribua este canal.
+                    </p>
+                  </div>
+                ) : (
+                  empresasLeads
+                    .filter((e) => e.empresaPaiId === selectedEmpresa.id)
+                    .map((conectada) => {
+                      const vidasContratadas = conectada.quantidadeVidas || conectada.colaboradores || "0";
+                      const vidasCadastradas = (conectada.colaboradoresList || []).length;
+                      return (
+                        <div
+                          key={conectada.id}
+                          className="bg-white p-5 rounded-2xl border border-soft shadow-xs hover:shadow-md transition-all flex flex-col justify-between gap-4"
+                        >
+                          <div>
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <h5 className="font-bold text-forest text-base line-clamp-1">
+                                  {conectada.razaoSocial || conectada.nomeEmpresa}
+                                </h5>
+                                <span className="text-[11px] font-mono text-forest/60">
+                                  CNPJ: {conectada.cnpj || "Não informado"}
+                                </span>
+                              </div>
+                              <span
+                                className={`text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full border ${
+                                  conectada.ativo === false
+                                    ? "bg-slate-100 text-slate-600 border-slate-200"
+                                    : "bg-emerald-100 text-emerald-800 border-emerald-200"
+                                }`}
+                              >
+                                {conectada.ativo === false ? "Inativo" : "Ativo"}
+                              </span>
+                            </div>
+
+                            <div className="mt-4 p-3 bg-warm/40 rounded-xl space-y-1.5 text-xs text-forest/80">
+                              <div className="flex items-center justify-between">
+                                <span className="text-forest/60 font-medium">Vidas na Planilha:</span>
+                                <strong className="text-forest">{vidasCadastradas} vidas</strong>
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <span className="text-forest/60 font-medium">Vidas Contratadas:</span>
+                                <strong className="text-forest">{vidasContratadas}</strong>
+                              </div>
+                              {conectada.contatoNome && (
+                                <div className="flex items-center justify-between border-t border-soft/60 pt-1.5 mt-1.5">
+                                  <span className="text-forest/60 font-medium">Contato:</span>
+                                  <span className="truncate max-w-[130px] font-semibold">{conectada.contatoNome}</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 pt-2 border-t border-soft">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedEmpresa(conectada);
+                                setEmpresaModalTab("empresa");
+                              }}
+                              className="flex-1 py-2 bg-sun hover:bg-sun-dark text-forest font-semibold text-xs rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                            >
+                              <FileText className="w-3.5 h-3.5" />
+                              <span>Abrir Ficha de Bordo</span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })
+                )}
+              </div>
+            </div>
           )}
         </div>
 
@@ -13972,6 +15255,18 @@ export function DashboardView({
                 {selectedEmpresa.quantidadeVidas || selectedEmpresa.colaboradores
                   ? ` / ${selectedEmpresa.quantidadeVidas || selectedEmpresa.colaboradores} vidas contratadas`
                   : ""}
+              </span>
+            ) : empresaModalTab === "carteira" ? (
+              <span>
+                Total na carteira do canal:{" "}
+                <strong className="text-forest font-bold">
+                  {empresasLeads.filter((e) => e.empresaPaiId === selectedEmpresa.id).length}
+                </strong> empresas conectadas (
+                <strong className="text-forest font-bold">
+                  {empresasLeads
+                    .filter((e) => e.empresaPaiId === selectedEmpresa.id)
+                    .reduce((acc, curr) => acc + (curr.colaboradoresList || []).length, 0)}
+                </strong> vidas)
               </span>
             ) : (
               <span>
@@ -13986,6 +15281,94 @@ export function DashboardView({
             Fechar Ficha
           </button>
         </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Confirmação para Alteração de Categorias B2B */}
+      {confirmCategoriaModal && selectedEmpresa && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center px-4 bg-forest/40 backdrop-blur-sm animate-in fade-in py-4">
+          <div className="bg-white rounded-3xl w-full max-w-lg flex flex-col shadow-2xl border border-soft overflow-hidden animate-in zoom-in-95">
+            <div className="px-6 py-5 border-b border-soft bg-gradient-to-r from-warm/80 to-warm/30 flex items-start gap-3">
+              <div className={`p-2.5 rounded-2xl shrink-0 ${confirmCategoriaModal.warning ? "bg-amber-100 text-amber-800" : "bg-forest text-sun"}`}>
+                {confirmCategoriaModal.warning ? <AlertTriangle className="w-6 h-6" /> : <ShieldAlert className="w-6 h-6" />}
+              </div>
+              <div className="min-w-0">
+                <h3 className="font-serif text-lg text-forest font-bold">
+                  {confirmCategoriaModal.title}
+                </h3>
+                <p className="text-xs text-forest/70 mt-0.5">
+                  Empresa: <strong className="text-forest">{selectedEmpresa.razaoSocial || selectedEmpresa.nomeEmpresa}</strong>
+                </p>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-4 text-xs text-forest/80">
+              <p className="leading-relaxed text-sm text-forest font-medium">
+                {confirmCategoriaModal.description}
+              </p>
+
+              {/* Badges de Comparação: Categorização resultante */}
+              <div className="bg-warm/40 p-3.5 rounded-2xl border border-soft flex flex-col gap-2">
+                <div className="flex items-center justify-between text-[11px] font-bold text-forest/60 uppercase">
+                  <span>Categorização resultante para a empresa:</span>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {confirmCategoriaModal.nextCats.map((cat) => (
+                    <span
+                      key={cat}
+                      className={`text-xs font-bold px-3 py-1 rounded-full border shadow-2xs ${
+                        cat === "empresa_direta"
+                          ? "bg-blue-100 text-blue-900 border-blue-200"
+                          : cat === "canal_parceiro"
+                          ? "bg-purple-100 text-purple-900 border-purple-200"
+                          : "bg-emerald-100 text-emerald-900 border-emerald-200"
+                      }`}
+                    >
+                      {cat === "empresa_direta"
+                        ? "Cliente Direta"
+                        : cat === "canal_parceiro"
+                        ? "Canal de Benefícios"
+                        : "Empresa Conectada"}
+                    </span>
+                  ))}
+                  {confirmCategoriaModal.nextCats.length === 0 && (
+                    <span className="text-xs text-rose-600 font-bold italic">Nenhuma categoria ativa</span>
+                  )}
+                </div>
+              </div>
+
+              {confirmCategoriaModal.warning && (
+                <div className="p-3.5 bg-amber-50 border border-amber-300 rounded-2xl text-amber-900 text-xs flex items-start gap-2.5">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <span className="leading-snug font-medium">{confirmCategoriaModal.warning}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="px-6 py-4 border-t border-soft bg-warm/30 flex items-center justify-end gap-3 shrink-0">
+              <button
+                type="button"
+                onClick={() => setConfirmCategoriaModal(null)}
+                className="px-4 py-2 bg-white hover:bg-warm border border-soft rounded-xl text-xs font-bold text-forest/80 hover:text-forest transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  await handleUpdateEmpresaProperties(
+                    selectedEmpresa.id,
+                    confirmCategoriaModal.actionPayload
+                  );
+                  setConfirmCategoriaModal(null);
+                  showToast("Categorização atualizada com sucesso!", "success");
+                }}
+                className="px-5 py-2 bg-forest hover:bg-forest/90 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+              >
+                <Check className="w-4 h-4 text-sun" /> Confirmar Alteração
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -16419,7 +17802,7 @@ export function DashboardView({
 
                 return filteredList.map((lead) => (
                   <div
-                    key={lead.id}
+                    key={`plead-${lead.id}`}
                     className="p-4 bg-warm/30 hover:bg-warm/60 border border-soft/50 rounded-2xl flex justify-between items-center gap-4 transition-all"
                   >
                     <div className="min-w-0 flex-1">
@@ -16964,6 +18347,166 @@ export function DashboardView({
                 Continuar no atual
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Inclusão Manual de Empresa */}
+      {showNovaEmpresaModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-forest/40 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl border border-soft space-y-6 max-h-[90vh] overflow-y-auto custom-scrollbar animate-in zoom-in-95">
+            <div className="flex items-center justify-between border-b border-soft pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-sun/30 flex items-center justify-center text-forest">
+                  <Building2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-serif text-lg font-bold text-forest">Inclusão Manual de Empresa</h3>
+                  <p className="text-xs text-forest/60">Cadastre uma nova empresa diretamente no sistema</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowNovaEmpresaModal(false)}
+                className="p-1.5 text-forest/50 hover:text-red-500 rounded-full hover:bg-red-50 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCriarEmpresaManual} className="space-y-4 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="sm:col-span-2">
+                  <label className="block font-bold text-forest mb-1">Nome da Empresa / Razão Social *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ex: Empresa Exemplo S.A."
+                    value={novaEmpresaForm.nomeEmpresa}
+                    onChange={(e) => setNovaEmpresaForm({ ...novaEmpresaForm, nomeEmpresa: e.target.value })}
+                    className="w-full px-3.5 py-2.5 bg-warm/40 border border-soft rounded-xl focus:border-forest outline-none text-xs text-forest"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-forest mb-1">CNPJ *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="00.000.000/0001-00"
+                    value={novaEmpresaForm.cnpj}
+                    onChange={(e) => setNovaEmpresaForm({ ...novaEmpresaForm, cnpj: e.target.value })}
+                    className="w-full px-3.5 py-2.5 bg-warm/40 border border-soft rounded-xl focus:border-forest outline-none text-xs text-forest font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-forest mb-1">Ramo de Atividade</label>
+                  <select
+                    value={novaEmpresaForm.ramoAtividade}
+                    onChange={(e) => setNovaEmpresaForm({ ...novaEmpresaForm, ramoAtividade: e.target.value })}
+                    className="w-full px-3.5 py-2.5 bg-warm/40 border border-soft rounded-xl focus:border-forest outline-none text-xs text-forest"
+                  >
+                    <option value="Tecnologia">Tecnologia</option>
+                    <option value="Saúde">Saúde</option>
+                    <option value="Varejo">Varejo / Comércio</option>
+                    <option value="Indústria">Indústria</option>
+                    <option value="Serviços">Serviços</option>
+                    <option value="Educação">Educação</option>
+                    <option value="Outros">Outros</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-forest mb-1">Local / Sede</label>
+                  <input
+                    type="text"
+                    placeholder="Ex: São Paulo, SP"
+                    value={novaEmpresaForm.local}
+                    onChange={(e) => setNovaEmpresaForm({ ...novaEmpresaForm, local: e.target.value })}
+                    className="w-full px-3.5 py-2.5 bg-warm/40 border border-soft rounded-xl focus:border-forest outline-none text-xs text-forest"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-forest mb-1">Qtde de Vidas / Colaboradores</label>
+                  <select
+                    value={novaEmpresaForm.colaboradores}
+                    onChange={(e) => setNovaEmpresaForm({ ...novaEmpresaForm, colaboradores: e.target.value })}
+                    className="w-full px-3.5 py-2.5 bg-warm/40 border border-soft rounded-xl focus:border-forest outline-none text-xs text-forest"
+                  >
+                    <option value="1 a 10">1 a 10 pessoas</option>
+                    <option value="11 a 50">11 a 50 pessoas</option>
+                    <option value="51 a 200">51 a 200 pessoas</option>
+                    <option value="Mais de 200">Mais de 200 pessoas</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-forest mb-1">Nome do Responsável / Contato</label>
+                  <input
+                    type="text"
+                    placeholder="Ex: Maria Silva (RH)"
+                    value={novaEmpresaForm.contatoNome}
+                    onChange={(e) => setNovaEmpresaForm({ ...novaEmpresaForm, contatoNome: e.target.value })}
+                    className="w-full px-3.5 py-2.5 bg-warm/40 border border-soft rounded-xl focus:border-forest outline-none text-xs text-forest"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-forest mb-1">Categoria B2B</label>
+                  <select
+                    value={novaEmpresaForm.categoria}
+                    onChange={(e) => setNovaEmpresaForm({ ...novaEmpresaForm, categoria: e.target.value as CategoriaEmpresa })}
+                    className="w-full px-3.5 py-2.5 bg-warm/40 border border-soft rounded-xl focus:border-forest outline-none text-xs text-forest font-semibold"
+                  >
+                    <option value="empresa_direta">Cliente Direta</option>
+                    <option value="canal_parceiro">Canal de Benefícios</option>
+                    <option value="empresa_conectada">Empresa Conectada</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-forest mb-1">E-mail Corporativo *</label>
+                  <input
+                    type="email"
+                    required
+                    placeholder="contato@empresa.com"
+                    value={novaEmpresaForm.email}
+                    onChange={(e) => setNovaEmpresaForm({ ...novaEmpresaForm, email: e.target.value })}
+                    className="w-full px-3.5 py-2.5 bg-warm/40 border border-soft rounded-xl focus:border-forest outline-none text-xs text-forest"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-forest mb-1">Telefone / WhatsApp</label>
+                  <input
+                    type="tel"
+                    placeholder="(11) 99999-9999"
+                    value={novaEmpresaForm.telefone}
+                    onChange={(e) => setNovaEmpresaForm({ ...novaEmpresaForm, telefone: e.target.value })}
+                    className="w-full px-3.5 py-2.5 bg-warm/40 border border-soft rounded-xl focus:border-forest outline-none text-xs text-forest"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-soft">
+                <button
+                  type="button"
+                  onClick={() => setShowNovaEmpresaModal(false)}
+                  className="px-4 py-2.5 bg-warm hover:bg-soft text-forest rounded-xl font-bold transition-all cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingNovaEmpresa}
+                  className="px-5 py-2.5 bg-forest hover:bg-forest/90 text-white rounded-xl font-bold shadow-2xs transition-all disabled:opacity-50 cursor-pointer flex items-center gap-2"
+                >
+                  {isSubmittingNovaEmpresa ? "Salvando..." : "Salvar Empresa"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

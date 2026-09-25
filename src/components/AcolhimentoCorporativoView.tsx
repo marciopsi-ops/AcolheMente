@@ -65,6 +65,7 @@ interface EmpresaData {
   logoUrl?: string;
   slogan?: string;
   email?: string;
+  colaboradoresList?: any[];
   beneficioConfig?: {
     cargos?: CargoEmpresa[];
     servicos?: ServicoCorporativoConfig[];
@@ -324,6 +325,10 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
   const [etapaAtual, setEtapaAtual] = useState<"identificacao" | "vitrine">("identificacao");
 
   // 3. Dados do Colaborador
+  const [colaboradorCpf, setColaboradorCpf] = useState("");
+  const [cpfVerificado, setCpfVerificado] = useState(false);
+  const [cpfErro, setCpfErro] = useState("");
+  const [dependentesCadastrados, setDependentesCadastrados] = useState<any[]>([]);
   const [colaboradorNome, setColaboradorNome] = useState("");
   const [colaboradorWhatsapp, setColaboradorWhatsapp] = useState("");
   const [selectedCargoId, setSelectedCargoId] = useState<string>("");
@@ -332,6 +337,70 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
   const [beneficiarioTipo, setBeneficiarioTipo] = useState<"titular" | "dependente">("titular");
   const [dependenteParentesco, setDependenteParentesco] = useState<string>("Filho(a) / Adolescente");
   const [dependenteInfo, setDependenteInfo] = useState<string>("");
+  const [frequenciaSelecionada, setFrequenciaSelecionada] = useState<"semanal" | "quinzenal">("semanal");
+
+  const handleVerificarCpfColaborador = () => {
+    const cleanCpf = colaboradorCpf.replace(/\D/g, "");
+    if (!cleanCpf || cleanCpf.length < 11) {
+      setCpfErro("Por favor, digite um CPF válido com 11 dígitos.");
+      setCpfVerificado(false);
+      return;
+    }
+
+    const colaboradores = empresaValidated?.colaboradoresList || [];
+    // Se for empresa demo e o usuário digitar o CPF de exemplo ou qualquer CPF válido, simulamos o colaborador
+    const isDemo = empresaValidated?.id === "empresa-demo" || colaboradores.length === 0;
+    
+    let titularEncontrado = colaboradores.find((c: any) => {
+      const cCpf = (c.cpf || "").replace(/\D/g, "");
+      const isTitular = !c.tipo || c.tipo === "titular";
+      return cCpf === cleanCpf && isTitular;
+    });
+
+    if (!titularEncontrado && isDemo) {
+      titularEncontrado = {
+        nomeCompleto: "João da Silva (Colaborador Exemplo)",
+        cpf: cleanCpf,
+        cargo: "analista",
+        telefone: "(11) 99999-9999"
+      };
+      // Adicionar dependentes demo se não houver
+      if (dependentesCadastrados.length === 0) {
+        setDependentesCadastrados([
+          { nomeCompleto: "Maria da Silva", parentesco: "Cônjuge / Parceiro(a)" },
+          { nomeCompleto: "Pedrinho da Silva (12 anos)", parentesco: "Filho(a) / Criança" }
+        ]);
+      }
+    }
+
+    if (titularEncontrado) {
+      setColaboradorNome(titularEncontrado.nomeCompleto || titularEncontrado.nome || "");
+      if (titularEncontrado.cargo) {
+        setSelectedCargoId(titularEncontrado.cargo);
+      }
+      if (titularEncontrado.telefone || titularEncontrado.whatsapp) {
+        setColaboradorWhatsapp(titularEncontrado.telefone || titularEncontrado.whatsapp || "");
+      }
+
+      // Buscar dependentes cadastrados para este titular
+      const deps = colaboradores.filter((c: any) => {
+        const isDep = c.tipo === "dependente";
+        const vinculo = (c.titularVinculado || "").replace(/\D/g, "");
+        const nomeVinculo = (c.titularVinculado || "").toLowerCase();
+        const nomeTitular = (titularEncontrado.nomeCompleto || titularEncontrado.nome || "").toLowerCase();
+        return isDep && (vinculo === cleanCpf || (nomeVinculo && nomeVinculo === nomeTitular));
+      });
+      if (deps.length > 0) {
+        setDependentesCadastrados(deps);
+      }
+
+      setCpfVerificado(true);
+      setCpfErro("");
+    } else {
+      setCpfVerificado(false);
+      setCpfErro(`CPF "${colaboradorCpf}" não consta na base ativa da empresa ${empresaValidated?.nomeEmpresa || ""}. Por favor, procure o RH de sua empresa para averiguar o cadastro e inclusão.`);
+    }
+  };
 
   // Termo / Concordância de Valores
   const [concordouValores, setConcordouValores] = useState(false);
@@ -531,6 +600,7 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
           logoUrl: data.logoUrl || "",
           slogan: data.slogan || "Cuidando do bem-estar e da saúde mental da nossa equipe em parceria com a AcolheMente.",
           email: data.email,
+          colaboradoresList: data.colaboradoresList || [],
           beneficioConfig: data.beneficioConfig,
         };
       } else {
@@ -550,6 +620,7 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
               logoUrl: data.logoUrl || "",
               slogan: data.slogan || "Cuidando do bem-estar e da saúde mental da nossa equipe em parceria com a AcolheMente.",
               email: data.email,
+              colaboradoresList: data.colaboradoresList || [],
               beneficioConfig: data.beneficioConfig,
             };
           }
@@ -601,13 +672,24 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
 
   // Preço e frequência do cargo selecionado para determinado serviço
   const getPrecoInfoDoCargo = (servico: ServicoCorporativoConfig, cargoId: string) => {
-    return (
-      servico.precosPorCargo[cargoId] || {
-        valorSessao: 80,
-        frequenciaRecomendada: "Semanal (4 sessões/mês)",
-        sessoesMesEstimadas: 4,
-      }
-    );
+    const base = servico.precosPorCargo[cargoId] || {
+      valorSessao: 80,
+      frequenciaRecomendada: "Semanal (4 sessões/mês)",
+      sessoesMesEstimadas: 4,
+    };
+
+    if (frequenciaSelecionada === "quinzenal") {
+      return {
+        valorSessao: Math.round(base.valorSessao * 1.15),
+        frequenciaRecomendada: "Quinzenal (~2 sessões/mês em média)",
+        sessoesMesEstimadas: 2,
+      };
+    }
+    return {
+      ...base,
+      frequenciaRecomendada: "Semanal (~4 sessões/mês em média)",
+      sessoesMesEstimadas: 4,
+    };
   };
 
   // Quando o colaborador confirma os dados e avança para a vitrine
@@ -1099,161 +1181,242 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
             </div>
           </div>
 
-          {/* Formulário de Identificação & Cargo */}
+          {/* Formulário de Identificação & CPF */}
           <div className="bg-white p-6 sm:p-8 rounded-3xl border border-soft shadow-xs space-y-6">
             <div className="border-b border-soft pb-3">
               <h3 className="font-serif text-lg font-bold text-forest flex items-center gap-2">
                 <User className="w-5 h-5 text-forest/70" />
-                1. Seus Dados de Acesso
+                1. Confirmação de Identidade por CPF
               </h3>
               <p className="text-xs text-forest/60">
-                Necessários para o terapeuta saber quem você é ao iniciar a conversa no WhatsApp.
+                Insira seu CPF para que o sistema puxe automaticamente seu nome, cargo e dependentes cadastrados pelo RH.
               </p>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold uppercase tracking-wider text-forest/80">
-                  Seu Nome Completo *
-                </label>
+            {/* Bloco de CPF */}
+            <div className="space-y-3 p-4 bg-warm/30 rounded-2xl border border-soft">
+              <label className="block text-xs font-bold uppercase tracking-wider text-forest/80">
+                Seu CPF (Cadastrado no RH) *
+              </label>
+              <div className="flex flex-col sm:flex-row gap-2">
                 <input
                   type="text"
-                  value={colaboradorNome}
-                  onChange={(e) => setColaboradorNome(e.target.value)}
-                  placeholder="Ex: Mariana Ferreira"
-                  className="w-full text-xs sm:text-sm px-4 py-2.5 bg-warm/30 border border-soft rounded-xl focus:outline-none focus:border-forest text-forest"
+                  value={colaboradorCpf}
+                  onChange={(e) => setColaboradorCpf(e.target.value)}
+                  placeholder="000.000.000-00"
+                  className="flex-1 text-xs sm:text-sm px-4 py-2.5 bg-white border border-soft rounded-xl focus:outline-none focus:border-forest text-forest font-mono"
                 />
+                <button
+                  type="button"
+                  onClick={handleVerificarCpfColaborador}
+                  className="px-5 py-2.5 bg-forest text-white hover:bg-forest/90 text-xs font-bold rounded-xl transition-all shadow-2xs cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <Search className="w-4 h-4 text-sun" />
+                  <span>Verificar Cadastro</span>
+                </button>
               </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold uppercase tracking-wider text-forest/80">
-                  Seu WhatsApp com DDD *
-                </label>
-                <input
-                  type="tel"
-                  value={colaboradorWhatsapp}
-                  onChange={(e) => setColaboradorWhatsapp(e.target.value)}
-                  placeholder="Ex: (11) 98765-4321"
-                  className="w-full text-xs sm:text-sm px-4 py-2.5 bg-warm/30 border border-soft rounded-xl focus:outline-none focus:border-forest text-forest"
-                />
-              </div>
-            </div>
-
-            {/* SELEÇÃO DO CARGO NA EMPRESA */}
-            <div className="space-y-2 pt-2">
-              <label className="text-xs font-bold uppercase tracking-wider text-forest/80 flex items-center gap-1.5">
-                <Briefcase className="w-4 h-4 text-forest/60" /> Seu Cargo / Nível na Empresa *
-              </label>
-              <select
-                value={selectedCargoId}
-                onChange={(e) => setSelectedCargoId(e.target.value)}
-                className="w-full text-xs sm:text-sm px-4 py-3 bg-warm/40 border border-soft rounded-xl focus:outline-none focus:border-forest text-forest font-bold cursor-pointer"
-              >
-                {cargosDisponiveis.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.nome}
-                  </option>
-                ))}
-              </select>
               <p className="text-[11px] text-forest/60">
-                Os valores de coparticipação e limites de subsídio da sua empresa são ajustados conforme o seu nível de atuação.
+                Instrução: Se o seu CPF não constar na plataforma, procure o <strong>RH da sua empresa</strong> para averiguar o seu cadastro e inclusão no convênio AcolheMente.
               </p>
-            </div>
 
-            {/* QUEM É O PACIENTE: TITULAR OU DEPENDENTE? */}
-            <div className="space-y-3 pt-3 border-t border-soft">
-              <label className="text-xs font-bold uppercase tracking-wider text-forest/80 flex items-center gap-1.5">
-                <Users className="w-4 h-4 text-forest/60" /> Para quem é o atendimento psicológico? *
-              </label>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={() => setBeneficiarioTipo("titular")}
-                  className={`p-4 rounded-2xl border text-left transition-all flex items-start gap-3 cursor-pointer ${
-                    beneficiarioTipo === "titular"
-                      ? "bg-forest/5 border-forest text-forest shadow-xs ring-1 ring-forest/20"
-                      : "bg-white border-soft text-forest/70 hover:bg-warm/30"
-                  }`}
-                >
-                  <div className={`w-5 h-5 rounded-full border flex items-center justify-center mt-0.5 shrink-0 ${
-                    beneficiarioTipo === "titular" ? "border-forest bg-forest text-white" : "border-soft"
-                  }`}>
-                    {beneficiarioTipo === "titular" && <Check className="w-3 h-3" />}
-                  </div>
+              {cpfErro && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-900 text-xs flex items-start gap-2 animate-in fade-in">
+                  <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
                   <div>
-                    <span className="font-bold text-xs sm:text-sm text-forest block">
-                      Para mim mesmo(a)
-                    </span>
-                    <span className="text-[11px] text-forest/60">
-                      Colaborador(a) titular da empresa.
-                    </span>
+                    <p className="font-bold">CPF não localizado</p>
+                    <p className="mt-0.5">{cpfErro}</p>
                   </div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setBeneficiarioTipo("dependente")}
-                  className={`p-4 rounded-2xl border text-left transition-all flex items-start gap-3 cursor-pointer ${
-                    beneficiarioTipo === "dependente"
-                      ? "bg-forest/5 border-forest text-forest shadow-xs ring-1 ring-forest/20"
-                      : "bg-white border-soft text-forest/70 hover:bg-warm/30"
-                  }`}
-                >
-                  <div className={`w-5 h-5 rounded-full border flex items-center justify-center mt-0.5 shrink-0 ${
-                    beneficiarioTipo === "dependente" ? "border-forest bg-forest text-white" : "border-soft"
-                  }`}>
-                    {beneficiarioTipo === "dependente" && <Check className="w-3 h-3" />}
-                  </div>
-                  <div>
-                    <span className="font-bold text-xs sm:text-sm text-forest block">
-                      Para um dependente familiar
-                    </span>
-                    <span className="text-[11px] text-forest/60">
-                      Filho(a), cônjuge ou familiar com benefício estendido.
-                    </span>
-                  </div>
-                </button>
-              </div>
-
-              {/* Campos adicionais caso seja dependente */}
-              {beneficiarioTipo === "dependente" && (
-                <div className="p-4 bg-sun-light/30 border border-sun/30 rounded-2xl space-y-3 animate-in fade-in">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <label className="text-[11px] font-bold uppercase tracking-wider text-forest/80">
-                        Grau de Parentesco *
-                      </label>
-                      <select
-                        value={dependenteParentesco}
-                        onChange={(e) => setDependenteParentesco(e.target.value)}
-                        className="w-full text-xs px-3 py-2 bg-white border border-soft rounded-xl focus:outline-none focus:border-forest text-forest font-semibold cursor-pointer"
-                      >
-                        <option value="Filho(a) / Criança">Filho(a) — Criança</option>
-                        <option value="Filho(a) / Adolescente">Filho(a) — Adolescente</option>
-                        <option value="Cônjuge / Parceiro(a)">Cônjuge / Parceiro(a)</option>
-                        <option value="Pai / Mãe / Familiar">Pai / Mãe / Outro familiar</option>
-                      </select>
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-[11px] font-bold uppercase tracking-wider text-forest/80">
-                        Nome e Idade do Dependente *
-                      </label>
-                      <input
-                        type="text"
-                        value={dependenteInfo}
-                        onChange={(e) => setDependenteInfo(e.target.value)}
-                        placeholder="Ex: Lucas Ferreira (14 anos)"
-                        className="w-full text-xs px-3 py-2 bg-white border border-soft rounded-xl focus:outline-none focus:border-forest text-forest"
-                      />
-                    </div>
-                  </div>
-                  <p className="text-[10px] text-forest/60">
-                    O terapeuta saberá com antecedência a faixa etária para confirmar se atende à especialidade infantil ou juvenil.
-                  </p>
                 </div>
               )}
+
+              {cpfVerificado && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-900 text-xs flex items-center gap-2 animate-in fade-in">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <div>
+                    <p className="font-bold">Colaborador(a) identificado(a) com sucesso!</p>
+                    <p className="text-[11px] text-emerald-800">Seus dados de cargo e dependentes elegíveis foram carregados automaticamente.</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Campos preenchidos automaticamente / exibidos após verificação */}
+            <div className="space-y-6 pt-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold uppercase tracking-wider text-forest/80">
+                    Seu Nome Completo *
+                  </label>
+                  <input
+                    type="text"
+                    value={colaboradorNome}
+                    onChange={(e) => setColaboradorNome(e.target.value)}
+                    placeholder="Ex: Mariana Ferreira"
+                    className="w-full text-xs sm:text-sm px-4 py-2.5 bg-warm/30 border border-soft rounded-xl focus:outline-none focus:border-forest text-forest font-semibold"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold uppercase tracking-wider text-forest/80">
+                    Seu WhatsApp com DDD *
+                  </label>
+                  <input
+                    type="tel"
+                    value={colaboradorWhatsapp}
+                    onChange={(e) => setColaboradorWhatsapp(e.target.value)}
+                    placeholder="Ex: (11) 98765-4321"
+                    className="w-full text-xs sm:text-sm px-4 py-2.5 bg-warm/30 border border-soft rounded-xl focus:outline-none focus:border-forest text-forest"
+                  />
+                </div>
+              </div>
+
+              {/* SELEÇÃO DO CARGO NA EMPRESA */}
+              <div className="space-y-2">
+                <label className="text-xs font-bold uppercase tracking-wider text-forest/80 flex items-center gap-1.5">
+                  <Briefcase className="w-4 h-4 text-forest/60" /> Seu Cargo / Nível na Empresa *
+                </label>
+                <select
+                  value={selectedCargoId}
+                  onChange={(e) => setSelectedCargoId(e.target.value)}
+                  className="w-full text-xs sm:text-sm px-4 py-3 bg-warm/40 border border-soft rounded-xl focus:outline-none focus:border-forest text-forest font-bold cursor-pointer"
+                >
+                  {cargosDisponiveis.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.nome}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[11px] text-forest/60">
+                  Os valores de coparticipação e limites de subsídio da sua empresa são ajustados conforme o seu nível de atuação.
+                </p>
+              </div>
+
+              {/* QUEM É O PACIENTE: TITULAR OU DEPENDENTES PRÉ-CADASTRADOS */}
+              <div className="space-y-3 pt-3 border-t border-soft">
+                <label className="text-xs font-bold uppercase tracking-wider text-forest/80 flex items-center gap-1.5">
+                  <Users className="w-4 h-4 text-forest/60" /> Para quem você deseja usar o benefício? *
+                </label>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setBeneficiarioTipo("titular")}
+                    className={`p-4 rounded-2xl border text-left transition-all flex items-start gap-3 cursor-pointer ${
+                      beneficiarioTipo === "titular"
+                        ? "bg-forest/5 border-forest text-forest shadow-xs ring-1 ring-forest/20"
+                        : "bg-white border-soft text-forest/70 hover:bg-warm/30"
+                    }`}
+                  >
+                    <div className={`w-5 h-5 rounded-full border flex items-center justify-center mt-0.5 shrink-0 ${
+                      beneficiarioTipo === "titular" ? "border-forest bg-forest text-white" : "border-soft"
+                    }`}>
+                      {beneficiarioTipo === "titular" && <Check className="w-3 h-3" />}
+                    </div>
+                    <div>
+                      <span className="font-bold text-xs sm:text-sm text-forest block">
+                        Para mim mesmo(a) (Titular)
+                      </span>
+                      <span className="text-[11px] text-forest/60">
+                        {colaboradorNome || "Colaborador(a)"}
+                      </span>
+                    </div>
+                  </button>
+
+                  {/* Exibir dependentes cadastrados ou opção genérica */}
+                  {dependentesCadastrados.length > 0 ? (
+                    dependentesCadastrados.map((dep, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => {
+                          setBeneficiarioTipo("dependente");
+                          setDependenteInfo(`${dep.nomeCompleto || dep.nome} (${dep.parentesco || "Dependente"})`);
+                          setDependenteParentesco(dep.parentesco || "Familiar");
+                        }}
+                        className={`p-4 rounded-2xl border text-left transition-all flex items-start gap-3 cursor-pointer ${
+                          beneficiarioTipo === "dependente" && dependenteInfo.includes(dep.nomeCompleto || dep.nome)
+                            ? "bg-forest/5 border-forest text-forest shadow-xs ring-1 ring-forest/20"
+                            : "bg-white border-soft text-forest/70 hover:bg-warm/30"
+                        }`}
+                      >
+                        <div className={`w-5 h-5 rounded-full border flex items-center justify-center mt-0.5 shrink-0 ${
+                          beneficiarioTipo === "dependente" && dependenteInfo.includes(dep.nomeCompleto || dep.nome) ? "border-forest bg-forest text-white" : "border-soft"
+                        }`}>
+                          {beneficiarioTipo === "dependente" && dependenteInfo.includes(dep.nomeCompleto || dep.nome) && <Check className="w-3 h-3" />}
+                        </div>
+                        <div>
+                          <span className="font-bold text-xs sm:text-sm text-forest block">
+                            {dep.nomeCompleto || dep.nome}
+                          </span>
+                          <span className="text-[11px] text-forest/60">
+                            Dependente ({dep.parentesco || "Familiar"})
+                          </span>
+                        </div>
+                      </button>
+                    ))
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setBeneficiarioTipo("dependente")}
+                      className={`p-4 rounded-2xl border text-left transition-all flex items-start gap-3 cursor-pointer ${
+                        beneficiarioTipo === "dependente"
+                          ? "bg-forest/5 border-forest text-forest shadow-xs ring-1 ring-forest/20"
+                          : "bg-white border-soft text-forest/70 hover:bg-warm/30"
+                      }`}
+                    >
+                      <div className={`w-5 h-5 rounded-full border flex items-center justify-center mt-0.5 shrink-0 ${
+                        beneficiarioTipo === "dependente" ? "border-forest bg-forest text-white" : "border-soft"
+                      }`}>
+                        {beneficiarioTipo === "dependente" && <Check className="w-3 h-3" />}
+                      </div>
+                      <div>
+                        <span className="font-bold text-xs sm:text-sm text-forest block">
+                          Para um dependente familiar
+                        </span>
+                        <span className="text-[11px] text-forest/60">
+                          Filho(a), cônjuge ou familiar estendido.
+                        </span>
+                      </div>
+                    </button>
+                  )}
+                </div>
+
+                {/* Campos adicionais caso seja dependente */}
+                {beneficiarioTipo === "dependente" && dependentesCadastrados.length === 0 && (
+                  <div className="p-4 bg-sun-light/30 border border-sun/30 rounded-2xl space-y-3 animate-in fade-in mt-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-bold uppercase tracking-wider text-forest/80">
+                          Grau de Parentesco *
+                        </label>
+                        <select
+                          value={dependenteParentesco}
+                          onChange={(e) => setDependenteParentesco(e.target.value)}
+                          className="w-full text-xs px-3 py-2 bg-white border border-soft rounded-xl focus:outline-none focus:border-forest text-forest font-semibold cursor-pointer"
+                        >
+                          <option value="Filho(a) / Criança">Filho(a) — Criança</option>
+                          <option value="Filho(a) / Adolescente">Filho(a) — Adolescente</option>
+                          <option value="Cônjuge / Parceiro(a)">Cônjuge / Parceiro(a)</option>
+                          <option value="Pai / Mãe / Familiar">Pai / Mãe / Outro familiar</option>
+                        </select>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-bold uppercase tracking-wider text-forest/80">
+                          Nome e Idade do Dependente *
+                        </label>
+                        <input
+                          type="text"
+                          value={dependenteInfo}
+                          onChange={(e) => setDependenteInfo(e.target.value)}
+                          placeholder="Ex: Lucas Ferreira (14 anos)"
+                          className="w-full text-xs px-3 py-2 bg-white border border-soft rounded-xl focus:outline-none focus:border-forest text-forest"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
@@ -1278,6 +1441,75 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
               <span className="px-3 py-1 bg-warm rounded-xl text-[11px] font-bold text-forest/80 border border-soft self-start sm:self-auto">
                 Transparência Total
               </span>
+            </div>
+
+            {/* SELETOR DE FREQUÊNCIA FIXO E IMEDIATO */}
+            <div className="p-4 bg-warm/50 rounded-2xl border border-soft space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold uppercase tracking-wider text-forest flex items-center gap-1.5">
+                  <Calendar className="w-4 h-4 text-sun-dark" />
+                  Frequência & Qtde Mensal de Sessões Desejada *
+                </span>
+                <span className="text-[10px] bg-sun-light/70 text-forest px-2 py-0.5 rounded-md font-semibold">
+                  Ajusta valores em tempo real
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setFrequenciaSelecionada("semanal")}
+                  className={`p-3.5 rounded-xl border text-left transition-all flex items-start gap-2.5 cursor-pointer ${
+                    frequenciaSelecionada === "semanal"
+                      ? "bg-forest/5 border-forest text-forest shadow-xs ring-1 ring-forest/20"
+                      : "bg-white border-soft text-forest/70 hover:bg-warm/30"
+                  }`}
+                >
+                  <div className={`w-4 h-4 rounded-full border flex items-center justify-center mt-0.5 shrink-0 ${
+                    frequenciaSelecionada === "semanal" ? "border-forest bg-forest text-white" : "border-soft"
+                  }`}>
+                    {frequenciaSelecionada === "semanal" && <Check className="w-2.5 h-2.5" />}
+                  </div>
+                  <div>
+                    <span className="font-bold text-xs text-forest block">
+                      Frequência Semanal (~4 sessões/mês)
+                    </span>
+                    <span className="text-[11px] text-forest/60 block mt-0.5">
+                      Maior constância terapêutica. Aplicado menor preço unitário por sessão.
+                    </span>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setFrequenciaSelecionada("quinzenal")}
+                  className={`p-3.5 rounded-xl border text-left transition-all flex items-start gap-2.5 cursor-pointer ${
+                    frequenciaSelecionada === "quinzenal"
+                      ? "bg-forest/5 border-forest text-forest shadow-xs ring-1 ring-forest/20"
+                      : "bg-white border-soft text-forest/70 hover:bg-warm/30"
+                  }`}
+                >
+                  <div className={`w-4 h-4 rounded-full border flex items-center justify-center mt-0.5 shrink-0 ${
+                    frequenciaSelecionada === "quinzenal" ? "border-forest bg-forest text-white" : "border-soft"
+                  }`}>
+                    {frequenciaSelecionada === "quinzenal" && <Check className="w-2.5 h-2.5" />}
+                  </div>
+                  <div>
+                    <span className="font-bold text-xs text-forest block">
+                      Frequência Quinzenal (~2 sessões/mês)
+                    </span>
+                    <span className="text-[11px] text-forest/60 block mt-0.5">
+                      Maior flexibilidade na agenda. Preço por sessão ajustado proporcionalmente.
+                    </span>
+                  </div>
+                </button>
+              </div>
+
+              {/* Lembrete sobre meses com 5 semanas */}
+              <p className="text-[11px] text-forest/70 bg-white p-2.5 rounded-xl border border-soft/80 flex items-start gap-2">
+                <span className="text-sun-dark font-bold shrink-0">⚠️ Lembrete importante:</span>
+                <span>Em ambas as frequências, alguns meses do ano podem contar com <strong>3 ou 5 sessões</strong> (ao invés de exatamente 2 ou 4) devido a meses que possuem 5 semanas no calendário. O planejamento e cronograma são ajustados proporcionalmente com o seu profissional.</span>
+              </p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

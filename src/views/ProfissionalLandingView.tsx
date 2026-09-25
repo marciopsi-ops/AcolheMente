@@ -47,6 +47,8 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
     outrosPublicosExperiencia: '',
     outrosPublicosGosto: '',
     motivacao: '',
+    comoConheceu: '',
+    outroComoConheceu: '',
     servicosOferecidos: [] as string[],
     servicosOrcamentoAcessivel: [] as string[],
     outrosServicos: ''
@@ -172,8 +174,8 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
     }
 
     if (step === 4) {
-      if (!formData.motivacao) {
-        setErrorMsg("Por favor, preencha todos os campos obrigatórios.");
+      if (!formData.comoConheceu || !formData.motivacao) {
+        setErrorMsg("Por favor, preencha todos os campos obrigatórios, incluindo como conheceu nossa plataforma.");
         return;
       }
       if (!cienciaTaxa) {
@@ -279,10 +281,10 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
                   A terapia não deve ser um privilégio.
                 </h1>
                 <p className="text-lg text-forest/80 leading-relaxed max-w-lg mt-4">
-                  Entendemos que o cuidado com a saúde mental é uma necessidade de todos e não um luxo. Estamos buscando profissionais motivados por esse propósito humanizado e acessível.
+                  Entendemos que o cuidado com a saúde mental é uma necessidade de todos e não um privilégio. Estamos buscando profissionais motivados por esse propósito humanizado e acessível.
                 </p>
                 <p className="text-lg text-forest/80 leading-relaxed max-w-lg">
-                  Ao abrir sua agenda e disponibilizar algumas horas, você possibilita o acesso a pessoas em vulnerabilidade ou através de subsídios solidários. Você continua sendo remunerado por isso, porém praticando valores compatíveis com o projeto.
+                  Ao abrir sua agenda e disponibilizar horas, você possibilita o acesso a pessoas em vulnerabilidade ou através de benefício corporativo. Você continua sendo remunerado por isso, porém praticando valores compatíveis com nossa plataforma.
                 </p>
               </div>
               <div className="w-full lg:w-1/2 flex justify-center lg:justify-end">
@@ -308,7 +310,7 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
                   <Clock className="w-6 h-6" />
                 </div>
                 <h3 className="font-semibold text-lg text-forest">Liberdade</h3>
-                <p className="text-sm text-forest/80 leading-relaxed">Escolha doar de 1 a 20 horas por mês. Sua disponibilidade constrói o tamanho da nossa rede de apoio.</p>
+                <p className="text-sm text-forest/80 leading-relaxed">Escolha a quantidade de horas por mês para atender em nossa plataforma. Sua disponibilidade constrói o tamanho da nossa rede de apoio.</p>
               </div>
 
               <div className="bg-white/90 backdrop-blur-md p-6 rounded-3xl border border-white/80 flex flex-col gap-3 shadow-lg shadow-forest/5 hover:shadow-xl hover:border-sun/40 hover:-translate-y-1 transition-all duration-300 group">
@@ -324,7 +326,7 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
                   <UserPlus className="w-6 h-6" />
                 </div>
                 <h3 className="font-semibold text-lg text-forest">Ecossistema</h3>
-                <p className="text-sm text-forest/80 leading-relaxed">Os pacientes chegam através de empresas parceiras ou do nosso fundo solidário, já engajados para tratamento.</p>
+                <p className="text-sm text-forest/80 leading-relaxed">Os pacientes chegam através de empresas parceiras ou do nosso canal de acolhimento acessível, já engajados para tratamento.</p>
               </div>
 
               <div className="bg-white/90 backdrop-blur-md p-6 rounded-3xl border border-white/80 flex flex-col gap-3 shadow-lg shadow-forest/5 hover:shadow-xl hover:border-sun/40 hover:-translate-y-1 transition-all duration-300 group">
@@ -495,14 +497,14 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
                   <h2 className="font-serif text-3xl font-medium text-forest mb-2">
                     {step === 1 && "Dados Pessoais"}
                     {step === 2 && "Sua Formação"}
-                    {step === 3 && "Público-Alvo"}
+                    {step === 3 && "Serviços oferecidos e Experiência clínica"}
                     {step === 4 && "Seu Propósito"}
                   </h2>
                   <p className="text-forest/80 text-sm">
                     {step === 1 && "Preencha suas informações de identificação e contato."}
                     {step === 2 && "Conte-nos um pouco sobre sua formação e disponibilidade."}
-                    {step === 3 && "Selecione os públicos com os quais você tem experiência ou prefere atender."}
-                    {step === 4 && "Diga-nos o que te motiva a fazer parte do AcolheMente."}
+                    {step === 3 && "Selecione os serviços profissionais oferecidos e informe sua experiência com atendimento clínico."}
+                    {step === 4 && "Diga-nos como nos conheceu e o que te motiva a fazer parte do AcolheMente."}
                   </p>
                   
                   <div className="flex gap-2 mt-6">
@@ -855,7 +857,7 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
                           Experiência de no mínimo um ano com atendimento clínico de:
                         </label>
                         <div className="flex flex-col gap-2 px-2">
-                          {['Adulto', 'Idoso', 'Criança', 'Adolescente', 'Casal', 'Família', 'Outros'].map(op => (
+                          {['Adulto', 'Idoso', 'Criança', 'Adolescente', 'Casal', 'Família', 'Não tenho experiência clínica/ menos de 1 ano de experiência', 'Outros'].map(op => (
                             <label key={`exp-${op}`} className="flex items-center gap-2 text-sm text-forest cursor-pointer w-fit">
                               <input 
                                 type="checkbox" 
@@ -914,6 +916,34 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
 
                   {step === 4 && (
                     <div className="flex flex-col gap-6 animate-in fade-in duration-500">
+                      <div className="flex flex-col gap-2">
+                        <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">Como conheceu nossa plataforma? *</label>
+                        <select
+                          required
+                          name="comoConheceu"
+                          value={formData.comoConheceu}
+                          onChange={handleChange}
+                          className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest"
+                        >
+                          <option value="">Selecione uma opção...</option>
+                          <option value="Redes Sociais (Instagram, LinkedIn, etc.)">Redes Sociais (Instagram, LinkedIn, etc.)</option>
+                          <option value="Indicação de colega / amigo">Indicação de colega / amigo</option>
+                          <option value="Google / Pesquisa na internet">Google / Pesquisa na internet</option>
+                          <option value="Evento ou Palestra">Evento ou Palestra</option>
+                          <option value="Outros">Outros</option>
+                        </select>
+                        {formData.comoConheceu === 'Outros' && (
+                          <input
+                            type="text"
+                            name="outroComoConheceu"
+                            placeholder="Especifique como conheceu..."
+                            value={formData.outroComoConheceu}
+                            onChange={handleChange}
+                            className="mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl text-xs text-forest focus:outline-none focus:border-sun-dark"
+                          />
+                        )}
+                      </div>
+
                       <div className="flex flex-col gap-1">
                         <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">Por que você quer fazer parte desse projeto? *</label>
                         <textarea 

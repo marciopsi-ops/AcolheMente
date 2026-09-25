@@ -837,23 +837,22 @@ export function GestaoEsteiraTarefas({
     <div className="flex-1 overflow-auto p-4 md:p-8 flex flex-col gap-6 slide-up bg-warm">
       <div className="max-w-7xl w-full mx-auto flex flex-col gap-6">
         {/* Top Header & Metrics Banner */}
-        <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 bg-white p-6 rounded-[2rem] border border-soft shadow-xs">
-          <div className="flex items-start gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-forest/10 border border-forest/20 flex items-center justify-center text-forest shrink-0">
-              <Layers className="w-6 h-6" />
+        <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3 bg-white p-4 sm:p-5 rounded-2xl border border-soft shadow-xs">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl bg-forest/10 border border-forest/20 flex items-center justify-center text-forest shrink-0">
+              <Layers className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="font-serif text-2xl md:text-3xl font-medium text-forest">
-                  Esteira de Tarefas, Alertas e Pendências
+                <h1 className="font-serif text-base sm:text-lg font-bold text-forest">
+                  Esteira de Tarefas & Pendências
                 </h1>
-                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-forest text-white">
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-forest text-white">
                   {totalUntreatedDemands} {totalUntreatedDemands === 1 ? "demanda" : "demandas"}
                 </span>
               </div>
-              <p className="text-xs text-forest/70 mt-1 max-w-2xl">
-                Organização cronológica de todas as demandas pendentes agrupadas por paciente, profissional ou empresa. 
-                Os casos mais antigos estão no topo da esteira (FIFO) para garantir atendimento ágil e sem gargalos.
+              <p className="text-[11px] text-forest/70 mt-0.5 max-w-2xl leading-relaxed">
+                Demandas pendentes agrupadas por paciente, profissional ou empresa em ordem cronológica (FIFO).
               </p>
             </div>
           </div>
@@ -864,10 +863,10 @@ export function GestaoEsteiraTarefas({
               <button
                 type="button"
                 onClick={handleTratarProximo}
-                className="px-4 py-2.5 bg-forest text-white hover:bg-forest/90 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center gap-2 transition-all shadow-sm hover:scale-[1.02] active:scale-[0.98]"
+                className="px-3 py-1.5 bg-forest text-white hover:bg-forest/90 rounded-lg font-semibold text-xs flex items-center gap-1.5 transition-all shadow-2xs hover:scale-102 active:scale-98 cursor-pointer"
                 title="Abrir a demanda que está esperando há mais tempo no topo da esteira"
               >
-                <Zap className="w-4 h-4 text-sun" />
+                <Zap className="w-3.5 h-3.5 text-sun" />
                 <span>Tratar Próxima Demanda</span>
               </button>
             )}

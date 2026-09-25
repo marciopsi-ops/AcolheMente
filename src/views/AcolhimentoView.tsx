@@ -17,7 +17,8 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
   const [accessType, setAccessType] = useState<AccessType>(() => {
     const params = new URLSearchParams(window.location.search);
     const via = params.get("via")?.toLowerCase();
-    if (via === "corporativo") return "Corporativo";
+    const convenio = params.get("convenio") || params.get("empresa") || params.get("codigo") || params.get("codigo_empresa");
+    if (via === "corporativo" || Boolean(convenio)) return "Corporativo";
     return "Particular";
   });
   const [step, setStep] = useState<number>(1);
