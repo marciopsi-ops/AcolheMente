@@ -8,6 +8,7 @@ import {
   where,
   getDocs,
   onSnapshot,
+  addDoc,
 } from "firebase/firestore";
 import * as XLSX from "xlsx";
 import { db } from "../lib/firebase";
@@ -56,6 +57,10 @@ import {
   Wallet,
   Receipt,
   CheckCircle,
+  BookOpen,
+  Send,
+  HelpCircle,
+  FileCheck2,
 } from "lucide-react";
 import {
   CategoriaEmpresa,
@@ -68,6 +73,10 @@ import {
   CargoEmpresa,
   ServicoCorporativoConfig,
   DEFAULT_SERVICOS_CORPORATIVOS,
+  getEmpresaPin,
+  ItemCatalogoCorporativo,
+  getCatalogoEmpresa,
+  SolicitacaoOrcamentoCorporativo,
 } from "../types/corporativo";
 import logoImage from "../assets/images/logo_acolhe.jpeg";
 
@@ -214,6 +223,22 @@ export function PortalEmpresaView({
   // Modal de Relatório Mensal para Impressão / PDF
   const [showRelatorioModal, setShowRelatorioModal] = useState(false);
 
+  // Catálogo de Serviços & Intervenções NR-1 (GRO / PGR) & Solicitação de Orçamento
+  const [selectedServicoParaOrcamento, setSelectedServicoParaOrcamento] = useState<ItemCatalogoCorporativo | null>(null);
+  const [showModalOrcamento, setShowModalOrcamento] = useState(false);
+  const [formOrcamento, setFormOrcamento] = useState({
+    nomeContato: "",
+    emailContato: "",
+    telefoneContato: "",
+    vidasEstimadas: 0,
+    formato: "online" as "online" | "presencial" | "hibrido",
+    urgencia: "normal" as "normal" | "alta" | "imediata",
+    mensagem: "",
+  });
+  const [isSendingOrcamento, setIsSendingOrcamento] = useState(false);
+  const [orcamentoSucesso, setOrcamentoSucesso] = useState(false);
+  const [filtroCategoriaCatalogo, setFiltroCategoriaCatalogo] = useState<string>("todas");
+
   // Helper de Toast
   const showToast = (text: string, type: "success" | "error" | "info" = "success") => {
     setToastMsg({ text, type });
@@ -246,9 +271,9 @@ export function PortalEmpresaView({
           setEmpresaAtivaId(data.id);
           setColaboradoresList(Array.isArray(data.colaboradoresList) ? data.colaboradoresList : []);
 
-          // Checa PIN / Autenticação
+          // Checa PIN / Autenticação por Senha Numérica (4 dígitos)
           const sessionAuth = sessionStorage.getItem(`portal_rh_auth_${empresaId}`);
-          if (!data.pinAcessoRH || sessionAuth === "true") {
+          if (sessionAuth === "true") {
             setIsAuthenticated(true);
           } else {
             setIsAuthenticated(false);
@@ -387,13 +412,16 @@ export function PortalEmpresaView({
         return;
       }
 
-      // Valida PIN se houver
-      if (found.pinAcessoRH && found.pinAcessoRH.trim()) {
-        if (found.pinAcessoRH !== loginPin.trim()) {
-          setPinError("PIN de Acesso RH incorreto.");
-          setIsLoggingIn(false);
-          return;
-        }
+      // Valida Senha Numérica (PIN de 4 dígitos)
+      const expectedPin = getEmpresaPin(found);
+      if (
+        loginPin.trim() !== expectedPin &&
+        (!found.pinAcessoRH || found.pinAcessoRH.trim() !== loginPin.trim()) &&
+        (!found.pinAcesso || found.pinAcesso.trim() !== loginPin.trim())
+      ) {
+        setPinError("Senha numérica (PIN de 4 dígitos) incorreta.");
+        setIsLoggingIn(false);
+        return;
       }
 
       setEmpresaId(found.id);
@@ -418,17 +446,18 @@ export function PortalEmpresaView({
     e.preventDefault();
     if (!empresaPrincipal) return;
 
-    if (empresaPrincipal.pinAcessoRH && empresaPrincipal.pinAcessoRH.trim()) {
-      if (pinInput.trim() === empresaPrincipal.pinAcessoRH.trim()) {
-        setIsAuthenticated(true);
-        sessionStorage.setItem(`portal_rh_auth_${empresaPrincipal.id}`, "true");
-        setPinError("");
-        showToast("Identidade confirmada!", "success");
-      } else {
-        setPinError("PIN de Acesso incorreto. Tente novamente.");
-      }
-    } else {
+    const expectedPin = getEmpresaPin(empresaPrincipal);
+    if (
+      pinInput.trim() === expectedPin ||
+      (empresaPrincipal.pinAcessoRH && pinInput.trim() === empresaPrincipal.pinAcessoRH.trim()) ||
+      (empresaPrincipal.pinAcesso && pinInput.trim() === empresaPrincipal.pinAcesso.trim())
+    ) {
       setIsAuthenticated(true);
+      sessionStorage.setItem(`portal_rh_auth_${empresaPrincipal.id}`, "true");
+      setPinError("");
+      showToast("Identidade confirmada! Acesso liberado ao Portal do RH.", "success");
+    } else {
+      setPinError("Senha numérica (PIN de 4 dígitos) incorreta. Tente novamente.");
     }
   };
 
@@ -1200,17 +1229,19 @@ export function PortalEmpresaView({
             // Form PIN da Empresa encontrada
             <form onSubmit={handleVerifyPin} className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-forest mb-1.5">
-                  PIN de Acesso RH / Canal (4 a 6 dígitos)
+                <label className="block text-xs font-bold text-forest mb-1.5 text-center">
+                  Senha Numérica de 4 Dígitos (PIN RH)
                 </label>
-                <div className="relative">
+                <div className="relative max-w-[220px] mx-auto">
                   <input
                     type={showPin ? "text" : "password"}
-                    maxLength={10}
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength={4}
                     value={pinInput}
-                    onChange={(e) => setPinInput(e.target.value)}
-                    placeholder="••••••"
-                    className="w-full pl-4 pr-10 py-3 bg-warm/40 border border-soft focus:border-forest rounded-xl text-center text-lg font-mono tracking-widest text-forest outline-none transition-all"
+                    onChange={(e) => setPinInput(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                    placeholder="••••"
+                    className="w-full pl-4 pr-10 py-3 bg-warm/40 border border-soft focus:border-forest rounded-xl text-center text-2xl font-mono tracking-[0.5em] text-forest outline-none transition-all placeholder:tracking-widest"
                     autoFocus
                   />
                   <button
@@ -1225,7 +1256,12 @@ export function PortalEmpresaView({
 
               <button
                 type="submit"
-                className="w-full py-3 bg-forest text-white hover:bg-forest/90 font-bold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
+                disabled={pinInput.length < 4}
+                className={`w-full py-3 font-bold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                  pinInput.length === 4
+                    ? "bg-forest text-white hover:bg-forest/90"
+                    : "bg-forest/40 text-white/80 cursor-not-allowed"
+                }`}
               >
                 <Unlock className="w-4 h-4 text-sun" />
                 <span>Entrar no Portal</span>
@@ -1247,13 +1283,17 @@ export function PortalEmpresaView({
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-forest mb-1">PIN de Acesso RH (se configurado)</label>
+                <label className="block text-xs font-bold text-forest mb-1">Senha Numérica (PIN de 4 dígitos)</label>
                 <input
                   type="password"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={4}
                   value={loginPin}
-                  onChange={(e) => setLoginPin(e.target.value)}
-                  placeholder="••••••"
-                  className="w-full px-3.5 py-2.5 bg-warm/40 border border-soft focus:border-forest rounded-xl text-xs font-mono text-forest outline-none"
+                  onChange={(e) => setLoginPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                  placeholder="••••"
+                  className="w-full px-3.5 py-2.5 bg-warm/40 border border-soft focus:border-forest rounded-xl text-sm font-mono tracking-widest text-center text-forest outline-none"
+                  required
                 />
               </div>
 
@@ -1711,6 +1751,167 @@ export function PortalEmpresaView({
                   <span>Visualizar Relatório Executivo</span>
                 </button>
               </div>
+            </div>
+
+            {/* ========================================================================= */}
+            {/* SEÇÃO INTEGRADA: CATÁLOGO DE INTERVENÇÕES NR-1 (GRO & PGR) & PRODUTOS */}
+            {/* ========================================================================= */}
+            <div className="bg-white p-5 sm:p-6 rounded-2xl border border-soft shadow-xs space-y-5">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-soft">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-xl bg-sun/20 border border-sun/40 flex items-center justify-center text-forest">
+                      <BookOpen className="w-4 h-4 text-forest" />
+                    </div>
+                    <div>
+                      <h3 className="font-serif text-base sm:text-lg font-bold text-forest flex items-center gap-2">
+                        <span>Catálogo de Intervenções, Treinamentos & Soluções NR-1</span>
+                      </h3>
+                      <p className="text-[11px] text-forest/70">
+                        Com base nos indicadores de saúde mental da equipe, solicite orçamentos sob medida para cumprimento da <strong>NR-1 (GRO & PGR)</strong>, CIPA (Lei 14.457) e treinamentos corporativos.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Filtro de Categorias */}
+                <div className="flex flex-wrap items-center gap-1.5 self-start md:self-center">
+                  {[
+                    { id: "todas", label: "Todos os Serviços" },
+                    { id: "nr1_gro_pgr", label: "NR-1 / GRO & PGR" },
+                    { id: "palestras_workshops", label: "Palestras CIPA" },
+                    { id: "diagnostico_psicossocial", label: "Diagnósticos" },
+                    { id: "lideranca_saude", label: "Liderança" },
+                    { id: "plantao_crise", label: "Gestão de Crise" },
+                  ].map((filtro) => (
+                    <button
+                      key={filtro.id}
+                      type="button"
+                      onClick={() => setFiltroCategoriaCatalogo(filtro.id)}
+                      className={`px-2.5 py-1 rounded-xl text-[11px] font-semibold transition-all cursor-pointer ${
+                        filtroCategoriaCatalogo === filtro.id
+                          ? "bg-forest text-white shadow-2xs"
+                          : "bg-warm text-forest/70 hover:bg-soft hover:text-forest"
+                      }`}
+                    >
+                      {filtro.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Cards do Catálogo */}
+              {(() => {
+                const catalogoCompleto = getCatalogoEmpresa(empresaAtiva);
+                const catalogoFiltrado = catalogoCompleto
+                  .filter((item) => item.ativo)
+                  .filter((item) => (filtroCategoriaCatalogo === "todas" ? true : item.categoria === filtroCategoriaCatalogo));
+
+                if (catalogoFiltrado.length === 0) {
+                  return (
+                    <div className="text-center py-8 text-forest/60 text-xs">
+                      Nenhum serviço disponível nesta categoria no momento.
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {catalogoFiltrado.map((item) => (
+                      <div
+                        key={item.id}
+                        className={`rounded-2xl border p-4.5 flex flex-col justify-between transition-all hover:shadow-md ${
+                          item.destaque
+                            ? "bg-gradient-to-b from-amber-50/40 via-white to-white border-amber-300"
+                            : "bg-white border-soft hover:border-sun/60"
+                        }`}
+                      >
+                        <div className="space-y-3">
+                          {/* Tags e Badges */}
+                          <div className="flex flex-wrap items-center justify-between gap-1.5">
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-forest/10 text-forest">
+                              {item.formatoAtendimento === "online" ? "🌐 Remoto" : item.formatoAtendimento === "presencial" ? "🏢 Presencial" : "🔄 Híbrido"}
+                            </span>
+                            {item.tagNormativa && (
+                              <span className="px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wide bg-rose-50 text-rose-800 border border-rose-200">
+                                {item.tagNormativa}
+                              </span>
+                            )}
+                          </div>
+
+                          <div>
+                            <h4 className="font-serif text-sm font-bold text-forest leading-snug">
+                              {item.titulo}
+                            </h4>
+                            <p className="text-xs text-forest/75 mt-1.5 leading-relaxed">
+                              {item.descricaoCurta}
+                            </p>
+                          </div>
+
+                          {/* Como Funciona */}
+                          {item.comoFunciona && (
+                            <div className="p-3 bg-warm/50 rounded-xl text-[11px] text-forest/80 border border-soft/60 space-y-1">
+                              <span className="font-bold text-forest flex items-center gap-1">
+                                <HelpCircle className="w-3 h-3 text-sun-dark" /> Como funciona:
+                              </span>
+                              <p className="line-clamp-3 leading-relaxed">{item.comoFunciona}</p>
+                            </div>
+                          )}
+
+                          {/* Benefícios em lista */}
+                          {item.beneficiosEsperados && item.beneficiosEsperados.length > 0 && (
+                            <div className="space-y-1">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-forest/60">
+                                Principais Entregáveis:
+                              </span>
+                              <ul className="space-y-1">
+                                {item.beneficiosEsperados.slice(0, 3).map((ben, idx) => (
+                                  <li key={idx} className="flex items-start gap-1.5 text-[11px] text-forest/80">
+                                    <Check className="w-3 h-3 text-emerald-600 shrink-0 mt-0.5" />
+                                    <span className="line-clamp-1">{ben}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Rodapé com Preço Estimado e Botão de Solicitação */}
+                        <div className="pt-4 mt-3 border-t border-soft/60 flex items-center justify-between gap-2">
+                          <div className="flex flex-col">
+                            <span className="text-[9px] uppercase font-bold text-forest/60">Estimativa</span>
+                            <span className="text-[11px] font-semibold text-forest truncate max-w-[130px]">
+                              {item.precoReferencia || "Sob consulta"}
+                            </span>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedServicoParaOrcamento(item);
+                              setFormOrcamento({
+                                nomeContato: empresaAtiva?.nomeResponsavel || empresaAtiva?.contatoNome || "",
+                                emailContato: empresaAtiva?.email || "",
+                                telefoneContato: empresaAtiva?.telefone || "",
+                                vidasEstimadas: vidasCadastradasAtivas || vidasContratadasNum || 10,
+                                formato: item.formatoAtendimento || "online",
+                                urgencia: "normal",
+                                mensagem: `Gostaríamos de receber uma proposta de intervenção para a nossa equipe voltada a "${item.titulo}".`,
+                              });
+                              setOrcamentoSucesso(false);
+                              setShowModalOrcamento(true);
+                            }}
+                            className="px-3 py-1.5 bg-forest hover:bg-forest/90 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer hover:scale-102"
+                          >
+                            <Send className="w-3 h-3 text-sun" />
+                            <span>Solicitar Orçamento</span>
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
           </div>
         )}
@@ -3341,6 +3542,249 @@ export function PortalEmpresaView({
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: SOLICITAÇÃO DE ORÇAMENTO DE SERVIÇO / NR-1 / TREINAMENTOS */}
+      {/* ========================================================================= */}
+      {showModalOrcamento && selectedServicoParaOrcamento && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-forest/40 backdrop-blur-xs overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-soft relative animate-in zoom-in-95 my-8">
+            <div className="flex items-center justify-between pb-3 border-b border-soft mb-4">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-forest text-sun flex items-center justify-center shrink-0">
+                  <Send className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-serif text-base font-bold text-forest">
+                    Solicitar Proposta & Orçamento
+                  </h3>
+                  <span className="text-[11px] text-forest/60">
+                    {empresaAtiva?.nomeEmpresa || empresaAtiva?.razaoSocial}
+                  </span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowModalOrcamento(false);
+                  setSelectedServicoParaOrcamento(null);
+                }}
+                className="p-1.5 text-forest/50 hover:text-forest rounded-xl hover:bg-warm transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {orcamentoSucesso ? (
+              <div className="py-6 text-center space-y-3">
+                <div className="w-14 h-14 bg-emerald-100 text-emerald-700 rounded-full flex items-center justify-center mx-auto shadow-xs">
+                  <CheckCircle2 className="w-8 h-8" />
+                </div>
+                <h4 className="font-serif text-lg font-bold text-forest">
+                  Solicitação Enviada com Sucesso!
+                </h4>
+                <p className="text-xs text-forest/70 max-w-sm mx-auto leading-relaxed">
+                  Nossa equipe de consultoria em Saúde Ocupacional e Psicologia entrará em contato em até <strong>24 horas úteis</strong> com uma proposta personalizada para sua empresa.
+                </p>
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowModalOrcamento(false);
+                      setSelectedServicoParaOrcamento(null);
+                    }}
+                    className="px-6 py-2.5 bg-forest text-white hover:bg-forest/90 font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer"
+                  >
+                    Concluir e Voltar
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  setIsSendingOrcamento(true);
+                  try {
+                    const payload: SolicitacaoOrcamentoCorporativo = {
+                      id: `orcamento_${Date.now()}`,
+                      empresaId: empresaAtiva?.id || empresaPrincipal?.id || "",
+                      empresaNome: empresaAtiva?.nomeEmpresa || empresaAtiva?.razaoSocial || "Empresa Parceira",
+                      catalogoItemId: selectedServicoParaOrcamento.id,
+                      catalogoItemTitulo: selectedServicoParaOrcamento.titulo,
+                      tagNormativa: selectedServicoParaOrcamento.tagNormativa,
+                      contatoNome: formOrcamento.nomeContato,
+                      contatoEmail: formOrcamento.emailContato,
+                      contatoTelefone: formOrcamento.telefoneContato,
+                      vidasEstimadas: Number(formOrcamento.vidasEstimadas) || 0,
+                      formatoDesejado: formOrcamento.formato,
+                      urgencia: formOrcamento.urgencia,
+                      mensagemOuNecessidade: formOrcamento.mensagem,
+                      indicadoresContexto: `Ativos: ${vidasCadastradasAtivas} vidas | Desfechos: ${desfechosAnonimos.emAtendimento} em acolhimento`,
+                      dataSolicitacao: new Date().toISOString(),
+                      status: "novo",
+                    };
+
+                    // Salva na coleção corporativa de solicitações de orçamento
+                    await addDoc(collection(db, "solicitacoes_orcamentos_corporativos"), payload);
+
+                    setOrcamentoSucesso(true);
+                    showToast("Proposta solicitada com sucesso!", "success");
+                  } catch (err: any) {
+                    console.error("Erro ao salvar solicitacao de orcamento:", err);
+                    showToast("Erro ao enviar solicitação. Tente novamente.", "error");
+                  } finally {
+                    setIsSendingOrcamento(false);
+                  }
+                }}
+                className="space-y-4 text-xs"
+              >
+                {/* Card de Resumo do Item Selecionado */}
+                <div className="p-3.5 bg-warm/60 border border-soft rounded-2xl space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-forest text-xs">
+                      {selectedServicoParaOrcamento.titulo}
+                    </span>
+                    {selectedServicoParaOrcamento.tagNormativa && (
+                      <span className="px-2 py-0.5 rounded-full text-[9px] font-extrabold bg-rose-50 text-rose-800 border border-rose-200">
+                        {selectedServicoParaOrcamento.tagNormativa}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-forest/70 line-clamp-2">
+                    {selectedServicoParaOrcamento.descricaoCurta}
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="flex flex-col gap-1">
+                    <label className="font-bold text-forest/70 text-[10px] uppercase">
+                      Nome do Responsável / Solicitante *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={formOrcamento.nomeContato}
+                      onChange={(e) => setFormOrcamento({ ...formOrcamento, nomeContato: e.target.value })}
+                      placeholder="Seu nome completo"
+                      className="px-3 py-2 bg-white border border-soft rounded-xl text-xs text-forest focus:outline-none focus:border-forest"
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1">
+                    <label className="font-bold text-forest/70 text-[10px] uppercase">
+                      E-mail Corporativo *
+                    </label>
+                    <input
+                      type="email"
+                      required
+                      value={formOrcamento.emailContato}
+                      onChange={(e) => setFormOrcamento({ ...formOrcamento, emailContato: e.target.value })}
+                      placeholder="rh@empresa.com.br"
+                      className="px-3 py-2 bg-white border border-soft rounded-xl text-xs text-forest focus:outline-none focus:border-forest"
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1">
+                    <label className="font-bold text-forest/70 text-[10px] uppercase">
+                      WhatsApp / Telefone para Contato *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={formOrcamento.telefoneContato}
+                      onChange={(e) => setFormOrcamento({ ...formOrcamento, telefoneContato: e.target.value })}
+                      placeholder="(11) 99999-9999"
+                      className="px-3 py-2 bg-white border border-soft rounded-xl text-xs text-forest focus:outline-none focus:border-forest"
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1">
+                    <label className="font-bold text-forest/70 text-[10px] uppercase">
+                      Vidas Impactadas Estimadas
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      value={formOrcamento.vidasEstimadas || ""}
+                      onChange={(e) => setFormOrcamento({ ...formOrcamento, vidasEstimadas: Number(e.target.value) })}
+                      placeholder="Ex: 50 colaboradores"
+                      className="px-3 py-2 bg-white border border-soft rounded-xl text-xs text-forest focus:outline-none focus:border-forest"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="flex flex-col gap-1">
+                    <label className="font-bold text-forest/70 text-[10px] uppercase">
+                      Formato Preferido
+                    </label>
+                    <select
+                      value={formOrcamento.formato}
+                      onChange={(e) => setFormOrcamento({ ...formOrcamento, formato: e.target.value as any })}
+                      className="px-3 py-2 bg-white border border-soft rounded-xl text-xs text-forest font-semibold focus:outline-none focus:border-forest cursor-pointer"
+                    >
+                      <option value="online">Online / Remoto</option>
+                      <option value="presencial">Presencial na Sede da Empresa</option>
+                      <option value="hibrido">Híbrido</option>
+                    </select>
+                  </div>
+
+                  <div className="flex flex-col gap-1">
+                    <label className="font-bold text-forest/70 text-[10px] uppercase">
+                      Urgência de Implantação
+                    </label>
+                    <select
+                      value={formOrcamento.urgencia}
+                      onChange={(e) => setFormOrcamento({ ...formOrcamento, urgencia: e.target.value as any })}
+                      className="px-3 py-2 bg-white border border-soft rounded-xl text-xs text-forest font-semibold focus:outline-none focus:border-forest cursor-pointer"
+                    >
+                      <option value="normal">Normal (Planejamento anual/trimestral)</option>
+                      <option value="alta">Alta (Próximos 15 a 30 dias)</option>
+                      <option value="imediata">Imediata / Crise (Para esta semana)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-1">
+                  <label className="font-bold text-forest/70 text-[10px] uppercase">
+                    Observações ou Necessidade Específica
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={formOrcamento.mensagem}
+                    onChange={(e) => setFormOrcamento({ ...formOrcamento, mensagem: e.target.value })}
+                    placeholder="Conte um pouco sobre o cenário da equipe (ex: aumento de afastamentos por estresse, demanda da CIPA, auditoria fiscal de NR-1)..."
+                    className="px-3 py-2 bg-white border border-soft rounded-xl text-xs text-forest focus:outline-none focus:border-forest resize-none"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-3 border-t border-soft">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowModalOrcamento(false);
+                      setSelectedServicoParaOrcamento(null);
+                    }}
+                    className="px-4 py-2 text-xs font-semibold text-forest/70 hover:text-forest rounded-xl"
+                  >
+                    Cancelar
+                  </button>
+
+                  <button
+                    type="submit"
+                    disabled={isSendingOrcamento}
+                    className="px-5 py-2.5 bg-forest hover:bg-forest/90 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    <Send className="w-3.5 h-3.5 text-sun" />
+                    <span>{isSendingOrcamento ? "Enviando..." : "Enviar Solicitação"}</span>
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}

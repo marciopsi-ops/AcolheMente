@@ -22,6 +22,7 @@ import { sendEvolutionMessage } from "../lib/whatsappService";
 import { triggerEmail } from "../lib/emailService";
 import { getNotificationTriggers } from "../lib/notificationRulesService";
 import { NotificationTrigger } from "../types/notificationRules";
+import { getEmpresaPin } from "../types/corporativo";
 
 export interface UserProfileSummary {
   uid?: string;
@@ -233,6 +234,10 @@ export const PatientNotificationModal: React.FC<PatientNotificationModalProps> =
       "[NOME_EMPRESA]": empresaNome,
       "{cnpj}": target?.cnpj || "",
       "[CNPJ]": target?.cnpj || "",
+      "{pin_empresa}": getEmpresaPin(target),
+      "[PIN_EMPRESA]": getEmpresaPin(target),
+      "{pin}": getEmpresaPin(target),
+      "[PIN]": getEmpresaPin(target),
       "{valores_acertados}": target?.valoresDefinidos || target?.valoresAcertados || "Conforme acordado",
       "[VALORES_ACERTADOS]": target?.valoresDefinidos || target?.valoresAcertados || "Conforme acordado",
       "{forma_pagamento}": target?.formaPagamento || "Boleto / Faturamento",
@@ -261,7 +266,7 @@ export const PatientNotificationModal: React.FC<PatientNotificationModalProps> =
           name: "🏢 Ficha de Bordo Cadastral e Colaboradores",
           category: "operacional",
           subject: "AcolheMente - Ficha de Bordo Cadastral da Empresa",
-          body: `Olá *{primeiro_nome}*! Tudo bem? 🌿\n\nNós do *Projeto AcolheMente Saúde* gostaríamos de solicitar o preenchimento e conferência da Ficha de Bordo da sua empresa *{empresa}*.\n\n👉 Acesse o link exclusivo da Ficha de Bordo para cadastrar/conferir dados e a planilha de colaboradores e dependentes:\n{link_ficha_empresa}\n\nFicamos à total disposição para tirar qualquer dúvida! ✨`,
+          body: `Olá *{primeiro_nome}*! Tudo bem? 🌿\n\nNós do *Projeto AcolheMente Saúde* gostaríamos de solicitar o preenchimento e conferência da Ficha de Bordo da sua empresa *{empresa}*.\n\n👉 Acesse o link exclusivo da Ficha de Bordo para cadastrar/conferir dados e a planilha de colaboradores e dependentes:\n{link_ficha_empresa}\n\n🔒 *Senha Numérica (PIN de Acesso RH):* *{pin_empresa}*\n\nFicamos à total disposição para tirar qualquer dúvida! ✨`,
         },
         {
           id: "contrato_empresa",
@@ -282,7 +287,7 @@ export const PatientNotificationModal: React.FC<PatientNotificationModalProps> =
           name: "🎉 Boas-Vindas & Benefício Corporativo",
           category: "operacional",
           subject: "AcolheMente - Boas-Vindas ao Convênio de Saúde Mental",
-          body: `Olá *{primeiro_nome}*! Tudo pronto para cuidarmos da saúde mental da sua equipe! 🌿\n\nA parceria da *{empresa}* com o *Projeto AcolheMente Saúde* está oficialmente ativa.\n\nLembramos que o link da Ficha de Bordo pode ser atualizado com novos colaboradores ou dependentes a qualquer momento:\n{link_ficha_empresa}\n\nConte sempre com a gente!`,
+          body: `Olá *{primeiro_nome}*! Tudo pronto para cuidarmos da saúde mental da sua equipe! 🌿\n\nA parceria da *{empresa}* com o *Projeto AcolheMente Saúde* está oficialmente ativa.\n\nLembramos que o link da Ficha de Bordo pode ser atualizado com novos colaboradores ou dependentes a qualquer momento:\n{link_ficha_empresa}\n\n🔒 *PIN de Segurança (4 dígitos):* *{pin_empresa}*\n\nConte sempre com a gente!`,
         },
       ];
     }

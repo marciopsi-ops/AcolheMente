@@ -165,5 +165,11 @@ service cloud.firestore {
       allow read: if isSignedIn() && (isMaster() || isTriagem());
       allow update, delete: if false;
     }
+
+    // Solicitações de Orçamento Corporativo (NR-1, Palestras, Treinamentos)
+    match /solicitacoes_orcamentos_corporativos/{solicitacaoId} {
+      allow create: if true;
+      allow read, update, delete: if isSignedIn() && (isMaster() || isTriagem());
+    }
   }
 }

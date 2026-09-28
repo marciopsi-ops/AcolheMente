@@ -1,5 +1,5 @@
 import { Footer } from '../components/Footer';
-import { ArrowLeft, CheckCircle2, HeartHandshake, UserPlus, Clock, PiggyBank, Network, Wallet, Check, CreditCard, Sparkles, BookOpen } from "lucide-react";
+import { ArrowLeft, CheckCircle2, HeartHandshake, UserPlus, Clock, PiggyBank, Network, Wallet, Check, CreditCard, Sparkles, BookOpen, MessageSquare, Mail } from "lucide-react";
 import React, { FormEvent, useState, useEffect } from "react";
 import { collection, addDoc, serverTimestamp, getDocs, query, where, doc, onSnapshot } from "firebase/firestore";
 import { db, handleFirestoreError, OperationType } from "../lib/firebase";
@@ -425,22 +425,39 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
                   <CheckCircle2 className="w-10 h-10 text-forest" />
                 </div>
                 <h2 className="font-serif text-3xl font-bold text-forest mb-2">Pré-Inscrição Concluída!</h2>
-                <p className="text-forest/80 max-w-lg mx-auto mb-5 text-sm leading-relaxed">
-                  Muito obrigado pela iniciativa em fazer parte do Projeto AcolheMente! Recebemos suas informações e nossa equipe entrará em contato em breve para realizar a <strong className="text-forest font-semibold">entrevista de alinhamento</strong>.
+                <p className="text-forest/80 max-w-lg mx-auto mb-4 text-sm leading-relaxed">
+                  Muito obrigado pela iniciativa em fazer parte da nossa rede de apoio! Recebemos suas informações com sucesso.
                 </p>
 
+                {/* Highlight: Contato em até 24h para envio de login e acesso */}
+                <div className="w-full max-w-lg bg-emerald-50/90 border border-emerald-300 p-4 rounded-2xl mb-4 text-left flex items-start gap-3.5 shadow-xs">
+                  <div className="w-10 h-10 rounded-xl bg-forest text-sun flex items-center justify-center shrink-0 mt-0.5">
+                    <MessageSquare className="w-5 h-5" />
+                  </div>
+                  <div className="flex flex-col gap-0.5">
+                    <h4 className="font-bold text-xs uppercase tracking-wider text-forest flex items-center gap-1.5">
+                      <span>Envio de Acesso e Login</span>
+                      <span className="bg-sun/40 text-forest text-[10px] px-2 py-0.5 rounded-full font-bold">Em até 24h</span>
+                    </h4>
+                    <p className="text-xs text-forest/90 leading-relaxed mt-0.5">
+                      Nossa equipe entrará em contato via <strong>e-mail ou WhatsApp em até 24 horas</strong> para envio do seu <strong>acesso e credenciais de login</strong> na plataforma, bem como para o alinhamento das próximas etapas.
+                    </p>
+                  </div>
+                </div>
+
                 {/* Clear Process / Fee Policy Banner */}
-                <div className="w-full max-w-lg bg-emerald-50/90 p-4 rounded-2xl border border-emerald-200/80 mb-6 text-left flex flex-col gap-2">
-                  <div className="flex items-center gap-2 text-emerald-900 font-bold text-xs uppercase tracking-wider">
-                    <Clock className="w-4 h-4 text-emerald-700 shrink-0" />
+                <div className="w-full max-w-lg bg-warm/50 p-4 rounded-2xl border border-soft mb-6 text-left flex flex-col gap-2">
+                  <div className="flex items-center gap-2 text-forest font-bold text-xs uppercase tracking-wider">
+                    <Clock className="w-4 h-4 text-forest/70 shrink-0" />
                     <span>Próximas Etapas do Processo</span>
                   </div>
                   <ol className="text-xs text-forest/90 space-y-1.5 list-decimal pl-4 leading-relaxed">
+                    <li><strong>Contato e Envio de Acesso:</strong> Em até 24h via e-mail/WhatsApp.</li>
                     <li><strong>Análise de Perfil:</strong> Validação dos dados profissionais e CRP pela equipe de gestão.</li>
                     <li><strong>Entrevista de Alinhamento:</strong> Reunião online com nossos coordenadores.</li>
-                    <li><strong>Aceite & Assinatura de Contrato:</strong> Formalização e liberação de acesso ao catálogo e pacientes.</li>
+                    <li><strong>Aceite & Assinatura de Contrato:</strong> Formalização e liberação para atendimentos.</li>
                   </ol>
-                  <p className="text-[11px] text-emerald-800 italic border-t border-emerald-200/60 pt-2 mt-1">
+                  <p className="text-[11px] text-forest/80 italic border-t border-soft pt-2 mt-1">
                     💡 <strong>Lembrete:</strong> Nenhuma cobrança é efetuada neste momento. A taxa associativa (R$ {taxaAssociativaMensal}/mês) só é devida após a aprovação e assinatura formal do contrato.
                   </p>
                 </div>

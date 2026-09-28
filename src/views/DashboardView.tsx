@@ -9,8 +9,10 @@ import { EventosServicosView } from "./EventosServicosView";
 import { ComplianceModal } from "../components/ComplianceModal";
 import { BackupManager } from "../components/BackupManager";
 import { EmpresaBeneficioManager } from "../components/EmpresaBeneficioManager";
+import { EmpresaCatalogoManager } from "../components/EmpresaCatalogoManager";
 import { TriagemCorporativaKanban } from "../components/TriagemCorporativaKanban";
 import { EvolutionDiagnosticModal } from "../components/EvolutionDiagnosticModal";
+import { ContratoGeradorModal } from "../components/ContratoGeradorModal";
 import {
   CategoriaEmpresa,
   CATEGORIAS_EMPRESA_CONFIG,
@@ -23,6 +25,8 @@ import {
   FaturaHistoricoItem,
   ServicoAdicionalItem,
   StatusFatura,
+  getEmpresaPin,
+  ItemCatalogoCorporativo,
 } from "../types/corporativo";
 import {
   Activity,
@@ -43,6 +47,7 @@ import {
   XCircle,
   Search,
   FileText,
+  FileSignature,
   HandHeart,
   HeartHandshake,
   ChevronRight,
@@ -412,9 +417,13 @@ export function getPatientFlowDetails(card: any) {
 
   const isAtribuicaoAceita = isAtribuido && card.atribuicaoStatus === "Aceito";
   const isAtribuicaoDevolvida =
-    isAtribuido &&
-    (card.atribuicaoStatus === "Devolvido" ||
-      card.atribuicaoStatus === "Rejeitado");
+    card.status === "Devolvido para triagem" ||
+    card.status === "Devolvido" ||
+    card.atribuicaoStatus === "Devolvido" ||
+    card.atribuicaoStatus === "Rejeitado" ||
+    (isAtribuido &&
+      (card.atribuicaoStatus === "Devolvido" ||
+        card.atribuicaoStatus === "Rejeitado"));
 
   const isAtendimentoIniciado =
     isAtribuido &&
@@ -651,8 +660,14 @@ const COLUMNS = [
     tab: "kanban",
   },
   {
+    id: "Devolvido para triagem",
+    label: "Devolvido para triagem",
+    role: ["master", "triagem"],
+    tab: "kanban",
+  },
+  {
     id: "Aprovado",
-    label: "Fila de Espera",
+    label: "Aguardando atribuição",
     role: ["master", "triagem", "profissional"],
     tab: "kanban",
   },
@@ -665,6 +680,12 @@ const COLUMNS = [
   {
     id: "Alta",
     label: "Alta / Finalizado",
+    role: ["master", "triagem", "profissional"],
+    tab: "pacientes",
+  },
+  {
+    id: "Quebra de Contrato",
+    label: "Quebra de Contrato",
     role: ["master", "triagem", "profissional"],
     tab: "pacientes",
   },
@@ -2800,9 +2821,23 @@ export function DashboardView({
       if (newStatus === "Alta") {
         updates.ativo = false;
         updates.statusInativacao = "Desligado";
+        updates.desligado = true;
+        if (!currentPaciente?.desligamentoMotivo) {
+          updates.desligamentoMotivo = "Alta Clínica";
+        }
+      } else if (newStatus === "Quebra de Contrato") {
+        updates.ativo = false;
+        updates.statusInativacao = "Desligado";
+        updates.desligado = true;
+        updates.desligamentoMotivo = "Quebra de Contrato";
       } else if (newStatus === "Standby") {
         updates.ativo = true;
         updates.statusInativacao = "Standby";
+      } else if (newStatus === "Devolvido para triagem") {
+        updates.ativo = true;
+        updates.statusInativacao = "Ativo";
+        updates.atribuicaoStatus = "Devolvido";
+        updates.desligado = false;
       } else if (
         newStatus === "Aguardando Avaliação" ||
         newStatus === "Em Triagem" ||
@@ -2811,6 +2846,13 @@ export function DashboardView({
       ) {
         updates.ativo = true;
         updates.statusInativacao = "Ativo";
+        updates.desligado = false;
+        if (
+          currentPaciente?.atribuicaoStatus === "Devolvido" ||
+          currentPaciente?.atribuicaoStatus === "Rejeitado"
+        ) {
+          updates.atribuicaoStatus = "Pendente";
+        }
       }
 
       if (newStatus === "Em Atendimento" && currentRole === "profissional") {
@@ -9556,15 +9598,48 @@ export function DashboardView({
                         // Other triage columns must not show standby cards
                         if (cardInStandby) return false;
 
+                        const isReturned =
+                          cardStatus === "Devolvido para triagem" ||
+                          cardStatus === "Devolvido" ||
+                          a.atribuicaoStatus === "Devolvido" ||
+                          a.atribuicaoStatus === "Rejeitado";
+
+                        if (col.id === "Devolvido para triagem") {
+                          return isReturned;
+                        }
+
+                        // If returned, it belongs specifically to "Devolvido para triagem"
+                        if (isReturned) return false;
+
+                        if (col.id === "Aprovado") {
+                          return (
+                            !isInactiveOrAlta &&
+                            (cardStatus === "Aprovado" || cardStatus === "Aguardando atribuição")
+                          );
+                        }
+
                         return (
                           !isInactiveOrAlta &&
                           cardStatus === col.id
                         );
                       } else {
                         // Pacientes tab (activeTab === "pacientesAcolhidos" or for profissional)
+                        const motivo = (a.desligamentoMotivo || "").toLowerCase();
+                        const isQuebraContratoMotivo =
+                          cardStatus === "Quebra de Contrato" ||
+                          motivo.includes("inadimpl") ||
+                          motivo.includes("quebra") ||
+                          motivo.includes("abandono") ||
+                          motivo.includes("absente") ||
+                          motivo.includes("banimento");
+
+                        if (col.id === "Quebra de Contrato") {
+                          return (isDesligadoOrFinal || (!cardInStandby && a.ativo === false)) && isQuebraContratoMotivo;
+                        }
+
                         if (col.id === "Alta") {
-                          // All inactive, desligado, or alta patients go to the Alta / Finalizado column
-                          return isDesligadoOrFinal || (!cardInStandby && a.ativo === false);
+                          // All inactive, desligado, or alta patients go to Alta / Finalizado unless Quebra de Contrato
+                          return (isDesligadoOrFinal || (!cardInStandby && a.ativo === false)) && !isQuebraContratoMotivo;
                         }
                         if (col.id === "Em Atendimento") {
                           // Active patients in accompaniment
@@ -9594,9 +9669,11 @@ export function DashboardView({
                       className={`w-[320px] shrink-0 h-full flex flex-col rounded-2xl overflow-hidden transition-colors duration-200 ${
                         isColOver
                           ? "bg-sun/15 border-2 border-sun shadow-md"
-                          : col.id === "Standby"
-                            ? "bg-amber-50/40 border border-amber-200/80 shadow-xs"
-                            : "bg-white/50 border border-soft shadow-xs"
+                          : col.id === "Devolvido para triagem"
+                            ? "bg-rose-50/40 border border-rose-200/80 shadow-xs"
+                            : col.id === "Standby"
+                              ? "bg-amber-50/40 border border-amber-200/80 shadow-xs"
+                              : "bg-white/50 border border-soft shadow-xs"
                       }`}
                       onDrop={(e) => {
                         setDragOverColId(null);
@@ -9623,6 +9700,11 @@ export function DashboardView({
                               <Clock className="w-3 h-3 text-amber-700" />
                             </div>
                           )}
+                          {col.id === "Devolvido para triagem" && (
+                            <div className="w-5 h-5 rounded-md bg-rose-100 border border-rose-300 flex items-center justify-center text-rose-700 shrink-0">
+                              <RotateCcw className="w-3 h-3 text-rose-700" />
+                            </div>
+                          )}
                           <div>
                             <h3 className="font-semibold text-forest text-sm">
                               {col.label}
@@ -9632,12 +9714,24 @@ export function DashboardView({
                                 Aguardando retomada
                               </p>
                             )}
+                            {col.id === "Devolvido para triagem" && (
+                              <p className="text-[10px] text-rose-700 font-medium -mt-0.5">
+                                Requer nova atribuição
+                              </p>
+                            )}
+                            {col.id === "Aprovado" && (
+                              <p className="text-[10px] text-forest/50 font-medium -mt-0.5">
+                                Fila para encaminhamento
+                              </p>
+                            )}
                           </div>
                         </div>
                         <span className={`px-2 py-0.5 rounded-full text-xs font-bold border ${
-                          col.id === "Standby"
-                            ? "bg-amber-100 text-amber-900 border-amber-300"
-                            : "bg-warm text-forest/70 border-soft"
+                          col.id === "Devolvido para triagem"
+                            ? "bg-rose-100 text-rose-900 border-rose-300"
+                            : col.id === "Standby"
+                              ? "bg-amber-100 text-amber-900 border-amber-300"
+                              : "bg-warm text-forest/70 border-soft"
                         }`}>
                           {colCards.length}
                         </span>
@@ -9818,7 +9912,7 @@ export function DashboardView({
                                           </span>
                                         ) : flow.isAtribuicaoDevolvida ? (
                                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
-                                            <RotateCcw className="w-2.5 h-2.5 text-rose-600" /> Atribuição Devolvida
+                                            <RotateCcw className="w-2.5 h-2.5 text-rose-600" /> Devolvido para nova atribuição
                                           </span>
                                         ) : flow.isAtribuido ? (
                                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
@@ -11526,40 +11620,69 @@ export function DashboardView({
         <div className="fixed inset-0 z-50 flex items-center justify-center px-1 sm:px-4 bg-forest/25 backdrop-blur-sm animate-in fade-in py-1 sm:py-3">
           <div className="bg-white rounded-2xl sm:rounded-3xl w-full max-w-[98vw] 2xl:max-w-[1550px] h-[96vh] sm:h-[95vh] flex flex-col shadow-2xl border border-soft overflow-hidden animate-in zoom-in-95">
             {/* Header */}
-            <div className="px-3 sm:px-6 py-2.5 sm:py-4 flex flex-col border-b border-soft bg-gradient-to-r from-warm/60 via-white to-warm/40 gap-2.5 shrink-0">
-              <div className="flex justify-between items-start sm:items-center gap-2">
-                <div className="flex items-center gap-2 min-w-0">
-                  <div className="p-2 sm:p-2.5 bg-forest text-white rounded-xl shadow-xs shrink-0">
-                    <User className="w-4 h-4 sm:w-5 sm:h-5" />
+            <div className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 flex flex-col border-b border-soft bg-gradient-to-r from-warm/70 via-white to-warm/40 gap-2 shrink-0">
+              <div className="flex justify-between items-start sm:items-center gap-2.5">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className={`p-2.5 rounded-xl shadow-xs shrink-0 flex items-center justify-center ${
+                    getPatientFlowDetails(selectedCard).isAtribuicaoDevolvida
+                      ? "bg-rose-600 text-white"
+                      : "bg-forest text-white"
+                  }`}>
+                    {getPatientFlowDetails(selectedCard).isAtribuicaoDevolvida ? (
+                      <RotateCcw className="w-4 h-4 sm:w-5 sm:h-5" />
+                    ) : (
+                      <User className="w-4 h-4 sm:w-5 sm:h-5" />
+                    )}
                   </div>
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-                      <h3 className="font-serif text-lg sm:text-2xl text-forest font-semibold truncate max-w-[180px] sm:max-w-none">
+                      <h3 className="font-serif text-lg sm:text-2xl text-forest font-semibold truncate max-w-[200px] sm:max-w-none">
                         {selectedCard.nome || (selectedCard as any).nomeCompleto || "Paciente sem nome"}
                       </h3>
-                      <span
-                        className={`text-[9px] sm:text-[10px] font-extrabold uppercase px-2 sm:px-2.5 py-0.5 rounded-full border ${
-                          isCardInStandby(selectedCard)
-                            ? "bg-amber-100 text-amber-900 border-amber-300"
-                            : selectedCard.ativo === false
-                              ? "bg-slate-100 text-slate-600 border-slate-200"
-                              : "bg-emerald-100 text-emerald-800 border-emerald-200"
-                        }`}
-                      >
-                        {isCardInStandby(selectedCard) ? "Standby" : selectedCard.ativo === false ? "Inativo" : "Ativo"}
-                      </span>
-                      {selectedCard.status && !isCardInStandby(selectedCard) && (
-                        <span className="text-[9px] sm:text-[10px] font-bold uppercase px-2 sm:px-2.5 py-0.5 rounded-full bg-sun/30 text-forest border border-sun/50">
-                          {selectedCard.status}
+
+                      {/* Status Primário: Devolvido para nova atribuição em destaque máximo */}
+                      {getPatientFlowDetails(selectedCard).isAtribuicaoDevolvida ? (
+                        <span className="text-[10px] sm:text-xs font-extrabold uppercase px-2.5 sm:px-3 py-0.5 rounded-full bg-rose-100 text-rose-800 border border-rose-300 shadow-2xs flex items-center gap-1.5 animate-pulse">
+                          <RotateCcw className="w-3.5 h-3.5 text-rose-600" />
+                          Devolvido para nova atribuição
                         </span>
+                      ) : (
+                        <>
+                          <span
+                            className={`text-[9px] sm:text-[10px] font-extrabold uppercase px-2 sm:px-2.5 py-0.5 rounded-full border ${
+                              isCardInStandby(selectedCard)
+                                ? "bg-amber-100 text-amber-900 border-amber-300"
+                                : selectedCard.ativo === false
+                                  ? "bg-slate-100 text-slate-600 border-slate-200"
+                                  : "bg-emerald-100 text-emerald-800 border-emerald-200"
+                            }`}
+                          >
+                            {isCardInStandby(selectedCard) ? "Standby" : selectedCard.ativo === false ? "Inativo" : "Ativo"}
+                          </span>
+                          {selectedCard.status && !isCardInStandby(selectedCard) && (
+                            <span className="text-[9px] sm:text-[10px] font-bold uppercase px-2 sm:px-2.5 py-0.5 rounded-full bg-sun/30 text-forest border border-sun/50">
+                              {selectedCard.status === "Aprovado" ? "Aguardando atribuição" : selectedCard.status}
+                            </span>
+                          )}
+                          {isCardInStandby(selectedCard) && (
+                            <span className="text-[9px] sm:text-[10px] font-bold uppercase px-2 sm:px-2.5 py-0.5 rounded-full bg-amber-200/90 text-amber-950 border border-amber-300">
+                              Etapa: Standby
+                            </span>
+                          )}
+                        </>
                       )}
-                      {isCardInStandby(selectedCard) && (
-                        <span className="text-[9px] sm:text-[10px] font-bold uppercase px-2 sm:px-2.5 py-0.5 rounded-full bg-amber-200/90 text-amber-950 border border-amber-300">
-                          Etapa: Standby
+
+                      {selectedCard.empresaNome && (
+                        <span className="text-[9px] sm:text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-800 border border-blue-200 flex items-center gap-1">
+                          <Building2 className="w-3 h-3 text-blue-600" /> {selectedCard.empresaNome}
                         </span>
                       )}
                     </div>
-                    <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-[10px] sm:text-[11px] font-semibold text-forest/60 mt-0.5">
+
+                    <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-[10px] sm:text-[11px] font-medium text-forest/70 mt-0.5">
+                      <span className="font-mono text-forest/50">
+                        ID: #{selectedCard.id?.slice(0, 6)}
+                      </span>
                       {selectedCard.createdAt && (
                         <span className="flex items-center gap-1">
                           <Clock className="w-3 h-3 text-forest/40" /> Entrada: {formatDate(selectedCard.createdAt)}
@@ -11568,6 +11691,11 @@ export function DashboardView({
                       {selectedCard.statusUpdatedAt && (
                         <span className="flex items-center gap-1">
                           <Calendar className="w-3 h-3 text-forest/40" /> Ativação: {formatDate(selectedCard.statusUpdatedAt)}
+                        </span>
+                      )}
+                      {selectedCard.profissionalId && (
+                        <span className="flex items-center gap-1 text-emerald-800 font-semibold bg-emerald-50 px-2 py-0.2 rounded border border-emerald-200/60">
+                          <UserCheck className="w-3 h-3 text-emerald-600" /> Profissional Atribuído
                         </span>
                       )}
                     </div>
@@ -11587,7 +11715,7 @@ export function DashboardView({
                     <button
                       type="button"
                       onClick={() => handleOpenPatientWhatsApp(selectedCard)}
-                      className="flex items-center gap-1.5 font-bold text-[11px] sm:text-xs px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-xl bg-[#25D366] hover:bg-[#20b858] text-white shadow-2xs transition-all hover:scale-105 shrink-0 cursor-pointer"
+                      className="flex items-center gap-1.5 font-bold text-[11px] sm:text-xs px-2.5 sm:px-3 py-1.5 rounded-xl bg-[#25D366] hover:bg-[#20b858] text-white shadow-2xs transition-all hover:scale-105 shrink-0 cursor-pointer"
                       title="Enviar WhatsApp para o paciente"
                     >
                       <Phone className="w-3.5 h-3.5 text-white" />
@@ -11597,7 +11725,7 @@ export function DashboardView({
 
                   <button
                     onClick={() => setIsEditingCard(!isEditingCard)}
-                    className={`sm:hidden flex items-center gap-1 font-bold text-[11px] px-2.5 py-1 rounded-lg border transition-all shadow-2xs ${
+                    className={`sm:hidden flex items-center gap-1 font-bold text-[11px] px-2.5 py-1.5 rounded-xl border transition-all shadow-2xs ${
                       isEditingCard
                         ? "bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700"
                         : "bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100"
@@ -11617,6 +11745,27 @@ export function DashboardView({
                 </div>
               </div>
 
+              {/* Banner Informativo de Devolução (quando o paciente for devolvido por um profissional) */}
+              {getPatientFlowDetails(selectedCard).isAtribuicaoDevolvida && (
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-3 py-2 rounded-xl bg-rose-50 border border-rose-200 text-rose-950 text-xs">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="w-6 h-6 rounded-lg bg-rose-200 text-rose-800 flex items-center justify-center shrink-0">
+                      <RotateCcw className="w-3.5 h-3.5 text-rose-700" />
+                    </div>
+                    <div className="min-w-0">
+                      <span className="font-bold text-rose-900 mr-2">Devolvido para nova atribuição:</span>
+                      <span className="text-rose-800 text-[11px]">
+                        {selectedCard.devolvidoMotivo || "Encaminhamento anterior devolvido pelo profissional para a triagem."}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 text-[10px] text-rose-700 font-medium shrink-0">
+                    {selectedCard.devolvidoPor && <span>Por: <strong>{selectedCard.devolvidoPor}</strong></span>}
+                    {selectedCard.devolvidoEm && <span>• {formatDate(selectedCard.devolvidoEm)}</span>}
+                  </div>
+                </div>
+              )}
+
               {/* Patient Journey Flow Progress */}
               {(() => {
                 const status = selectedCard.status || "Aguardando Avaliação";
@@ -11631,13 +11780,13 @@ export function DashboardView({
                 const flow = getPatientFlowDetails(selectedCard);
 
                 return (
-                  <div className="w-full bg-white/90 p-2 sm:p-3 rounded-xl sm:rounded-2xl border border-soft shadow-2xs space-y-1.5">
+                  <div className="w-full bg-white/90 p-2 sm:p-2.5 rounded-xl border border-soft shadow-2xs space-y-1.5">
                     {/* Mobile Summary Bar */}
                     <div className="sm:hidden flex items-center justify-between text-[11px] font-bold">
                       <div className="flex items-center gap-1.5 text-forest">
-                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                        <span className={`w-2 h-2 rounded-full ${flow.isAtribuicaoDevolvida ? "bg-rose-500 animate-ping" : "bg-emerald-500 animate-pulse"}`}></span>
                         <span>
-                          Jornada ({flow.activeStep}/6): {flow.propostaRevisao ? "Revisão Solicitada" : flow.propostaAceita ? "Proposta Aceita" : flow.isAtribuido ? "Atribuído" : "Triagem"}
+                          Jornada ({flow.activeStep}/6): {flow.isAtribuicaoDevolvida ? "Devolvido para nova atribuição" : flow.propostaRevisao ? "Revisão Solicitada" : flow.propostaAceita ? "Proposta Aceita" : flow.isAtribuido ? "Atribuído" : "Triagem"}
                         </span>
                       </div>
                       <button
@@ -11651,22 +11800,22 @@ export function DashboardView({
                     </div>
 
                     <div className={`${showJourneyMobileDetails ? "grid" : "hidden sm:grid"} grid-cols-2 sm:grid-cols-6 gap-1 text-center text-[9px] sm:text-[10px] font-bold uppercase tracking-wider mb-1`}>
-                      <div className={`p-1 sm:p-1.5 rounded-lg sm:rounded-xl border transition-colors ${flow.propostaRevisao ? "text-amber-800 bg-amber-50/90 border-amber-300 font-extrabold" : flow.activeStep >= 1 ? "text-emerald-800 bg-emerald-50/90 border-emerald-200" : "text-forest/40 bg-warm/30 border-transparent"}`}>
+                      <div className={`p-1 sm:p-1.5 rounded-lg border transition-colors ${flow.propostaRevisao ? "text-amber-800 bg-amber-50/90 border-amber-300 font-extrabold" : flow.activeStep >= 1 ? "text-emerald-800 bg-emerald-50/90 border-emerald-200" : "text-forest/40 bg-warm/30 border-transparent"}`}>
                         1. Questionário {flow.propostaRevisao ? "(Revisão)" : ""}
                       </div>
-                      <div className={`p-1 sm:p-1.5 rounded-lg sm:rounded-xl border transition-colors ${flow.propostaRevisao ? "text-amber-800 bg-amber-50/90 border-amber-200" : (flow.isPropostaEnviada || flow.propostaAceita) ? "text-emerald-800 bg-emerald-50/90 border-emerald-200" : flow.activeStep === 2 ? "text-blue-800 bg-blue-50/90 border-blue-200" : "text-forest/40 bg-warm/30 border-transparent"}`}>
+                      <div className={`p-1 sm:p-1.5 rounded-lg border transition-colors ${flow.propostaRevisao ? "text-amber-800 bg-amber-50/90 border-amber-200" : (flow.isPropostaEnviada || flow.propostaAceita) ? "text-emerald-800 bg-emerald-50/90 border-emerald-200" : flow.activeStep === 2 ? "text-blue-800 bg-blue-50/90 border-blue-200" : "text-forest/40 bg-warm/30 border-transparent"}`}>
                         2. Proposta
                       </div>
-                      <div className={`p-1 sm:p-1.5 rounded-lg sm:rounded-xl border transition-colors ${flow.propostaAceita ? "text-emerald-800 bg-emerald-50/90 border-emerald-200" : flow.propostaRevisao ? "text-amber-800 bg-amber-50/90 border-amber-300 font-extrabold" : flow.isPropostaEnviada ? "text-blue-800 bg-blue-50/90 border-blue-200" : "text-forest/40 bg-warm/30 border-transparent"}`}>
+                      <div className={`p-1 sm:p-1.5 rounded-lg border transition-colors ${flow.propostaAceita ? "text-emerald-800 bg-emerald-50/90 border-emerald-200" : flow.propostaRevisao ? "text-amber-800 bg-amber-50/90 border-amber-300 font-extrabold" : flow.isPropostaEnviada ? "text-blue-800 bg-blue-50/90 border-blue-200" : "text-forest/40 bg-warm/30 border-transparent"}`}>
                         3. {flow.propostaRevisao ? "Revisão Solicitada" : flow.propostaAceita ? "Aceite OK" : "Aceite / Revisão"}
                       </div>
-                      <div className={`p-1 sm:p-1.5 rounded-lg sm:rounded-xl border transition-colors ${flow.isAtribuido ? "text-emerald-800 bg-emerald-50/90 border-emerald-200" : flow.propostaAceita ? "text-amber-800 bg-amber-50/90 border-amber-300 font-bold" : "text-forest/40 bg-warm/30 border-transparent"}`}>
+                      <div className={`p-1 sm:p-1.5 rounded-lg border transition-colors ${flow.isAtribuido ? "text-emerald-800 bg-emerald-50/90 border-emerald-200" : flow.propostaAceita ? "text-amber-800 bg-amber-50/90 border-amber-300 font-bold" : "text-forest/40 bg-warm/30 border-transparent"}`}>
                         4. Atribuir Prof. {!flow.isAtribuido && flow.propostaAceita ? "(Pendente)" : ""}
                       </div>
-                      <div className={`p-1 sm:p-1.5 rounded-lg sm:rounded-xl border transition-colors ${flow.isAtribuicaoDevolvida ? "text-rose-800 bg-rose-50/90 border-rose-200" : flow.isAtribuicaoAceita ? "text-emerald-800 bg-emerald-50/90 border-emerald-200" : flow.isAtribuido ? "text-amber-800 bg-amber-50/90 border-amber-200" : "text-forest/40 bg-warm/30 border-transparent"}`}>
-                        5. Atribuição {!flow.isAtribuicaoAceita && flow.isAtribuido && !flow.isAtribuicaoDevolvida ? "(Pendente)" : ""}
+                      <div className={`p-1 sm:p-1.5 rounded-lg border transition-colors ${flow.isAtribuicaoDevolvida ? "text-rose-900 bg-rose-100 border-rose-300 font-extrabold" : flow.isAtribuicaoAceita ? "text-emerald-800 bg-emerald-50/90 border-emerald-200" : flow.isAtribuido ? "text-amber-800 bg-amber-50/90 border-amber-200" : "text-forest/40 bg-warm/30 border-transparent"}`}>
+                        5. {flow.isAtribuicaoDevolvida ? "Devolvido (Nova Atribuição)" : flow.isAtribuicaoAceita ? "Atribuição (Aceita)" : flow.isAtribuido ? "Atribuição (Pendente)" : "Atribuição"}
                       </div>
-                      <div className={`p-1 sm:p-1.5 rounded-lg sm:rounded-xl border transition-colors ${flow.isAtribuido && flow.isAtribuicaoAceita && (flow.isAtendimentoIniciado || selectedCard.status === "Em Atendimento") ? "text-emerald-800 bg-emerald-50/90 border-emerald-200" : "text-forest/40 bg-warm/30 border-transparent"}`}>
+                      <div className={`p-1 sm:p-1.5 rounded-lg border transition-colors ${flow.isAtribuido && flow.isAtribuicaoAceita && (flow.isAtendimentoIniciado || selectedCard.status === "Em Atendimento") ? "text-emerald-800 bg-emerald-50/90 border-emerald-200" : "text-forest/40 bg-warm/30 border-transparent"}`}>
                         6. Atendimento
                       </div>
                     </div>
@@ -11676,7 +11825,7 @@ export function DashboardView({
                       <div className={`flex-1 rounded-full transition-colors ${flow.propostaRevisao ? "bg-amber-300" : (flow.isPropostaEnviada || flow.propostaAceita) ? "bg-emerald-500" : "bg-warm-dark/30"}`}></div>
                       <div className={`flex-1 rounded-full transition-colors ${flow.propostaAceita ? "bg-emerald-500" : flow.propostaRevisao ? "bg-amber-500" : flow.isPropostaEnviada ? "bg-blue-400" : "bg-warm-dark/30"}`}></div>
                       <div className={`flex-1 rounded-full transition-colors ${flow.isAtribuido ? "bg-emerald-500" : flow.propostaAceita ? "bg-amber-400" : "bg-warm-dark/30"}`}></div>
-                      <div className={`flex-1 rounded-full transition-colors ${flow.isAtribuido && flow.isAtribuicaoDevolvida ? "bg-rose-500" : flow.isAtribuido && flow.isAtribuicaoAceita ? "bg-emerald-500" : flow.isAtribuido ? "bg-amber-400" : "bg-warm-dark/30"}`}></div>
+                      <div className={`flex-1 rounded-full transition-colors ${flow.isAtribuido && flow.isAtribuicaoDevolvida ? "bg-rose-500" : flow.isAtribuido && flow.isAtribuicaoAceita ? "bg-emerald-500" : flow.isAtribuido ? "bg-amber-400" : flow.isAtribuicaoDevolvida ? "bg-rose-500" : "bg-warm-dark/30"}`}></div>
                       <div className={`flex-1 rounded-full transition-colors ${flow.isAtribuido && flow.isAtribuicaoAceita && (flow.isAtendimentoIniciado || selectedCard.status === "Em Atendimento") ? "bg-emerald-500" : "bg-warm-dark/30"}`}></div>
                     </div>
                   </div>
@@ -11723,13 +11872,13 @@ export function DashboardView({
 
                 <button
                   onClick={() => {
-                    const defaultText = `CONTRATO DE PRESTAÇÃO DE SERVIÇOS PSICOLÓGICOS\n\nCONTRATANTE: ${selectedCard.nome || "[NOME]"}, portador(a) do e-mail ${selectedCard.email || "[EMAIL]"} e CPF ${selectedCard.cpf || "[CPF_AQUI]"}.\n\nCONTRATADO: Projeto AcolheMente Saúde...\n\nCLÁUSULA 1 - O presente contrato tem por objeto a prestação de serviços psicológicos na modalidade de Terapia Individual...\n\n(Edite as cláusulas abaixo)`;
-                    setContratoText(selectedCard.contratoText || defaultText);
                     setShowContratoModal(true);
                   }}
-                  className="hidden md:flex items-center gap-1 text-xs font-medium text-forest/70 hover:text-forest px-2.5 py-1.5 rounded-lg hover:bg-warm transition-colors whitespace-nowrap"
+                  className="flex items-center gap-1.5 text-xs font-bold text-forest bg-warm/60 hover:bg-warm px-3 py-1.5 rounded-xl border border-soft transition-colors whitespace-nowrap shadow-2xs cursor-pointer"
+                  title="Gerenciar e enviar contrato terapêutico com aceite digital"
                 >
-                  Modelo de Contrato
+                  <FileSignature className="w-3.5 h-3.5 text-emerald-700" />
+                  {selectedCard.contratoAssinado ? "Ver Contrato Assinado" : "Gerar Contrato"}
                 </button>
 
                 {/* Contrato Pill */}
@@ -11771,7 +11920,7 @@ export function DashboardView({
                   </button>
                 )}
 
-                {/* Multibotão de Status: Ativar / Standby / Inativar */}
+                {/* Multibotão de Status: Ativar / Standby */}
                 {(currentRole === "master" || currentRole === "triagem") && (
                   <div className="flex items-center p-0.5 bg-warm/80 rounded-xl border border-soft shadow-2xs shrink-0">
                     <button
@@ -11782,14 +11931,14 @@ export function DashboardView({
                         } else {
                           handleUpdateAcolhimentoProperty(selectedCard.id, "ativo", true);
                           handleUpdateAcolhimentoProperty(selectedCard.id, "statusInativacao", "Ativo");
-                          if (selectedCard.status === "Inativo" || selectedCard.status === "Standby" || selectedCard.status === "Alta") {
+                          if (selectedCard.status === "Inativo" || selectedCard.status === "Standby" || selectedCard.status === "Alta" || selectedCard.status === "Quebra de Contrato") {
                             handleUpdateAcolhimentoProperty(selectedCard.id, "status", "Em Triagem");
                           }
                           showToast("Status alterado para Ativo", "success");
                         }
                       }}
                       className={`px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-[10px] sm:text-xs font-bold transition-all flex items-center gap-1 ${
-                        !isCardInStandby(selectedCard) && selectedCard.ativo !== false && selectedCard.statusInativacao !== "Inativo" && selectedCard.status !== "Alta"
+                        !isCardInStandby(selectedCard) && selectedCard.ativo !== false && selectedCard.statusInativacao !== "Inativo" && selectedCard.status !== "Alta" && selectedCard.status !== "Quebra de Contrato"
                           ? "bg-emerald-600 text-white shadow-2xs"
                           : "text-forest/70 hover:text-forest hover:bg-white/60"
                       }`}
@@ -11812,24 +11961,6 @@ export function DashboardView({
                       title="Armazenar paciente na etapa Standby da Triagem"
                     >
                       <Clock className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> <span className="hidden sm:inline">Standby</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        handleUpdateAcolhimentoProperty(selectedCard.id, "ativo", false);
-                        handleUpdateAcolhimentoProperty(selectedCard.id, "status", "Alta");
-                        handleUpdateAcolhimentoProperty(selectedCard.id, "statusInativacao", "Inativo");
-                        showToast("Paciente inativado e direcionado para Alta / Finalizado", "info");
-                      }}
-                      className={`px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-[10px] sm:text-xs font-bold transition-all flex items-center gap-1 ${
-                        selectedCard.ativo === false || selectedCard.statusInativacao === "Inativo" || selectedCard.status === "Alta"
-                          ? "bg-rose-600 text-white shadow-2xs"
-                          : "text-forest/70 hover:text-forest hover:bg-white/60"
-                      }`}
-                      title="Inativar paciente (direcionar para Alta / Finalizado)"
-                    >
-                      <XCircle className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> <span className="hidden sm:inline">Inativar</span>
                     </button>
                   </div>
                 )}
@@ -12439,9 +12570,9 @@ export function DashboardView({
                       <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 bg-emerald-100 px-2.5 py-1 rounded-lg border border-emerald-300">
                         <UserCheck className="w-3.5 h-3.5 text-emerald-600" /> Profissional Confirmado
                       </span>
-                    ) : selectedCard.atribuicaoStatus === "Devolvido" || selectedCard.atribuicaoStatus === "Rejeitado" ? (
+                    ) : selectedCard.atribuicaoStatus === "Devolvido" || selectedCard.atribuicaoStatus === "Rejeitado" || selectedCard.status === "Devolvido para triagem" ? (
                       <span className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-800 bg-rose-100 px-2.5 py-1 rounded-lg border border-rose-300">
-                        <RotateCcw className="w-3.5 h-3.5 text-rose-600" /> Devolvido para Triagem
+                        <RotateCcw className="w-3.5 h-3.5 text-rose-600" /> Devolvido para nova atribuição
                       </span>
                     ) : selectedCard.profissionalId ? (
                       <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-800 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200">
@@ -12751,7 +12882,7 @@ export function DashboardView({
                             <Clock className="w-4 h-4" />
                           </div>
                           <div>
-                            <span className="text-xs font-bold text-forest block">Fila de Espera / Triagem</span>
+                            <span className="text-xs font-bold text-forest block">Aguardando atribuição / Triagem</span>
                             <span className="text-[10px] text-forest/50 uppercase block">Desatribuído</span>
                           </div>
                         </div>
@@ -12811,10 +12942,11 @@ export function DashboardView({
                           const updates: any = {
                             atribuicaoStatus: "Aceito",
                             status: "Em Atendimento",
-                            notificacao: `${notifAnterior}[${nowStr}] Encaminhamento ACEITO pelo profissional ${authName}. Paciente saiu da Fila de Espera e passou para a aba Pacientes (Em Atendimento).`,
+                            notificacao: `${notifAnterior}[${nowStr}] Encaminhamento ACEITO pelo profissional ${authName}. Paciente saiu de Aguardando atribuição e passou para a aba Pacientes (Em Atendimento).`,
                           };
                           await updateDoc(doc(db, "acolhimentos", selectedCard.id), updates);
                           setSelectedCard({ ...selectedCard, ...updates });
+                          showToast("Paciente aceito no vínculo com sucesso!", "success");
                         }}
                         className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
                           selectedCard.atribuicaoStatus === "Aceito"
@@ -12824,6 +12956,18 @@ export function DashboardView({
                       >
                         <CheckCircle2 className="w-4 h-4" />
                         {selectedCard.atribuicaoStatus === "Aceito" ? "Paciente Aceito no Vínculo" : "Aceitar Paciente"}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowContratoModal(true);
+                        }}
+                        className="px-5 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold transition-all shadow-2xs flex items-center justify-center gap-2 cursor-pointer"
+                        title="Gerar ou editar o contrato terapêutico com aceite digital para este paciente"
+                      >
+                        <FileSignature className="w-4 h-4 text-sun" />
+                        {selectedCard.contratoAssinado ? "Ver Contrato Assinado" : "Gerar / Enviar Contrato"}
                       </button>
 
                       <button
@@ -13392,17 +13536,39 @@ export function DashboardView({
         />
       )}
 
-      {/* Contrato Modal */}
-      {showContratoModal && notificarTarget && (
+      {/* Contrato Gerador Modal (com pré-preenchimento, parâmetros, aceite digital e auditoria) */}
+      {showContratoModal && (selectedCard || notificarTarget) && (
+        <ContratoGeradorModal
+          isOpen={showContratoModal}
+          onClose={() => setShowContratoModal(false)}
+          paciente={selectedCard || notificarTarget}
+          profissionalLogado={profile}
+          allUsers={allUsers}
+          showToast={showToast}
+          onContratoSalvo={(updatedPaciente) => {
+            if (selectedCard && selectedCard.id === updatedPaciente.id) {
+              setSelectedCard((prev: any) => ({ ...prev, ...updatedPaciente }));
+            }
+            setAcolhimentos((prev) =>
+              prev.map((a) => (a.id === updatedPaciente.id ? { ...a, ...updatedPaciente } : a))
+            );
+            setMeusPacientes((prev) =>
+              prev.map((a) => (a.id === updatedPaciente.id ? { ...a, ...updatedPaciente } : a))
+            );
+          }}
+        />
+      )}
+
+      {/* Contrato Modal Corporativo para Empresas */}
+      {showContratoModal && selectedEmpresa && !selectedCard && !notificarTarget && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center px-4 bg-forest/20 backdrop-blur-sm animate-in fade-in">
           <div className="bg-white rounded-3xl w-full max-w-3xl max-h-[90vh] flex flex-col shadow-2xl border border-soft overflow-hidden animate-in zoom-in-95">
             <div className="px-6 py-4 flex justify-between items-center border-b border-soft bg-warm/50">
               <h3 className="font-serif text-xl text-forest">
-                Editar Contrato:{" "}
-                {notificarTarget.nome ||
-                  ("nomeEmpresa" in notificarTarget
-                    ? notificarTarget.nomeEmpresa
-                    : notificarTarget.name)}
+                Editar Minuta de Contrato Corporativo:{" "}
+                <span className="font-sans font-normal text-forest/70">
+                  {selectedEmpresa.razaoSocial || selectedEmpresa.nomeEmpresa}
+                </span>
               </h3>
               <button
                 onClick={() => setShowContratoModal(false)}
@@ -13413,7 +13579,7 @@ export function DashboardView({
             </div>
             <div className="p-6 flex-1 overflow-y-auto">
               <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">
-                Modelo de Contrato (Editável)
+                Modelo de Contrato Corporativo (Editável)
               </label>
               <textarea
                 value={contratoText}
@@ -13430,17 +13596,17 @@ export function DashboardView({
               </button>
               <button
                 onClick={() => {
-                  handleUpdateAcolhimentoProperty(
-                    notificarTarget.id,
+                  handleUpdateEmpresaProperty(
+                    selectedEmpresa.id,
                     "contratoText",
                     contratoText,
                   );
-                  showToast("Contrato atualizado para o paciente!", "success");
+                  showToast("Contrato corporativo atualizado com sucesso!", "success");
                   setShowContratoModal(false);
                 }}
-                className="px-5 py-2 bg-sun-dark text-forest rounded-full text-sm font-semibold hover:bg-sun-dark-dark transition-colors flex items-center gap-2"
+                className="px-5 py-2 bg-emerald-700 text-white rounded-full text-sm font-semibold hover:bg-emerald-800 transition-colors flex items-center gap-2"
               >
-                <CheckCircle2 className="w-4 h-4" /> Salvar Contrato
+                <CheckCircle2 className="w-4 h-4 text-sun" /> Salvar Minuta Corporativa
               </button>
             </div>
           </div>
@@ -13478,7 +13644,7 @@ export function DashboardView({
             {/* Body */}
             <div className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
               <div className="p-3 bg-rose-50/70 border border-rose-200 rounded-2xl text-xs text-rose-900 leading-relaxed">
-                <strong>Atenção:</strong> Ao concluir o desligamento, o atendimento do paciente será interrompido, o status será atualizado para <strong>Alta / Desligado</strong> e as justificativas ficarão registradas na ficha de bordo.
+                <strong>Atenção:</strong> Ao concluir o desligamento, o atendimento do paciente será atualizado, os status ficarão registrados conforme a justificativa e os dados serão auditados na ficha de bordo.
               </div>
 
               {/* Motivo de Desligamento (Select) */}
@@ -13495,8 +13661,11 @@ export function DashboardView({
                   <option value="Alta Clínica">Alta Clínica</option>
                   <option value="Interrupção voluntária (Iniciativa do paciente)">Interrupção voluntária (Iniciativa do paciente)</option>
                   <option value="Interrupção involuntária (Iniciativa do profissional)">Interrupção involuntária (Iniciativa do profissional)</option>
+                  <option value="Quebra de Contrato">Quebra de Contrato</option>
                   <option value="Inadimplência">Inadimplência</option>
+                  <option value="Abandono de Tratamento">Abandono de Tratamento</option>
                   <option value="Absenteismo (Faltas/ Ausências sem justificativa)">Absenteismo (Faltas/ Ausências sem justificativa)</option>
+                  <option value="Retornar para triagem">Retornar para triagem</option>
                   <option value="Banimento">Banimento</option>
                   <option value="Outro (descreva)">Outro (descreva)</option>
                 </select>
@@ -13543,11 +13712,27 @@ export function DashboardView({
                     const nowFormatted = new Date().toLocaleDateString("pt-BR");
                     const userIdent = profile?.name || user?.email || "Profissional";
 
-                    const updates = {
-                      status: "Alta",
-                      ativo: false,
-                      statusInativacao: "Desligado",
-                      desligado: true,
+                    const motivoLower = desligamentoMotivo.toLowerCase();
+                    const isQuebraContrato =
+                      desligamentoMotivo === "Quebra de Contrato" ||
+                      motivoLower.includes("inadimpl") ||
+                      motivoLower.includes("abandono") ||
+                      motivoLower.includes("absente") ||
+                      motivoLower.includes("banimento");
+                    const isRetornarTriagem = desligamentoMotivo === "Retornar para triagem";
+
+                    const finalStatus = isRetornarTriagem
+                      ? "Devolvido para triagem"
+                      : isQuebraContrato
+                      ? "Quebra de Contrato"
+                      : "Alta";
+
+                    const updates: any = {
+                      status: finalStatus,
+                      ativo: isRetornarTriagem ? true : false,
+                      statusInativacao: isRetornarTriagem ? "Ativo" : "Desligado",
+                      atribuicaoStatus: isRetornarTriagem ? "Devolvido" : (selectedCard.atribuicaoStatus || "Pendente"),
+                      desligado: !isRetornarTriagem,
                       desligamentoMotivo: desligamentoMotivo,
                       desligamentoDetalhes: desligamentoDetalhes,
                       desligadoEm: nowIso,
@@ -13566,7 +13751,12 @@ export function DashboardView({
                       prev.map((c) => (c.id === selectedCard.id ? { ...c, ...updates } : c))
                     );
 
-                    showToast("Desligamento do paciente concluído com sucesso!", "success");
+                    showToast(
+                      isRetornarTriagem
+                        ? "Paciente devolvido para a Triagem com sucesso!"
+                        : "Desligamento do paciente concluído com sucesso!",
+                      "success"
+                    );
                     setShowDesligamentoModal(false);
                   } catch (err) {
                     console.error("Erro ao desligar paciente:", err);
@@ -13642,7 +13832,8 @@ export function DashboardView({
                         const phoneParam = rawPhone ? `phone=${rawPhone.length === 10 || rawPhone.length === 11 ? `55${rawPhone}` : rawPhone}&` : "";
                         const link = `${window.location.origin}/?ficha_empresa=${selectedEmpresa.id}`;
                         const nome = selectedEmpresa.nomeEmpresa || selectedEmpresa.razaoSocial || "sua empresa";
-                        const msg = `Olá! Tudo bem? Segue o link da Ficha de Bordo da ${nome} na plataforma AcolheMente para conferir e preencher dados cadastrais e colaboradores: ${link}`;
+                        const pin = getEmpresaPin(selectedEmpresa);
+                        const msg = `Olá! Tudo bem? Segue o link da Ficha de Bordo da ${nome} na plataforma AcolheMente para conferir e preencher dados cadastrais e colaboradores: ${link}\n\n🔒 Senha Numérica (PIN de 4 dígitos) para acesso seguro: *${pin}*`;
                         window.open(`https://api.whatsapp.com/send?${phoneParam}text=${encodeURIComponent(msg)}`, "_blank");
                       }}
                       className="flex items-center gap-1.5 font-bold text-[11px] px-2.5 py-1 rounded-xl bg-[#25D366] hover:bg-[#20b858] text-white shadow-2xs transition-all hover:scale-102 cursor-pointer"
@@ -13718,6 +13909,24 @@ export function DashboardView({
                     </span>
                   </button>
 
+                  {/* Badge PIN de Acesso Seguro (4 dígitos) */}
+                  <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-300 px-2 py-0.5 rounded-lg text-[10px] font-bold text-amber-900 shadow-2xs">
+                    <Lock className="w-3 h-3 text-amber-700" />
+                    <span>PIN RH: <strong className="font-mono text-xs text-amber-950">{getEmpresaPin(selectedEmpresa)}</strong></span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const pin = getEmpresaPin(selectedEmpresa);
+                        navigator.clipboard.writeText(pin);
+                        showToast(`PIN ${pin} copiado com sucesso!`, "success");
+                      }}
+                      className="p-0.5 hover:bg-amber-200 rounded text-amber-800 transition-colors ml-0.5"
+                      title="Copiar PIN numérico de 4 dígitos"
+                    >
+                      <Copy className="w-2.5 h-2.5" />
+                    </button>
+                  </div>
+
                   {/* Link Portal do RH & Indicadores */}
                   <a
                     href={`/?portal_empresa=${selectedEmpresa.id}`}
@@ -13732,9 +13941,9 @@ export function DashboardView({
                   <button
                     onClick={() => {
                       const link = `${window.location.origin}/?portal_empresa=${selectedEmpresa.id}`;
-                      const pinInfo = selectedEmpresa.pinAcessoRH ? ` (PIN de Acesso RH: ${selectedEmpresa.pinAcessoRH})` : "";
+                      const pin = getEmpresaPin(selectedEmpresa);
                       navigator.clipboard.writeText(link);
-                      showToast(`Link do Portal do RH copiado!${pinInfo}`, "success");
+                      showToast(`Link do Portal do RH copiado! (PIN de Segurança: ${pin})`, "success");
                     }}
                     className="flex items-center gap-1 bg-white hover:bg-warm text-forest font-semibold text-[10px] px-2 py-0.5 rounded-lg border border-soft transition-colors shadow-2xs"
                     title="Copiar Link de Acesso do RH"
@@ -13795,8 +14004,9 @@ export function DashboardView({
                       type="button"
                       onClick={() => {
                         const link = `${window.location.origin}/?ficha_empresa=${selectedEmpresa.id}`;
+                        const pin = getEmpresaPin(selectedEmpresa);
                         navigator.clipboard.writeText(link);
-                        showToast("Link da Ficha de Bordo copiado!", "success");
+                        showToast(`Link da Ficha de Bordo copiado! (PIN de Segurança: ${pin})`, "success");
                       }}
                       className="flex items-center gap-1 px-1.5 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-bold cursor-pointer shadow-2xs"
                       title="Copiar Link da Ficha Externa"
@@ -14238,8 +14448,8 @@ export function DashboardView({
                 <h4 className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-3 flex items-center gap-2">
                   <Building2 className="w-4 h-4 text-sun-dark" /> Dados Cadastrais da Empresa
                 </h4>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="flex flex-col gap-1 md:col-span-1">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="flex flex-col gap-1">
                     <label className="text-[10px] font-semibold uppercase text-forest/70 ml-2">
                       Razão Social
                     </label>
@@ -14256,7 +14466,7 @@ export function DashboardView({
                       }
                     />
                   </div>
-                  <div className="flex flex-col gap-1 md:col-span-1">
+                  <div className="flex flex-col gap-1">
                     <label className="text-[10px] font-semibold uppercase text-forest/70 ml-2">
                       Nome Fantasia / Comercial
                     </label>
@@ -14273,7 +14483,7 @@ export function DashboardView({
                       }
                     />
                   </div>
-                  <div className="flex flex-col gap-1 md:col-span-1">
+                  <div className="flex flex-col gap-1">
                     <label className="text-[10px] font-semibold uppercase text-forest/70 ml-2">
                       CNPJ
                     </label>
@@ -14289,6 +14499,48 @@ export function DashboardView({
                         )
                       }
                     />
+                  </div>
+                  {/* PIN Numérico de Acesso RH (Proteção LGPD) */}
+                  <div className="flex flex-col gap-1 bg-amber-50/70 p-2.5 rounded-xl border border-amber-200">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] font-bold uppercase text-amber-900 flex items-center gap-1">
+                        <Lock className="w-3 h-3 text-amber-700" /> Senha PIN (4 Dígitos)
+                      </label>
+                      <span className="text-[9px] font-bold text-amber-800 bg-amber-200/80 px-1.5 py-0.2 rounded">
+                        Proteção LGPD
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <input
+                        type="text"
+                        maxLength={4}
+                        pattern="[0-9]*"
+                        inputMode="numeric"
+                        placeholder={getEmpresaPin(selectedEmpresa)}
+                        defaultValue={selectedEmpresa.pinAcessoRH || getEmpresaPin(selectedEmpresa)}
+                        onBlur={(e) => {
+                          const val = e.target.value.replace(/\D/g, "").slice(0, 4);
+                          if (val && val.length === 4) {
+                            handleUpdateEmpresaProperty(selectedEmpresa.id, "pinAcessoRH", val);
+                            showToast(`PIN de 4 dígitos atualizado para ${val}!`, "success");
+                          }
+                        }}
+                        className="w-full text-center font-mono font-bold tracking-widest text-sm bg-white border border-amber-300 rounded-lg py-1.5 text-forest focus:outline-none focus:ring-2 focus:ring-amber-400"
+                        title="Senha de 4 dígitos para liberação da Ficha de Bordo externa e Portal do RH"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const pin = getEmpresaPin(selectedEmpresa);
+                          navigator.clipboard.writeText(pin);
+                          showToast(`PIN ${pin} copiado!`, "success");
+                        }}
+                        className="px-2 py-1.5 bg-amber-200 hover:bg-amber-300 text-amber-900 rounded-lg text-xs font-bold transition-colors shrink-0"
+                        title="Copiar PIN"
+                      >
+                        <Copy className="w-3 h-3" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               </section>
@@ -14580,6 +14832,18 @@ export function DashboardView({
                   onUpdateSuccess={(data) => {
                     setSelectedEmpresa((prev) => (prev ? { ...prev, ...data } : null));
                   }}
+                />
+              </section>
+
+              {/* Catálogo de Serviços & Intervenções NR-1 (GRO / PGR) - Editável na Gestão */}
+              <section className="bg-white p-1 rounded-2xl border border-soft shadow-xs">
+                <EmpresaCatalogoManager
+                  empresa={selectedEmpresa}
+                  onSaveCatalogo={(catalogoAtualizado: ItemCatalogoCorporativo[]) => {
+                    handleUpdateEmpresaProperty(selectedEmpresa.id, "catalogoServicosConfig", catalogoAtualizado);
+                    setSelectedEmpresa((prev) => (prev ? { ...prev, catalogoServicosConfig: catalogoAtualizado } : null));
+                  }}
+                  onShowToast={showToast}
                 />
               </section>
 
@@ -17974,7 +18238,7 @@ export function DashboardView({
               <span className="font-semibold">
                 {devolverModalConfig.pacienteName}
               </span>{" "}
-              para a triagem. Esta ação o recolocará na Fila de Espera.
+              para a triagem. Esta ação o recolocará na coluna "Devolvido para triagem" (Devolvido para nova atribuição).
             </p>
 
             <div className="flex flex-col gap-4 mb-8">
@@ -18021,12 +18285,12 @@ export function DashboardView({
 
                     const updates = {
                       profissionalId: "",
-                      status: "Aguardando Avaliação", // Triagem
+                      status: "Devolvido para triagem", // Novo Kanban Devolvido para triagem
                       atribuicaoStatus: "Devolvido",
-                      devolvidoMotivo: observacaoFinal || "Devolvido pelo profissional para a triagem",
+                      devolvidoMotivo: observacaoFinal || "Devolvido pelo profissional para nova atribuição",
                       devolvidoPor: profile?.name || "Parceiro",
                       devolvidoEm: new Date().toISOString(),
-                      notificacao: `${notificacaoAnterior}[${nowStr}] Atendimento devolvido pelo profissional ${profile?.name || "Parceiro"}.${textoMotivo} Retornou para a Triagem.`,
+                      notificacao: `${notificacaoAnterior}[${nowStr}] Atendimento devolvido pelo profissional ${profile?.name || "Parceiro"}.${textoMotivo} Retornou para a coluna "Devolvido para triagem" (Devolvido para nova atribuição).`,
                     };
                     await updateDoc(
                       doc(db, "acolhimentos", devolverModalConfig.pacienteId),

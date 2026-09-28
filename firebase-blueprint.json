@@ -170,6 +170,26 @@
         "createdAt": { "type": "timestamp" }
       },
       "required": ["nomeEmpresa", "cnpj", "createdAt"]
+    },
+    "SolicitacaoOrcamento": {
+      "title": "SolicitacaoOrcamento",
+      "description": "Registro de solicitação de orçamento de intervenção corporativa, palestra ou laudo NR-1 enviado pela empresa cliente.",
+      "type": "object",
+      "properties": {
+        "empresaId": { "type": "string" },
+        "empresaNome": { "type": "string" },
+        "catalogoItemId": { "type": "string" },
+        "catalogoItemTitulo": { "type": "string" },
+        "contatoNome": { "type": "string" },
+        "contatoEmail": { "type": "string" },
+        "contatoTelefone": { "type": "string" },
+        "vidasEstimadas": { "type": "number" },
+        "formatoDesejado": { "type": "string", "enum": ["online", "presencial", "hibrido"] },
+        "urgencia": { "type": "string", "enum": ["normal", "alta", "imediata"] },
+        "status": { "type": "string", "enum": ["novo", "em_analise", "orcamento_enviado", "contratado", "arquivado"] },
+        "dataSolicitacao": { "type": "string" }
+      },
+      "required": ["empresaId", "catalogoItemId", "contatoNome", "contatoEmail", "status", "dataSolicitacao"]
     }
   },
   "firestore": {
@@ -204,6 +224,10 @@
     "auditoria_gestao": {
       "schema": { "$ref": "#/entities/AuditoriaGestao" },
       "description": "Logs e trilha de auditoria para ações de apoio e segurança de acesso."
+    },
+    "solicitacoes_orcamentos_corporativos": {
+      "schema": { "$ref": "#/entities/SolicitacaoOrcamento" },
+      "description": "Pedidos de orçamento enviados por empresas via Portal do RH para serviços de NR-1, GRO/PGR e palestras."
     }
   }
 }

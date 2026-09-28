@@ -309,3 +309,178 @@ export interface FaturamentoConfig {
   servicosAdicionaisMesAtual?: ServicoAdicionalItem[];
   historicoFaturas?: FaturaHistoricoItem[];
 }
+
+export type CategoriaCatalogo = "nr1_gro_pgr" | "palestras_workshops" | "diagnostico_psicossocial" | "plantao_crise" | "lideranca_saude" | "outros";
+
+export interface ItemCatalogoCorporativo {
+  id: string;
+  titulo: string;
+  categoria: CategoriaCatalogo;
+  tagNormativa?: string; // Ex: "NR-1 / GRO / PGR", "CIPA", "ESG Social"
+  descricaoCurta: string; // Breve resumo do que é
+  comoFunciona: string; // Como funciona na prática
+  publicoAlvo?: string; // Ex: Lideranças, CIPA, Toda a equipe
+  cargaHorariaEstimada?: string; // Ex: "4 horas", "Ciclo mensal de 3 encontros", "Contínuo"
+  formatoAtendimento?: "online" | "presencial" | "hibrido";
+  beneficiosEsperados?: string[];
+  ativo: boolean; // Se aparece no portal do RH
+  destaque?: boolean; // Se ganha badge de destaque
+  precoReferencia?: string; // Ex: "Sob consulta / Orçamento sob demanda", "A partir de R$ 1.200"
+}
+
+export interface SolicitacaoOrcamentoCorporativo {
+  id: string;
+  empresaId: string;
+  empresaNome: string;
+  catalogoItemId: string;
+  catalogoItemTitulo: string;
+  tagNormativa?: string;
+  contatoNome: string;
+  contatoEmail: string;
+  contatoTelefone?: string;
+  vidasEstimadas?: number;
+  formatoDesejado?: "online" | "presencial" | "hibrido";
+  urgencia?: "normal" | "alta" | "imediata";
+  mensagemOuNecessidade?: string;
+  indicadoresContexto?: string; // Ex: Resumo do mês/turnover no momento do pedido
+  dataSolicitacao: string;
+  status: "novo" | "em_analise" | "orcamento_enviado" | "contratado" | "arquivado";
+}
+
+export const DEFAULT_CATALOGO_CORPORATIVO: ItemCatalogoCorporativo[] = [
+  {
+    id: "nr1_gestao_riscos_psicossociais",
+    titulo: "Assessoria NR-1: Gestão de Riscos Psicossociais (GRO & PGR)",
+    categoria: "nr1_gro_pgr",
+    tagNormativa: "Obrigatório NR-1 / GRO / PGR",
+    descricaoCurta: "Estruturação técnica completa para identificação, mapeamento, matriz de risco e plano de ação contra fatores de estresse, assédio e esgotamento ocupacional exigidos pela NR-1.",
+    comoFunciona: "Nossa equipe de psicólogos organizacionais e especialistas aplica instrumentos validados e escutas diagnósticas com os setores, cruzando dados de absenteísmo e turnover. Em seguida, elabora o Inventário de Riscos Psicossociais integrado ao PGR da empresa, fornecendo plano de intervenção preventiva e relatórios prontos para auditorias fiscais.",
+    publicoAlvo: "RH, SESMT/CIPA, Jurídico e Alta Direção",
+    cargaHorariaEstimada: "Ciclo diagnóstico de 30 a 45 dias com relatórios técnicos e suporte contínuo",
+    formatoAtendimento: "hibrido",
+    beneficiosEsperados: [
+      "Conformidade legal plena com as diretrizes atualizadas da Norma Regulamentadora NR-1",
+      "Redução direta de passivos trabalhistas relacionados a Burnout, assédio e afastamentos (FAP/NTEP)",
+      "Matriz de gravidade e priorização de ações alinhada ao GRO/PGR da medicina do trabalho",
+      "Melhoria do clima organizacional e mitigação de custos ocultos com absenteísmo"
+    ],
+    ativo: true,
+    destaque: true,
+    precoReferencia: "Sob medida conforme porte e quantidade de colaboradores",
+  },
+  {
+    id: "palestra_prevencao_assedio_cipa",
+    titulo: "Treinamento & Palestra: Prevenção ao Assédio e Clima Seguro (Lei 14.457/22 & CIPA)",
+    categoria: "palestras_workshops",
+    tagNormativa: "Obrigatório CIPA / Lei 14.457",
+    descricaoCurta: "Capacitação interativa e humanizada para colaboradores e lideranças sobre prevenção ao assédio moral e sexual, respeito interpessoal e canal de apoio.",
+    comoFunciona: "Conduzida por psicólogos especialistas em formato dinâmico, abordando situações do cotidiano corporativo, limites éticos, como identificar microagressões e o funcionamento do acolhimento confidencial. Inclui emissão de certificado e material para evidência documental da CIPA.",
+    publicoAlvo: "Todos os colaboradores e comissão da CIPA/CIPATR",
+    cargaHorariaEstimada: "Workshops de 1h30 a 2h00 por turma ou palestra magna para toda a organização",
+    formatoAtendimento: "online",
+    beneficiosEsperados: [
+      "Cumprimento da obrigatoriedade anual da Lei 14.457/2022 (CIPA com foco em assédio)",
+      "Ambiente psicologicamente seguro para comunicação transparente e denúncias legítimas",
+      "Material de evidência e ata com lista de presença para inspeções e auditorias"
+    ],
+    ativo: true,
+    destaque: true,
+    precoReferencia: "Orçamento sob demanda por lote de colaboradores",
+  },
+  {
+    id: "workshop_lideranca_acolhedora",
+    titulo: "Workshop de Liderança Acolhedora: Manejo de Ansiedade e Burnout nas Equipes",
+    categoria: "lideranca_saude",
+    tagNormativa: "Desenvolvimento de Gestores & GRO",
+    descricaoCurta: "Treinamento prático para coordenadores, supervisores e diretores identificarem sinais precoces de sofrimento mental nas suas equipes antes que se tornem afastamentos.",
+    comoFunciona: "Sessões interativas de role-playing e estudos de caso focados em: como dar feedbacks sem gerar pânico, primeiros socorros emocionais, encaminhamento sem estigma para o Projeto AcolheMente e gestão saudável de prazos e metas.",
+    publicoAlvo: "Gerentes, Coordenadores, Supervisores e Tech Leads",
+    cargaHorariaEstimada: "Módulo imersivo de 4 horas ou trilha com 2 encontros de 2h",
+    formatoAtendimento: "hibrido",
+    beneficiosEsperados: [
+      "Líderes preparados para agir preventivamente antes de crises graves",
+      "Redução de turnover na equipe decorrente de atritos com a gestão",
+      "Aumento da taxa de adesão ao acolhimento terapêutico nos casos mais críticos"
+    ],
+    ativo: true,
+    destaque: false,
+    precoReferencia: "Sob demanda por grupo de liderança",
+  },
+  {
+    id: "plantao_escuta_gestao_crise",
+    titulo: "Plantão Psicológico de Emergência & Gestão de Crise Organizacional",
+    categoria: "plantao_crise",
+    tagNormativa: "Intervenção Crítica Emergencial",
+    descricaoCurta: "Suporte intensivo e imediato para equipes que vivenciaram eventos traumáticos, perdas de colegas, acidentes de trabalho graves ou processos intensos de reestruturação/layoffs.",
+    comoFunciona: "Disponibilização rápida de plantonistas para salas individuais ou rodas de acolhimento em grupo (debriefing psicológico). Auxilia a equipe a processar o choque, restabelecer a estabilidade emocional e reduzir o impacto de estresse pós-traumático no trabalho.",
+    publicoAlvo: "Equipes impactadas por eventos críticos ou setores sob pressão excepcional",
+    cargaHorariaEstimada: "Atendimento emergencial de 24h a 72h conforme o evento ocorrido",
+    formatoAtendimento: "online",
+    beneficiosEsperados: [
+      "Estabilização imediata da equipe em momentos de dor e estresse agudo",
+      "Demonstração real de cuidado humano da liderança com os colaboradores",
+      "Prevenção de TEPT (Transtorno de Estresse Pós-Traumático) e crises de pânico coletivas"
+    ],
+    ativo: true,
+    destaque: false,
+    precoReferencia: "Plano emergencial sob demanda",
+  },
+  {
+    id: "diagnostico_termometro_emocional",
+    titulo: "Censo de Saúde Mental & Clima Psicossocial (Diagnóstico Profundo)",
+    categoria: "diagnostico_psicossocial",
+    tagNormativa: "Evidência para Plano de Ação PGR",
+    descricaoCurta: "Pesquisa diagnóstica anônima e confidencial com análise de dados preditivos sobre os principais estressores da equipe (sobrecarga, ergonomia cognitiva, reconhecimento, relações).",
+    comoFunciona: "Disparo digital de formulário psicométrico protegido por sigilo. A IA e os psicólogos compilam dashboards estratificados por área (sem identificar indivíduos), identificando pontos de calor e entregando recomendações precisas de intervenção para a diretoria.",
+    publicoAlvo: "100% da base de colaboradores",
+    cargaHorariaEstimada: "Coleta em 15 dias + relatório executivo e apresentação para o board",
+    formatoAtendimento: "online",
+    beneficiosEsperados: [
+      "Identificação antecipada de setores com risco iminente de afastamento por CID F32/F41",
+      "Relatório executivo com KPIs prontos para apresentar em reuniões de diretoria e auditorias",
+      "Fundamentação sólida de onde investir recursos de saúde e bem-estar com maior retorno (ROI)"
+    ],
+    ativo: true,
+    destaque: false,
+    precoReferencia: "Sob consulta conforme o número de colaboradores da empresa",
+  },
+];
+
+/**
+ * Retorna o catálogo corporativo consolidado da empresa.
+ * Se a empresa possuir customizações salvas em `catalogoServicosConfig`, utiliza-as;
+ * caso contrário, retorna os itens padrões da plataforma.
+ */
+export function getCatalogoEmpresa(empresa: any): ItemCatalogoCorporativo[] {
+  if (empresa?.catalogoServicosConfig && Array.isArray(empresa.catalogoServicosConfig) && empresa.catalogoServicosConfig.length > 0) {
+    return empresa.catalogoServicosConfig;
+  }
+  return DEFAULT_CATALOGO_CORPORATIVO;
+}
+
+/**
+ * Retorna o PIN numérico de 4 dígitos de acesso ao RH/Ficha de Bordo da Empresa.
+
+ * Prioridade:
+ * 1. Campo customizado no documento (pinAcessoRH ou pinAcesso)
+ * 2. 4 primeiros dígitos do CNPJ
+ * 3. 4 primeiros dígitos do ID ou "1234"
+ */
+export function getEmpresaPin(empresa: any): string {
+  if (!empresa) return "1234";
+  if (empresa.pinAcessoRH && String(empresa.pinAcessoRH).trim().length >= 4) {
+    return String(empresa.pinAcessoRH).trim().slice(0, 4);
+  }
+  if (empresa.pinAcesso && String(empresa.pinAcesso).trim().length >= 4) {
+    return String(empresa.pinAcesso).trim().slice(0, 4);
+  }
+  const cnpjDigits = (empresa.cnpj || "").replace(/\D/g, "");
+  if (cnpjDigits.length >= 4) {
+    return cnpjDigits.slice(0, 4);
+  }
+  const idDigits = (empresa.id || "").replace(/\D/g, "");
+  if (idDigits.length >= 4) {
+    return idDigits.slice(0, 4);
+  }
+  return "1234";
+}

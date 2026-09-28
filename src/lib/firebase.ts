@@ -1,10 +1,23 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, setPersistence, browserLocalPersistence } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId); // CRITICAL
+
+// In AI Studio iframe environment and restricted browser sandboxes, WebSockets can be blocked or interrupted.
+// Using experimentalLongPolling ensures resilient, persistent connection to Cloud Firestore.
+export const db = initializeFirestore(
+  app,
+  {
+    experimentalForceLongPolling: true,
+    localCache: persistentLocalCache({
+      tabManager: persistentMultipleTabManager(),
+    }),
+  },
+  firebaseConfig.firestoreDatabaseId
+);
+
 export const auth = getAuth(app);
 
 // In the AI Studio iframe environment, third-party cookies/IndexedDB might be restricted.

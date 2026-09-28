@@ -18,10 +18,14 @@ import {
   UserCheck,
   Sparkles,
   ArrowLeft,
+  Lock,
+  Unlock,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { Breadcrumbs } from "../components/Breadcrumbs";
 import { EmpresaColaboradoresSpreadsheet, ColaboradorEmpresa } from "../components/EmpresaColaboradoresSpreadsheet";
-import { CategoriaEmpresa, getEmpresaCategorias, hasEmpresaCategoria } from "../types/corporativo";
+import { CategoriaEmpresa, getEmpresaCategorias, hasEmpresaCategoria, getEmpresaPin } from "../types/corporativo";
 
 interface FichaEmpresaLandingViewProps {
   empresaId: string;
@@ -61,6 +65,15 @@ export function FichaEmpresaLandingView({
   const [colaboradoresList, setColaboradoresList] = useState<ColaboradorEmpresa[]>([]);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
+  // Proteção LGPD por Senha Numérica (PIN de 4 dígitos)
+  const [empresaDoc, setEmpresaDoc] = useState<any>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    return sessionStorage.getItem(`ficha_empresa_auth_${empresaId}`) === "true";
+  });
+  const [pinInput, setPinInput] = useState("");
+  const [pinError, setPinError] = useState("");
+  const [showPin, setShowPin] = useState(false);
+
   const [formData, setFormData] = useState({
     razaoSocial: "",
     cnpj: "",
@@ -90,6 +103,8 @@ export function FichaEmpresaLandingView({
         const docSnap = await getDoc(doc(db, "empresa_leads", empresaId));
         if (docSnap.exists()) {
           const d = docSnap.data();
+          const loadedDoc = { id: docSnap.id, ...d };
+          setEmpresaDoc(loadedDoc);
           setNomeEmpresaExibicao(d.nomeEmpresa || d.razaoSocial || "Empresa Parceira");
           setEmpresaCategorias(getEmpresaCategorias(d as any));
           setEmpresaPaiNome(d.empresaPaiNome);
@@ -109,6 +124,14 @@ export function FichaEmpresaLandingView({
             formaPagamento: d.formaPagamento || "",
             observacoesGerais: d.observacoesGerais || d.registrosDeReunioes || "",
           });
+
+          // Valida autenticação por sessão
+          const sessionAuth = sessionStorage.getItem(`ficha_empresa_auth_${empresaId}`);
+          if (sessionAuth === "true") {
+            setIsAuthenticated(true);
+          } else {
+            setIsAuthenticated(false);
+          }
         } else {
           setErrorMsg("Empresa não encontrada no sistema. Verifique o link ou entre em contato com o suporte.");
         }
@@ -127,6 +150,31 @@ export function FichaEmpresaLandingView({
       setErrorMsg("Identificador da empresa ausente na URL.");
     }
   }, [empresaId]);
+
+  const handleVerifyPin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!empresaDoc) return;
+    const expectedPin = getEmpresaPin(empresaDoc);
+    if (
+      pinInput.trim() === expectedPin ||
+      (empresaDoc.pinAcessoRH && pinInput.trim() === empresaDoc.pinAcessoRH.trim()) ||
+      (empresaDoc.pinAcesso && pinInput.trim() === empresaDoc.pinAcesso.trim())
+    ) {
+      setIsAuthenticated(true);
+      sessionStorage.setItem(`ficha_empresa_auth_${empresaId}`, "true");
+      setPinError("");
+      setToastMsg("Acesso autorizado à Ficha de Bordo!");
+    } else {
+      setPinError("Senha numérica (PIN de 4 dígitos) incorreta. Tente novamente.");
+    }
+  };
+
+  const handleLockAccess = () => {
+    sessionStorage.removeItem(`ficha_empresa_auth_${empresaId}`);
+    setIsAuthenticated(false);
+    setPinInput("");
+    setPinError("");
+  };
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
@@ -209,8 +257,10 @@ export function FichaEmpresaLandingView({
 
   const handleCopyLink = () => {
     const url = window.location.href;
+    const pin = empresaDoc ? getEmpresaPin(empresaDoc) : "";
     navigator.clipboard.writeText(url);
     setCopiedLink(true);
+    setToastMsg(pin ? `Link copiado! (PIN de Segurança: ${pin})` : "Link copiado!");
     setTimeout(() => setCopiedLink(false), 3000);
   };
 
@@ -243,6 +293,123 @@ export function FichaEmpresaLandingView({
     );
   }
 
+  // TELA DE DESBLOQUEIO POR SENHA NUMÉRICA (PIN DE 4 DÍGITOS) - PROTEÇÃO LGPD
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-warm flex flex-col selection:bg-sun-dark/30">
+        {/* Top Navbar */}
+        <nav className="p-4 md:px-12 flex items-center justify-between bg-white/70 backdrop-blur-md sticky top-0 z-40 border-b border-soft">
+          <div
+            className="flex items-center gap-3 cursor-pointer"
+            onClick={onGoHome || onBack}
+          >
+            <div className="w-10 h-10 bg-sun-dark rounded-xl flex items-center justify-center shadow-xs">
+              <Building2 className="w-5 h-5 text-forest" />
+            </div>
+            <div className="flex flex-col">
+              <span className="font-serif text-xl font-bold tracking-tight text-forest leading-none">
+                AcolheMente
+              </span>
+              <span className="text-[10px] uppercase font-bold tracking-widest text-forest/60">
+                Corporativo & Saúde Mental
+              </span>
+            </div>
+          </div>
+
+          <button
+            onClick={onGoHome || onBack}
+            className="flex items-center gap-1.5 text-xs text-forest/80 hover:text-forest font-semibold px-3 py-2 rounded-xl hover:bg-white transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>Voltar</span>
+          </button>
+        </nav>
+
+        {/* Card de Desbloqueio */}
+        <div className="flex-1 flex items-center justify-center p-4 sm:p-6">
+          <div className="bg-white max-w-md w-full rounded-3xl p-6 sm:p-8 shadow-xl border border-soft relative overflow-hidden animate-in zoom-in-95">
+            <div className="absolute -top-10 -right-10 w-32 h-32 bg-sun/20 rounded-full blur-2xl pointer-events-none" />
+
+            <div className="text-center mb-6 relative z-10">
+              <div className="w-14 h-14 rounded-2xl bg-forest text-sun flex items-center justify-center mx-auto mb-3 shadow-md">
+                <Lock className="w-7 h-7" />
+              </div>
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 text-emerald-800 text-[11px] font-bold rounded-full border border-emerald-200 mb-2.5">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" /> Acesso Seguro • Proteção LGPD
+              </span>
+              <h2 className="font-serif text-2xl font-bold text-forest">
+                Ficha de Bordo da Empresa
+              </h2>
+              <p className="text-xs text-forest/70 mt-1.5 leading-relaxed">
+                Esta página abriga dados contratuais e a planilha de colaboradores de{" "}
+                <strong className="text-forest font-semibold">{nomeEmpresaExibicao}</strong>.
+              </p>
+            </div>
+
+            {pinError && (
+              <div className="mb-5 p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800 flex items-start gap-2.5">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                <span className="leading-relaxed">{pinError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleVerifyPin} className="space-y-5">
+              <div>
+                <label className="block text-xs font-bold text-forest uppercase tracking-wider mb-2 text-center">
+                  Digite a Senha Numérica (PIN de 4 Dígitos)
+                </label>
+                <div className="relative max-w-[240px] mx-auto">
+                  <input
+                    type={showPin ? "text" : "password"}
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength={4}
+                    value={pinInput}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/\D/g, "").slice(0, 4);
+                      setPinInput(val);
+                      if (pinError) setPinError("");
+                    }}
+                    placeholder="••••"
+                    className="w-full py-3.5 bg-warm/50 border-2 border-soft focus:border-forest rounded-2xl text-center text-3xl font-mono tracking-[0.5em] text-forest outline-none transition-all placeholder:tracking-widest"
+                    autoFocus
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPin(!showPin)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-forest/40 hover:text-forest p-1 rounded-lg"
+                    title={showPin ? "Ocultar senha" : "Ver senha"}
+                  >
+                    {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={pinInput.length < 4}
+                className={`w-full py-3.5 font-bold text-sm rounded-2xl shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                  pinInput.length === 4
+                    ? "bg-forest text-white hover:bg-forest/90 hover:scale-[1.01]"
+                    : "bg-forest/40 text-white/80 cursor-not-allowed"
+                }`}
+              >
+                <Unlock className="w-4 h-4 text-sun" />
+                <span>Desbloquear Ficha de Bordo</span>
+              </button>
+            </form>
+
+            <div className="mt-6 pt-5 border-t border-soft/60 text-center">
+              <p className="text-[11px] text-forest/60 leading-relaxed">
+                💡 <strong>Precisa do PIN?</strong> O código de segurança foi enviado para o WhatsApp/E-mail de contato cadastrado. Se necessário, contate o suporte do Projeto AcolheMente.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-warm flex flex-col selection:bg-sun-dark/30">
       {/* Top Navbar */}
@@ -264,15 +431,24 @@ export function FichaEmpresaLandingView({
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
           <button
             type="button"
             onClick={handleCopyLink}
             className="hidden sm:flex items-center gap-2 px-3 py-2 text-xs font-semibold text-forest bg-warm/80 hover:bg-soft rounded-xl transition-all border border-soft"
-            title="Copiar link desta ficha"
+            title="Copiar link desta ficha com PIN"
           >
             <Copy className="w-3.5 h-3.5" />
             <span>{copiedLink ? "Link Copiado!" : "Copiar Link"}</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleLockAccess}
+            className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-rose-800 bg-rose-50 hover:bg-rose-100 rounded-xl transition-all border border-rose-200 cursor-pointer"
+            title="Bloquear sessão da Ficha de Bordo"
+          >
+            <Lock className="w-3.5 h-3.5 text-rose-600" />
+            <span>Bloquear</span>
           </button>
           <button
             onClick={onGoHome || onBack}
