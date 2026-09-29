@@ -17,6 +17,10 @@ import {
   Eye,
   UserCheck,
   RefreshCw,
+  KeyRound,
+  Share2,
+  MessageCircle,
+  Link2,
 } from "lucide-react";
 
 export interface ColaboradorItem {
@@ -45,9 +49,11 @@ export type ColaboradorEmpresa = ColaboradorItem;
 interface EmpresaColaboradoresSpreadsheetProps {
   empresaId: string;
   empresaNome?: string;
+  codigoAcesso?: string;
   quantidadeVidasContratadas?: string | number;
   colaboradores: ColaboradorItem[];
   onChangeColaboradores: (colaboradores: ColaboradorItem[]) => void;
+  onUpdateCodigoAcesso?: (newCode: string) => void;
   readOnly?: boolean;
   onShowToast?: (msg: string, type?: "success" | "error" | "info") => void;
 }
@@ -55,9 +61,11 @@ interface EmpresaColaboradoresSpreadsheetProps {
 export const EmpresaColaboradoresSpreadsheet: React.FC<EmpresaColaboradoresSpreadsheetProps> = ({
   empresaId,
   empresaNome = "Empresa",
+  codigoAcesso = "",
   quantidadeVidasContratadas,
   colaboradores = [],
   onChangeColaboradores,
+  onUpdateCodigoAcesso,
   readOnly = false,
   onShowToast,
 }) => {
@@ -66,6 +74,8 @@ export const EmpresaColaboradoresSpreadsheet: React.FC<EmpresaColaboradoresSprea
   const [showImportModal, setShowImportModal] = useState(false);
   const [importText, setImportText] = useState("");
   const [isCopied, setIsCopied] = useState(false);
+  const [copiedCodeSpreadsheet, setCopiedCodeSpreadsheet] = useState(false);
+  const [copiedLinkSpreadsheet, setCopiedLinkSpreadsheet] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Parse meta de vidas
@@ -339,8 +349,129 @@ export const EmpresaColaboradoresSpreadsheet: React.FC<EmpresaColaboradoresSprea
     e.target.value = "";
   };
 
+  const handleCopyCodeSpreadsheet = () => {
+    if (!codigoAcesso) return;
+    navigator.clipboard.writeText(codigoAcesso);
+    setCopiedCodeSpreadsheet(true);
+    if (onShowToast) onShowToast(`Código do colaborador "${codigoAcesso}" copiado!`, "success");
+    setTimeout(() => setCopiedCodeSpreadsheet(false), 2000);
+  };
+
+  const handleCopyLinkSpreadsheet = () => {
+    const code = codigoAcesso.trim().toUpperCase();
+    const link = code
+      ? `${window.location.origin}/?view=acolhimento&via=corporativo&convenio=${encodeURIComponent(code)}`
+      : `${window.location.origin}/?view=acolhimento&via=corporativo`;
+    navigator.clipboard.writeText(link);
+    setCopiedLinkSpreadsheet(true);
+    if (onShowToast) onShowToast("Link direto de acolhimento do colaborador copiado!", "success");
+    setTimeout(() => setCopiedLinkSpreadsheet(false), 2000);
+  };
+
+  const handleShareSpreadsheet = () => {
+    const code = codigoAcesso.trim().toUpperCase();
+    const link = code
+      ? `${window.location.origin}/?view=acolhimento&via=corporativo&convenio=${encodeURIComponent(code)}`
+      : `${window.location.origin}/?view=acolhimento&via=corporativo`;
+    const msg = `Olá, time! 🎉\n\nÉ com muita alegria que informamos que a ${empresaNome} firmou parceria oficial com o Projeto AcolheMente para oferecer apoio psicológico e cuidado à saúde mental de todos os nossos colaboradores!\n\n🔑 Seu Código de Acesso Corporativo: *${code || "SEU-CODIGO"}*\n\n🔗 Link direto de Acolhimento Corporativo:\n${link}\n\nComo iniciar seu acolhimento de forma 100% sigilosa e online:\n1. Acesse o link corporativo acima (já com o código do convênio pré-preenchido)\n2. Escolha o profissional e serviço desejado\n3. Inicie seu atendimento com sigilo ético absoluto!\n\nCuidar da sua mente é uma prioridade para nós! 💚`;
+    navigator.clipboard.writeText(msg);
+    if (onShowToast) onShowToast("Mensagem de divulgação pronta copiada com sucesso!", "success");
+  };
+
+  const handleWhatsAppSpreadsheet = () => {
+    const code = codigoAcesso.trim().toUpperCase();
+    const link = code
+      ? `${window.location.origin}/?view=acolhimento&via=corporativo&convenio=${encodeURIComponent(code)}`
+      : `${window.location.origin}/?view=acolhimento&via=corporativo`;
+    const msg = `Olá, time! 🎉\n\nÉ com muita alegria que informamos que a ${empresaNome} firmou parceria oficial com o Projeto AcolheMente para oferecer apoio psicológico e cuidado à saúde mental de todos os nossos colaboradores!\n\n🔑 Seu Código de Acesso Corporativo: *${code || "SEU-CODIGO"}*\n\n🔗 Link direto de Acolhimento Corporativo:\n${link}\n\nComo iniciar seu acolhimento de forma 100% sigilosa e online:\n1. Acesse o link corporativo acima (já com o código do convênio pré-preenchido)\n2. Escolha o profissional e serviço desejado\n3. Inicie seu atendimento com sigilo ético absoluto!\n\nCuidar da sua mente é uma prioridade para nós! 💚`;
+    window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, "_blank");
+  };
+
   return (
     <div className="flex flex-col h-full space-y-4">
+      {/* Banner de Código do Colaborador para o RH e Gestão */}
+      <div className="bg-emerald-900 text-white p-3.5 sm:p-4 rounded-2xl border border-emerald-800 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center shrink-0 border border-white/20">
+            <KeyRound className="w-5 h-5 text-sun" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-white">Código de Acesso do Colaborador:</span>
+              <span className="font-mono text-sm font-black text-sun bg-white/10 px-2 py-0.5 rounded border border-white/20 tracking-wider">
+                {codigoAcesso || "NÃO CADASTRADO"}
+              </span>
+            </div>
+            <p className="text-[11px] text-emerald-200/90 mt-0.5">
+              Este código é repassado aos colaboradores desta empresa para desbloquear o acolhimento corporativo com condições especiais.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 self-stretch sm:self-auto justify-end flex-wrap">
+          {codigoAcesso ? (
+            <>
+              <button
+                type="button"
+                onClick={handleCopyCodeSpreadsheet}
+                className="px-2.5 py-1.5 bg-white text-forest hover:bg-warm rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+                title="Copiar Código de Acesso"
+              >
+                {copiedCodeSpreadsheet ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>{copiedCodeSpreadsheet ? "Copiado!" : "Copiar Código"}</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleCopyLinkSpreadsheet}
+                className="px-2.5 py-1.5 bg-emerald-800 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer border border-emerald-700 shadow-2xs"
+                title="Copiar Link de Acolhimento com Convênio Preenchido"
+              >
+                {copiedLinkSpreadsheet ? <Check className="w-3.5 h-3.5 text-sun" /> : <Link2 className="w-3.5 h-3.5" />}
+                <span>{copiedLinkSpreadsheet ? "Link Copiado!" : "Copiar Link"}</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleShareSpreadsheet}
+                className="px-2.5 py-1.5 bg-sun hover:bg-sun-dark text-forest rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+                title="Copiar Mensagem Pronta de Divulgação"
+              >
+                <Share2 className="w-3.5 h-3.5" />
+                <span>Divulgação</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleWhatsAppSpreadsheet}
+                className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+                title="Compartilhar via WhatsApp"
+              >
+                <MessageCircle className="w-3.5 h-3.5" />
+                <span className="hidden md:inline">WhatsApp</span>
+              </button>
+            </>
+          ) : (
+            onUpdateCodigoAcesso && !readOnly && (
+              <button
+                type="button"
+                onClick={() => {
+                  const prefix = empresaNome
+                    .normalize("NFD")
+                    .replace(/[\u0300-\u036f]/g, "")
+                    .replace(/[^a-zA-Z]/g, "")
+                    .slice(0, 4)
+                    .toUpperCase() || "CORP";
+                  const newCode = `${prefix}-${Math.floor(1000 + Math.random() * 9000)}`;
+                  onUpdateCodigoAcesso(newCode);
+                }}
+                className="px-3 py-1.5 bg-sun hover:bg-sun-dark text-forest rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Gerar Código do Colaborador</span>
+              </button>
+            )
+          )}
+        </div>
+      </div>
+
       {/* Top Banner: Metrics & Controls */}
       <div className="bg-white p-4 rounded-2xl border border-soft shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         {/* Left summary cards */}

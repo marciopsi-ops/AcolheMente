@@ -484,3 +484,102 @@ export function getEmpresaPin(empresa: any): string {
   }
   return "1234";
 }
+
+/**
+ * Interface dos Temas e Queixas de Busca dos Colaboradores
+ * Mapeados diretamente às soluções recomendadas do Catálogo Corporativo / NR-1.
+ */
+export interface TemaQueixaItem {
+  id: string;
+  label: string;
+  categoria: string;
+  iconeEmoji: string;
+  servicoCatalogoSugeridoId: string;
+  solucaoSugeridaTitulo: string;
+  solucaoSugeridaDescricao: string;
+}
+
+export const TEMAS_QUEIXAS_CORPORATIVAS: TemaQueixaItem[] = [
+  {
+    id: "ansiedade_estresse",
+    label: "Ansiedade, Estresse & Tensão",
+    categoria: "Saúde Emocional",
+    iconeEmoji: "⚡",
+    servicoCatalogoSugeridoId: "nr1_gestao_riscos_psicossociais",
+    solucaoSugeridaTitulo: "Workshop de Manejo da Ansiedade & Gestão do Estresse",
+    solucaoSugeridaDescricao: "Sessões focais para redução de estresse agudo, regulação emocional e pausas restaurativas no trabalho.",
+  },
+  {
+    id: "burnout_sobrecarga",
+    label: "Burnout, Sobrecarga & Esgotamento (NR-1)",
+    categoria: "Saúde Ocupacional",
+    iconeEmoji: "🔥",
+    servicoCatalogoSugeridoId: "workshop_lideranca_acolhedora",
+    solucaoSugeridaTitulo: "Treinamento de Liderança Acolhedora & Prevenção ao Burnout",
+    solucaoSugeridaDescricao: "Mapeamento de sobrecarga e capacitação de gestores para detectar sinais precoces de exaustão e equilibrar metas.",
+  },
+  {
+    id: "conflitos_relacionamentos",
+    label: "Conflitos de Equipe & Relacionamento",
+    categoria: "Clima & Relações Humanas",
+    iconeEmoji: "🤝",
+    servicoCatalogoSugeridoId: "palestra_prevencao_assedio_cipa",
+    solucaoSugeridaTitulo: "Roda de Conversa & Comunicação Não-Violenta (CNV)",
+    solucaoSugeridaDescricao: "Mediação de clima, alinhamento interpessoal e dinâmicas de segurança psicológica e respeito mútuo.",
+  },
+  {
+    id: "tristeza_desanimo",
+    label: "Depressão, Desânimo & Desmotivação",
+    categoria: "Saúde Emocional",
+    iconeEmoji: "🌧️",
+    servicoCatalogoSugeridoId: "nr1_gestao_riscos_psicossociais",
+    solucaoSugeridaTitulo: "Acolhimento Terapêutico Contínuo & Avaliação de Riscos",
+    solucaoSugeridaDescricao: "Apoio clínico individualizado integrado a indicadores de suporte à vida e acompanhamento contínuo.",
+  },
+  {
+    id: "sono_insonia",
+    label: "Insônia & Distúrbios do Sono",
+    categoria: "Qualidade de Vida",
+    iconeEmoji: "🌙",
+    servicoCatalogoSugeridoId: "nr1_gestao_riscos_psicossociais",
+    solucaoSugeridaTitulo: "Palestra de Higiene do Sono & Foco Mental",
+    solucaoSugeridaDescricao: "Orientação prática para melhorar a recuperação psicofísica, descanso e atenção no dia a dia.",
+  },
+  {
+    id: "luto_crise",
+    label: "Luto, Perdas & Situações de Crise",
+    categoria: "Gestão de Crises",
+    iconeEmoji: "🕊️",
+    servicoCatalogoSugeridoId: "plantao_escuta_gestao_crise",
+    solucaoSugeridaTitulo: "Plantão Psicológico & Suporte em Situações Críticas",
+    solucaoSugeridaDescricao: "Intervenção focal rápida e acolhimento estruturado para colaboradores em momentos de vulnerabilidade ou perdas.",
+  },
+  {
+    id: "carreira_desempenho",
+    label: "Desenvolvimento de Carreira, Foco & Transição",
+    categoria: "Performance & Carreira",
+    iconeEmoji: "🎯",
+    servicoCatalogoSugeridoId: "workshop_lideranca_acolhedora",
+    solucaoSugeridaTitulo: "Mentoria de Carreira & Inteligência Emocional Profissional",
+    solucaoSugeridaDescricao: "Fortalecimento de competências socioemocionais, clareza de metas e equilíbrio sob pressão.",
+  },
+  {
+    id: "familia_parentalidade",
+    label: "Desafios Familiares & Parentalidade",
+    categoria: "Vida Pessoal & Família",
+    iconeEmoji: "🏡",
+    servicoCatalogoSugeridoId: "palestra_prevencao_assedio_cipa",
+    solucaoSugeridaTitulo: "Ciclo de Apoio à Parentalidade & Conciliação Vida-Trabalho",
+    solucaoSugeridaDescricao: "Orientação e acolhimento para pais, mães e cuidadores equilibrarem responsabilidades familiares e corporativas.",
+  },
+  {
+    id: "autoconhecimento",
+    label: "Autoconhecimento & Resiliência",
+    categoria: "Desenvolvimento Pessoal",
+    iconeEmoji: "🌱",
+    servicoCatalogoSugeridoId: "workshop_lideranca_acolhedora",
+    solucaoSugeridaTitulo: "Workshop de Autoliderança & Inteligência Emocional",
+    solucaoSugeridaDescricao: "Práticas de autopercepção, gestão de limites e desenvolvimento sustentável da resiliência.",
+  },
+];
+

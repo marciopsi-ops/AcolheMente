@@ -355,7 +355,13 @@ export default function App() {
     return new URLSearchParams(window.location.search).get("proposta");
   });
   const [publicFichaEmpresaId, setPublicFichaEmpresaId] = useState<string | null>(() => {
-    return new URLSearchParams(window.location.search).get("ficha_empresa") || new URLSearchParams(window.location.search).get("empresa_ficha");
+    const p = new URLSearchParams(window.location.search);
+    return (
+      p.get("ficha_implantacao") ||
+      p.get("implantacao") ||
+      p.get("ficha_empresa") ||
+      p.get("empresa_ficha")
+    );
   });
   const [publicPortalEmpresaId, setPublicPortalEmpresaId] = useState<string | null>(() => {
     return (
@@ -412,7 +418,12 @@ export default function App() {
       setPublicEventoId(p.get("evento"));
       setPublicContratoId(p.get("contrato"));
       setPublicPropostaId(p.get("proposta"));
-      setPublicFichaEmpresaId(p.get("ficha_empresa") || p.get("empresa_ficha"));
+      setPublicFichaEmpresaId(
+        p.get("ficha_implantacao") ||
+        p.get("implantacao") ||
+        p.get("ficha_empresa") ||
+        p.get("empresa_ficha")
+      );
       setPublicPortalEmpresaId(p.get("portal_empresa") || p.get("portal_rh") || p.get("empresa_portal"));
       setPublicArtigoId(p.get("artigo"));
       const v = p.get("view");

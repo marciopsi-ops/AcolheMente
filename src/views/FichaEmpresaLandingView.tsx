@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { doc, getDoc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { doc, getDoc, updateDoc, collection, addDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import {
   Building2,
@@ -59,15 +59,24 @@ export function FichaEmpresaLandingView({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [createdEmpresaId, setCreatedEmpresaId] = useState<string | null>(null);
+  const [createdPin, setCreatedPin] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [activeTab, setActiveTab] = useState<"empresa" | "colaboradores">("empresa");
   const [colaboradoresList, setColaboradoresList] = useState<ColaboradorEmpresa[]>([]);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
+  // Parâmetros de URL para onboarding / novo vínculo com Canal Parceiro
+  const isNovaEmpresa = empresaId === "nova" || empresaId === "novo";
+  const urlParams = new URLSearchParams(window.location.search);
+  const parceiroIdParam = urlParams.get("parceiro_id") || urlParams.get("parceiro") || urlParams.get("canal_id");
+
   // Proteção LGPD por Senha Numérica (PIN de 4 dígitos)
   const [empresaDoc, setEmpresaDoc] = useState<any>(null);
+  const [parceiroDoc, setParceiroDoc] = useState<any>(null);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    if (empresaId === "nova" || empresaId === "novo") return true;
     return sessionStorage.getItem(`ficha_empresa_auth_${empresaId}`) === "true";
   });
   const [pinInput, setPinInput] = useState("");
@@ -100,6 +109,27 @@ export function FichaEmpresaLandingView({
     const fetchEmpresa = async () => {
       try {
         setLoading(true);
+
+        if (isNovaEmpresa) {
+          setIsAuthenticated(true);
+          if (parceiroIdParam) {
+            try {
+              const pSnap = await getDoc(doc(db, "empresa_leads", parceiroIdParam));
+              if (pSnap.exists()) {
+                const pd = pSnap.data();
+                setParceiroDoc({ id: pSnap.id, ...pd });
+                setEmpresaPaiNome(pd.nomeEmpresa || pd.razaoSocial || "Canal Parceiro");
+              }
+            } catch (pErr) {
+              console.warn("Canal parceiro não carregado:", pErr);
+            }
+          }
+          setNomeEmpresaExibicao("Primeira Implantação de Empresa");
+          setEmpresaCategorias(["empresa_conectada"]);
+          setLoading(false);
+          return;
+        }
+
         const docSnap = await getDoc(doc(db, "empresa_leads", empresaId));
         if (docSnap.exists()) {
           const d = docSnap.data();
@@ -136,7 +166,7 @@ export function FichaEmpresaLandingView({
           setErrorMsg("Empresa não encontrada no sistema. Verifique o link ou entre em contato com o suporte.");
         }
       } catch (err) {
-        console.error("Erro ao carregar ficha da empresa:", err);
+        console.error("Erro ao carregar ficha de implantação da empresa:", err);
         setErrorMsg("Não foi possível carregar os dados. Verifique sua conexão e tente novamente.");
       } finally {
         setLoading(false);
@@ -163,7 +193,7 @@ export function FichaEmpresaLandingView({
       setIsAuthenticated(true);
       sessionStorage.setItem(`ficha_empresa_auth_${empresaId}`, "true");
       setPinError("");
-      setToastMsg("Acesso autorizado à Ficha de Bordo!");
+      setToastMsg("Acesso autorizado à Ficha de Implantação!");
     } else {
       setPinError("Senha numérica (PIN de 4 dígitos) incorreta. Tente novamente.");
     }
@@ -222,33 +252,71 @@ export function FichaEmpresaLandingView({
 
     try {
       setSaving(true);
-      await updateDoc(doc(db, "empresa_leads", empresaId), {
-        razaoSocial: formData.razaoSocial.trim(),
-        cnpj: formData.cnpj.trim(),
-        cpfResponsavel: formData.cpfResponsavel.trim(),
-        nomeResponsavel: formData.nomeResponsavel.trim(),
-        email: formData.email.trim(),
-        telefone: formData.telefone.trim(),
-        quantidadeVidas: formData.quantidadeVidas.trim(),
-        produtosContratados: formData.produtosContratados.trim(),
-        valoresDefinidos: formData.valoresDefinidos.trim(),
-        formaPagamento: formData.formaPagamento.trim(),
-        observacoesGerais: formData.observacoesGerais.trim(),
-        // Mantém sincronizado com as chaves históricas para compatibilidade
-        nomeEmpresa: formData.razaoSocial.trim(),
-        contatoNome: formData.nomeResponsavel.trim(),
-        colaboradores: formData.quantidadeVidas.trim(),
-        servicosOferecidos: formData.produtosContratados.trim(),
-        valoresAcertados: formData.valoresDefinidos.trim(),
-        colaboradoresList: colaboradoresList,
-        fichaPreenchidaPelaEmpresa: true,
-        fichaPreenchidaEm: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
-      setSavedSuccess(true);
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      if (isNovaEmpresa) {
+        const generatedPin = Math.floor(1000 + Math.random() * 9000).toString();
+        const docRef = await addDoc(collection(db, "empresa_leads"), {
+          razaoSocial: formData.razaoSocial.trim(),
+          cnpj: formData.cnpj.trim(),
+          cpfResponsavel: formData.cpfResponsavel.trim(),
+          nomeResponsavel: formData.nomeResponsavel.trim(),
+          email: formData.email.trim(),
+          telefone: formData.telefone.trim(),
+          quantidadeVidas: formData.quantidadeVidas.trim(),
+          produtosContratados: formData.produtosContratados.trim(),
+          valoresDefinidos: formData.valoresDefinidos.trim(),
+          formaPagamento: formData.formaPagamento.trim(),
+          observacoesGerais: formData.observacoesGerais.trim(),
+          nomeEmpresa: formData.razaoSocial.trim(),
+          contatoNome: formData.nomeResponsavel.trim(),
+          colaboradores: formData.quantidadeVidas.trim(),
+          servicosOferecidos: formData.produtosContratados.trim(),
+          valoresAcertados: formData.valoresDefinidos.trim(),
+          colaboradoresList: colaboradoresList,
+          categorias: ["empresa_conectada"],
+          tipoParceria: "empresa_conectada",
+          canalParceiroId: parceiroIdParam || null,
+          empresaMaeId: parceiroIdParam || null,
+          empresaPaiId: parceiroIdParam || null,
+          empresaPaiNome: parceiroDoc?.nomeEmpresa || parceiroDoc?.razaoSocial || empresaPaiNome || "Canal Parceiro",
+          pinAcessoRH: generatedPin,
+          fichaPreenchidaPelaEmpresa: true,
+          fichaPreenchidaEm: serverTimestamp(),
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+        setCreatedEmpresaId(docRef.id);
+        setCreatedPin(generatedPin);
+        setSavedSuccess(true);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      } else {
+        await updateDoc(doc(db, "empresa_leads", empresaId), {
+          razaoSocial: formData.razaoSocial.trim(),
+          cnpj: formData.cnpj.trim(),
+          cpfResponsavel: formData.cpfResponsavel.trim(),
+          nomeResponsavel: formData.nomeResponsavel.trim(),
+          email: formData.email.trim(),
+          telefone: formData.telefone.trim(),
+          quantidadeVidas: formData.quantidadeVidas.trim(),
+          produtosContratados: formData.produtosContratados.trim(),
+          valoresDefinidos: formData.valoresDefinidos.trim(),
+          formaPagamento: formData.formaPagamento.trim(),
+          observacoesGerais: formData.observacoesGerais.trim(),
+          // Mantém sincronizado com as chaves históricas para compatibilidade
+          nomeEmpresa: formData.razaoSocial.trim(),
+          contatoNome: formData.nomeResponsavel.trim(),
+          colaboradores: formData.quantidadeVidas.trim(),
+          servicosOferecidos: formData.produtosContratados.trim(),
+          valoresAcertados: formData.valoresDefinidos.trim(),
+          colaboradoresList: colaboradoresList,
+          fichaPreenchidaPelaEmpresa: true,
+          fichaPreenchidaEm: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+        setSavedSuccess(true);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }
     } catch (err) {
-      console.error("Erro ao salvar dados da Ficha de Bordo:", err);
+      console.error("Erro ao salvar dados da Ficha de Implantação:", err);
       alert("Houve uma falha ao salvar as informações. Por favor, tente novamente.");
     } finally {
       setSaving(false);
@@ -269,7 +337,7 @@ export function FichaEmpresaLandingView({
       <div className="min-h-screen flex flex-col items-center justify-center bg-warm p-6">
         <div className="w-12 h-12 border-4 border-sun-dark border-t-transparent rounded-full animate-spin mb-4" />
         <p className="text-forest font-semibold animate-pulse text-sm">
-          Carregando Ficha de Bordo da Empresa...
+          Carregando Ficha de Implantação da Empresa...
         </p>
       </div>
     );
@@ -299,21 +367,40 @@ export function FichaEmpresaLandingView({
       <div className="min-h-screen bg-warm flex flex-col selection:bg-sun-dark/30">
         {/* Top Navbar */}
         <nav className="p-4 md:px-12 flex items-center justify-between bg-white/70 backdrop-blur-md sticky top-0 z-40 border-b border-soft">
-          <div
-            className="flex items-center gap-3 cursor-pointer"
-            onClick={onGoHome || onBack}
-          >
-            <div className="w-10 h-10 bg-sun-dark rounded-xl flex items-center justify-center shadow-xs">
-              <Building2 className="w-5 h-5 text-forest" />
+          <div className="flex items-center gap-3">
+            <div
+              className="flex items-center gap-3 cursor-pointer"
+              onClick={onGoHome || onBack}
+            >
+              <div className="w-10 h-10 bg-sun-dark rounded-xl flex items-center justify-center shadow-xs">
+                <Building2 className="w-5 h-5 text-forest" />
+              </div>
+              <div className="flex flex-col">
+                <span className="font-serif text-xl font-bold tracking-tight text-forest leading-none">
+                  AcolheMente
+                </span>
+                <span className="text-[10px] uppercase font-bold tracking-widest text-forest/60">
+                  Corporativo & Saúde Mental
+                </span>
+              </div>
             </div>
-            <div className="flex flex-col">
-              <span className="font-serif text-xl font-bold tracking-tight text-forest leading-none">
-                AcolheMente
-              </span>
-              <span className="text-[10px] uppercase font-bold tracking-widest text-forest/60">
-                Corporativo & Saúde Mental
-              </span>
-            </div>
+
+            {/* Logo da Empresa no Topo */}
+            {(empresaDoc?.logoUrl || empresaDoc?.logo || empresaDoc?.empresaLogo || empresaDoc?.logoBase64) && (
+              <div className="hidden sm:flex items-center gap-2.5 pl-3 border-l border-soft">
+                <div className="w-8 h-8 rounded-lg bg-white border border-soft p-0.5 flex items-center justify-center overflow-hidden shadow-2xs">
+                  <img
+                    src={empresaDoc.logoUrl || empresaDoc.logo || empresaDoc.empresaLogo || empresaDoc.logoBase64}
+                    alt={nomeEmpresaExibicao}
+                    className="w-full h-full object-contain"
+                    referrerPolicy="no-referrer"
+                  />
+                </div>
+                <span className="text-xs font-bold text-forest max-w-[180px] truncate">
+                  {nomeEmpresaExibicao}
+                </span>
+              </div>
+            )}
           </div>
 
           <button
@@ -338,7 +425,7 @@ export function FichaEmpresaLandingView({
                 <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" /> Acesso Seguro • Proteção LGPD
               </span>
               <h2 className="font-serif text-2xl font-bold text-forest">
-                Ficha de Bordo da Empresa
+                Ficha de Implantação da Empresa
               </h2>
               <p className="text-xs text-forest/70 mt-1.5 leading-relaxed">
                 Esta página abriga dados contratuais e a planilha de colaboradores de{" "}
@@ -395,7 +482,7 @@ export function FichaEmpresaLandingView({
                 }`}
               >
                 <Unlock className="w-4 h-4 text-sun" />
-                <span>Desbloquear Ficha de Bordo</span>
+                <span>Desbloquear Ficha de Implantação</span>
               </button>
             </form>
 
@@ -414,21 +501,40 @@ export function FichaEmpresaLandingView({
     <div className="min-h-screen bg-warm flex flex-col selection:bg-sun-dark/30">
       {/* Top Navbar */}
       <nav className="p-4 md:px-12 flex items-center justify-between bg-white/70 backdrop-blur-md sticky top-0 z-40 border-b border-soft">
-        <div
-          className="flex items-center gap-3 cursor-pointer"
-          onClick={onGoHome || onBack}
-        >
-          <div className="w-10 h-10 bg-sun-dark rounded-xl flex items-center justify-center shadow-xs">
-            <Building2 className="w-5 h-5 text-forest" />
+        <div className="flex items-center gap-3">
+          <div
+            className="flex items-center gap-3 cursor-pointer"
+            onClick={onGoHome || onBack}
+          >
+            <div className="w-10 h-10 bg-sun-dark rounded-xl flex items-center justify-center shadow-xs">
+              <Building2 className="w-5 h-5 text-forest" />
+            </div>
+            <div className="flex flex-col">
+              <span className="font-serif text-xl font-bold tracking-tight text-forest leading-none">
+                AcolheMente
+              </span>
+              <span className="text-[10px] uppercase font-bold tracking-widest text-forest/60">
+                Corporativo & Saúde Mental
+              </span>
+            </div>
           </div>
-          <div className="flex flex-col">
-            <span className="font-serif text-xl font-bold tracking-tight text-forest leading-none">
-              AcolheMente
-            </span>
-            <span className="text-[10px] uppercase font-bold tracking-widest text-forest/60">
-              Corporativo & Saúde Mental
-            </span>
-          </div>
+
+          {/* Logo da Empresa Replicado no Topo ao Lado do Nome */}
+          {(empresaDoc?.logoUrl || empresaDoc?.logo || empresaDoc?.empresaLogo || empresaDoc?.logoBase64) && (
+            <div className="hidden sm:flex items-center gap-2.5 pl-3 border-l border-soft">
+              <div className="w-8 h-8 rounded-lg bg-white border border-soft p-0.5 flex items-center justify-center overflow-hidden shadow-2xs">
+                <img
+                  src={empresaDoc.logoUrl || empresaDoc.logo || empresaDoc.empresaLogo || empresaDoc.logoBase64}
+                  alt={nomeEmpresaExibicao}
+                  className="w-full h-full object-contain"
+                  referrerPolicy="no-referrer"
+                />
+              </div>
+              <span className="text-xs font-bold text-forest max-w-[180px] truncate">
+                {nomeEmpresaExibicao}
+              </span>
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-2 sm:gap-3">
@@ -445,7 +551,7 @@ export function FichaEmpresaLandingView({
             type="button"
             onClick={handleLockAccess}
             className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-rose-800 bg-rose-50 hover:bg-rose-100 rounded-xl transition-all border border-rose-200 cursor-pointer"
-            title="Bloquear sessão da Ficha de Bordo"
+            title="Bloquear sessão da Ficha de Implantação"
           >
             <Lock className="w-3.5 h-3.5 text-rose-600" />
             <span>Bloquear</span>
@@ -466,7 +572,7 @@ export function FichaEmpresaLandingView({
           items={[
             { label: "Início", onClick: onGoHome || onBack },
             { label: "Corporativo", onClick: onGoHome || onBack },
-            { label: "Ficha de Bordo da Empresa", active: true },
+            { label: "Ficha de Implantação da Empresa", active: true },
           ]}
           className="!px-0 !mt-0"
         />
@@ -483,7 +589,7 @@ export function FichaEmpresaLandingView({
                 <span>Cadastro Oficial & Formalização</span>
               </div>
               <h1 className="font-serif text-2xl sm:text-3xl md:text-4xl text-forest font-semibold mb-2">
-                Ficha de Bordo da Empresa
+                Ficha de Implantação da Empresa
               </h1>
               <p className="text-sm sm:text-base text-forest/70 max-w-2xl leading-relaxed">
                 Complete e confira as informações cadastrais, responsáveis, escopo de produtos
@@ -492,30 +598,47 @@ export function FichaEmpresaLandingView({
               </p>
             </div>
 
-            <div className="bg-warm/60 border border-soft rounded-2xl p-4 shrink-0 flex flex-col gap-1.5 min-w-[240px]">
-              <div className="flex flex-wrap items-center gap-1.5">
-                {empresaCategorias.includes("empresa_direta") && (
-                  <span className="text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200">
-                    Cliente Direta
-                  </span>
-                )}
-                {empresaCategorias.includes("canal_parceiro") && (
-                  <span className="text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-purple-100 text-purple-900 border border-purple-300">
-                    Canal Parceiro
-                  </span>
-                )}
-                {empresaCategorias.includes("empresa_conectada") && (
-                  <span className="text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300">
-                    Conectada {empresaPaiNome ? `(${empresaPaiNome})` : ""}
-                  </span>
-                )}
-              </div>
-              <span className="text-base font-bold text-forest line-clamp-1">
-                {nomeEmpresaExibicao}
-              </span>
-              <div className="flex items-center gap-1.5 text-xs text-emerald-700 font-semibold">
-                <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                <span>Ambiente Seguro & LGPD</span>
+            <div className="bg-warm/60 border border-soft rounded-2xl p-4 shrink-0 flex items-center gap-3.5 min-w-[280px]">
+              {(empresaDoc?.logoUrl || empresaDoc?.logo || empresaDoc?.empresaLogo || empresaDoc?.logoBase64) ? (
+                <div className="w-14 h-14 rounded-2xl bg-white border border-soft p-1 flex items-center justify-center shrink-0 shadow-2xs overflow-hidden">
+                  <img
+                    src={empresaDoc.logoUrl || empresaDoc.logo || empresaDoc.empresaLogo || empresaDoc.logoBase64}
+                    alt={nomeEmpresaExibicao}
+                    className="w-full h-full object-contain"
+                    referrerPolicy="no-referrer"
+                  />
+                </div>
+              ) : (
+                <div className="w-12 h-12 rounded-2xl bg-forest flex items-center justify-center text-sun shadow-2xs font-bold text-sm shrink-0">
+                  {nomeEmpresaExibicao.slice(0, 2).toUpperCase()}
+                </div>
+              )}
+
+              <div className="flex flex-col gap-1 min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {empresaCategorias.includes("empresa_direta") && (
+                    <span className="text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200">
+                      Cliente Direta
+                    </span>
+                  )}
+                  {empresaCategorias.includes("canal_parceiro") && (
+                    <span className="text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-purple-100 text-purple-900 border border-purple-300">
+                      Canal Parceiro
+                    </span>
+                  )}
+                  {empresaCategorias.includes("empresa_conectada") && (
+                    <span className="text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300">
+                      Conectada {empresaPaiNome ? `(${empresaPaiNome})` : ""}
+                    </span>
+                  )}
+                </div>
+                <span className="text-base font-bold text-forest line-clamp-1">
+                  {nomeEmpresaExibicao}
+                </span>
+                <div className="flex items-center gap-1.5 text-xs text-emerald-700 font-semibold">
+                  <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>Ambiente Seguro & LGPD</span>
+                </div>
               </div>
             </div>
           </div>
@@ -564,15 +687,60 @@ export function FichaEmpresaLandingView({
 
         {/* Success Alert */}
         {savedSuccess && activeTab === "empresa" && (
-          <div className="bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-2xl p-5 flex items-start gap-4 animate-in fade-in slide-in-from-top-2">
-            <CheckCircle2 className="w-6 h-6 text-emerald-600 shrink-0 mt-0.5" />
-            <div>
-              <h4 className="font-bold text-sm">Ficha de Bordo salva com sucesso!</h4>
-              <p className="text-xs text-emerald-800 mt-1">
-                Os dados contratuais e operacionais foram sincronizados diretamente com a gestão da
-                plataforma AcolheMente.
-              </p>
+          <div className="bg-emerald-50 border border-emerald-300 text-emerald-950 rounded-2xl p-5 sm:p-6 flex flex-col gap-4 animate-in fade-in slide-in-from-top-2 shadow-sm">
+            <div className="flex items-start gap-3">
+              <CheckCircle2 className="w-6 h-6 text-emerald-600 shrink-0 mt-0.5" />
+              <div>
+                <h4 className="font-bold text-base text-emerald-950">
+                  {createdEmpresaId ? "Ficha de Implantação concluída com sucesso!" : "Ficha de Implantação salva com sucesso!"}
+                </h4>
+                <p className="text-xs text-emerald-800 mt-1 leading-relaxed">
+                  {createdEmpresaId
+                    ? `Os dados foram salvos e a empresa foi cadastrada como Empresa Conectada vinculada ao parceiro ${empresaPaiNome || "Canal Parceiro"}.`
+                    : "Os dados contratuais e operacionais foram sincronizados diretamente com a gestão da plataforma AcolheMente."}
+                </p>
+              </div>
             </div>
+
+            {createdEmpresaId && createdPin && (
+              <div className="p-4 bg-white rounded-xl border border-emerald-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div className="space-y-1">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-900 block">
+                    Acesso ao Portal do RH da Empresa Conectada
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-forest/70">Senha PIN de Acesso:</span>
+                    <span className="font-mono font-bold text-base text-forest bg-amber-100 border border-amber-300 px-2 py-0.5 rounded">
+                      {createdPin}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const link = `${window.location.origin}/?portal_rh=${createdEmpresaId}`;
+                      navigator.clipboard.writeText(link);
+                      setToastMsg(`Link do Portal do RH copiado! PIN: ${createdPin}`);
+                      setTimeout(() => setToastMsg(null), 3500);
+                    }}
+                    className="flex-1 sm:flex-initial px-3 py-2 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>Copiar Link do Portal RH</span>
+                  </button>
+                  <a
+                    href={`/?portal_rh=${createdEmpresaId}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex-1 sm:flex-initial px-3.5 py-2 bg-forest hover:bg-forest/90 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5 text-sun" />
+                    <span>Abrir Portal RH</span>
+                  </a>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -902,7 +1070,7 @@ export function FichaEmpresaLandingView({
                 ) : (
                   <>
                     <Save className="w-4 h-4" />
-                    <span>Salvar Ficha de Bordo</span>
+                    <span>Salvar Ficha de Implantação</span>
                   </>
                 )}
               </button>

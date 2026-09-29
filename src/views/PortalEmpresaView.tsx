@@ -14,6 +14,7 @@ import * as XLSX from "xlsx";
 import { db } from "../lib/firebase";
 import {
   Building2,
+  Globe,
   Users,
   BarChart3,
   Calendar,
@@ -51,6 +52,8 @@ import {
   X,
   Share2,
   Copy,
+  KeyRound,
+  MessageCircle,
   Info,
   DollarSign,
   CreditCard,
@@ -61,6 +64,14 @@ import {
   Send,
   HelpCircle,
   FileCheck2,
+  Target,
+  Zap,
+  Flame,
+  Compass,
+  PieChart,
+  UserPlus,
+  Link2,
+  ExternalLink,
 } from "lucide-react";
 import {
   CategoriaEmpresa,
@@ -77,6 +88,8 @@ import {
   ItemCatalogoCorporativo,
   getCatalogoEmpresa,
   SolicitacaoOrcamentoCorporativo,
+  TEMAS_QUEIXAS_CORPORATIVAS,
+  TemaQueixaItem,
 } from "../types/corporativo";
 import logoImage from "../assets/images/logo_acolhe.jpeg";
 
@@ -238,6 +251,7 @@ export function PortalEmpresaView({
   const [isSendingOrcamento, setIsSendingOrcamento] = useState(false);
   const [orcamentoSucesso, setOrcamentoSucesso] = useState(false);
   const [filtroCategoriaCatalogo, setFiltroCategoriaCatalogo] = useState<string>("todas");
+  const [acessosCorporativos, setAcessosCorporativos] = useState<any[]>([]);
 
   // Helper de Toast
   const showToast = (text: string, type: "success" | "error" | "info" = "success") => {
@@ -245,31 +259,114 @@ export function PortalEmpresaView({
     setTimeout(() => setToastMsg(null), 4000);
   };
 
+  // Estados para Código de Acesso do Colaborador (Exposto para o RH repassar aos colaboradores)
+  const [copiedCodigoColab, setCopiedCodigoColab] = useState(false);
+  const [copiedLinkColab, setCopiedLinkColab] = useState(false);
+  const [copiedMsgColab, setCopiedMsgColab] = useState(false);
+  const [showModalMensagemColaborador, setShowModalMensagemColaborador] = useState(false);
+
+  // Helper para obter o Código de Acesso do Colaborador ativo
+  const getCodigoColaborador = () => {
+    return (empresaAtiva?.codigoAcesso || empresaPrincipal?.codigoAcesso || "").trim().toUpperCase();
+  };
+
+  const getNomeEmpresaAtiva = () => {
+    return (
+      empresaAtiva?.nomeEmpresa ||
+      empresaAtiva?.razaoSocial ||
+      empresaPrincipal?.nomeEmpresa ||
+      empresaPrincipal?.razaoSocial ||
+      "Nossa Empresa"
+    );
+  };
+
+  const getLinkAcolhimentoColaborador = (codigo: string) => {
+    return codigo
+      ? `${window.location.origin}/?view=acolhimento&via=corporativo&convenio=${encodeURIComponent(codigo)}`
+      : `${window.location.origin}/?view=acolhimento&via=corporativo`;
+  };
+
+  const getMensagemDivulgacaoColaborador = (empresaNome: string, codigo: string, link: string) => {
+    return `Olá, time! 🎉\n\nÉ com muita alegria que informamos que a ${empresaNome} firmou parceria oficial com o Projeto AcolheMente para oferecer apoio psicológico, acolhimento e cuidado com a saúde mental a todos os nossos colaboradores e dependentes!\n\n🔑 Seu Código de Acesso Corporativo: *${codigo || "SOLICITAR-AO-RH"}*\n\n🔗 Link direto de Acolhimento Corporativo:\n${link}\n\nComo iniciar seu atendimento 100% online, humanizado e com sigilo ético absoluto:\n1. Acesse o link corporativo acima (já com o convênio preenchido);\n2. Escolha o serviço e profissional de sua preferência;\n3. Agende sua sessão com privacidade total garantida pelo Código de Ética Profissional.\n\nCuidar da sua mente e do seu bem-estar é prioridade para a nossa gestão! 💚`;
+  };
+
+  const handleCopiarCodigoColaborador = (codigo: string) => {
+    if (!codigo) {
+      showToast("Nenhum código configurado no momento pela Gestão AcolheMente.", "info");
+      return;
+    }
+    navigator.clipboard.writeText(codigo);
+    setCopiedCodigoColab(true);
+    showToast(`Código do colaborador "${codigo}" copiado com sucesso!`, "success");
+    setTimeout(() => setCopiedCodigoColab(false), 2500);
+  };
+
+  const handleCopiarLinkColaborador = (link: string) => {
+    navigator.clipboard.writeText(link);
+    setCopiedLinkColab(true);
+    showToast("Link direto de acolhimento do colaborador copiado com sucesso!", "success");
+    setTimeout(() => setCopiedLinkColab(false), 2500);
+  };
+
+  const handleCompartilharColaborador = async (empresaNome: string, codigo: string) => {
+    const link = getLinkAcolhimentoColaborador(codigo);
+    const msg = getMensagemDivulgacaoColaborador(empresaNome, codigo, link);
+
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: `Acesso AcolheMente - ${empresaNome}`,
+          text: msg,
+          url: link,
+        });
+        showToast("Compartilhado com sucesso!", "success");
+        return;
+      } catch (e) {
+        // Usuário cancelou ou navegador não suportou completamente, segue para copiar
+      }
+    }
+
+    navigator.clipboard.writeText(msg);
+    setCopiedMsgColab(true);
+    showToast("Mensagem de divulgação copiada com sucesso! Cole no WhatsApp, Teams, Slack ou e-mail.", "success");
+    setTimeout(() => setCopiedMsgColab(false), 3000);
+  };
+
+  const handleWhatsAppColaborador = (empresaNome: string, codigo: string) => {
+    const link = getLinkAcolhimentoColaborador(codigo);
+    const msg = getMensagemDivulgacaoColaborador(empresaNome, codigo, link);
+    window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, "_blank");
+  };
+
   // Scroll to top
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: "instant" });
   }, [activeTab, empresaAtivaId]);
 
-  // Carrega a empresa principal
+  // Carrega a empresa principal em tempo real (atualiza automaticamente quando a Gestão AcolheMente cria/altera o código)
   useEffect(() => {
     if (!empresaId) {
       setLoading(false);
       return;
     }
 
-    const fetchEmpresa = async () => {
-      try {
-        setLoading(true);
-        setErrorMsg("");
-        const docRef = doc(db, "empresa_leads", empresaId);
-        const docSnap = await getDoc(docRef);
+    setLoading(true);
+    setErrorMsg("");
+    const docRef = doc(db, "empresa_leads", empresaId);
 
+    const unsub = onSnapshot(
+      docRef,
+      (docSnap) => {
+        setLoading(false);
         if (docSnap.exists()) {
           const data = { id: docSnap.id, ...docSnap.data() } as any;
           setEmpresaPrincipal(data);
-          setEmpresaAtiva(data);
-          setEmpresaAtivaId(data.id);
-          setColaboradoresList(Array.isArray(data.colaboradoresList) ? data.colaboradoresList : []);
+          setEmpresaAtiva((prev: any) => {
+            if (!prev || prev.id === data.id) return data;
+            return prev;
+          });
+          setEmpresaAtivaId((prevId) => prevId || data.id);
+          setColaboradoresList((prev) => (!empresaAtivaId || empresaAtivaId === data.id ? (Array.isArray(data.colaboradoresList) ? data.colaboradoresList : []) : prev));
 
           // Checa PIN / Autenticação por Senha Numérica (4 dígitos)
           const sessionAuth = sessionStorage.getItem(`portal_rh_auth_${empresaId}`);
@@ -282,45 +379,56 @@ export function PortalEmpresaView({
         } else {
           setErrorMsg("Empresa não encontrada ou link expirado.");
         }
-      } catch (err) {
-        console.error("Erro ao carregar empresa:", err);
-        setErrorMsg("Falha ao comunicar com o servidor. Verifique sua conexão.");
-      } finally {
+      },
+      (err) => {
+        console.error("Erro ao sincronizar dados da empresa:", err);
         setLoading(false);
+        setErrorMsg("Falha ao comunicar com o servidor. Verifique sua conexão.");
       }
-    };
+    );
 
-    fetchEmpresa();
+    return () => unsub();
   }, [empresaId]);
 
-  // Se a empresa for um Canal de Benefícios, busca as empresas conectadas
+  // Se a empresa for um Canal de Benefícios, busca as empresas conectadas em tempo real
   useEffect(() => {
     if (!empresaPrincipal || !isAuthenticated) return;
     const cats = getEmpresaCategorias(empresaPrincipal);
     if (!cats.includes("canal_parceiro")) return;
 
-    const fetchConectadas = async () => {
-      try {
-        setLoadingConectadas(true);
-        const q = query(
-          collection(db, "empresa_leads"),
-          where("empresaPaiId", "==", empresaPrincipal.id)
-        );
-        const snap = await getDocs(q);
+    setLoadingConectadas(true);
+    const q = query(
+      collection(db, "empresa_leads"),
+      where("empresaPaiId", "==", empresaPrincipal.id)
+    );
+
+    const unsubConectadas = onSnapshot(
+      q,
+      (snap) => {
         const list: any[] = [];
         snap.forEach((docSnap) => {
           list.push({ id: docSnap.id, ...docSnap.data() });
         });
         setEmpresasConectadas(list);
-      } catch (err) {
+        setLoadingConectadas(false);
+
+        // Se a empresa ativa for uma das conectadas, mantém seus dados em tempo real
+        setEmpresaAtiva((prev: any) => {
+          if (prev && prev.id !== empresaPrincipal.id) {
+            const found = list.find((c) => c.id === prev.id);
+            if (found) return found;
+          }
+          return prev;
+        });
+      },
+      (err) => {
         console.error("Erro ao buscar empresas conectadas:", err);
-      } finally {
         setLoadingConectadas(false);
       }
-    };
+    );
 
-    fetchConectadas();
-  }, [empresaPrincipal, isAuthenticated]);
+    return () => unsubConectadas();
+  }, [empresaPrincipal?.id, isAuthenticated]);
 
   // Atualiza empresa ativa quando o operador do canal troca no seletor
   const handleTrocarEmpresaAtiva = async (novaEmpresaId: string) => {
@@ -339,17 +447,17 @@ export function PortalEmpresaView({
     }
   };
 
-  // Carrega indicadores clínicos/acolhimentos reais anônimos do Firestore para a empresa ativa
+  // Carrega indicadores clínicos/acolhimentos e motivos de busca do Firestore para a empresa ativa
   useEffect(() => {
     if (!empresaAtivaId || !isAuthenticated) return;
 
-    // Busca acolhimentos vinculados a esta empresa
+    // 1. Busca acolhimentos vinculados a esta empresa
     const qAcolhimentos = query(
       collection(db, "acolhimentos"),
       where("empresaLeadId", "==", empresaAtivaId)
     );
 
-    const unsub = onSnapshot(
+    const unsubAcolhimentos = onSnapshot(
       qAcolhimentos,
       (snap) => {
         const list: any[] = [];
@@ -376,12 +484,171 @@ export function PortalEmpresaView({
         setAtendimentosMes(filtradosMes);
       },
       (err) => {
-        console.error("Erro ao carregar atendimentos da empresa:", err);
+        console.error("Erro ao carregar acolhimentos da empresa:", err);
       }
     );
 
-    return () => unsub();
+    // 2. Busca registros de demandas/acessos corporativos e triagem
+    const qTriagem = query(
+      collection(db, "triagem_corporativa"),
+      where("empresaId", "==", empresaAtivaId)
+    );
+
+    const qAcessos = query(
+      collection(db, "beneficio_acessos"),
+      where("empresaId", "==", empresaAtivaId)
+    );
+
+    let triagemDocs: any[] = [];
+    let acessosDocs: any[] = [];
+
+    const atualizarAcessos = () => {
+      // Unifica deduplicando por id ou dados similares
+      const map = new Map<string, any>();
+      [...triagemDocs, ...acessosDocs].forEach((item) => {
+        const key = item.id || `${item.colaboradorNome}_${item.queixa}_${item.createdAt?.seconds || ""}`;
+        if (!map.has(key)) {
+          map.set(key, item);
+        }
+      });
+      setAcessosCorporativos(Array.from(map.values()));
+    };
+
+    const unsubTriagem = onSnapshot(
+      qTriagem,
+      (snap) => {
+        triagemDocs = [];
+        snap.forEach((d) => triagemDocs.push({ id: d.id, ...d.data() }));
+        atualizarAcessos();
+      },
+      (err) => console.error("Erro ao carregar triagens corporativas:", err)
+    );
+
+    const unsubAcessos = onSnapshot(
+      qAcessos,
+      (snap) => {
+        acessosDocs = [];
+        snap.forEach((d) => acessosDocs.push({ id: d.id, ...d.data() }));
+        atualizarAcessos();
+      },
+      (err) => console.error("Erro ao carregar acessos do benefício:", err)
+    );
+
+    return () => {
+      unsubAcolhimentos();
+      unsubTriagem();
+      unsubAcessos();
+    };
   }, [empresaAtivaId, isAuthenticated, mesSelecionado, anoSelecionado]);
+
+  // Cálculo consolidado de Queixas / Temas & Cruzamento com o Catálogo Corporativo
+  const indicadoresDemandas = useMemo(() => {
+    // Itens no mês selecionado
+    const itensMes = acessosCorporativos.filter((item) => {
+      let d: Date | null = null;
+      if (item.createdAt?.toDate) d = item.createdAt.toDate();
+      else if (item.dataCadastro) d = new Date(item.dataCadastro);
+      else if (item.data) d = new Date(item.data);
+      if (!d || isNaN(d.getTime())) return false;
+      return d.getMonth() + 1 === mesSelecionado && d.getFullYear() === anoSelecionado;
+    });
+
+    const baseParaAnalise = itensMes.length > 0 ? itensMes : acessosCorporativos;
+    const isHistoricoGeral = itensMes.length === 0 && acessosCorporativos.length > 0;
+
+    const contagemPorTema: Record<string, number> = {};
+    TEMAS_QUEIXAS_CORPORATIVAS.forEach((t) => {
+      contagemPorTema[t.id] = 0;
+    });
+
+    let totalDemandasRegistradas = 0;
+
+    baseParaAnalise.forEach((item) => {
+      // 1. Array de temasIds
+      if (Array.isArray(item.temasIds) && item.temasIds.length > 0) {
+        item.temasIds.forEach((tId: string) => {
+          if (contagemPorTema[tId] !== undefined) {
+            contagemPorTema[tId]++;
+            totalDemandasRegistradas++;
+          }
+        });
+      } else if (Array.isArray(item.temas) && item.temas.length > 0) {
+        item.temas.forEach((tNome: string) => {
+          const found = TEMAS_QUEIXAS_CORPORATIVAS.find(
+            (t) => t.label.toLowerCase() === tNome.toLowerCase() || tNome.toLowerCase().includes(t.id)
+          );
+          if (found) {
+            contagemPorTema[found.id]++;
+            totalDemandasRegistradas++;
+          }
+        });
+      } else if (item.queixa || item.temaPrincipal) {
+        const txt = `${item.queixa || ""} ${item.temaPrincipal || ""}`.toLowerCase();
+        let matched = false;
+        TEMAS_QUEIXAS_CORPORATIVAS.forEach((t) => {
+          if (txt.includes(t.id.toLowerCase()) || txt.includes(t.label.toLowerCase().slice(0, 7))) {
+            contagemPorTema[t.id]++;
+            matched = true;
+            totalDemandasRegistradas++;
+          }
+        });
+        if (!matched) {
+          contagemPorTema["ansiedade_estresse"] = (contagemPorTema["ansiedade_estresse"] || 0) + 1;
+          totalDemandasRegistradas++;
+        }
+      }
+    });
+
+    const catalogoItens = getCatalogoEmpresa(empresaAtiva);
+
+    const rankingTemas = TEMAS_QUEIXAS_CORPORATIVAS.map((tema) => {
+      const qtd = contagemPorTema[tema.id] || 0;
+      const percentual =
+        totalDemandasRegistradas > 0
+          ? Math.round((qtd / totalDemandasRegistradas) * 100)
+          : 0;
+
+      // Localiza serviço sugerido correspondente no catálogo
+      const servicoSugerido =
+        catalogoItens.find((cat) => cat.id === tema.servicoCatalogoSugeridoId) ||
+        catalogoItens.find((cat) => cat.categoria === "nr1_gro_pgr") ||
+        catalogoItens[0];
+
+      return {
+        ...tema,
+        quantidade: qtd,
+        percentual,
+        servicoSugerido,
+      };
+    }).sort((a, b) => b.quantidade - a.quantidade || b.percentual - a.percentual);
+
+    const topTemasCriticos = rankingTemas.filter((t) => t.quantidade > 0).slice(0, 3);
+
+    return {
+      totalDemandasRegistradas,
+      rankingTemas,
+      topTemasCriticos,
+      isHistoricoGeral,
+      totalRegistrosAnalisados: baseParaAnalise.length,
+    };
+  }, [acessosCorporativos, mesSelecionado, anoSelecionado, empresaAtiva]);
+
+  // Função para abrir o modal de proposta com o contexto do indicador pré-preenchido
+  const handleAbrirOrcamentoComContexto = (servico: ItemCatalogoCorporativo, tema: any) => {
+    setSelectedServicoParaOrcamento(servico);
+    const mesNome = MESES_ANO.find((m) => m.valor === mesSelecionado)?.nome || "Mês Vigente";
+    setFormOrcamento({
+      nomeContato: empresaAtiva?.nomeResponsavel || empresaAtiva?.contatoNome || "",
+      emailContato: empresaAtiva?.email || "",
+      telefoneContato: empresaAtiva?.telefone || "",
+      vidasEstimadas: vidasCadastradasAtivas || vidasContratadasNum || 0,
+      formato: servico.formatoAtendimento || "hibrido",
+      urgencia: "alta",
+      mensagem: `Gostaríamos de receber uma proposta e plano de intervenção técnica para a solução "${servico.titulo}".\n\n🎯 Justificativa Baseada em Indicadores: Identificamos uma demanda relevante de ${tema.percentual > 0 ? `${tema.percentual}% dos atendimentos` : "alta prioridade"} voltada para o tema "${tema.label}" na nossa equipe no período de ${mesNome}/${anoSelecionado}.`,
+    });
+    setOrcamentoSucesso(false);
+    setShowModalOrcamento(true);
+  };
 
   // Login por CNPJ + PIN caso o operador acesse sem URL direta
   const handleLoginByCnpj = async (e: React.FormEvent) => {
@@ -468,7 +735,8 @@ export function PortalEmpresaView({
     sessionStorage.removeItem("portal_empresa_active_id");
     setIsAuthenticated(false);
     setPinInput("");
-    if (onGoHome) onGoHome();
+    setPinError("");
+    showToast("Sessão finalizada. Faça login novamente com o PIN de segurança.", "info");
   };
 
   // Algoritmo Determinístico Client-Side: Geração automática de cargos e precificação por Quartis (Modelo A) com mínimo de R$ 60
@@ -1199,19 +1467,59 @@ export function PortalEmpresaView({
     return (
       <div className="min-h-screen bg-warm flex flex-col justify-between p-4 sm:p-8">
         <div className="max-w-md w-full mx-auto my-auto bg-white rounded-3xl border border-soft shadow-xl p-6 sm:p-8">
-          {/* Header */}
-          <div className="flex flex-col items-center text-center gap-3 mb-6">
-            <div className="w-16 h-16 rounded-2xl bg-sun/20 border border-sun/40 flex items-center justify-center text-forest overflow-hidden shadow-sm">
-              <img src={logoImage} alt="AcolheMente" className="w-full h-full object-cover" />
+          {/* Header com Co-Branding AcolheMente + Empresa Parceira */}
+          <div className="flex flex-col items-center text-center gap-4 mb-6">
+            <div className="flex items-center justify-center gap-3 p-2 bg-warm/50 rounded-2xl border border-soft w-full">
+              {/* Logo e Marca AcolheMente */}
+              <div className="flex items-center gap-2">
+                <div className="w-10 h-10 rounded-xl bg-sun/20 border border-sun/40 flex items-center justify-center text-forest overflow-hidden shadow-2xs shrink-0">
+                  <img src={logoImage} alt="AcolheMente" className="w-full h-full object-cover" />
+                </div>
+                <div className="text-left hidden sm:block">
+                  <span className="font-serif text-xs font-bold text-forest block leading-tight">AcolheMente</span>
+                  <span className="text-[9px] text-forest/60 font-semibold uppercase tracking-wider block">Saúde Mental</span>
+                </div>
+              </div>
+
+              <div className="h-6 w-px bg-soft shrink-0" />
+
+              {/* Logo e Nome da Empresa Parceira */}
+              <div className="flex items-center gap-2 min-w-0">
+                {(empresaPrincipal?.logoUrl || empresaPrincipal?.logo || empresaPrincipal?.empresaLogo || empresaPrincipal?.logoBase64) ? (
+                  <div className="w-10 h-10 rounded-xl bg-white border border-soft flex items-center justify-center overflow-hidden shadow-2xs p-1 shrink-0">
+                    <img
+                      src={empresaPrincipal.logoUrl || empresaPrincipal.logo || empresaPrincipal.empresaLogo || empresaPrincipal.logoBase64}
+                      alt={empresaPrincipal.nomeEmpresa || empresaPrincipal.razaoSocial || "Logo Empresa"}
+                      className="w-full h-full object-contain"
+                      referrerPolicy="no-referrer"
+                    />
+                  </div>
+                ) : (
+                  <div className="w-10 h-10 rounded-xl bg-forest flex items-center justify-center text-sun shadow-2xs font-bold text-xs shrink-0">
+                    {(empresaPrincipal?.nomeEmpresa || empresaPrincipal?.razaoSocial || "EP").slice(0, 2).toUpperCase()}
+                  </div>
+                )}
+                <div className="text-left min-w-0">
+                  <span className="font-serif text-xs font-bold text-forest truncate block max-w-[130px]">
+                    {empresaPrincipal?.nomeEmpresa || empresaPrincipal?.razaoSocial || "Empresa Parceira"}
+                  </span>
+                  <span className="text-[9px] text-emerald-800 font-bold uppercase tracking-wider block">
+                    {hasEmpresaCategoria(empresaPrincipal, "empresa_conectada") ? "Empresa Conectada" : "Gestão RH"}
+                  </span>
+                </div>
+              </div>
             </div>
+
             <div>
               <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-forest/10 text-forest border border-forest/20 inline-flex items-center gap-1">
                 <ShieldCheck className="w-3 h-3" /> Acesso Restrito RH & Canal
               </span>
-              <h1 className="font-serif text-2xl font-bold text-forest mt-1.5">Portal Corporativo</h1>
+              <h1 className="font-serif text-xl sm:text-2xl font-bold text-forest mt-1.5">
+                Portal Corporativo do RH
+              </h1>
               <p className="text-xs text-forest/70 mt-1">
                 {empresaPrincipal
-                  ? `Digite o PIN de Segurança para acessar o painel de ${empresaPrincipal.nomeEmpresa || empresaPrincipal.razaoSocial}`
+                  ? `Digite o PIN de Segurança para gerir colaboradores e visualizar indicadores de ${empresaPrincipal.nomeEmpresa || empresaPrincipal.razaoSocial}.`
                   : "Acesse os indicadores e faça a gestão do quadro de colaboradores da sua empresa."}
               </p>
             </div>
@@ -1313,14 +1621,22 @@ export function PortalEmpresaView({
           )}
 
           {onGoHome && (
-            <div className="mt-6 text-center">
+            <div className="mt-6 pt-5 border-t border-soft/80 flex flex-col items-center gap-2">
               <button
                 type="button"
                 onClick={onGoHome}
-                className="text-xs text-forest/60 hover:text-forest flex items-center justify-center gap-1 mx-auto cursor-pointer"
+                className="w-full py-2.5 px-4 bg-warm/60 hover:bg-warm border border-soft hover:border-forest/30 text-forest text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow-2xs hover:shadow-sm"
               >
-                <ArrowLeft className="w-3.5 h-3.5" />
-                <span>Voltar à Página Inicial</span>
+                <Globe className="w-3.5 h-3.5 text-forest/70" />
+                <span>Conheça a Rede AcolheMente</span>
+              </button>
+              <button
+                type="button"
+                onClick={onGoHome}
+                className="text-[11px] text-forest/50 hover:text-forest flex items-center justify-center gap-1 mx-auto cursor-pointer"
+              >
+                <ArrowLeft className="w-3 h-3" />
+                <span>Ir para a Página Inicial</span>
               </button>
             </div>
           )}
@@ -1332,6 +1648,15 @@ export function PortalEmpresaView({
   // PORTAL AUTENTICADO
   const categoriasEmpresa = getEmpresaCategorias(empresaPrincipal);
   const isCanalBeneficios = categoriasEmpresa.includes("canal_parceiro");
+  const isEmpresaConectada =
+    hasEmpresaCategoria(empresaAtiva || empresaPrincipal, "empresa_conectada") ||
+    Boolean((empresaAtiva || empresaPrincipal)?.canalParceiroId || (empresaAtiva || empresaPrincipal)?.empresaMaeId);
+
+  useEffect(() => {
+    if (isEmpresaConectada && activeTab === "faturamento") {
+      setActiveTab("indicadores");
+    }
+  }, [isEmpresaConectada, activeTab]);
 
   return (
     <div className="min-h-screen bg-warm flex flex-col">
@@ -1370,8 +1695,30 @@ export function PortalEmpresaView({
               </button>
             )}
 
-            <div className="w-9 h-9 rounded-xl bg-sun/20 border border-sun/40 flex items-center justify-center text-forest overflow-hidden shrink-0 shadow-2xs">
-              <img src={logoImage} alt="Logo" className="w-full h-full object-cover" />
+            {/* Co-Branding de Logos no Topo da Página */}
+            <div className="flex items-center gap-2">
+              {(empresaAtiva?.logoUrl || empresaAtiva?.logo || empresaAtiva?.empresaLogo || empresaAtiva?.logoBase64 || empresaPrincipal?.logoUrl) ? (
+                <div className="h-9 sm:h-10 max-w-[120px] sm:max-w-[150px] bg-white rounded-xl border border-soft p-1 flex items-center justify-center shrink-0 shadow-2xs overflow-hidden">
+                  <img
+                    src={empresaAtiva?.logoUrl || empresaAtiva?.logo || empresaAtiva?.empresaLogo || empresaAtiva?.logoBase64 || empresaPrincipal?.logoUrl}
+                    alt={empresaAtiva?.nomeEmpresa || empresaAtiva?.razaoSocial || "Logo Empresa"}
+                    className="w-full h-full object-contain"
+                    referrerPolicy="no-referrer"
+                  />
+                </div>
+              ) : (
+                <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-forest flex items-center justify-center text-sun shadow-2xs font-bold text-xs sm:text-sm shrink-0">
+                  {(empresaAtiva?.nomeEmpresa || empresaAtiva?.razaoSocial || "EP").slice(0, 2).toUpperCase()}
+                </div>
+              )}
+
+              {/* Selo AcolheMente */}
+              <div className="hidden sm:flex items-center gap-1.5 px-2 py-1 bg-warm/80 rounded-xl border border-soft/60 shrink-0">
+                <div className="w-4 h-4 rounded-full overflow-hidden shrink-0 border border-forest/20">
+                  <img src={logoImage} alt="AcolheMente" className="w-full h-full object-cover" />
+                </div>
+                <span className="text-[10px] font-bold text-forest/75">AcolheMente</span>
+              </div>
             </div>
 
             <div>
@@ -1397,7 +1744,27 @@ export function PortalEmpresaView({
           </div>
 
           {/* Seletor de Carteira para Canal de Benefícios & Logout */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap justify-end">
+            {isCanalBeneficios && (
+              <button
+                type="button"
+                onClick={() => {
+                  const link = `${window.location.origin}/?ficha_implantacao=nova&parceiro_id=${empresaPrincipal.id}`;
+                  navigator.clipboard.writeText(link);
+                  setToastMsg({
+                    type: "success",
+                    text: "Link de Implantação do Canal copiado! Envie para a empresa cliente preencher os dados e colaboradores para vincular automaticamente.",
+                  });
+                }}
+                className="px-2.5 py-1.5 bg-purple-700 hover:bg-purple-800 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer"
+                title="Ficha de Implantação - Primeiros Cadastros: Envie para a empresa contratada preencher seus dados e colaboradores. Ela ficará automaticamente vinculada ao seu canal parceiro como empresa conectada."
+              >
+                <Sparkles className="w-3.5 h-3.5 text-sun" />
+                <span className="hidden md:inline">+ Link Implantação Novo Cliente</span>
+                <span className="md:hidden">+ Implantação</span>
+              </button>
+            )}
+
             {isCanalBeneficios && empresasConectadas.length > 0 && (
               <div className="flex items-center gap-1.5 bg-purple-50 border border-purple-200 rounded-xl px-2.5 py-1 text-xs">
                 <Layers className="w-3.5 h-3.5 text-purple-700 shrink-0" />
@@ -1418,6 +1785,71 @@ export function PortalEmpresaView({
                     ))}
                   </optgroup>
                 </select>
+              </div>
+            )}
+
+            {isCanalBeneficios && empresaAtiva && empresaAtiva.id !== empresaPrincipal.id && (
+              <button
+                type="button"
+                onClick={() => {
+                  const link = `${window.location.origin}/?portal_rh=${empresaAtiva.id}`;
+                  const pin = getEmpresaPin(empresaAtiva);
+                  navigator.clipboard.writeText(link);
+                  setToastMsg({
+                    type: "success",
+                    text: `Link do Portal RH da empresa ${empresaAtiva.nomeEmpresa || empresaAtiva.razaoSocial} copiado! PIN de Acesso: ${pin}`,
+                  });
+                }}
+                className="px-2 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 rounded-xl text-xs font-bold flex items-center gap-1 transition-all cursor-pointer"
+                title={`Copiar link de acesso ao Portal do RH desta empresa conectada (PIN: ${getEmpresaPin(empresaAtiva)})`}
+              >
+                <Copy className="w-3 h-3 text-emerald-700" />
+                <span className="hidden sm:inline">Copiar Link RH Cliente</span>
+              </button>
+            )}
+
+            {/* Bloco Código de Acesso do Colaborador - Barra Superior */}
+            {getCodigoColaborador() ? (
+              <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-300 rounded-xl px-2.5 py-1 text-xs shadow-2xs">
+                <div className="flex items-center gap-1 text-emerald-950 font-bold">
+                  <KeyRound className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-emerald-800 hidden xl:inline">Código Colab:</span>
+                  <span className="font-mono text-xs font-black text-emerald-950 bg-white/80 px-1.5 py-0.5 rounded border border-emerald-200">
+                    {getCodigoColaborador()}
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => handleCopiarCodigoColaborador(getCodigoColaborador())}
+                  className="p-1 hover:bg-emerald-200/80 rounded-lg text-emerald-800 transition-colors cursor-pointer"
+                  title="Copiar Código de Acesso do Colaborador"
+                >
+                  {copiedCodigoColab ? <Check className="w-3.5 h-3.5 text-emerald-700" /> : <Copy className="w-3.5 h-3.5" />}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleCompartilharColaborador(getNomeEmpresaAtiva(), getCodigoColaborador())}
+                  className="p-1 hover:bg-emerald-200/80 rounded-lg text-emerald-800 transition-colors cursor-pointer"
+                  title="Compartilhar comunicado com colaboradores"
+                >
+                  <Share2 className="w-3.5 h-3.5 text-emerald-700" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleWhatsAppColaborador(getNomeEmpresaAtiva(), getCodigoColaborador())}
+                  className="p-1 hover:bg-emerald-200/80 rounded-lg text-emerald-800 transition-colors cursor-pointer hidden sm:flex"
+                  title="Compartilhar via WhatsApp"
+                >
+                  <MessageCircle className="w-3.5 h-3.5 text-emerald-700" />
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-300 rounded-xl px-2 py-1 text-[11px] text-amber-900 shadow-2xs">
+                <KeyRound className="w-3 h-3 text-amber-700 shrink-0" />
+                <span>Código Colab: <span className="italic text-amber-700 font-semibold">Aguardando Gestão</span></span>
               </div>
             )}
 
@@ -1461,20 +1893,22 @@ export function PortalEmpresaView({
             </span>
           </button>
 
-          <button
-            onClick={() => setActiveTab("faturamento")}
-            className={`py-2.5 px-3.5 border-b-2 font-bold text-xs transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
-              activeTab === "faturamento"
-                ? "border-forest text-forest"
-                : "border-transparent text-forest/60 hover:text-forest"
-            }`}
-          >
-            <Receipt className="w-4 h-4 text-emerald-700" />
-            <span>Faturamento & Mensalidade</span>
-            <span className="px-2 py-0.5 rounded-full text-[10px] bg-emerald-100 text-emerald-900 border border-emerald-200 font-extrabold">
-              R$ {faturamentoAtualCalculado.valorTotal.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-            </span>
-          </button>
+          {!isEmpresaConectada && (
+            <button
+              onClick={() => setActiveTab("faturamento")}
+              className={`py-2.5 px-3.5 border-b-2 font-bold text-xs transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+                activeTab === "faturamento"
+                  ? "border-forest text-forest"
+                  : "border-transparent text-forest/60 hover:text-forest"
+              }`}
+            >
+              <Receipt className="w-4 h-4 text-emerald-700" />
+              <span>Faturamento & Mensalidade</span>
+              <span className="px-2 py-0.5 rounded-full text-[10px] bg-emerald-100 text-emerald-900 border border-emerald-200 font-extrabold">
+                R$ {faturamentoAtualCalculado.valorTotal.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+              </span>
+            </button>
+          )}
 
           <button
             onClick={() => setActiveTab("dados")}
@@ -1497,6 +1931,62 @@ export function PortalEmpresaView({
         {/* ========================================================================= */}
         {activeTab === "indicadores" && (
           <div className="space-y-6">
+            {/* Barra Rápida: Código de Acesso do Colaborador para Repasse */}
+            {getCodigoColaborador() && (
+              <div className="bg-emerald-50/90 border border-emerald-200/90 p-3.5 sm:p-4 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-xl bg-emerald-700 text-white flex items-center justify-center shrink-0 shadow-2xs">
+                    <KeyRound className="w-4 h-4 text-sun" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-emerald-950">Código de Acesso do Colaborador:</span>
+                      <span className="font-mono text-xs font-black bg-white px-2 py-0.5 rounded border border-emerald-300 text-emerald-950 tracking-wider">
+                        {getCodigoColaborador()}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-emerald-900/75 mt-0.5">
+                      Repasse este código aos colaboradores para que iniciem acolhimento psicológico corporativo com sigilo e sem custos de consulta.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 self-stretch sm:self-auto justify-end flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => handleCopiarCodigoColaborador(getCodigoColaborador())}
+                    className="px-2.5 py-1.5 bg-white text-emerald-900 border border-emerald-300 hover:bg-emerald-100 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+                  >
+                    {copiedCodigoColab ? <Check className="w-3.5 h-3.5 text-emerald-700" /> : <Copy className="w-3.5 h-3.5 text-emerald-700" />}
+                    <span>{copiedCodigoColab ? "Copiado!" : "Copiar Código"}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleCopiarLinkColaborador(getLinkAcolhimentoColaborador(getCodigoColaborador()))}
+                    className="px-2.5 py-1.5 bg-white text-emerald-900 border border-emerald-300 hover:bg-emerald-100 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+                  >
+                    {copiedLinkColab ? <Check className="w-3.5 h-3.5 text-emerald-700" /> : <Link2 className="w-3.5 h-3.5 text-emerald-700" />}
+                    <span>Link Direto</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleCompartilharColaborador(getNomeEmpresaAtiva(), getCodigoColaborador())}
+                    className="px-2.5 py-1.5 bg-emerald-700 text-white hover:bg-emerald-800 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+                  >
+                    <Share2 className="w-3.5 h-3.5 text-sun" />
+                    <span>Compartilhar</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleWhatsAppColaborador(getNomeEmpresaAtiva(), getCodigoColaborador())}
+                    className="p-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl transition-colors cursor-pointer shadow-2xs"
+                    title="Enviar via WhatsApp"
+                  >
+                    <MessageCircle className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Header de Controle do Período & Botão de Impressão */}
             <div className="bg-white p-4 sm:p-5 rounded-2xl border border-soft shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
               <div>
@@ -1628,47 +2118,49 @@ export function PortalEmpresaView({
               </div>
             </div>
 
-            {/* Banner Executivo de Previsão de Faturamento do Mês */}
-            <div className="bg-gradient-to-r from-forest to-forest/90 text-white p-5 rounded-2xl border border-forest/50 shadow-md flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center text-sun shrink-0">
-                  <Receipt className="w-6 h-6" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-sun text-forest">
-                      Competência Vigente
-                    </span>
-                    <span className="text-xs text-white/80">
-                      {faturamentoAtualCalculado.competencia} (Vencimento: {faturamentoAtualCalculado.dataVencimento})
-                    </span>
+            {/* Banner Executivo de Previsão de Faturamento do Mês (apenas empresas padrão/canal, oculto para conectadas) */}
+            {!isEmpresaConectada && (
+              <div className="bg-gradient-to-r from-forest to-forest/90 text-white p-5 rounded-2xl border border-forest/50 shadow-md flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center text-sun shrink-0">
+                    <Receipt className="w-6 h-6" />
                   </div>
-                  <div className="flex items-baseline gap-3 mt-1">
-                    <h3 className="font-serif text-2xl font-bold text-white">
-                      R$ {faturamentoAtualCalculado.valorTotal.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-                    </h3>
-                    <span className="text-xs text-white/70">
-                      ({vidasCadastradasAtivas} vidas ativas × R$ {(faturamentoConfig.valorPorVida || 18).toFixed(2)}
-                      {faturamentoAtualCalculado.totalServicosAdicionais > 0
-                        ? ` + R$ ${faturamentoAtualCalculado.totalServicosAdicionais.toFixed(2)} serviços extras`
-                        : ""}
-                      )
-                    </span>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-sun text-forest">
+                        Competência Vigente
+                      </span>
+                      <span className="text-xs text-white/80">
+                        {faturamentoAtualCalculado.competencia} (Vencimento: {faturamentoAtualCalculado.dataVencimento})
+                      </span>
+                    </div>
+                    <div className="flex items-baseline gap-3 mt-1">
+                      <h3 className="font-serif text-2xl font-bold text-white">
+                        R$ {faturamentoAtualCalculado.valorTotal.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                      </h3>
+                      <span className="text-xs text-white/70">
+                        ({vidasCadastradasAtivas} vidas ativas × R$ {(faturamentoConfig.valorPorVida || 18).toFixed(2)}
+                        {faturamentoAtualCalculado.totalServicosAdicionais > 0
+                          ? ` + R$ ${faturamentoAtualCalculado.totalServicosAdicionais.toFixed(2)} serviços extras`
+                          : ""}
+                        )
+                      </span>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <div className="flex items-center gap-2 w-full md:w-auto">
-                <button
-                  type="button"
-                  onClick={() => setActiveTab("faturamento")}
-                  className="w-full md:w-auto px-4 py-2 bg-sun hover:bg-sun-dark text-forest font-bold text-xs rounded-xl shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-                >
-                  <Receipt className="w-4 h-4" />
-                  <span>Ver Demonstrativo & Faturamento</span>
-                </button>
+                <div className="flex items-center gap-2 w-full md:w-auto">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("faturamento")}
+                    className="w-full md:w-auto px-4 py-2 bg-sun hover:bg-sun-dark text-forest font-bold text-xs rounded-xl shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Receipt className="w-4 h-4" />
+                    <span>Ver Demonstrativo & Faturamento</span>
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Painel com Desfechos Clínicos e Gráfico de Distribuição */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -1754,9 +2246,247 @@ export function PortalEmpresaView({
             </div>
 
             {/* ========================================================================= */}
+            {/* NOVO INDICADOR: TERMÔMETRO DE DEMANDAS & RISCOS PSICOSSOCIAIS (NR-1) */}
+            {/* ========================================================================= */}
+            <div className="bg-white p-5 sm:p-6 rounded-2xl border border-soft shadow-xs space-y-6">
+              {/* Header do Indicador */}
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-soft">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-amber-100 text-amber-900 border border-amber-300 flex items-center justify-center shrink-0 shadow-2xs mt-0.5">
+                    <Flame className="w-5 h-5 text-amber-700" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="font-serif text-base sm:text-lg font-bold text-forest">
+                        Termômetro de Demandas & Riscos Psicossociais (NR-1)
+                      </h3>
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-rose-100 text-rose-900 border border-rose-200">
+                        GRO & PGR Ocupacional
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                        100% Anônimo & LGPD
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-forest/70 mt-1 max-w-3xl leading-relaxed">
+                      Mapeamento epidemiológico das queixas e motivos de busca selecionados obrigatoriamente pelos colaboradores antes do primeiro contato. Utilize esses dados para fundamentar o <strong>Inventário de Riscos Psicossociais da NR-1</strong> e selecionar as intervenções preventivas recomendadas no catálogo corporativo.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-warm/60 px-3.5 py-2 rounded-xl border border-soft shrink-0 text-right">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-forest/60 block">
+                    Total de Demandas Registradas
+                  </span>
+                  <span className="text-lg font-bold text-forest">
+                    {indicadoresDemandas.totalDemandasRegistradas} {indicadoresDemandas.totalDemandasRegistradas === 1 ? "queixa" : "queixas"}
+                  </span>
+                  <span className="text-[10px] text-forest/50 block">
+                    {indicadoresDemandas.isHistoricoGeral ? "Base Histórica Geral" : `Mês ${MESES_ANO.find((m) => m.valor === mesSelecionado)?.nome}/${anoSelecionado}`}
+                  </span>
+                </div>
+              </div>
+
+              {/* Grid: 2 Colunas (Ranking de Queixas & Soluções Recomendadas) */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                {/* Coluna Esquerda (7 cols): Barras de Progresso e Percentual dos Temas */}
+                <div className="lg:col-span-7 space-y-4">
+                  <div className="flex items-center justify-between pb-2 border-b border-soft/60">
+                    <h4 className="text-xs font-bold text-forest flex items-center gap-1.5 uppercase tracking-wider">
+                      <PieChart className="w-4 h-4 text-forest/60" />
+                      Distribuição Percentual das Queixas na Equipe
+                    </h4>
+                    <span className="text-[10px] text-forest/60">
+                      {indicadoresDemandas.totalDemandasRegistradas > 0 ? "Ordenado por relevância" : "Matriz de Temas Padrão"}
+                    </span>
+                  </div>
+
+                  <div className="space-y-2.5">
+                    {indicadoresDemandas.rankingTemas.map((tema, idx) => {
+                      const isTop1 = idx === 0 && tema.quantidade > 0;
+                      const isTop3 = idx < 3 && tema.quantidade > 0;
+
+                      return (
+                        <div
+                          key={tema.id}
+                          className={`p-3 rounded-xl border transition-all ${
+                            isTop1
+                              ? "bg-amber-50/50 border-amber-200 shadow-2xs"
+                              : isTop3
+                              ? "bg-warm/30 border-soft hover:border-sun/60"
+                              : "bg-white border-soft/70 hover:bg-warm/20"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-2 mb-1.5">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="text-base shrink-0">{tema.iconeEmoji}</span>
+                              <span className="text-xs font-bold text-forest truncate">
+                                {tema.label}
+                              </span>
+                              <span className="hidden sm:inline-block px-2 py-0.2 rounded-full text-[9px] font-bold bg-forest/5 text-forest/70 border border-forest/10 shrink-0">
+                                {tema.categoria}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0">
+                              {isTop1 && (
+                                <span className="px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase bg-rose-100 text-rose-900 border border-rose-200">
+                                  Risco Prioritário
+                                </span>
+                              )}
+                              <span className="text-xs font-bold text-forest">
+                                {tema.percentual}%
+                              </span>
+                              <span className="text-[10px] text-forest/50 font-medium">
+                                ({tema.quantidade})
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Barra de Progresso Visual */}
+                          <div className="w-full h-2 bg-warm rounded-full overflow-hidden border border-soft/50">
+                            <div
+                              className={`h-full rounded-full transition-all duration-700 ${
+                                isTop1
+                                  ? "bg-gradient-to-r from-amber-500 to-rose-500"
+                                  : isTop3
+                                  ? "bg-gradient-to-r from-sun-dark to-forest"
+                                  : "bg-forest/40"
+                              }`}
+                              style={{ width: `${Math.max(tema.percentual, tema.quantidade > 0 ? 6 : 2)}%` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="p-3 bg-warm/40 rounded-xl border border-soft text-[11px] text-forest/70 flex items-start gap-2">
+                    <ShieldCheck className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
+                    <span>
+                      <strong>Sigilo Ético Assegurado:</strong> As queixas são agrupadas exclusivamente em categorias epidemiológicas agregadas sem identificação individual, preservando integralmente o sigilo profissional (Resolução CFP 010/05).
+                    </span>
+                  </div>
+                </div>
+
+                {/* Coluna Direita (5 cols): Cruzamento Comercial & Recomendações do Catálogo */}
+                <div className="lg:col-span-5 flex flex-col justify-between bg-gradient-to-b from-warm/60 via-warm/30 to-white p-4 sm:p-5 rounded-2xl border border-soft space-y-4">
+                  <div>
+                    <div className="flex items-center justify-between pb-3 border-b border-soft">
+                      <div>
+                        <span className="text-[10px] font-extrabold uppercase tracking-wider text-forest/60 block">
+                          Ações Corretivas & Preventivas
+                        </span>
+                        <h4 className="font-serif text-sm sm:text-base font-bold text-forest flex items-center gap-1.5">
+                          <Target className="w-4 h-4 text-sun-dark" />
+                          Soluções Recomendadas do Catálogo
+                        </h4>
+                      </div>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-sun/40 text-forest border border-sun/60">
+                        ROI em Saúde
+                      </span>
+                    </div>
+
+                    <p className="text-[11px] text-forest/70 mt-3 leading-relaxed">
+                      Com base nos maiores índices de queixas identificados na equipe, nossa equipe técnica selecionou as intervenções de maior eficácia comprovada para mitigar afastamentos e cumprir a NR-1:
+                    </p>
+
+                    {/* Cards de Soluções Recomendadas Pré-Preenchidas */}
+                    <div className="space-y-3 mt-4">
+                      {indicadoresDemandas.topTemasCriticos.length > 0 ? (
+                        indicadoresDemandas.topTemasCriticos.map((topTema) => (
+                          <div
+                            key={topTema.id}
+                            className="bg-white p-3.5 rounded-xl border border-soft hover:border-forest/40 shadow-2xs space-y-2.5 transition-all"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-800 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200 inline-block mb-1">
+                                  {topTema.iconeEmoji} Para mitigar: {topTema.label} ({topTema.percentual}%)
+                                </span>
+                                <h5 className="font-serif text-xs font-bold text-forest">
+                                  {topTema.servicoSugerido?.titulo || topTema.solucaoSugeridaTitulo}
+                                </h5>
+                              </div>
+                            </div>
+
+                            <p className="text-[11px] text-forest/75 leading-snug line-clamp-2">
+                              {topTema.servicoSugerido?.descricaoCurta || topTema.solucaoSugeridaDescricao}
+                            </p>
+
+                            <button
+                              type="button"
+                              onClick={() => handleAbrirOrcamentoComContexto(topTema.servicoSugerido, topTema)}
+                              className="w-full py-2 bg-forest hover:bg-forest/90 text-white font-bold text-[11px] rounded-xl shadow-2xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                            >
+                              <Send className="w-3.5 h-3.5 text-sun" />
+                              <span>Solicitar Proposta desta Solução</span>
+                            </button>
+                          </div>
+                        ))
+                      ) : (
+                        // Se ainda não houve acolhimentos no mês, exibe as principais soluções estratégicas
+                        [
+                          {
+                            tema: TEMAS_QUEIXAS_CORPORATIVAS[0],
+                            servico: getCatalogoEmpresa(empresaAtiva)[0],
+                          },
+                          {
+                            tema: TEMAS_QUEIXAS_CORPORATIVAS[1],
+                            servico: getCatalogoEmpresa(empresaAtiva)[1],
+                          },
+                        ].map((item, idx) => (
+                          <div
+                            key={idx}
+                            className="bg-white p-3.5 rounded-xl border border-soft hover:border-forest/40 shadow-2xs space-y-2.5 transition-all"
+                          >
+                            <div>
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-forest/70 bg-warm px-2 py-0.5 rounded-md border border-soft inline-block mb-1">
+                                {item.tema.iconeEmoji} Solução Preventiva Recomendada
+                              </span>
+                              <h5 className="font-serif text-xs font-bold text-forest">
+                                {item.servico?.titulo || item.tema.solucaoSugeridaTitulo}
+                              </h5>
+                            </div>
+
+                            <p className="text-[11px] text-forest/75 leading-snug line-clamp-2">
+                              {item.servico?.descricaoCurta || item.tema.solucaoSugeridaDescricao}
+                            </p>
+
+                            <button
+                              type="button"
+                              onClick={() => handleAbrirOrcamentoComContexto(item.servico, item.tema)}
+                              className="w-full py-2 bg-forest hover:bg-forest/90 text-white font-bold text-[11px] rounded-xl shadow-2xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                            >
+                              <Send className="w-3.5 h-3.5 text-sun" />
+                              <span>Solicitar Proposta desta Solução</span>
+                            </button>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-soft/60 flex items-center justify-between text-[11px] text-forest/60">
+                    <span>Dúvidas sobre o enquadramento NR-1?</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const elem = document.getElementById("secao-catalogo-completo");
+                        if (elem) elem.scrollIntoView({ behavior: "smooth" });
+                      }}
+                      className="font-bold text-forest hover:underline cursor-pointer flex items-center gap-1"
+                    >
+                      Ver Catálogo Completo <ChevronDown className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* ========================================================================= */}
             {/* SEÇÃO INTEGRADA: CATÁLOGO DE INTERVENÇÕES NR-1 (GRO & PGR) & PRODUTOS */}
             {/* ========================================================================= */}
-            <div className="bg-white p-5 sm:p-6 rounded-2xl border border-soft shadow-xs space-y-5">
+            <div id="secao-catalogo-completo" className="bg-white p-5 sm:p-6 rounded-2xl border border-soft shadow-xs space-y-5">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-soft">
                 <div>
                   <div className="flex items-center gap-2">
@@ -1921,6 +2651,124 @@ export function PortalEmpresaView({
         {/* ========================================================================= */}
         {activeTab === "colaboradores" && (
           <div className="space-y-4">
+            {/* Banner Executivo: Código de Acesso do Colaborador & Instruções de Repasse */}
+            <div className="bg-linear-to-r from-emerald-950 via-forest to-emerald-900 text-white p-5 sm:p-6 rounded-3xl shadow-sm border border-emerald-800/60 relative overflow-hidden">
+              <div className="relative z-10 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-5">
+                <div className="space-y-2 max-w-2xl">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wider uppercase bg-sun text-forest">
+                      Acesso dos Colaboradores
+                    </span>
+                    <span className="text-xs text-emerald-200/90 font-medium">
+                      Benefício Corporativo de Saúde Mental • AcolheMente
+                    </span>
+                  </div>
+
+                  <h3 className="font-serif text-lg sm:text-xl font-bold tracking-tight text-white flex items-center gap-2">
+                    <KeyRound className="w-5 h-5 text-sun shrink-0" />
+                    <span>Código de Acesso do Colaborador à Rede</span>
+                  </h3>
+
+                  <p className="text-xs sm:text-sm text-emerald-100/90 leading-relaxed">
+                    {getCodigoColaborador() ? (
+                      <>
+                        Repasse este código exclusivo para que os colaboradores e dependentes de{" "}
+                        <strong className="text-white underline decoration-sun/60">{getNomeEmpresaAtiva()}</strong> agendem atendimentos psicológicos online com sigilo profissional ético (CFP) e sem custos extras na consulta.
+                      </>
+                    ) : (
+                      <>
+                        O código do colaborador está em emissão pela Gestão AcolheMente. Assim que configurado pela administração, ele aparecerá aqui automaticamente em tempo real para ser compartilhado.
+                      </>
+                    )}
+                  </p>
+                </div>
+
+                {/* Bloco do Código e Botões de Compartilhamento */}
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto shrink-0">
+                  {getCodigoColaborador() ? (
+                    <div className="bg-white/10 backdrop-blur-md border border-white/20 p-3.5 rounded-2xl flex flex-col items-center justify-center gap-1.5 shadow-inner min-w-[170px]">
+                      <span className="text-[10px] uppercase font-bold tracking-widest text-emerald-200">
+                        Código do Convênio
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-xl sm:text-2xl font-black text-sun tracking-wider select-all">
+                          {getCodigoColaborador()}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleCopiarCodigoColaborador(getCodigoColaborador())}
+                          className="p-1.5 bg-white/20 hover:bg-white/30 rounded-xl text-white transition-all cursor-pointer"
+                          title="Copiar Código"
+                        >
+                          {copiedCodigoColab ? <Check className="w-4 h-4 text-sun" /> : <Copy className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="bg-white/10 p-3.5 rounded-2xl text-center text-xs text-emerald-200 border border-white/10">
+                      Código em emissão
+                    </div>
+                  )}
+
+                  {/* Ações */}
+                  {getCodigoColaborador() && (
+                    <div className="flex flex-col gap-2">
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleCopiarCodigoColaborador(getCodigoColaborador())}
+                          className="flex-1 px-3.5 py-2 bg-white text-forest hover:bg-warm font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer"
+                        >
+                          {copiedCodigoColab ? <Check className="w-3.5 h-3.5 text-emerald-700" /> : <Copy className="w-3.5 h-3.5 text-forest" />}
+                          <span>{copiedCodigoColab ? "Copiado!" : "Copiar Código"}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleCopiarLinkColaborador(getLinkAcolhimentoColaborador(getCodigoColaborador()))}
+                          className="flex-1 px-3.5 py-2 bg-emerald-800/80 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all border border-emerald-600/50 cursor-pointer shadow-xs"
+                        >
+                          {copiedLinkColab ? <Check className="w-3.5 h-3.5 text-sun" /> : <Link2 className="w-3.5 h-3.5 text-emerald-300" />}
+                          <span>{copiedLinkColab ? "Link Copiado!" : "Copiar Link"}</span>
+                        </button>
+                      </div>
+
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleCompartilharColaborador(getNomeEmpresaAtiva(), getCodigoColaborador())}
+                          className="flex-1 px-3 py-2 bg-sun hover:bg-sun-dark text-forest font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer"
+                          title="Compartilhar mensagem e link com colaboradores"
+                        >
+                          <Share2 className="w-3.5 h-3.5" />
+                          <span>Compartilhar</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleWhatsAppColaborador(getNomeEmpresaAtiva(), getCodigoColaborador())}
+                          className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer"
+                          title="Enviar via WhatsApp"
+                        >
+                          <MessageCircle className="w-3.5 h-3.5" />
+                          <span>WhatsApp</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setShowModalMensagemColaborador(true)}
+                          className="p-2 bg-white/15 hover:bg-white/25 text-white rounded-xl transition-all cursor-pointer"
+                          title="Visualizar comunicado completo"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
             {/* Header da Gestão de Colaboradores & Ações em Massa */}
             <div className="bg-white p-4 sm:p-5 rounded-2xl border border-soft shadow-xs flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3">
               <div>
@@ -2253,7 +3101,7 @@ export function PortalEmpresaView({
         {/* ========================================================================= */}
         {/* ABA 3: FATURAMENTO & MENSALIDADE PREVISTA */}
         {/* ========================================================================= */}
-        {activeTab === "faturamento" && (
+        {!isEmpresaConectada && activeTab === "faturamento" && (
           <div className="space-y-6">
             {/* Header de Controle de Competência e Ações */}
             <div className="bg-white p-4 sm:p-5 rounded-2xl border border-soft shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
@@ -2684,6 +3532,78 @@ export function PortalEmpresaView({
               </div>
             </div>
 
+            {/* Código de Acesso do Colaborador (Convênio / Benefício) */}
+            <div className="bg-white p-5 rounded-2xl border border-soft shadow-xs space-y-4">
+              <div className="flex items-center justify-between pb-2 border-b border-soft">
+                <h2 className="font-serif text-base font-bold text-forest flex items-center gap-2">
+                  <KeyRound className="w-4 h-4 text-emerald-700" />
+                  <span>Código de Acesso Corporativo dos Colaboradores</span>
+                </h2>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                  Benefício Ativo
+                </span>
+              </div>
+
+              <p className="text-xs text-forest/70 leading-relaxed">
+                Este é o código alfanumérico que os colaboradores da empresa devem utilizar para desbloquear o acolhimento corporativo no site da AcolheMente.
+              </p>
+
+              <div className="p-4 bg-warm/40 border border-soft rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-forest text-white flex items-center justify-center font-bold shadow-2xs">
+                    <KeyRound className="w-5 h-5 text-sun" />
+                  </div>
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-forest/60">Código Registrado na Gestão</span>
+                    <p className="font-mono text-lg font-black text-forest tracking-wider">
+                      {getCodigoColaborador() || "NÃO CADASTRADO"}
+                    </p>
+                  </div>
+                </div>
+
+                {getCodigoColaborador() ? (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => handleCopiarCodigoColaborador(getCodigoColaborador())}
+                      className="px-3 py-1.5 bg-white text-forest hover:bg-warm border border-soft rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+                    >
+                      {copiedCodigoColab ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                      <span>{copiedCodigoColab ? "Copiado!" : "Copiar Código"}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleCopiarLinkColaborador(getLinkAcolhimentoColaborador(getCodigoColaborador()))}
+                      className="px-3 py-1.5 bg-white text-forest hover:bg-warm border border-soft rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+                    >
+                      {copiedLinkColab ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Link2 className="w-3.5 h-3.5" />}
+                      <span>Link Direto</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleCompartilharColaborador(getNomeEmpresaAtiva(), getCodigoColaborador())}
+                      className="px-3 py-1.5 bg-forest text-white hover:bg-forest/90 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+                    >
+                      <Share2 className="w-3.5 h-3.5 text-sun" />
+                      <span>Compartilhar</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleWhatsAppColaborador(getNomeEmpresaAtiva(), getCodigoColaborador())}
+                      className="p-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl transition-colors cursor-pointer shadow-2xs"
+                      title="Compartilhar via WhatsApp"
+                    >
+                      <MessageCircle className="w-4 h-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <span className="text-xs text-amber-800 font-semibold italic">
+                    Aguardando configuração pela Gestão AcolheMente
+                  </span>
+                )}
+              </div>
+            </div>
+
             {/* Configuração do PIN de Segurança do RH */}
             <div className="bg-white p-5 rounded-2xl border border-soft shadow-xs space-y-4">
               <div className="flex items-center justify-between pb-2 border-b border-soft">
@@ -3101,12 +4021,27 @@ export function PortalEmpresaView({
               {/* Cabeçalho Timbrado */}
               <div className="flex items-center justify-between border-b-2 border-forest pb-4">
                 <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-xl bg-sun/20 border border-sun/40 flex items-center justify-center overflow-hidden">
-                    <img src={logoImage} alt="AcolheMente" className="w-full h-full object-cover" />
+                  {/* Co-Branding de Logos */}
+                  <div className="flex items-center gap-2">
+                    {(empresaAtiva?.logoUrl || empresaAtiva?.logo || empresaAtiva?.empresaLogo || empresaAtiva?.logoBase64 || empresaPrincipal?.logoUrl) && (
+                      <div className="w-12 h-12 rounded-xl bg-white border border-soft flex items-center justify-center overflow-hidden p-1 shadow-2xs">
+                        <img
+                          src={empresaAtiva?.logoUrl || empresaAtiva?.logo || empresaAtiva?.empresaLogo || empresaAtiva?.logoBase64 || empresaPrincipal?.logoUrl}
+                          alt={empresaAtiva?.nomeEmpresa || empresaAtiva?.razaoSocial}
+                          className="w-full h-full object-contain"
+                          referrerPolicy="no-referrer"
+                        />
+                      </div>
+                    )}
+                    <div className="w-12 h-12 rounded-xl bg-sun/20 border border-sun/40 flex items-center justify-center overflow-hidden">
+                      <img src={logoImage} alt="AcolheMente" className="w-full h-full object-cover" />
+                    </div>
                   </div>
                   <div>
-                    <h2 className="font-serif text-lg font-bold text-forest">AcolheMente Saúde Mental</h2>
-                    <p className="text-[11px] text-forest/70">Relatório Mensal de Gestão & Cuidado Psicológico</p>
+                    <h2 className="font-serif text-lg font-bold text-forest">
+                      {empresaAtiva?.nomeEmpresa || empresaAtiva?.razaoSocial || "Empresa Parceira"} & AcolheMente
+                    </h2>
+                    <p className="text-[11px] text-forest/70">Relatório Executivo de Saúde Mental & Diagnóstico NR-1 (GRO/PGR)</p>
                   </div>
                 </div>
                 <div className="text-right text-xs">
@@ -3200,6 +4135,64 @@ export function PortalEmpresaView({
                     </tr>
                   </tbody>
                 </table>
+              </div>
+
+              {/* 3. Mapeamento Epidemiológico de Queixas & Riscos Psicossociais (NR-1) */}
+              <div>
+                <h4 className="font-serif text-sm font-bold text-forest mb-2">
+                  3. Mapeamento Epidemiológico de Temas & Queixas (NR-1 / GRO)
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                  {indicadoresDemandas.rankingTemas.slice(0, 6).map((tema) => (
+                    <div
+                      key={tema.id}
+                      className="p-2.5 bg-warm/30 rounded-xl border border-soft flex items-center justify-between gap-2"
+                    >
+                      <div className="flex items-center gap-1.5 truncate">
+                        <span>{tema.iconeEmoji}</span>
+                        <span className="font-semibold text-forest truncate">{tema.label}</span>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0 font-bold text-forest">
+                        <span>{tema.percentual}%</span>
+                        <span className="text-[10px] text-forest/50">({tema.quantidade})</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* 4. Ações Preventivas & Soluções Recomendadas do Catálogo */}
+              <div className="bg-warm/40 p-4 rounded-2xl border border-soft space-y-2">
+                <h4 className="font-serif text-xs font-bold text-forest uppercase tracking-wider">
+                  4. Intervenções & Ações Recomendadas para o Plano de Ação (PGR)
+                </h4>
+                <ul className="space-y-1.5 text-xs text-forest/80">
+                  {indicadoresDemandas.topTemasCriticos.length > 0 ? (
+                    indicadoresDemandas.topTemasCriticos.map((topTema) => (
+                      <li key={topTema.id} className="flex items-start gap-1.5">
+                        <span className="text-forest font-bold">•</span>
+                        <span>
+                          <strong>{topTema.servicoSugerido?.titulo || topTema.solucaoSugeridaTitulo}:</strong> Recomendado para atuar sobre a queixa de <em>{topTema.label}</em> ({topTema.percentual}% da equipe).
+                        </span>
+                      </li>
+                    ))
+                  ) : (
+                    <>
+                      <li className="flex items-start gap-1.5">
+                        <span className="text-forest font-bold">•</span>
+                        <span>
+                          <strong>Assessoria NR-1: Gestão de Riscos Psicossociais (GRO & PGR):</strong> Estruturação da matriz de risco ocupacional e plano de ação preventiva.
+                        </span>
+                      </li>
+                      <li className="flex items-start gap-1.5">
+                        <span className="text-forest font-bold">•</span>
+                        <span>
+                          <strong>Workshop de Liderança Acolhedora:</strong> Capacitação das lideranças e gestores no manejo preventivo de estresse e burnout.
+                        </span>
+                      </li>
+                    </>
+                  )}
+                </ul>
               </div>
 
               {/* Declaração de Conformidade & Assinatura */}
@@ -3785,6 +4778,97 @@ export function PortalEmpresaView({
                 </div>
               </form>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: COMUNICADO PRONTO DE DIVULGAÇÃO AOS COLABORADORES */}
+      {/* ========================================================================= */}
+      {showModalMensagemColaborador && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl border border-soft shadow-2xl max-w-xl w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between pb-3 border-b border-soft">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center">
+                  <KeyRound className="w-5 h-5 text-emerald-700" />
+                </div>
+                <div>
+                  <h3 className="font-serif text-base font-bold text-forest">
+                    Comunicado de Acesso para os Colaboradores
+                  </h3>
+                  <p className="text-[11px] text-forest/60">
+                    {getNomeEmpresaAtiva()} • Convênio AcolheMente
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowModalMensagemColaborador(false)}
+                className="p-1.5 hover:bg-warm rounded-xl text-forest/50 hover:text-forest transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="bg-warm/50 border border-soft rounded-2xl p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-forest uppercase tracking-wider">
+                  Texto Pronto para Compartilhamento
+                </span>
+                <span className="text-[11px] text-emerald-800 font-mono font-bold bg-emerald-100 px-2 py-0.5 rounded-lg border border-emerald-200">
+                  Código: {getCodigoColaborador()}
+                </span>
+              </div>
+              <textarea
+                readOnly
+                rows={12}
+                value={getMensagemDivulgacaoColaborador(
+                  getNomeEmpresaAtiva(),
+                  getCodigoColaborador(),
+                  getLinkAcolhimentoColaborador(getCodigoColaborador())
+                )}
+                className="w-full text-xs font-sans p-3 bg-white border border-soft rounded-xl text-forest/90 leading-relaxed outline-none resize-none selection:bg-sun-dark/30 select-all"
+              />
+              <p className="text-[11px] text-forest/60 leading-relaxed">
+                💡 Este texto pode ser enviado nos canais internos da empresa (WhatsApp, Slack, Teams, comunicados impressos ou e-mail corporativo). O link já abre com o código do convênio validado.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-between gap-2 pt-2 border-t border-soft flex-wrap">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleCopiarCodigoColaborador(getCodigoColaborador())}
+                  className="px-3 py-2 bg-warm hover:bg-soft text-forest rounded-xl font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <Copy className="w-3.5 h-3.5 text-forest/60" />
+                  <span>Copiar Código</span>
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleWhatsAppColaborador(getNomeEmpresaAtiva(), getCodigoColaborador())}
+                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                >
+                  <MessageCircle className="w-3.5 h-3.5" />
+                  <span>Enviar no WhatsApp</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleCompartilharColaborador(getNomeEmpresaAtiva(), getCodigoColaborador());
+                  }}
+                  className="px-4 py-2 bg-forest hover:bg-forest/90 text-white rounded-xl font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                >
+                  <Share2 className="w-3.5 h-3.5 text-sun" />
+                  <span>Copiar Comunicado</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

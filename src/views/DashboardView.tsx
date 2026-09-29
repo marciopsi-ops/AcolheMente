@@ -108,6 +108,7 @@ import {
   Minimize2,
   Maximize2,
   Lock,
+  KeyRound,
   TrendingUp,
   PlusCircle,
   BookOpen,
@@ -13781,9 +13782,20 @@ export function DashboardView({
               {/* Linha 1: Título da Empresa, Badges Principais e Ações Rápidas */}
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                  <div className="p-2 bg-forest text-white rounded-xl shadow-xs shrink-0">
-                    <Building2 className="w-4 h-4 sm:w-5 sm:h-5 text-sun" />
-                  </div>
+                  {(selectedEmpresa.logoUrl || (selectedEmpresa as any).logo || (selectedEmpresa as any).empresaLogo || (selectedEmpresa as any).logoEmpresa) ? (
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white border border-soft p-1 flex items-center justify-center shrink-0 shadow-2xs overflow-hidden">
+                      <img
+                        src={selectedEmpresa.logoUrl || (selectedEmpresa as any).logo || (selectedEmpresa as any).empresaLogo || (selectedEmpresa as any).logoEmpresa}
+                        alt={selectedEmpresa.razaoSocial || selectedEmpresa.nomeEmpresa || "Logo da Empresa"}
+                        className="w-full h-full object-contain"
+                        referrerPolicy="no-referrer"
+                      />
+                    </div>
+                  ) : (
+                    <div className="p-2 bg-forest text-white rounded-xl shadow-xs shrink-0">
+                      <Building2 className="w-4 h-4 sm:w-5 sm:h-5 text-sun" />
+                    </div>
+                  )}
                   <div className="min-w-0 flex items-center gap-2 flex-wrap">
                     <h3 className="font-serif text-base sm:text-xl text-forest font-bold truncate max-w-[280px] sm:max-w-md" title={selectedEmpresa.razaoSocial || selectedEmpresa.nomeEmpresa}>
                       {selectedEmpresa.razaoSocial || selectedEmpresa.nomeEmpresa || "Empresa sem nome"}
@@ -13927,6 +13939,62 @@ export function DashboardView({
                     </button>
                   </div>
 
+                  {/* Badge Código de Acesso do Colaborador */}
+                  <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-300 px-2 py-0.5 rounded-lg text-[10px] font-bold text-emerald-900 shadow-2xs">
+                    <KeyRound className="w-3 h-3 text-emerald-700" />
+                    <span>Código Colab: <strong className="font-mono text-xs text-emerald-950 uppercase">{selectedEmpresa.codigoAcesso || "Não Definido"}</strong></span>
+                    {selectedEmpresa.codigoAcesso ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(selectedEmpresa.codigoAcesso);
+                            showToast(`Código do colaborador "${selectedEmpresa.codigoAcesso}" copiado!`, "success");
+                          }}
+                          className="p-0.5 hover:bg-emerald-200 rounded text-emerald-800 transition-colors ml-0.5"
+                          title="Copiar Código de Acesso do Colaborador"
+                        >
+                          <Copy className="w-2.5 h-2.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const code = selectedEmpresa.codigoAcesso;
+                            const link = `${window.location.origin}/?view=acolhimento&via=corporativo&convenio=${encodeURIComponent(code)}`;
+                            const msg = `Olá, time! 🎉\n\nÉ com muita alegria que informamos que a ${selectedEmpresa.nomeEmpresa || selectedEmpresa.razaoSocial || "nossa empresa"} firmou parceria oficial com o Projeto AcolheMente para oferecer apoio psicológico e cuidado à saúde mental de todos os nossos colaboradores!\n\n🔑 Seu Código de Acesso Corporativo: *${code}*\n\n🔗 Link direto de Acolhimento Corporativo:\n${link}\n\nComo iniciar seu acolhimento de forma 100% sigilosa e online:\n1. Acesse o link corporativo acima (já com o código do convênio pré-preenchido)\n2. Escolha o profissional e serviço desejado\n3. Inicie seu atendimento com sigilo ético absoluto!\n\nCuidar da sua mente é uma prioridade para nós! 💚`;
+                            navigator.clipboard.writeText(msg);
+                            showToast("Mensagem de divulgação para os colaboradores copiada com sucesso!", "success");
+                          }}
+                          className="p-0.5 hover:bg-emerald-200 rounded text-emerald-800 transition-colors ml-0.5"
+                          title="Copiar Comunicado Pronto para Colaboradores"
+                        >
+                          <Share2 className="w-2.5 h-2.5" />
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const prefix = (selectedEmpresa.nomeEmpresa || selectedEmpresa.razaoSocial || "EMP")
+                            .normalize("NFD")
+                            .replace(/[\u0300-\u036f]/g, "")
+                            .replace(/[^a-zA-Z]/g, "")
+                            .slice(0, 4)
+                            .toUpperCase() || "CORP";
+                          const randomNum = Math.floor(1000 + Math.random() * 9000);
+                          const generatedCode = `${prefix}-${randomNum}`;
+                          handleUpdateEmpresaProperty(selectedEmpresa.id, "codigoAcesso", generatedCode);
+                          setSelectedEmpresa((prev) => (prev ? { ...prev, codigoAcesso: generatedCode } : null));
+                          showToast(`Código do colaborador "${generatedCode}" gerado com sucesso!`, "success");
+                        }}
+                        className="px-1.5 py-0.2 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[9px] font-bold transition-colors ml-0.5 cursor-pointer"
+                        title="Gerar Código Automático para Colaboradores"
+                      >
+                        + Gerar
+                      </button>
+                    )}
+                  </div>
+
                   {/* Link Portal do RH & Indicadores */}
                   <a
                     href={`/?portal_empresa=${selectedEmpresa.id}`}
@@ -13995,36 +14063,68 @@ export function DashboardView({
                     <span>{selectedEmpresa.ativo === false ? "Inativa" : "Ativa"}</span>
                   </button>
 
-                  {/* Ficha Externa Compact Bar */}
+                  {/* Ficha de Implantação Bar */}
                   <div className="flex items-center gap-1 bg-emerald-50/90 border border-emerald-200 px-1.5 py-0.5 rounded-lg">
                     <span className="text-[10px] font-extrabold uppercase text-emerald-900 flex items-center gap-1">
-                      <Link2 className="w-3 h-3 text-emerald-700" /> Ficha Externa:
+                      <Link2 className="w-3 h-3 text-emerald-700" /> Ficha de Implantação:
                     </span>
                     <button
                       type="button"
                       onClick={() => {
-                        const link = `${window.location.origin}/?ficha_empresa=${selectedEmpresa.id}`;
+                        const link = `${window.location.origin}/?ficha_implantacao=${selectedEmpresa.id}`;
                         const pin = getEmpresaPin(selectedEmpresa);
                         navigator.clipboard.writeText(link);
-                        showToast(`Link da Ficha de Bordo copiado! (PIN de Segurança: ${pin})`, "success");
+                        showToast(`Link da Ficha de Implantação copiado! (PIN: ${pin})`, "success");
                       }}
                       className="flex items-center gap-1 px-1.5 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-bold cursor-pointer shadow-2xs"
-                      title="Copiar Link da Ficha Externa"
+                      title="Copiar Link da Ficha de Implantação da Empresa"
                     >
                       <Copy className="w-2.5 h-2.5" /> Copiar
                     </button>
                     <button
                       type="button"
                       onClick={() => {
-                        const link = `${window.location.origin}/?ficha_empresa=${selectedEmpresa.id}`;
+                        const link = `${window.location.origin}/?ficha_implantacao=${selectedEmpresa.id}`;
                         window.open(link, "_blank");
                       }}
                       className="p-0.5 text-emerald-800 hover:bg-emerald-200 rounded transition-colors"
-                      title="Abrir em nova aba"
+                      title="Abrir Ficha de Implantação em nova aba"
                     >
                       <ExternalLink className="w-3 h-3" />
                     </button>
                   </div>
+
+                  {/* Se for Canal Parceiro: Botão Dedicado de Ficha de Implantação para Primeiros Cadastros de Empresas Conectadas */}
+                  {hasEmpresaCategoria(selectedEmpresa, "canal_parceiro") && (
+                    <div className="flex items-center gap-1 bg-purple-100 border border-purple-300 px-2 py-0.5 rounded-lg shadow-2xs">
+                      <span className="text-[10px] font-extrabold uppercase text-purple-950 flex items-center gap-1">
+                        <Sparkles className="w-3 h-3 text-purple-700" /> Link de Implantação do Canal (Novos Clientes):
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const link = `${window.location.origin}/?ficha_implantacao=nova&parceiro_id=${selectedEmpresa.id}`;
+                          navigator.clipboard.writeText(link);
+                          showToast("Link de Implantação do Canal copiado! Ao preencher, a nova empresa ficará automaticamente amarrada como Empresa Conectada a este parceiro.", "success");
+                        }}
+                        className="flex items-center gap-1 px-2 py-0.5 bg-purple-700 hover:bg-purple-800 text-white rounded text-[10px] font-bold cursor-pointer shadow-2xs"
+                        title="Ficha de Implantação - Primeiros Cadastros: Envie para a empresa contratada pelo parceiro que está iniciando o vínculo lançar seus dados e colaboradores. Ela ficará automaticamente enquadrada como empresa conectada e amarrada a este canal."
+                      >
+                        <Copy className="w-2.5 h-2.5" /> Copiar Link Primeiros Cadastros
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const link = `${window.location.origin}/?ficha_implantacao=nova&parceiro_id=${selectedEmpresa.id}`;
+                          window.open(link, "_blank");
+                        }}
+                        className="p-0.5 text-purple-900 hover:bg-purple-200 rounded transition-colors"
+                        title="Abrir tela de primeiros cadastros em nova aba"
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -14870,11 +14970,16 @@ export function DashboardView({
             <EmpresaColaboradoresSpreadsheet
               empresaId={selectedEmpresa.id}
               empresaNome={selectedEmpresa.razaoSocial || selectedEmpresa.nomeEmpresa}
+              codigoAcesso={selectedEmpresa.codigoAcesso}
               quantidadeVidasContratadas={selectedEmpresa.quantidadeVidas || selectedEmpresa.colaboradores}
               colaboradores={selectedEmpresa.colaboradoresList || []}
               onChangeColaboradores={(newList) =>
                 handleUpdateEmpresaProperty(selectedEmpresa.id, "colaboradoresList", newList)
               }
+              onUpdateCodigoAcesso={(newCode) => {
+                handleUpdateEmpresaProperty(selectedEmpresa.id, "codigoAcesso", newCode);
+                setSelectedEmpresa((prev) => (prev ? { ...prev, codigoAcesso: newCode } : null));
+              }}
               onShowToast={showToast}
             />
           ) : empresaModalTab === "faturamento" ? (
