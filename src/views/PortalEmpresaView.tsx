@@ -343,6 +343,30 @@ export function PortalEmpresaView({
     window.scrollTo({ top: 0, left: 0, behavior: "instant" });
   }, [activeTab, empresaAtivaId]);
 
+  // Categorias e Enquadramento da Empresa (Canal Parceiro / Empresa Conectada)
+  const categoriasEmpresa = useMemo(() => {
+    return getEmpresaCategorias(empresaPrincipal);
+  }, [empresaPrincipal]);
+
+  const isCanalBeneficios = useMemo(() => {
+    return categoriasEmpresa.includes("canal_parceiro");
+  }, [categoriasEmpresa]);
+
+  const isEmpresaConectada = useMemo(() => {
+    const emp = empresaAtiva || empresaPrincipal;
+    return (
+      hasEmpresaCategoria(emp, "empresa_conectada") ||
+      Boolean(emp?.canalParceiroId || emp?.empresaMaeId)
+    );
+  }, [empresaAtiva, empresaPrincipal]);
+
+  // Se a empresa conectada tentar acessar faturamento, redireciona para indicadores
+  useEffect(() => {
+    if (isEmpresaConectada && activeTab === "faturamento") {
+      setActiveTab("indicadores");
+    }
+  }, [isEmpresaConectada, activeTab]);
+
   // Carrega a empresa principal em tempo real (atualiza automaticamente quando a Gestão AcolheMente cria/altera o código)
   useEffect(() => {
     if (!empresaId) {
@@ -1644,19 +1668,6 @@ export function PortalEmpresaView({
       </div>
     );
   }
-
-  // PORTAL AUTENTICADO
-  const categoriasEmpresa = getEmpresaCategorias(empresaPrincipal);
-  const isCanalBeneficios = categoriasEmpresa.includes("canal_parceiro");
-  const isEmpresaConectada =
-    hasEmpresaCategoria(empresaAtiva || empresaPrincipal, "empresa_conectada") ||
-    Boolean((empresaAtiva || empresaPrincipal)?.canalParceiroId || (empresaAtiva || empresaPrincipal)?.empresaMaeId);
-
-  useEffect(() => {
-    if (isEmpresaConectada && activeTab === "faturamento") {
-      setActiveTab("indicadores");
-    }
-  }, [isEmpresaConectada, activeTab]);
 
   return (
     <div className="min-h-screen bg-warm flex flex-col">
