@@ -1036,6 +1036,22 @@ export function DashboardView({
   });
   const [isAddingServicoAdmin, setIsAddingServicoAdmin] = useState(false);
   const [empresaFilterCategoria, setEmpresaFilterCategoria] = useState<"todas" | "empresa_direta" | "canal_parceiro" | "empresa_conectada">("todas");
+  const [empresaSearchTerm, setEmpresaSearchTerm] = useState("");
+  const [expandedEmpresas, setExpandedEmpresas] = useState<Record<string, boolean>>({});
+  const toggleExpandEmpresa = (id: string) => {
+    setExpandedEmpresas((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  // Estados de Expansão/Minimização para Cards de Pacientes (Opção 1)
+  const [pacienteSearchTerm, setPacienteSearchTerm] = useState("");
+  const [expandedPacientes, setExpandedPacientes] = useState<Record<string, boolean>>({});
+  const toggleExpandPaciente = (id: string) => {
+    setExpandedPacientes((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+  const [expandedKanbanCards, setExpandedKanbanCards] = useState<Record<string, boolean>>({});
+  const toggleExpandKanbanCard = (id: string) => {
+    setExpandedKanbanCards((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
   const [showNovaEmpresaModal, setShowNovaEmpresaModal] = useState(false);
   const [isSubmittingNovaEmpresa, setIsSubmittingNovaEmpresa] = useState(false);
   const [novaEmpresaForm, setNovaEmpresaForm] = useState({
@@ -8188,172 +8204,277 @@ export function DashboardView({
           </div>
         </div>
       ) : currentRole === "profissional" && activeTab === "pacientes" ? (
-        <div className="flex-1 overflow-auto p-6 md:p-8 flex flex-col gap-8 slide-up">
-          <div className="max-w-5xl w-full mx-auto">
-            <h2 className="font-serif text-3xl text-forest bg-white px-8 py-6 rounded-[2rem] shadow-sm border border-soft flex items-center gap-4 mb-8">
-              <User className="w-8 h-8 text-forest/70" />
-              Meus Pacientes Encaminhados
-            </h2>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredMeusPacientes.length === 0 ? (
-                <div className="col-span-full text-center p-12 bg-white/50 border border-dashed border-soft rounded-[2rem] text-forest/70/70">
-                  Nenhum paciente encaminhado no momento.
+        <div className="flex-1 overflow-auto p-4 sm:p-6 md:p-8 flex flex-col gap-6 slide-up">
+          <div className="max-w-5xl w-full mx-auto flex flex-col gap-4">
+            {/* Barra de Topo Enxuta com Contagem, Busca e Botão Expandir/Recolher Todos */}
+            <div className="flex flex-wrap items-center justify-between gap-3 bg-white px-4 sm:px-6 py-3.5 rounded-2xl shadow-xs border border-soft">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-forest/5 flex items-center justify-center text-forest shrink-0">
+                  <User className="w-4 h-4 text-forest" />
                 </div>
-              ) : (
-                filteredMeusPacientes.map((p, pIdx) => {
-                  const entryDate = p.createdAt
-                    ? formatDateTimeSafely(p.createdAt, "Desconhecida")
-                    : "Desconhecida";
+                <div>
+                  <h2 className="font-serif text-lg sm:text-xl font-bold text-forest">
+                    Meus Pacientes Encaminhados
+                  </h2>
+                  <p className="text-[11px] text-forest/60">
+                    {filteredMeusPacientes.length} paciente(s) vinculado(s) ao seu acompanhamento
+                  </p>
+                </div>
+              </div>
 
-                  return (
-                    <div
-                      key={p.id}
-                      className="bg-white p-6 rounded-[2rem] shadow-md border border-soft hover:shadow-lg transition-all duration-300 flex flex-col gap-5 relative group"
+              <div className="flex items-center gap-2 flex-wrap">
+                {/* Campo de Busca Rápida */}
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-forest/40 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    placeholder="Buscar paciente..."
+                    value={pacienteSearchTerm}
+                    onChange={(e) => setPacienteSearchTerm(e.target.value)}
+                    className="pl-8 pr-3 py-1.5 bg-warm/40 border border-soft rounded-xl text-xs text-forest focus:outline-none focus:border-forest/40 w-40 sm:w-52"
+                  />
+                  {pacienteSearchTerm && (
+                    <button
+                      type="button"
+                      onClick={() => setPacienteSearchTerm("")}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-forest/40 hover:text-forest text-xs cursor-pointer"
                     >
-                      {/* Header Row */}
-                      <div>
-                        <div className="flex items-center justify-between gap-2 mb-2">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[10px] font-bold text-forest/70 bg-warm px-2 py-0.5 rounded-full border border-soft">
+                      ×
+                    </button>
+                  )}
+                </div>
+
+                {/* Alternar Expandir/Recolher Todos */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const currentlyExpandedCount = Object.values(expandedPacientes).filter(Boolean).length;
+                    if (currentlyExpandedCount > 0) {
+                      setExpandedPacientes({});
+                    } else {
+                      const all: Record<string, boolean> = {};
+                      filteredMeusPacientes.forEach((p) => {
+                        all[p.id] = true;
+                      });
+                      setExpandedPacientes(all);
+                    }
+                  }}
+                  className="px-2.5 py-1.5 text-forest/70 hover:text-forest hover:bg-warm rounded-xl text-xs font-semibold flex items-center gap-1 border border-soft transition-colors cursor-pointer"
+                  title="Expandir ou recolher todos os cards"
+                >
+                  {Object.values(expandedPacientes).filter(Boolean).length > 0 ? (
+                    <>
+                      <ChevronUp className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Recolher Todos</span>
+                    </>
+                  ) : (
+                    <>
+                      <ChevronDown className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Expandir Todos</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* Lista em Barras Compactas e Expansíveis (Opção 1) */}
+            {(() => {
+              const pacientesFiltrados = filteredMeusPacientes.filter((p) => {
+                if (pacienteSearchTerm.trim()) {
+                  const term = pacienteSearchTerm.toLowerCase();
+                  const nome = (p.nomeDesejado || p.nomeCivil || p.nome || "").toLowerCase();
+                  const telefone = (p.telefone || "").toLowerCase();
+                  const motivo = (p.motivo || "").toLowerCase();
+                  return nome.includes(term) || telefone.includes(term) || motivo.includes(term);
+                }
+                return true;
+              });
+
+              if (pacientesFiltrados.length === 0) {
+                return (
+                  <div className="w-full text-center p-8 bg-white/70 border border-dashed border-soft rounded-2xl text-forest/70 text-sm">
+                    {pacienteSearchTerm.trim()
+                      ? "Nenhum paciente encontrado com a busca informada."
+                      : "Nenhum paciente encaminhado no momento."}
+                  </div>
+                );
+              }
+
+              return (
+                <div className="flex flex-col gap-2 w-full">
+                  {pacientesFiltrados.map((p, pIdx) => {
+                    const isExpanded = Boolean(expandedPacientes[p.id]);
+                    const entryDate = p.createdAt
+                      ? formatDateTimeSafely(p.createdAt, "Desconhecida")
+                      : "Desconhecida";
+
+                    return (
+                      <div
+                        key={`paciente-card-${p.id}`}
+                        className="bg-white rounded-xl border border-soft shadow-2xs hover:border-forest/30 transition-all overflow-hidden"
+                      >
+                        {/* Barra Compacta Superior (~48px) */}
+                        <div
+                          onClick={() => toggleExpandPaciente(p.id)}
+                          className="px-3.5 sm:px-4 py-2.5 flex items-center justify-between gap-3 cursor-pointer hover:bg-warm/30 transition-colors select-none"
+                        >
+                          {/* Lado Esquerdo: Tag de Status, Nome e Dados Primordiais */}
+                          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                            {/* Número da Fila */}
+                            <span className="text-[10px] font-bold text-forest/60 bg-warm px-1.5 py-0.5 rounded border border-soft shrink-0">
                               #{pIdx + 1}
                             </span>
-                            <span className="text-[10px] font-bold text-forest/70 bg-warm px-2.5 py-1 rounded-full uppercase tracking-wider">
-                              Paciente
+
+                            {/* Status da Atribuição */}
+                            <span
+                              className={`px-2 py-0.5 rounded-full font-bold text-[9px] uppercase tracking-wide shrink-0 border ${
+                                p.atribuicaoStatus === "Aceito"
+                                  ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                                  : p.atribuicaoStatus === "Rejeitado"
+                                    ? "bg-rose-50 text-rose-800 border-rose-200"
+                                    : "bg-amber-50 text-amber-800 border-amber-200"
+                              }`}
+                            >
+                              {p.atribuicaoStatus || "Pendente"}
                             </span>
-                          </div>
-                          <span
-                            className={`px-2 py-1 rounded font-bold text-[9px] uppercase tracking-wide leading-none ${
-                              p.atribuicaoStatus === "Aceito"
-                                ? "bg-[#34A853]/10 text-[#34A853]"
-                                : p.atribuicaoStatus === "Rejeitado"
-                                  ? "bg-red-500/10 text-red-500"
-                                  : "bg-amber-500/10 text-amber-500"
-                            }`}
-                          >
-                            {p.atribuicaoStatus || "Pendente"}
-                          </span>
-                        </div>
-                        <h4 className="font-serif text-xl font-bold text-forest leading-snug tracking-tight">
-                          {p.nomeDesejado ||
-                            p.nomeCivil ||
-                            p.nome ||
-                            "Paciente não identificado"}
-                        </h4>
-                      </div>
 
-                      {/* Information organized in lines (Rows) */}
-                      <div className="bg-warm/25 rounded-2xl border border-soft/50 p-4 flex flex-col gap-2.5 text-xs text-forest/85">
-                        <div className="flex items-center justify-between py-1 border-b border-soft/30">
-                          <span className="text-forest/50 font-medium flex items-center gap-1.5">
-                            <Calendar className="w-3.5 h-3.5 text-forest/40" />{" "}
-                            Entrada:
-                          </span>
-                          <span className="font-semibold text-forest/90">
-                            {entryDate}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center justify-between py-1 border-b border-soft/30">
-                          <span className="text-forest/50 font-medium flex items-center gap-1.5">
-                            <User className="w-3.5 h-3.5 text-forest/40" />{" "}
-                            Idade:
-                          </span>
-                          <span className="font-semibold text-forest/90">
-                            {p.idade || "Não informada"}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center justify-between py-1 border-b border-soft/30">
-                          <span className="text-forest/50 font-medium flex items-center gap-1.5">
-                            <Circle className="w-3.5 h-3.5 text-forest/40" />{" "}
-                            Gênero:
-                          </span>
-                          <span className="font-semibold text-forest/90">
-                            {p.identidadeGenero || "Não informado"}
-                          </span>
-                        </div>
-
-                        {p.telefone && (
-                          <div className="flex items-center justify-between py-1 border-b border-soft/30">
-                            <span className="text-forest/50 font-medium flex items-center gap-1.5">
-                              <Phone className="w-3.5 h-3.5 text-forest/40" />{" "}
-                              Telefone:
-                            </span>
-                            <span className="font-semibold text-forest/90">
-                              {p.atribuicaoStatus === "Aceito" ? (
-                                p.telefone
-                              ) : (
-                                <span className="text-amber-800 text-[11px] bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200 flex items-center gap-1 font-medium">
-                                  <Lock className="w-3 h-3 text-amber-600" />
-                                  Oculto até o aceite
+                            {/* Nome do Paciente */}
+                            <div className="flex items-baseline gap-2 min-w-0 flex-1">
+                              <h4 className="font-bold text-xs sm:text-sm text-forest truncate" title={p.nomeDesejado || p.nomeCivil || p.nome || "Paciente sem nome"}>
+                                {p.nomeDesejado || p.nomeCivil || p.nome || "Paciente sem nome"}
+                              </h4>
+                              {p.viaAcesso && (
+                                <span className="text-[10px] text-forest/50 hidden sm:inline shrink-0 font-medium">
+                                  • {p.viaAcesso}
                                 </span>
                               )}
-                            </span>
+                            </div>
+
+                            {/* Detalhes Rápidos Primordiais (Idade / Gênero / Valor) */}
+                            <div className="hidden lg:flex items-center gap-2 text-xs text-forest/70 shrink-0">
+                              {p.idade && (
+                                <span className="px-2 py-0.5 rounded-md bg-warm text-forest/80 text-[10px] font-semibold border border-soft flex items-center gap-1">
+                                  <User className="w-3 h-3 text-forest/50" />
+                                  {p.idade}
+                                </span>
+                              )}
+                              {p.identidadeGenero && (
+                                <span className="px-2 py-0.5 rounded-md bg-warm text-forest/80 text-[10px] font-semibold border border-soft flex items-center gap-1">
+                                  <Circle className="w-3 h-3 text-forest/50" />
+                                  {p.identidadeGenero}
+                                </span>
+                              )}
+                              {p.valorSessao && (
+                                <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-800 text-[10px] font-semibold border border-emerald-200/60 flex items-center gap-1">
+                                  <DollarSign className="w-3 h-3 text-emerald-600" />
+                                  R$ {p.valorSessao}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Lado Direito: Ações Rápidas & Seta de Expansão */}
+                          <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+                            {p.telefone && p.atribuicaoStatus === "Aceito" && (
+                              <a
+                                href={`https://wa.me/55${p.telefone.replace(/\D/g, "")}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="hidden sm:flex px-2 py-1.5 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 rounded-xl text-xs font-semibold items-center gap-1 border border-emerald-200 transition-colors shadow-2xs"
+                                title="Conversar no WhatsApp"
+                              >
+                                <Phone className="w-3.5 h-3.5 text-emerald-600" />
+                                <span>WhatsApp</span>
+                              </a>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={() => setSelectedCard(p)}
+                              className="px-2.5 py-1.5 bg-forest text-white font-semibold text-xs rounded-xl hover:bg-forest/90 transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                              title="Abrir Ficha do Paciente"
+                            >
+                              <FileText className="w-3.5 h-3.5 text-sun" />
+                              <span className="hidden sm:inline">Ficha do Paciente</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => toggleExpandPaciente(p.id)}
+                              className="p-1 text-forest/60 hover:text-forest hover:bg-warm rounded-lg transition-colors cursor-pointer"
+                              title={isExpanded ? "Recolher detalhes" : "Expandir detalhes"}
+                            >
+                              {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Painel Expandido com Detalhes Complementares */}
+                        {isExpanded && (
+                          <div className="px-4 py-3 bg-warm/25 border-t border-soft/80 flex flex-col gap-2.5 text-xs animate-in fade-in duration-150">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-forest/85">
+                              <div className="flex flex-col gap-0.5">
+                                <span className="text-[10px] uppercase font-bold text-forest/50">Data de Entrada</span>
+                                <span className="flex items-center gap-1.5 font-medium">
+                                  <Calendar className="w-3.5 h-3.5 text-forest/50 shrink-0" />
+                                  {entryDate}
+                                </span>
+                              </div>
+
+                              <div className="flex flex-col gap-0.5">
+                                <span className="text-[10px] uppercase font-bold text-forest/50">Telefone / Contato</span>
+                                <span className="flex items-center gap-1.5 font-medium">
+                                  <Phone className="w-3.5 h-3.5 text-forest/50 shrink-0" />
+                                  {p.atribuicaoStatus === "Aceito" ? (
+                                    p.telefone || "Não informado"
+                                  ) : (
+                                    <span className="text-amber-800 text-[11px] bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200 flex items-center gap-1 font-medium">
+                                      <Lock className="w-3 h-3 text-amber-600" />
+                                      Oculto até o aceite
+                                    </span>
+                                  )}
+                                </span>
+                              </div>
+
+                              <div className="flex flex-col gap-0.5">
+                                <span className="text-[10px] uppercase font-bold text-forest/50">Condições de Sessão</span>
+                                <span className="flex items-center gap-1.5 font-medium">
+                                  <DollarSign className="w-3.5 h-3.5 text-forest/50 shrink-0" />
+                                  {p.valorSessao ? `R$ ${p.valorSessao}/sessão` : "A definir"} {p.frequenciaSessoes ? `(${p.frequenciaSessoes})` : ""}
+                                </span>
+                              </div>
+
+                              <div className="flex flex-col gap-0.5">
+                                <span className="text-[10px] uppercase font-bold text-forest/50">Etapa Atual</span>
+                                <span className="flex items-center gap-1.5 font-medium">
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-forest/50 shrink-0" />
+                                  {p.status || "Em Acompanhamento"}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Motivo / Queixa */}
+                            {p.motivo && (
+                              <div className="pt-2 border-t border-soft/50 flex flex-col gap-1">
+                                <span className="text-[10px] uppercase font-bold text-forest/50">Queixa / Motivo Informado:</span>
+                                <p className="p-2.5 bg-white rounded-lg border border-soft/80 text-forest/80 leading-relaxed text-xs">
+                                  {p.motivo}
+                                </p>
+                              </div>
+                            )}
+
+                            <div className="pt-1 flex items-center justify-between text-[10px] text-forest/50 italic">
+                              <span>Dica: Clique no botão "Ficha do Paciente" para ver evolução clínica, prontuário e histórico completo.</span>
+                              <span>Clique na barra para recolher</span>
+                            </div>
                           </div>
                         )}
-
-                        <div className="flex items-center justify-between py-1">
-                          <span className="text-forest/50 font-medium flex items-center gap-1.5">
-                            <CheckCircle2 className="w-3.5 h-3.5 text-forest/40" />{" "}
-                            Progresso:
-                          </span>
-                          <span className="font-semibold text-forest/70 bg-white/60 px-2 py-0.5 rounded border border-soft/40 text-[10px]">
-                            {p.status}
-                          </span>
-                        </div>
                       </div>
-
-                      {p.motivo && (
-                        <div className="text-xs flex flex-col gap-1.5 text-forest/80">
-                          <span className="font-semibold text-forest/60 uppercase tracking-wider text-[10px]">
-                            Queixa / Motivo
-                          </span>
-                          <p className="whitespace-pre-wrap max-h-[120px] overflow-y-auto bg-warm/15 p-3.5 rounded-2xl border border-soft/30 custom-scrollbar leading-relaxed">
-                            {p.motivo}
-                          </p>
-                        </div>
-                      )}
-
-                      {(p.valorSessao || p.frequenciaSessoes) && (
-                        <div className="flex flex-col gap-2 bg-emerald-50 text-emerald-700 px-4 py-3 rounded-2xl text-xs border border-emerald-100 shadow-sm">
-                          {p.valorSessao && (
-                            <div className="flex items-center justify-between font-bold">
-                              <span className="flex items-center gap-1.5">
-                                <DollarSign className="w-4 h-4 text-emerald-600" />{" "}
-                                Valor Acertado:
-                              </span>
-                              <span className="text-sm">
-                                R$ {p.valorSessao}
-                              </span>
-                            </div>
-                          )}
-                          {p.frequenciaSessoes && (
-                            <div className="flex items-center justify-between">
-                              <span className="flex items-center gap-1.5 font-semibold text-emerald-600/80">
-                                <Calendar className="w-4 h-4 text-emerald-600/70" />{" "}
-                                Frequência:
-                              </span>
-                              <span className="font-semibold text-emerald-800">
-                                {p.frequenciaSessoes}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      <button
-                        onClick={() => setSelectedCard(p)}
-                        className="w-full py-2.5 bg-forest hover:bg-forest/90 text-white font-serif font-semibold rounded-xl text-xs transition-colors flex items-center justify-center gap-2 shadow-sm"
-                      >
-                        <FileText className="w-4 h-4" />
-                        Ficha do Paciente
-                      </button>
-                    </div>
-                  );
-                })
-              )}
-            </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </div>
         </div>
       ) : currentRole === "profissional" &&
@@ -9560,6 +9681,37 @@ export function DashboardView({
               )}
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              {/* Alternar Expandir/Recolher Todos os Cards de Pacientes no Kanban */}
+              <button
+                type="button"
+                onClick={() => {
+                  const currentlyExpandedCount = Object.values(expandedKanbanCards).filter(Boolean).length;
+                  if (currentlyExpandedCount > 0) {
+                    setExpandedKanbanCards({});
+                  } else {
+                    const all: Record<string, boolean> = {};
+                    filteredAcolhimentos.forEach((c) => {
+                      all[c.id] = true;
+                    });
+                    setExpandedKanbanCards(all);
+                  }
+                }}
+                className="px-2.5 py-1 text-forest/70 hover:text-forest bg-white hover:bg-warm rounded-lg text-[11px] font-semibold flex items-center gap-1 border border-soft transition-colors cursor-pointer shadow-2xs"
+                title="Expandir ou recolher todos os cards de pacientes no quadro"
+              >
+                {Object.values(expandedKanbanCards).filter(Boolean).length > 0 ? (
+                  <>
+                    <ChevronUp className="w-3.5 h-3.5" />
+                    <span>Recolher Cards</span>
+                  </>
+                ) : (
+                  <>
+                    <ChevronDown className="w-3.5 h-3.5" />
+                    <span>Expandir Cards</span>
+                  </>
+                )}
+              </button>
+
               {/* Seletor de Ordenação por Entrada / Cadastro */}
               <div className="bg-white border border-soft rounded-lg p-0.5 flex items-center shadow-2xs">
                 <button
@@ -9691,7 +9843,7 @@ export function DashboardView({
                     <motion.div
                       layout
                       key={col.id}
-                      className={`w-[320px] shrink-0 h-full flex flex-col rounded-2xl overflow-hidden transition-colors duration-200 ${
+                      className={`w-[350px] sm:w-[370px] lg:w-[385px] max-w-[90vw] shrink-0 h-full flex flex-col rounded-2xl overflow-hidden transition-colors duration-200 ${
                         isColOver
                           ? "bg-sun/15 border-2 border-sun shadow-md"
                           : col.id === "Devolvido para triagem"
@@ -9765,16 +9917,23 @@ export function DashboardView({
                       {/* Cards List with Motion Layout */}
                       <motion.div
                         layout
-                        className="flex-1 overflow-y-auto p-4 flex flex-col gap-3 custom-scrollbar"
+                        className="flex-1 overflow-y-auto p-4 flex flex-col gap-3.5 custom-scrollbar"
                       >
                         <AnimatePresence mode="popLayout" initial={false}>
                           {colCards.map((card, cardIdx) => {
                             const isCardDragging = draggingCardId === card.id;
+                            const isCardExpanded = Boolean(expandedKanbanCards[card.id]);
+                            const patientName =
+                              (typeof card.nome === "string" && card.nome.trim()) ||
+                              (typeof card.nomeCompleto === "string" && card.nomeCompleto.trim()) ||
+                              (typeof card.nomeDesejado === "string" && card.nomeDesejado.trim()) ||
+                              (typeof card.nomeCivil === "string" && card.nomeCivil.trim()) ||
+                              (typeof card.nomePaciente === "string" && card.nomePaciente.trim()) ||
+                              "Paciente";
 
                             return (
                               <motion.div
                                 layout
-                                layoutId={`kanban-card-${card.id}`}
                                 key={card.id}
                                 initial={{ opacity: 0, y: 15, scale: 0.96 }}
                                 animate={{
@@ -9803,240 +9962,316 @@ export function DashboardView({
                                   setDragOverColId(null);
                                 }}
                                 onClick={() => setSelectedCard(card)}
-                                className={`bg-white p-4 rounded-xl shadow-sm border select-none ${
+                                className={`bg-white p-4 rounded-xl shadow-xs border select-none ${
                                   isCardDragging
                                     ? "border-sun ring-2 ring-sun/40 opacity-50 cursor-grabbing shadow-none"
                                     : "border-soft shadow-sun-dark/5 hover:shadow-md cursor-grab active:cursor-grabbing hover:border-sun-dark/30"
                                 } transition-all group`}
                               >
-                                <div className="flex justify-between items-start mb-2">
+                                {/* 1. Barra Superior com Badges de Identificação e Controle */}
+                                <div className="flex justify-between items-center gap-2 mb-2.5">
                                   <div className="flex items-center gap-1.5 flex-wrap">
-                                    <span className="text-[10px] font-bold text-forest/70 bg-warm px-1.5 py-0.5 rounded border border-soft">
+                                    <span className="text-[10px] font-bold text-forest/70 bg-warm px-2 py-0.5 rounded-md border border-soft shrink-0">
                                       #{cardIdx + 1}
                                     </span>
                                     <span
-                                      className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${
+                                      className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border shrink-0 ${
                                         card.viaAcesso === "Particular"
-                                          ? "bg-sun-dark-light text-forest/70-dark"
-                                          : "bg-[#E5EDF4] text-[#3B668D]"
+                                          ? "bg-amber-50 text-amber-900 border-amber-200"
+                                          : card.viaAcesso === "Corporativo"
+                                            ? "bg-blue-50 text-blue-900 border-blue-200"
+                                            : "bg-emerald-50 text-emerald-900 border-emerald-200"
                                       }`}
                                     >
-                                      {card.viaAcesso}
+                                      {card.viaAcesso || "Particular"}
                                     </span>
                                     {!isCardInStandby(card) && (card.status === "Alta" || card.ativo === false || card.desligado || card.statusInativacao === "Inativo" || card.statusInativacao === "Desligado") && (
-                                      <span className="text-[9px] font-bold text-rose-800 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-200 flex items-center gap-0.5">
+                                      <span className="text-[9px] font-bold text-rose-800 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-200 flex items-center gap-0.5 shrink-0">
                                         <XCircle className="w-2.5 h-2.5 text-rose-600" />
                                         {card.desligamentoMotivo || (card.statusInativacao === "Inativo" ? "Inativo" : "Alta")}
                                       </span>
                                     )}
                                     {isCardInStandby(card) && (
-                                      <span className="text-[9px] font-bold text-amber-900 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-300 flex items-center gap-0.5">
+                                      <span className="text-[9px] font-bold text-amber-900 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-300 flex items-center gap-0.5 shrink-0">
                                         <Clock className="w-2.5 h-2.5 text-amber-700" />
                                         Standby
                                       </span>
                                     )}
                                   </div>
-                                  <Grip className="w-4 h-4 text-forest/70/30 opacity-0 group-hover:opacity-100 transition-opacity" />
-                                </div>
-                                <h4 className="font-semibold text-forest text-sm line-clamp-1 break-words pb-1">
-                                  {card.nomeDesejado ||
-                                    card.nomeCivil ||
-                                    card.nome ||
-                                    "Paciente sem nome"}
-                                </h4>
 
-                                <div className="flex flex-wrap gap-1.5 text-[9px] text-forest/70 font-semibold uppercase tracking-wider mb-2">
+                                  <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleExpandKanbanCard(card.id)}
+                                      className="p-1 text-forest/50 hover:text-forest hover:bg-warm rounded-md transition-colors cursor-pointer"
+                                      title={isCardExpanded ? "Recolher detalhes" : "Expandir detalhes"}
+                                    >
+                                      {isCardExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                                    </button>
+                                    <Grip className="w-4 h-4 text-forest/30 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                  </div>
+                                </div>
+
+                                {/* 2. Destaque Visual Máximo do Nome do Paciente (O Protagonista) */}
+                                <div className="mb-2">
+                                  <h4
+                                    className="font-bold text-forest text-[15px] sm:text-base leading-snug break-words text-left group-hover:text-forest/90 transition-colors"
+                                    title={patientName}
+                                  >
+                                    {patientName}
+                                  </h4>
+                                </div>
+
+                                {/* 3. Linha Resumo Primordial (Idade / Gênero / Valor) */}
+                                <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-forest/75 font-medium mb-2">
                                   {card.idade && (
-                                    <span className="bg-warm px-1.5 py-0.5 rounded border border-soft flex items-center gap-1">
-                                      <User className="w-3 h-3" />
-                                      {card.idade}
+                                    <span className="bg-warm/80 px-2 py-0.5 rounded-md border border-soft flex items-center gap-1 shrink-0">
+                                      <User className="w-3 h-3 text-forest/50" />
+                                      <span>{card.idade} {typeof card.idade === "number" || !String(card.idade).includes("ano") ? "anos" : ""}</span>
                                     </span>
                                   )}
                                   {card.identidadeGenero && (
-                                    <span className="bg-warm px-1.5 py-0.5 rounded border border-soft flex items-center gap-1">
-                                      <Circle className="w-3 h-3" />
-                                      {card.identidadeGenero}
+                                    <span className="bg-warm/80 px-2 py-0.5 rounded-md border border-soft flex items-center gap-1 shrink-0">
+                                      <Circle className="w-2.5 h-2.5 text-forest/50" />
+                                      <span>{card.identidadeGenero}</span>
+                                    </span>
+                                  )}
+                                  {card.valorSessao && (
+                                    <span className="bg-emerald-50 text-emerald-800 px-2 py-0.5 rounded-md border border-emerald-200/60 font-semibold shrink-0">
+                                      R$ {card.valorSessao}/sessão
                                     </span>
                                   )}
                                 </div>
 
-                                <div className="text-[10px] text-forest/80 max-h-24 overflow-y-auto mt-2 bg-warm/30 p-2 rounded-lg border border-soft leading-tight custom-scrollbar">
-                                  <span className="font-bold block mb-[2px] text-forest/60">
-                                    Motivo/Queixa:
-                                  </span>
-                                  {card.motivo
-                                    ? card.motivo.split(" - ")[0]
-                                    : "Não informado"}
-                                </div>
-
-                                {(card.valorSessao || card.frequenciaSessoes) && (
-                                  <div className="mt-2 text-[10px] text-emerald-700 bg-emerald-50 px-2 py-1.5 rounded border border-emerald-100/50 flex flex-col gap-1 w-full">
-                                    {card.valorSessao && (
-                                      <div className="flex justify-between items-center font-bold">
-                                        <span>Valor Acertado:</span>{" "}
-                                        <span>R$ {card.valorSessao}</span>
-                                      </div>
-                                    )}
-                                    {card.frequenciaSessoes && (
-                                      <div className="flex justify-between items-center">
-                                        <span className="font-medium opacity-80">
-                                          Frequência:
-                                        </span>{" "}
-                                        <span className="font-semibold">
-                                          {card.frequenciaSessoes}
-                                        </span>
-                                      </div>
-                                    )}
+                                {/* 4. Rodapé Quando Minimizado */}
+                                {!isCardExpanded && (
+                                  <div className="mt-2 pt-2 border-t border-soft/50 flex items-center justify-between gap-2 text-[11px] text-forest/65">
+                                    <span className="line-clamp-1 italic flex-1 text-left min-w-0" title={card.motivo || "Ficha disponível"}>
+                                      {card.motivo ? card.motivo.split(" - ")[0] : "Clique para abrir ficha completa"}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        toggleExpandKanbanCard(card.id);
+                                      }}
+                                      className="text-forest/70 hover:text-forest font-semibold flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-warm cursor-pointer text-[10px] uppercase tracking-wider shrink-0 transition-colors"
+                                    >
+                                      <span>Mais</span>
+                                      <ChevronDown className="w-3 h-3" />
+                                    </button>
                                   </div>
                                 )}
 
-                                <div className="flex items-center gap-1.5 mt-3 pt-2 text-[9px] uppercase tracking-wider text-forest/70 font-bold border-t border-soft/50">
-                                  <Clock className="w-3 h-3 text-amber-600" />
-                                  <span>
-                                    Entrada:{" "}
-                                    {card.createdAt
-                                      ? formatDateTimeSafely(card.createdAt, "Desconhecida")
-                                      : "Desconhecida"}
-                                  </span>
-                                </div>
+                                    {/* Detalhes Complementares Quando Expandido */}
+                                    {isCardExpanded && (
+                                      <div className="mt-2 pt-2 border-t border-soft/60 flex flex-col gap-2 animate-in fade-in duration-150">
+                                        {/* Motivo / Queixa */}
+                                        <div className="text-[10px] text-forest/80 max-h-24 overflow-y-auto bg-warm/30 p-2 rounded-lg border border-soft leading-tight custom-scrollbar">
+                                          <span className="font-bold block mb-[2px] text-forest/60">
+                                            Motivo/Queixa:
+                                          </span>
+                                          {card.motivo
+                                            ? card.motivo.split(" - ")[0]
+                                            : "Não informado"}
+                                        </div>
 
-                                {(() => {
-                                  const status =
-                                    card.status || "Aguardando Avaliação";
-                                  if (
-                                    status === "Alta" ||
-                                    status === "Inativo" ||
-                                    status === "Encaminhamento Externo" ||
-                                    status === "Desistência"
-                                  )
-                                    return null;
-
-                                  const flow = getPatientFlowDetails(card);
-
-                                  return (
-                                    <div className="mt-3 pt-3 border-t border-soft/50 flex flex-col gap-1.5 w-full">
-                                      {/* Selos de Status do Fluxo */}
-                                      <div className="flex flex-wrap gap-1 mb-1">
-                                        {flow.propostaAceita ? (
-                                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                                            <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" /> Proposta Aceita
-                                          </span>
-                                        ) : flow.propostaRevisao ? (
-                                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
-                                            <HelpCircle className="w-2.5 h-2.5 text-amber-600" /> Revisão Solicitada
-                                          </span>
-                                        ) : flow.isPropostaEnviada ? (
-                                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-blue-100 text-blue-800 border border-blue-200">
-                                            <Send className="w-2.5 h-2.5 text-blue-600" /> Proposta Enviada
-                                          </span>
-                                        ) : null}
-
-                                        {flow.isAtribuicaoAceita ? (
-                                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                                            <UserCheck className="w-2.5 h-2.5 text-emerald-600" /> Atribuição Aceita
-                                          </span>
-                                        ) : flow.isAtribuicaoDevolvida ? (
-                                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
-                                            <RotateCcw className="w-2.5 h-2.5 text-rose-600" /> Devolvido para nova atribuição
-                                          </span>
-                                        ) : flow.isAtribuido ? (
-                                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
-                                            <Clock className="w-2.5 h-2.5 text-amber-600" /> Aceite Pendente
-                                          </span>
-                                        ) : null}
-
-                                        {flow.isAtendimentoIniciado && (
-                                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-600 text-white">
-                                            <Sparkles className="w-2.5 h-2.5 text-emerald-200" /> Atendimento Iniciado
-                                          </span>
+                                        {/* Valores e Frequência */}
+                                        {(card.valorSessao || card.frequenciaSessoes) && (
+                                          <div className="text-[10px] text-emerald-700 bg-emerald-50 px-2 py-1.5 rounded border border-emerald-100/50 flex flex-col gap-1 w-full">
+                                            {card.valorSessao && (
+                                              <div className="flex justify-between items-center font-bold">
+                                                <span>Valor Acertado:</span>{" "}
+                                                <span>R$ {card.valorSessao}</span>
+                                              </div>
+                                            )}
+                                            {card.frequenciaSessoes && (
+                                              <div className="flex justify-between items-center">
+                                                <span className="font-medium opacity-80">
+                                                  Frequência:
+                                                </span>{" "}
+                                                <span className="font-semibold">
+                                                  {card.frequenciaSessoes}
+                                                </span>
+                                              </div>
+                                            )}
+                                          </div>
                                         )}
+
+                                        {/* Data de Entrada */}
+                                        <div className="flex items-center gap-1.5 text-[9px] uppercase tracking-wider text-forest/70 font-bold">
+                                          <Clock className="w-3 h-3 text-amber-600" />
+                                          <span>
+                                            Entrada:{" "}
+                                            {card.createdAt
+                                              ? formatDateTimeSafely(card.createdAt, "Desconhecida")
+                                              : "Desconhecida"}
+                                          </span>
+                                        </div>
+
+                                        {/* Fluxo e Etapas */}
+                                        {(() => {
+                                          const status =
+                                            card.status || "Aguardando Avaliação";
+                                          if (
+                                            status === "Alta" ||
+                                            status === "Inativo" ||
+                                            status === "Encaminhamento Externo" ||
+                                            status === "Desistência"
+                                          )
+                                            return null;
+
+                                          const flow = getPatientFlowDetails(card);
+
+                                          return (
+                                            <div className="pt-1.5 border-t border-soft/50 flex flex-col gap-1.5 w-full">
+                                              {/* Selos de Status do Fluxo */}
+                                              <div className="flex flex-wrap gap-1 mb-1">
+                                                {flow.propostaAceita ? (
+                                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                                    <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" /> Proposta Aceita
+                                                  </span>
+                                                ) : flow.propostaRevisao ? (
+                                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
+                                                    <HelpCircle className="w-2.5 h-2.5 text-amber-600" /> Revisão Solicitada
+                                                  </span>
+                                                ) : flow.isPropostaEnviada ? (
+                                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-blue-100 text-blue-800 border border-blue-200">
+                                                    <Send className="w-2.5 h-2.5 text-blue-600" /> Proposta Enviada
+                                                  </span>
+                                                ) : null}
+
+                                                {flow.isAtribuicaoAceita ? (
+                                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                                    <UserCheck className="w-2.5 h-2.5 text-emerald-600" /> Atribuição Aceita
+                                                  </span>
+                                                ) : flow.isAtribuicaoDevolvida ? (
+                                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
+                                                    <RotateCcw className="w-2.5 h-2.5 text-rose-600" /> Devolvido para nova atribuição
+                                                  </span>
+                                                ) : flow.isAtribuido ? (
+                                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                                                    <Clock className="w-2.5 h-2.5 text-amber-600" /> Aceite Pendente
+                                                  </span>
+                                                ) : null}
+
+                                                {flow.isAtendimentoIniciado && (
+                                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-600 text-white">
+                                                    <Sparkles className="w-2.5 h-2.5 text-emerald-200" /> Atendimento Iniciado
+                                                  </span>
+                                                )}
+                                              </div>
+
+                                              {/* Progress bar de 6 etapas */}
+                                              <div className="flex gap-1 h-1.5 w-full">
+                                                <div className={`flex-1 rounded-full transition-colors ${flow.propostaRevisao ? "bg-amber-500" : "bg-emerald-500"}`} />
+                                                <div className={`flex-1 rounded-full transition-colors ${flow.propostaRevisao ? "bg-amber-300" : (flow.isPropostaEnviada || flow.propostaAceita) ? "bg-emerald-500" : "bg-warm-dark/40"}`} />
+                                                <div className={`flex-1 rounded-full transition-colors ${flow.propostaAceita ? "bg-emerald-500" : flow.propostaRevisao ? "bg-amber-500" : flow.isPropostaEnviada ? "bg-blue-400" : "bg-warm-dark/40"}`} />
+                                                <div className={`flex-1 rounded-full transition-colors ${flow.isAtribuido ? "bg-emerald-500" : flow.propostaAceita ? "bg-amber-400" : "bg-warm-dark/40"}`} />
+                                                <div className={`flex-1 rounded-full transition-colors ${flow.isAtribuido && flow.isAtribuicaoDevolvida ? "bg-rose-500" : flow.isAtribuido && flow.isAtribuicaoAceita ? "bg-emerald-500" : flow.isAtribuido ? "bg-amber-400" : "bg-warm-dark/40"}`} />
+                                                <div className={`flex-1 rounded-full transition-colors ${flow.isAtribuido && flow.isAtribuicaoAceita && flow.isAtendimentoIniciado ? "bg-emerald-500" : "bg-warm-dark/40"}`} />
+                                              </div>
+                                            </div>
+                                          );
+                                        })()}
+
+                                        {/* Profissional Atribuído */}
+                                        {card.profissionalId &&
+                                          (() => {
+                                            const assignedProf = allUsers.find(
+                                              (u) =>
+                                                u.uid === card.profissionalId ||
+                                                u.id === card.profissionalId,
+                                            );
+                                            const displayStatus =
+                                              card.atribuicaoStatus || "Pendente";
+                                            return (
+                                              <div className="pt-2 border-t border-soft/50 flex flex-wrap justify-between items-center text-[10px] gap-1 shrink-0">
+                                                <span className="text-forest/70 font-medium truncate max-w-[130px] flex items-center gap-1">
+                                                  👤{" "}
+                                                  {assignedProf
+                                                    ? assignedProf.name
+                                                    : "Indefinido"}
+                                                </span>
+                                                <span
+                                                  className={`px-1.5 py-0.5 rounded font-bold text-[9px] uppercase ${
+                                                    displayStatus === "Aceito"
+                                                      ? "bg-[#34A853]/10 text-[#34A853]"
+                                                      : displayStatus === "Rejeitado"
+                                                        ? "bg-red-500/10 text-red-500"
+                                                        : "bg-amber-500/10 text-amber-500"
+                                                  }`}
+                                                >
+                                                  {displayStatus}
+                                                </span>
+                                              </div>
+                                            );
+                                          })()}
+
+                                        {/* Motivo de Pausa / Cancelamento na Proposta (Standby) */}
+                                        {card.motivoPausaCancelamento && (
+                                          <div className="p-2 bg-amber-50/90 border border-amber-300/80 rounded-xl text-[10px] text-amber-950 leading-tight">
+                                            <span className="font-extrabold text-[9px] uppercase tracking-wider text-amber-900 flex items-center gap-1">
+                                              <PauseCircle className="w-3 h-3 text-amber-700 shrink-0" /> Motivo da Pausa:
+                                            </span>
+                                            <p className="line-clamp-2 italic text-forest/90 mt-0.5 font-serif">"{card.motivoPausaCancelamento}"</p>
+                                          </div>
+                                        )}
+
+                                        {/* Motivo de Revisão Solicitada */}
+                                        {card.motivoRevisao && (card.propostaStatus === "Paciente solicita revisão da proposta" || card.propostaStatus === "Revisão solicitada") && (
+                                          <div className="p-2 bg-orange-50/90 border border-orange-300/80 rounded-xl text-[10px] text-orange-950 leading-tight">
+                                            <span className="font-extrabold text-[9px] uppercase tracking-wider text-orange-900 flex items-center gap-1">
+                                              <RotateCcw className="w-3 h-3 text-orange-700 shrink-0" /> Motivo da Revisão:
+                                            </span>
+                                            <p className="line-clamp-2 italic text-forest/90 mt-0.5 font-serif">"{card.motivoRevisao}"</p>
+                                          </div>
+                                        )}
+
+                                        {/* Ação de Reativação para Standby */}
+                                        {(col.id === "Standby" || isCardInStandby(card)) && (
+                                          <div className="pt-2 border-t border-amber-200/60 flex flex-col gap-1 w-full">
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleReativarParaEmAnalise(card);
+                                              }}
+                                              className="w-full py-1.5 px-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white rounded-lg text-[11px] font-bold transition-all flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
+                                              title="Retomar processo e retornar paciente para 'Em Análise'"
+                                            >
+                                              <Play className="w-3 h-3 fill-white" />
+                                              <span>Reativar (Mover para Em Análise)</span>
+                                            </button>
+                                          </div>
+                                        )}
+
+                                        {/* Linha de Ações Inferior no Modo Expandido */}
+                                        <div className="pt-2 border-t border-soft/50 flex items-center justify-between gap-2" onClick={(e) => e.stopPropagation()}>
+                                          <button
+                                            type="button"
+                                            onClick={() => setSelectedCard(card)}
+                                            className="py-1 px-2.5 bg-forest text-white rounded-lg text-[10px] font-bold hover:bg-forest/90 transition-all flex items-center gap-1 cursor-pointer shadow-2xs"
+                                            title="Abrir Ficha de Bordo Completa"
+                                          >
+                                            <FileText className="w-3 h-3 text-sun" />
+                                            <span>Ficha de Bordo</span>
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => toggleExpandKanbanCard(card.id)}
+                                            className="text-[10px] text-forest/50 hover:text-forest flex items-center gap-0.5 cursor-pointer py-1 px-1.5 rounded hover:bg-warm transition-colors"
+                                          >
+                                            <span>Recolher</span>
+                                            <ChevronUp className="w-3 h-3" />
+                                          </button>
+                                        </div>
                                       </div>
-
-                                      {/* Progress bar de 6 etapas */}
-                                      <div className="flex gap-1 h-1.5 w-full">
-                                        <div className={`flex-1 rounded-full transition-colors ${flow.propostaRevisao ? "bg-amber-500" : "bg-emerald-500"}`} />
-                                        <div className={`flex-1 rounded-full transition-colors ${flow.propostaRevisao ? "bg-amber-300" : (flow.isPropostaEnviada || flow.propostaAceita) ? "bg-emerald-500" : "bg-warm-dark/40"}`} />
-                                        <div className={`flex-1 rounded-full transition-colors ${flow.propostaAceita ? "bg-emerald-500" : flow.propostaRevisao ? "bg-amber-500" : flow.isPropostaEnviada ? "bg-blue-400" : "bg-warm-dark/40"}`} />
-                                        <div className={`flex-1 rounded-full transition-colors ${flow.isAtribuido ? "bg-emerald-500" : flow.propostaAceita ? "bg-amber-400" : "bg-warm-dark/40"}`} />
-                                        <div className={`flex-1 rounded-full transition-colors ${flow.isAtribuido && flow.isAtribuicaoDevolvida ? "bg-rose-500" : flow.isAtribuido && flow.isAtribuicaoAceita ? "bg-emerald-500" : flow.isAtribuido ? "bg-amber-400" : "bg-warm-dark/40"}`} />
-                                        <div className={`flex-1 rounded-full transition-colors ${flow.isAtribuido && flow.isAtribuicaoAceita && flow.isAtendimentoIniciado ? "bg-emerald-500" : "bg-warm-dark/40"}`} />
-                                      </div>
-                                    </div>
-                                  );
-                                })()}
-
-                                {card.profissionalId &&
-                                  (() => {
-                                    const assignedProf = allUsers.find(
-                                      (u) =>
-                                        u.uid === card.profissionalId ||
-                                        u.id === card.profissionalId,
-                                    );
-                                    const displayStatus =
-                                      card.atribuicaoStatus || "Pendente";
-                                    return (
-                                      <div className="mt-2.5 pt-2 border-t border-soft/50 flex flex-wrap justify-between items-center text-[10px] gap-1 shrink-0">
-                                        <span className="text-forest/70 font-medium truncate max-w-[130px] flex items-center gap-1">
-                                          👤{" "}
-                                          {assignedProf
-                                            ? assignedProf.name
-                                            : "Indefinido"}
-                                        </span>
-                                        <span
-                                          className={`px-1.5 py-0.5 rounded font-bold text-[9px] uppercase ${
-                                            displayStatus === "Aceito"
-                                              ? "bg-[#34A853]/10 text-[#34A853]"
-                                              : displayStatus === "Rejeitado"
-                                                ? "bg-red-500/10 text-red-500"
-                                                : "bg-amber-500/10 text-amber-500"
-                                          }`}
-                                        >
-                                          {displayStatus}
-                                        </span>
-                                      </div>
-                                    );
-                                  })()}
-
-                                  {/* Motivo de Pausa / Cancelamento na Proposta (Standby) */}
-                                  {card.motivoPausaCancelamento && (
-                                    <div className="mt-2 p-2 bg-amber-50/90 border border-amber-300/80 rounded-xl text-[10px] text-amber-950 leading-tight">
-                                      <span className="font-extrabold text-[9px] uppercase tracking-wider text-amber-900 flex items-center gap-1">
-                                        <PauseCircle className="w-3 h-3 text-amber-700 shrink-0" /> Motivo da Pausa:
-                                      </span>
-                                      <p className="line-clamp-2 italic text-forest/90 mt-0.5 font-serif">"{card.motivoPausaCancelamento}"</p>
-                                    </div>
-                                  )}
-
-                                  {/* Motivo de Revisão Solicitada */}
-                                  {card.motivoRevisao && (card.propostaStatus === "Paciente solicita revisão da proposta" || card.propostaStatus === "Revisão solicitada") && (
-                                    <div className="mt-2 p-2 bg-orange-50/90 border border-orange-300/80 rounded-xl text-[10px] text-orange-950 leading-tight">
-                                      <span className="font-extrabold text-[9px] uppercase tracking-wider text-orange-900 flex items-center gap-1">
-                                        <RotateCcw className="w-3 h-3 text-orange-700 shrink-0" /> Motivo da Revisão:
-                                      </span>
-                                      <p className="line-clamp-2 italic text-forest/90 mt-0.5 font-serif">"{card.motivoRevisao}"</p>
-                                    </div>
-                                  )}
-
-                                  {(col.id === "Standby" || isCardInStandby(card)) && (
-                                    <div className="mt-2.5 pt-2 border-t border-amber-200/60 flex flex-col gap-1 w-full">
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleReativarParaEmAnalise(card);
-                                        }}
-                                        className="w-full py-1.5 px-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white rounded-lg text-[11px] font-bold transition-all flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
-                                        title="Retomar processo e retornar paciente para 'Em Análise'"
-                                      >
-                                        <Play className="w-3 h-3 fill-white" />
-                                        <span>Reativar (Mover para Em Análise)</span>
-                                      </button>
-                                    </div>
-                                  )}
-                              </motion.div>
-                            );
-                          })}
-                        </AnimatePresence>
+                                    )}
+                                  </motion.div>
+                                );
+                              })}
+                            </AnimatePresence>
 
                         {colCards.length === 0 && (
                           <motion.div
@@ -11151,10 +11386,11 @@ export function DashboardView({
           </div>
         </div>
       ) : activeTab === "empresas" ? (
-        <div className="flex-1 overflow-auto p-6 md:p-8 flex items-start flex-col gap-8 slide-up">
+        <div className="flex-1 overflow-auto p-4 sm:p-6 md:p-8 flex items-start flex-col gap-6 slide-up">
           <div className="w-full flex flex-col gap-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-white px-4 sm:px-5 py-3 rounded-2xl shadow-xs border border-soft">
-              <div className="flex items-center justify-between gap-2 w-full sm:w-auto">
+            {/* Header de Controle e Filtros */}
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 bg-white px-4 sm:px-5 py-3 rounded-2xl shadow-xs border border-soft">
+              <div className="flex items-center justify-between gap-2">
                 <h2 className="font-serif text-base sm:text-lg font-bold text-forest flex items-center gap-2">
                   <Briefcase className="w-4 h-4 sm:w-5 sm:h-5 text-forest/70" />
                   <span>Gestão Comercial de Empresas</span>
@@ -11170,42 +11406,99 @@ export function DashboardView({
                 </button>
               </div>
 
-              <div className="flex flex-wrap items-center justify-between gap-2 w-full sm:w-auto">
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Busca Rápida de Empresa */}
+                <div className="relative w-full sm:w-56 md:w-64">
+                  <Search className="w-3.5 h-3.5 text-forest/40 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={empresaSearchTerm}
+                    onChange={(e) => setEmpresaSearchTerm(e.target.value)}
+                    placeholder="Buscar por nome, CNPJ, contato..."
+                    className="w-full pl-8 pr-7 py-1.5 bg-warm/30 border border-soft rounded-xl text-xs text-forest placeholder:text-forest/40 outline-none focus:border-forest transition-colors"
+                  />
+                  {empresaSearchTerm && (
+                    <button
+                      type="button"
+                      onClick={() => setEmpresaSearchTerm("")}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-forest/40 hover:text-forest text-xs font-bold cursor-pointer"
+                      title="Limpar busca"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+
+                {/* Filtros de Categoria */}
+                <div className="flex items-center gap-1 bg-warm/60 p-0.5 rounded-xl border border-soft text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setEmpresaFilterCategoria("todas")}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                      empresaFilterCategoria === "todas"
+                        ? "bg-forest text-white shadow-2xs"
+                        : "text-forest/70 hover:text-forest"
+                    }`}
+                  >
+                    Todas ({empresasLeads.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEmpresaFilterCategoria("empresa_direta")}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                      empresaFilterCategoria === "empresa_direta"
+                        ? "bg-blue-600 text-white shadow-2xs"
+                        : "text-blue-900 hover:bg-blue-50"
+                    }`}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                    Diretas ({empresasLeads.filter((e) => hasEmpresaCategoria(e, "empresa_direta")).length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEmpresaFilterCategoria("canal_parceiro")}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                      empresaFilterCategoria === "canal_parceiro"
+                        ? "bg-purple-600 text-white shadow-2xs"
+                        : "text-purple-900 hover:bg-purple-50"
+                    }`}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-purple-500"></span>
+                    Canais ({empresasLeads.filter((e) => hasEmpresaCategoria(e, "canal_parceiro")).length})
+                  </button>
+                </div>
+
+                {/* Alternar Expandir/Recolher Todos */}
                 <button
                   type="button"
-                  onClick={() => setEmpresaFilterCategoria("todas")}
-                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
-                    empresaFilterCategoria === "todas"
-                      ? "bg-forest text-white shadow-2xs"
-                      : "bg-warm/60 text-forest/70 hover:bg-warm hover:text-forest"
-                  }`}
+                  onClick={() => {
+                    const currentlyExpandedCount = Object.values(expandedEmpresas).filter(Boolean).length;
+                    if (currentlyExpandedCount > 0) {
+                      setExpandedEmpresas({});
+                    } else {
+                      const all: Record<string, boolean> = {};
+                      empresasLeads.forEach((e) => {
+                        all[e.id] = true;
+                      });
+                      setExpandedEmpresas(all);
+                    }
+                  }}
+                  className="px-2.5 py-1.5 text-forest/70 hover:text-forest hover:bg-warm rounded-xl text-xs font-semibold flex items-center gap-1 border border-soft transition-colors cursor-pointer"
+                  title="Expandir ou recolher todos os cards"
                 >
-                  Todas ({empresasLeads.length})
+                  {Object.values(expandedEmpresas).filter(Boolean).length > 0 ? (
+                    <>
+                      <ChevronUp className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Recolher Todos</span>
+                    </>
+                  ) : (
+                    <>
+                      <ChevronDown className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Expandir Todos</span>
+                    </>
+                  )}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setEmpresaFilterCategoria("empresa_direta")}
-                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                    empresaFilterCategoria === "empresa_direta"
-                      ? "bg-blue-600 text-white shadow-2xs"
-                      : "bg-blue-50 text-blue-800 hover:bg-blue-100 border border-blue-200"
-                  }`}
-                >
-                  <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
-                  Diretas ({empresasLeads.filter((e) => hasEmpresaCategoria(e, "empresa_direta")).length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setEmpresaFilterCategoria("canal_parceiro")}
-                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                    empresaFilterCategoria === "canal_parceiro"
-                      ? "bg-purple-600 text-white shadow-2xs"
-                      : "bg-purple-50 text-purple-800 hover:bg-purple-100 border border-purple-200"
-                  }`}
-                >
-                  <span className="w-1.5 h-1.5 rounded-full bg-purple-500"></span>
-                  Canais ({empresasLeads.filter((e) => hasEmpresaCategoria(e, "canal_parceiro")).length})
-                </button>
+
                 <button
                   type="button"
                   onClick={() => setShowNovaEmpresaModal(true)}
@@ -11218,7 +11511,7 @@ export function DashboardView({
               </div>
             </div>
 
-            {/* Botão Flutuante (FAB) Otimizado para Telas Pequenas e Apertadas */}
+            {/* Botão Flutuante (FAB) para Mobile */}
             <div className="fixed bottom-6 right-6 z-40 sm:hidden">
               <button
                 type="button"
@@ -11231,136 +11524,222 @@ export function DashboardView({
               </button>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-              {empresasLeads.filter((lead) => {
-                if (empresaFilterCategoria === "todas") return true;
-                return hasEmpresaCategoria(lead, empresaFilterCategoria);
-              }).length === 0 ? (
-                <div className="col-span-full text-center p-8 bg-white/50 border border-dashed border-soft rounded-2xl text-forest/70 text-sm">
-                  Nenhuma empresa encontrada com este filtro.
-                </div>
-              ) : (
-                empresasLeads
-                  .filter((lead) => {
-                    if (empresaFilterCategoria === "todas") return true;
-                    return hasEmpresaCategoria(lead, empresaFilterCategoria);
-                  })
-                  .map((lead) => (
-                  <div
-                    key={`empresa-card-${lead.id}`}
-                    className="bg-white p-6 rounded-2xl shadow-sm border border-soft flex flex-col gap-4 group hover:shadow-md transition-shadow"
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex flex-col gap-1">
-                        <div className="flex flex-wrap items-center gap-1.5 mb-1">
-                          {/* Badges de Categoria */}
-                          {hasEmpresaCategoria(lead, "empresa_direta") && (
-                            <span className="text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200">
-                              Cliente Direta
-                            </span>
-                          )}
-                          {hasEmpresaCategoria(lead, "canal_parceiro") && (
-                            <span className="text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-purple-100 text-purple-900 border border-purple-300">
-                              Canal Parceiro
-                            </span>
-                          )}
-                          {hasEmpresaCategoria(lead, "empresa_conectada") && (
-                            <span className="text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-200">
-                              Conectada {lead.empresaPaiNome ? `(${lead.empresaPaiNome})` : ""}
-                            </span>
-                          )}
-                        </div>
-                        <h4 className="font-semibold text-lg text-forest">
-                          {lead.nomeEmpresa}
-                        </h4>
-                        <span className="text-xs font-semibold uppercase tracking-wider text-forest/60">
-                          CNPJ: {lead.cnpj}
-                        </span>
-                      </div>
-                      <div className="text-[10px] text-forest/70 font-bold bg-warm px-2 py-1 rounded-md whitespace-nowrap">
-                        {lead.createdAt
-                          ? formatDateSafely(lead.createdAt, "")
-                          : ""}
-                      </div>
-                    </div>
+            {/* Lista em Barras Compactas e Expansíveis (Opção 1) */}
+            {(() => {
+              const empresasFiltradas = empresasLeads.filter((lead) => {
+                if (empresaFilterCategoria !== "todas" && !hasEmpresaCategoria(lead, empresaFilterCategoria)) {
+                  return false;
+                }
+                if (empresaSearchTerm.trim()) {
+                  const term = empresaSearchTerm.toLowerCase();
+                  const nome = (lead.nomeEmpresa || lead.razaoSocial || "").toLowerCase();
+                  const cnpj = (lead.cnpj || "").toLowerCase();
+                  const contato = (lead.contatoNome || "").toLowerCase();
+                  const email = (lead.email || "").toLowerCase();
+                  const local = (lead.local || "").toLowerCase();
+                  return (
+                    nome.includes(term) ||
+                    cnpj.includes(term) ||
+                    contato.includes(term) ||
+                    email.includes(term) ||
+                    local.includes(term)
+                  );
+                }
+                return true;
+              });
 
-                    <div className="text-sm text-forest/80 flex flex-col gap-3 mt-2 bg-warm/50 p-4 rounded-xl border border-soft">
-                      <span className="flex items-center gap-3 font-medium">
-                        <Map className="w-4 h-4 text-forest/60" /> {lead.local}
-                      </span>
-                      <span className="flex items-center gap-3 font-medium">
-                        <Briefcase className="w-4 h-4 text-forest/60" /> Ramo:{" "}
-                        {lead.ramoAtividade}
-                      </span>
-                      <div className="flex flex-col gap-1.5">
-                        {hasEmpresaCategoria(lead, "canal_parceiro") && (
-                          <span className="flex items-center gap-3 font-medium text-purple-900">
-                            <Building2 className="w-4 h-4 text-purple-600 shrink-0" />
-                            Empresas no Canal: {empresasLeads.filter((e) => e.empresaPaiId === lead.id).length}
-                          </span>
-                        )}
-                        {hasEmpresaCategoria(lead, "empresa_direta") && (
-                          <span className="flex items-center gap-3 font-medium">
-                            <Users className="w-4 h-4 text-forest/60 shrink-0" />
-                            Colabs Próprios: {lead.colaboradoresList?.length || lead.colaboradores || "0"}
-                          </span>
-                        )}
-                        {!hasEmpresaCategoria(lead, "canal_parceiro") && !hasEmpresaCategoria(lead, "empresa_direta") && (
-                          <span className="flex items-center gap-3 font-medium">
-                            <Users className="w-4 h-4 text-forest/60 shrink-0" />
-                            Colaboradores: {lead.colaboradores || "0"}
-                          </span>
-                        )}
-                      </div>
-                      <div className="h-px w-full bg-soft/50 my-1"></div>
-                      <span className="flex items-center gap-3 font-medium text-forest">
-                        <User className="w-4 h-4 text-forest/60" />{" "}
-                        {lead.contatoNome || "Contato N/I"} (
-                        {lead.contatoDepartamento || "-"})
-                      </span>
-                    </div>
-
-                    <div className="text-sm flex flex-col gap-2 mt-2 border-b border-soft pb-4">
-                      <a
-                        href={`mailto:${lead.email}`}
-                        className="flex items-center gap-2 font-semibold text-forest hover:text-sun-dark transition-colors"
-                      >
-                        <Mail className="w-4 h-4" /> {lead.email}
-                      </a>
-                      <a
-                        href={`https://wa.me/${lead.telefone.replace(/\D/g, "")}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-2 font-semibold text-forest hover:text-sun-dark transition-colors"
-                      >
-                        <Phone className="w-4 h-4" /> {lead.telefone}
-                      </a>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2 mt-2">
-                      <button
-                        onClick={() => setSelectedEmpresa(lead)}
-                        className="w-full py-2 bg-sun text-forest font-semibold text-xs rounded-xl hover:bg-sun-dark transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
-                      >
-                        <FileText className="w-3.5 h-3.5" />
-                        <span>Ficha de Bordo</span>
-                      </button>
-
-                      <a
-                        href={`/?portal_empresa=${lead.id}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="w-full py-2 bg-forest text-white font-semibold text-xs rounded-xl hover:bg-forest/90 transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
-                        title="Abrir página dedicada do RH com indicadores, turnover e upload de colaboradores"
-                      >
-                        <BarChart3 className="w-3.5 h-3.5 text-sun" />
-                        <span>Portal do RH</span>
-                      </a>
-                    </div>
+              if (empresasFiltradas.length === 0) {
+                return (
+                  <div className="w-full text-center p-8 bg-white/70 border border-dashed border-soft rounded-2xl text-forest/70 text-sm">
+                    Nenhuma empresa encontrada com os filtros e busca aplicados.
                   </div>
-                ))
-              )}
-            </div>
+                );
+              }
+
+              return (
+                <div className="flex flex-col gap-2 w-full">
+                  {empresasFiltradas.map((lead) => {
+                    const isExpanded = Boolean(expandedEmpresas[lead.id]);
+                    return (
+                      <div
+                        key={`empresa-card-${lead.id}`}
+                        className="bg-white rounded-xl border border-soft shadow-2xs hover:border-forest/30 transition-all overflow-hidden"
+                      >
+                        {/* Barra Compacta Superior (Linha Enxuta de ~48px) */}
+                        <div
+                          onClick={() => toggleExpandEmpresa(lead.id)}
+                          className="px-3.5 sm:px-4 py-2.5 flex items-center justify-between gap-3 cursor-pointer hover:bg-warm/30 transition-colors select-none"
+                        >
+                          {/* Lado Esquerdo: Categoria, Nome e CNPJ */}
+                          <div className="flex items-center gap-2 min-w-0 flex-1">
+                            {/* Badges de Categoria */}
+                            <div className="flex items-center gap-1 shrink-0">
+                              {hasEmpresaCategoria(lead, "canal_parceiro") ? (
+                                <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-purple-50 text-purple-900 border border-purple-200 shrink-0 flex items-center gap-1" title="Canal Parceiro">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-purple-600"></span>
+                                  <span className="hidden sm:inline">Canal Parceiro</span>
+                                  <span className="sm:hidden">Canal</span>
+                                </span>
+                              ) : hasEmpresaCategoria(lead, "empresa_conectada") ? (
+                                <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-900 border border-emerald-200 shrink-0 flex items-center gap-1" title="Empresa Conectada">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
+                                  <span>Conectada</span>
+                                </span>
+                              ) : (
+                                <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-blue-50 text-blue-900 border border-blue-200 shrink-0 flex items-center gap-1" title="Cliente Direta">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-blue-600"></span>
+                                  <span className="hidden sm:inline">Cliente Direta</span>
+                                  <span className="sm:hidden">Direta</span>
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Nome da Empresa com Destaque Prioritário */}
+                            <div className="flex items-baseline gap-2 min-w-0 flex-1">
+                              <h4 className="font-bold text-xs sm:text-sm text-forest truncate" title={lead.nomeEmpresa || lead.razaoSocial}>
+                                {lead.nomeEmpresa || lead.razaoSocial}
+                              </h4>
+                              {lead.cnpj && (
+                                <span className="text-[10px] sm:text-[11px] font-mono text-forest/50 hidden md:inline shrink-0">
+                                  CNPJ: {lead.cnpj}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Detalhe Rápido de Vidas / Empresas no Canal */}
+                            <div className="hidden lg:flex items-center gap-2 text-xs text-forest/70 shrink-0">
+                              {hasEmpresaCategoria(lead, "canal_parceiro") ? (
+                                <span className="px-2 py-0.5 rounded-md bg-purple-50/80 text-purple-800 text-[10px] font-semibold border border-purple-200/50 flex items-center gap-1">
+                                  <Building2 className="w-3 h-3 text-purple-600" />
+                                  {empresasLeads.filter((e) => e.empresaPaiId === lead.id).length} clientes no canal
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[10px] font-semibold border border-slate-200 flex items-center gap-1">
+                                  <Users className="w-3 h-3 text-slate-500" />
+                                  {lead.colaboradoresList?.length || lead.colaboradores || "0"} vidas
+                                </span>
+                              )}
+                              {lead.contatoNome && (
+                                <span className="text-forest/60 text-[11px] hidden xl:inline">
+                                  • {lead.contatoNome} ({lead.contatoDepartamento || "RH"})
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Lado Direito: Ações Rápidas & Seta de Expansão */}
+                          <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedEmpresa(lead)}
+                              className="px-2.5 py-1.5 bg-sun text-forest font-semibold text-xs rounded-xl hover:bg-sun-dark transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                              title="Abrir Ficha de Bordo da Empresa"
+                            >
+                              <FileText className="w-3.5 h-3.5 text-forest/80" />
+                              <span className="hidden sm:inline">Ficha de Bordo</span>
+                            </button>
+
+                            <a
+                              href={`/?portal_empresa=${lead.id}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="px-2.5 py-1.5 bg-forest text-white font-semibold text-xs rounded-xl hover:bg-forest/90 transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                              title="Abrir Portal do RH dedicado"
+                            >
+                              <BarChart3 className="w-3.5 h-3.5 text-sun" />
+                              <span className="hidden sm:inline">Portal RH</span>
+                            </a>
+
+                            <button
+                              type="button"
+                              onClick={() => toggleExpandEmpresa(lead.id)}
+                              className="p-1 text-forest/60 hover:text-forest hover:bg-warm rounded-lg transition-colors cursor-pointer"
+                              title={isExpanded ? "Recolher detalhes" : "Expandir detalhes"}
+                            >
+                              {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Painel Expandido com Detalhes Complementares */}
+                        {isExpanded && (
+                          <div className="px-4 py-3 bg-warm/25 border-t border-soft/80 flex flex-col gap-2.5 text-xs animate-in fade-in duration-150">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-forest/85">
+                              <div className="flex flex-col gap-0.5">
+                                <span className="text-[10px] uppercase font-bold text-forest/50">Localidade</span>
+                                <span className="flex items-center gap-1.5 font-medium">
+                                  <Map className="w-3.5 h-3.5 text-forest/50 shrink-0" />
+                                  {lead.local || "Não informada"}
+                                </span>
+                              </div>
+
+                              <div className="flex flex-col gap-0.5">
+                                <span className="text-[10px] uppercase font-bold text-forest/50">Ramo de Atividade</span>
+                                <span className="flex items-center gap-1.5 font-medium">
+                                  <Briefcase className="w-3.5 h-3.5 text-forest/50 shrink-0" />
+                                  {lead.ramoAtividade || "Geral"}
+                                </span>
+                              </div>
+
+                              <div className="flex flex-col gap-0.5">
+                                <span className="text-[10px] uppercase font-bold text-forest/50">Contato do RH</span>
+                                <span className="flex items-center gap-1.5 font-medium">
+                                  <User className="w-3.5 h-3.5 text-forest/50 shrink-0" />
+                                  {lead.contatoNome || "Não informado"} {lead.contatoDepartamento ? `(${lead.contatoDepartamento})` : ""}
+                                </span>
+                              </div>
+
+                              <div className="flex flex-col gap-0.5">
+                                <span className="text-[10px] uppercase font-bold text-forest/50">Cadastrada em</span>
+                                <span className="flex items-center gap-1.5 font-medium">
+                                  <Clock className="w-3.5 h-3.5 text-forest/50 shrink-0" />
+                                  {lead.createdAt ? formatDateSafely(lead.createdAt, "") : "Recente"}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Linha Inferior com Links de E-mail e WhatsApp */}
+                            <div className="pt-2 border-t border-soft/50 flex flex-wrap items-center justify-between gap-2">
+                              <div className="flex items-center gap-4 flex-wrap">
+                                {lead.email && (
+                                  <a
+                                    href={`mailto:${lead.email}`}
+                                    className="flex items-center gap-1.5 text-forest/80 hover:text-forest font-semibold"
+                                  >
+                                    <Mail className="w-3.5 h-3.5 text-forest/50" />
+                                    <span>{lead.email}</span>
+                                  </a>
+                                )}
+                                {lead.telefone && (
+                                  <a
+                                    href={`https://wa.me/${lead.telefone.replace(/\D/g, "")}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center gap-1.5 text-emerald-800 hover:text-emerald-900 font-semibold"
+                                  >
+                                    <Phone className="w-3.5 h-3.5 text-emerald-600" />
+                                    <span>{lead.telefone}</span>
+                                  </a>
+                                )}
+                                {lead.empresaPaiNome && (
+                                  <span className="text-[11px] text-purple-900 bg-purple-50 px-2 py-0.5 rounded border border-purple-200 font-medium">
+                                    Canal Matriz: {lead.empresaPaiNome}
+                                  </span>
+                                )}
+                              </div>
+
+                              <span className="text-[10px] text-forest/50 italic">
+                                Clique na barra para recolher
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </div>
         </div>
       ) : activeTab === "compliance" ? (
