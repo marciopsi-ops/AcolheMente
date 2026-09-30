@@ -1671,21 +1671,21 @@ export function PortalEmpresaView({
 
   return (
     <div className="min-h-screen bg-warm flex flex-col">
-      {/* Toast Notification */}
+      {/* Toast Notification - Alinhado no rodapé à direita para não sobrepor o cabeçalho nem os botões */}
       {toastMsg && (
         <div
-          className={`fixed top-5 right-5 z-50 px-4 py-3 rounded-2xl shadow-xl border text-xs font-semibold flex items-center gap-2.5 animate-in fade-in slide-in-from-top-3 ${
+          className={`fixed bottom-5 right-5 z-50 px-4 py-3 rounded-2xl shadow-xl border text-xs font-semibold flex items-center gap-2.5 animate-in fade-in slide-in-from-bottom-3 max-w-md ${
             toastMsg.type === "success"
-              ? "bg-emerald-800 text-white border-emerald-600"
+              ? "bg-white text-slate-800 border-emerald-300 shadow-emerald-950/10"
               : toastMsg.type === "error"
-              ? "bg-red-800 text-white border-red-600"
-              : "bg-forest text-white border-forest/40"
+              ? "bg-white text-slate-800 border-red-300 shadow-red-950/10"
+              : "bg-white text-slate-800 border-slate-200 shadow-slate-950/10"
           }`}
         >
           {toastMsg.type === "success" ? (
-            <CheckCircle2 className="w-4 h-4 text-emerald-300" />
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
           ) : (
-            <AlertTriangle className="w-4 h-4 text-amber-300" />
+            <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
           )}
           <span>{toastMsg.text}</span>
         </div>
@@ -1693,13 +1693,13 @@ export function PortalEmpresaView({
 
       {/* TOPBAR DO PORTAL */}
       <header className="bg-white border-b border-soft sticky top-0 z-30 shadow-xs">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-3">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2 sm:py-2.5 flex flex-wrap items-center justify-between gap-2.5">
           {/* Logo e Nome da Empresa */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5">
             {onBack && (
               <button
                 onClick={onBack}
-                className="p-2 hover:bg-warm rounded-xl text-forest/70 hover:text-forest transition-colors cursor-pointer"
+                className="p-1.5 hover:bg-warm rounded-lg text-forest/70 hover:text-forest transition-colors cursor-pointer"
                 title="Voltar"
               >
                 <ArrowLeft className="w-4 h-4" />
@@ -1709,7 +1709,7 @@ export function PortalEmpresaView({
             {/* Co-Branding de Logos no Topo da Página */}
             <div className="flex items-center gap-2">
               {(empresaAtiva?.logoUrl || empresaAtiva?.logo || empresaAtiva?.empresaLogo || empresaAtiva?.logoBase64 || empresaPrincipal?.logoUrl) ? (
-                <div className="h-9 sm:h-10 max-w-[120px] sm:max-w-[150px] bg-white rounded-xl border border-soft p-1 flex items-center justify-center shrink-0 shadow-2xs overflow-hidden">
+                <div className="h-8 sm:h-9 max-w-[110px] sm:max-w-[130px] bg-white rounded-lg border border-soft p-1 flex items-center justify-center shrink-0 shadow-2xs overflow-hidden">
                   <img
                     src={empresaAtiva?.logoUrl || empresaAtiva?.logo || empresaAtiva?.empresaLogo || empresaAtiva?.logoBase64 || empresaPrincipal?.logoUrl}
                     alt={empresaAtiva?.nomeEmpresa || empresaAtiva?.razaoSocial || "Logo Empresa"}
@@ -1718,14 +1718,14 @@ export function PortalEmpresaView({
                   />
                 </div>
               ) : (
-                <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-forest flex items-center justify-center text-sun shadow-2xs font-bold text-xs sm:text-sm shrink-0">
+                <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-forest flex items-center justify-center text-sun shadow-2xs font-bold text-xs sm:text-sm shrink-0">
                   {(empresaAtiva?.nomeEmpresa || empresaAtiva?.razaoSocial || "EP").slice(0, 2).toUpperCase()}
                 </div>
               )}
 
               {/* Selo AcolheMente */}
-              <div className="hidden sm:flex items-center gap-1.5 px-2 py-1 bg-warm/80 rounded-xl border border-soft/60 shrink-0">
-                <div className="w-4 h-4 rounded-full overflow-hidden shrink-0 border border-forest/20">
+              <div className="hidden sm:flex items-center gap-1.5 px-2 py-0.5 bg-warm/80 rounded-lg border border-soft/60 shrink-0">
+                <div className="w-3.5 h-3.5 rounded-full overflow-hidden shrink-0 border border-forest/20">
                   <img src={logoImage} alt="AcolheMente" className="w-full h-full object-cover" />
                 </div>
                 <span className="text-[10px] font-bold text-forest/75">AcolheMente</span>
@@ -1733,12 +1733,12 @@ export function PortalEmpresaView({
             </div>
 
             <div>
-              <div className="flex items-center gap-2">
-                <h1 className="font-serif text-base sm:text-lg font-bold text-forest truncate max-w-xs sm:max-w-md">
+              <div className="flex items-center gap-1.5">
+                <h1 className="font-serif text-sm sm:text-base font-bold text-forest truncate max-w-xs sm:max-w-md">
                   {empresaAtiva?.nomeEmpresa || empresaAtiva?.razaoSocial || "Empresa Parceira"}
                 </h1>
                 {isCanalBeneficios && (
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-900 border border-purple-300 shrink-0">
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200 shrink-0">
                     Canal Parceiro
                   </span>
                 )}
@@ -1748,8 +1748,8 @@ export function PortalEmpresaView({
                   </span>
                 )}
               </div>
-              <p className="text-[11px] text-forest/60">
-                CNPJ: {empresaAtiva?.cnpj || "Não informado"} • Portal de Gestão do RH
+              <p className="text-[10px] sm:text-[11px] text-forest/60">
+                CNPJ: {empresaAtiva?.cnpj || "Não informado"} • Portal do RH
               </p>
             </div>
           </div>
@@ -1767,7 +1767,7 @@ export function PortalEmpresaView({
                     text: "Link de Implantação do Canal copiado! Envie para a empresa cliente preencher os dados e colaboradores para vincular automaticamente.",
                   });
                 }}
-                className="px-2.5 py-1.5 bg-purple-700 hover:bg-purple-800 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer"
+                className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer"
                 title="Ficha de Implantação - Primeiros Cadastros: Envie para a empresa contratada preencher seus dados e colaboradores. Ela ficará automaticamente vinculada ao seu canal parceiro como empresa conectada."
               >
                 <Sparkles className="w-3.5 h-3.5 text-sun" />
@@ -1777,13 +1777,13 @@ export function PortalEmpresaView({
             )}
 
             {isCanalBeneficios && empresasConectadas.length > 0 && (
-              <div className="flex items-center gap-1.5 bg-purple-50 border border-purple-200 rounded-xl px-2.5 py-1 text-xs">
-                <Layers className="w-3.5 h-3.5 text-purple-700 shrink-0" />
-                <span className="text-[11px] font-bold text-purple-900 hidden sm:inline">Empresa:</span>
+              <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1 text-xs">
+                <Layers className="w-3.5 h-3.5 text-slate-600 shrink-0" />
+                <span className="text-[11px] font-bold text-slate-700 hidden sm:inline">Empresa:</span>
                 <select
                   value={empresaAtivaId || ""}
                   onChange={(e) => handleTrocarEmpresaAtiva(e.target.value)}
-                  className="bg-transparent text-purple-900 font-semibold text-xs outline-none cursor-pointer pr-1"
+                  className="bg-transparent text-slate-800 font-semibold text-xs outline-none cursor-pointer pr-1"
                 >
                   <option value={empresaPrincipal.id}>
                     🏢 {empresaPrincipal.nomeEmpresa || empresaPrincipal.razaoSocial} (Canal Matriz)
@@ -1811,21 +1811,21 @@ export function PortalEmpresaView({
                     text: `Link do Portal RH da empresa ${empresaAtiva.nomeEmpresa || empresaAtiva.razaoSocial} copiado! PIN de Acesso: ${pin}`,
                   });
                 }}
-                className="px-2 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 rounded-xl text-xs font-bold flex items-center gap-1 transition-all cursor-pointer"
+                className="px-2 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1 transition-all cursor-pointer"
                 title={`Copiar link de acesso ao Portal do RH desta empresa conectada (PIN: ${getEmpresaPin(empresaAtiva)})`}
               >
-                <Copy className="w-3 h-3 text-emerald-700" />
+                <Copy className="w-3 h-3 text-slate-600" />
                 <span className="hidden sm:inline">Copiar Link RH Cliente</span>
               </button>
             )}
 
             {/* Bloco Código de Acesso do Colaborador - Barra Superior */}
             {getCodigoColaborador() ? (
-              <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-300 rounded-xl px-2.5 py-1 text-xs shadow-2xs">
-                <div className="flex items-center gap-1 text-emerald-950 font-bold">
+              <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1 text-xs shadow-2xs">
+                <div className="flex items-center gap-1 text-slate-800 font-bold">
                   <KeyRound className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
-                  <span className="text-[10px] uppercase font-bold tracking-wider text-emerald-800 hidden xl:inline">Código Colab:</span>
-                  <span className="font-mono text-xs font-black text-emerald-950 bg-white/80 px-1.5 py-0.5 rounded border border-emerald-200">
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-slate-600 hidden xl:inline">Código:</span>
+                  <span className="font-mono text-xs font-black text-slate-900 bg-white px-1.5 py-0.5 rounded border border-slate-200">
                     {getCodigoColaborador()}
                   </span>
                 </div>
@@ -1833,40 +1833,40 @@ export function PortalEmpresaView({
                 <button
                   type="button"
                   onClick={() => handleCopiarCodigoColaborador(getCodigoColaborador())}
-                  className="p-1 hover:bg-emerald-200/80 rounded-lg text-emerald-800 transition-colors cursor-pointer"
+                  className="p-1 hover:bg-slate-200/80 rounded-lg text-slate-700 transition-colors cursor-pointer"
                   title="Copiar Código de Acesso do Colaborador"
                 >
-                  {copiedCodigoColab ? <Check className="w-3.5 h-3.5 text-emerald-700" /> : <Copy className="w-3.5 h-3.5" />}
+                  {copiedCodigoColab ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
                 </button>
 
                 <button
                   type="button"
                   onClick={() => handleCompartilharColaborador(getNomeEmpresaAtiva(), getCodigoColaborador())}
-                  className="p-1 hover:bg-emerald-200/80 rounded-lg text-emerald-800 transition-colors cursor-pointer"
+                  className="p-1 hover:bg-slate-200/80 rounded-lg text-slate-700 transition-colors cursor-pointer"
                   title="Compartilhar comunicado com colaboradores"
                 >
-                  <Share2 className="w-3.5 h-3.5 text-emerald-700" />
+                  <Share2 className="w-3.5 h-3.5 text-slate-600" />
                 </button>
 
                 <button
                   type="button"
                   onClick={() => handleWhatsAppColaborador(getNomeEmpresaAtiva(), getCodigoColaborador())}
-                  className="p-1 hover:bg-emerald-200/80 rounded-lg text-emerald-800 transition-colors cursor-pointer hidden sm:flex"
+                  className="p-1 hover:bg-slate-200/80 rounded-lg text-slate-700 transition-colors cursor-pointer hidden sm:flex"
                   title="Compartilhar via WhatsApp"
                 >
-                  <MessageCircle className="w-3.5 h-3.5 text-emerald-700" />
+                  <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
                 </button>
               </div>
             ) : (
-              <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-300 rounded-xl px-2 py-1 text-[11px] text-amber-900 shadow-2xs">
-                <KeyRound className="w-3 h-3 text-amber-700 shrink-0" />
-                <span>Código Colab: <span className="italic text-amber-700 font-semibold">Aguardando Gestão</span></span>
+              <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2 py-1 text-[11px] text-slate-600 shadow-2xs">
+                <KeyRound className="w-3 h-3 text-slate-400 shrink-0" />
+                <span>Código: <span className="text-slate-500 font-medium">Aguardando Gestão</span></span>
               </div>
             )}
 
             <button
               onClick={handleLogout}
-              className="px-2.5 py-1.5 text-forest/70 hover:text-red-700 hover:bg-red-50 rounded-xl text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
+              className="px-2 py-1 text-forest/70 hover:text-red-700 hover:bg-red-50 rounded-xl text-xs font-medium flex items-center gap-1 transition-colors cursor-pointer"
               title="Sair do Portal"
             >
               <LogOut className="w-3.5 h-3.5" />
@@ -1879,25 +1879,25 @@ export function PortalEmpresaView({
         <div className="max-w-7xl mx-auto px-4 sm:px-6 flex items-center gap-2 border-t border-soft/60 overflow-x-auto no-scrollbar">
           <button
             onClick={() => setActiveTab("indicadores")}
-            className={`py-2.5 px-3.5 border-b-2 font-bold text-xs transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+            className={`py-2 px-3 border-b-2 font-bold text-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
               activeTab === "indicadores"
                 ? "border-forest text-forest"
                 : "border-transparent text-forest/60 hover:text-forest"
             }`}
           >
-            <BarChart3 className="w-4 h-4 text-sun" />
+            <BarChart3 className="w-3.5 h-3.5 text-sun" />
             <span>Indicadores & Relatório Mensal</span>
           </button>
 
           <button
             onClick={() => setActiveTab("colaboradores")}
-            className={`py-2.5 px-3.5 border-b-2 font-bold text-xs transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+            className={`py-2 px-3 border-b-2 font-bold text-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
               activeTab === "colaboradores"
                 ? "border-forest text-forest"
                 : "border-transparent text-forest/60 hover:text-forest"
             }`}
           >
-            <Users className="w-4 h-4 text-emerald-600" />
+            <Users className="w-3.5 h-3.5 text-emerald-600" />
             <span>Quadro de Colaboradores & Turnover</span>
             <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-forest text-white font-bold">
               {vidasCadastradasAtivas}
@@ -1907,15 +1907,15 @@ export function PortalEmpresaView({
           {!isEmpresaConectada && (
             <button
               onClick={() => setActiveTab("faturamento")}
-              className={`py-2.5 px-3.5 border-b-2 font-bold text-xs transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+              className={`py-2 px-3 border-b-2 font-bold text-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
                 activeTab === "faturamento"
                   ? "border-forest text-forest"
                   : "border-transparent text-forest/60 hover:text-forest"
               }`}
             >
-              <Receipt className="w-4 h-4 text-emerald-700" />
+              <Receipt className="w-3.5 h-3.5 text-emerald-700" />
               <span>Faturamento & Mensalidade</span>
-              <span className="px-2 py-0.5 rounded-full text-[10px] bg-emerald-100 text-emerald-900 border border-emerald-200 font-extrabold">
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-emerald-50 text-emerald-800 border border-emerald-200 font-extrabold">
                 R$ {faturamentoAtualCalculado.valorTotal.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
               </span>
             </button>
@@ -1923,83 +1923,27 @@ export function PortalEmpresaView({
 
           <button
             onClick={() => setActiveTab("dados")}
-            className={`py-2.5 px-3.5 border-b-2 font-bold text-xs transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+            className={`py-2 px-3 border-b-2 font-bold text-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
               activeTab === "dados"
                 ? "border-forest text-forest"
                 : "border-transparent text-forest/60 hover:text-forest"
             }`}
           >
-            <Building2 className="w-4 h-4 text-forest/70" />
+            <Building2 className="w-3.5 h-3.5 text-forest/70" />
             <span>Dados Cadastrais & PIN</span>
           </button>
         </div>
       </header>
 
-      {/* CONTEÚDO PRINCIPAL */}
-      <main className="max-w-7xl w-full mx-auto p-4 sm:p-6 flex-1 flex flex-col gap-6">
+      {/* CONTEÚDO PRINCIPAL - Alinhado mais acima com espaçamentos otimizados */}
+      <main className="max-w-7xl w-full mx-auto p-3 sm:p-4 flex-1 flex flex-col gap-3 sm:gap-4">
         {/* ========================================================================= */}
         {/* ABA 1: INDICADORES & RELATÓRIO MENSAL */}
         {/* ========================================================================= */}
         {activeTab === "indicadores" && (
-          <div className="space-y-6">
-            {/* Barra Rápida: Código de Acesso do Colaborador para Repasse */}
-            {getCodigoColaborador() && (
-              <div className="bg-emerald-50/90 border border-emerald-200/90 p-3.5 sm:p-4 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-xl bg-emerald-700 text-white flex items-center justify-center shrink-0 shadow-2xs">
-                    <KeyRound className="w-4 h-4 text-sun" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold text-emerald-950">Código de Acesso do Colaborador:</span>
-                      <span className="font-mono text-xs font-black bg-white px-2 py-0.5 rounded border border-emerald-300 text-emerald-950 tracking-wider">
-                        {getCodigoColaborador()}
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-emerald-900/75 mt-0.5">
-                      Repasse este código aos colaboradores para que iniciem acolhimento psicológico corporativo com sigilo e sem custos de consulta.
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 self-stretch sm:self-auto justify-end flex-wrap">
-                  <button
-                    type="button"
-                    onClick={() => handleCopiarCodigoColaborador(getCodigoColaborador())}
-                    className="px-2.5 py-1.5 bg-white text-emerald-900 border border-emerald-300 hover:bg-emerald-100 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
-                  >
-                    {copiedCodigoColab ? <Check className="w-3.5 h-3.5 text-emerald-700" /> : <Copy className="w-3.5 h-3.5 text-emerald-700" />}
-                    <span>{copiedCodigoColab ? "Copiado!" : "Copiar Código"}</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleCopiarLinkColaborador(getLinkAcolhimentoColaborador(getCodigoColaborador()))}
-                    className="px-2.5 py-1.5 bg-white text-emerald-900 border border-emerald-300 hover:bg-emerald-100 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
-                  >
-                    {copiedLinkColab ? <Check className="w-3.5 h-3.5 text-emerald-700" /> : <Link2 className="w-3.5 h-3.5 text-emerald-700" />}
-                    <span>Link Direto</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleCompartilharColaborador(getNomeEmpresaAtiva(), getCodigoColaborador())}
-                    className="px-2.5 py-1.5 bg-emerald-700 text-white hover:bg-emerald-800 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
-                  >
-                    <Share2 className="w-3.5 h-3.5 text-sun" />
-                    <span>Compartilhar</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleWhatsAppColaborador(getNomeEmpresaAtiva(), getCodigoColaborador())}
-                    className="p-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl transition-colors cursor-pointer shadow-2xs"
-                    title="Enviar via WhatsApp"
-                  >
-                    <MessageCircle className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            )}
-
+          <div className="space-y-4">
             {/* Header de Controle do Período & Botão de Impressão */}
-            <div className="bg-white p-4 sm:p-5 rounded-2xl border border-soft shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="bg-white p-3.5 sm:p-4 rounded-xl border border-soft shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
               <div>
                 <h2 className="font-serif text-base sm:text-lg font-bold text-forest flex items-center gap-2">
                   <BarChart3 className="w-4 h-4 text-forest/70" />
@@ -2661,133 +2605,64 @@ export function PortalEmpresaView({
         {/* ABA 2: QUADRO DE COLABORADORES, TURNOVER E PLANILHAS */}
         {/* ========================================================================= */}
         {activeTab === "colaboradores" && (
-          <div className="space-y-4">
-            {/* Banner Executivo: Código de Acesso do Colaborador & Instruções de Repasse */}
-            <div className="bg-linear-to-r from-emerald-950 via-forest to-emerald-900 text-white p-5 sm:p-6 rounded-3xl shadow-sm border border-emerald-800/60 relative overflow-hidden">
-              <div className="relative z-10 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-5">
-                <div className="space-y-2 max-w-2xl">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wider uppercase bg-sun text-forest">
-                      Acesso dos Colaboradores
-                    </span>
-                    <span className="text-xs text-emerald-200/90 font-medium">
-                      Benefício Corporativo de Saúde Mental • AcolheMente
-                    </span>
+          <div className="space-y-3 sm:space-y-3.5">
+            {/* Bloco Conciso de Acesso do Colaborador (apenas se houver código configurado) */}
+            {getCodigoColaborador() ? (
+              <div className="bg-white border border-slate-200/90 rounded-xl px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2.5 shadow-2xs">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200/80 flex items-center justify-center shrink-0">
+                    <KeyRound className="w-3.5 h-3.5" />
                   </div>
-
-                  <h3 className="font-serif text-lg sm:text-xl font-bold tracking-tight text-white flex items-center gap-2">
-                    <KeyRound className="w-5 h-5 text-sun shrink-0" />
-                    <span>Código de Acesso do Colaborador à Rede</span>
-                  </h3>
-
-                  <p className="text-xs sm:text-sm text-emerald-100/90 leading-relaxed">
-                    {getCodigoColaborador() ? (
-                      <>
-                        Repasse este código exclusivo para que os colaboradores e dependentes de{" "}
-                        <strong className="text-white underline decoration-sun/60">{getNomeEmpresaAtiva()}</strong> agendem atendimentos psicológicos online com sigilo profissional ético (CFP) e sem custos extras na consulta.
-                      </>
-                    ) : (
-                      <>
-                        O código do colaborador está em emissão pela Gestão AcolheMente. Assim que configurado pela administração, ele aparecerá aqui automaticamente em tempo real para ser compartilhado.
-                      </>
-                    )}
-                  </p>
+                  <div className="flex items-center gap-2 flex-wrap text-xs">
+                    <span className="font-semibold text-slate-700">Código de Acesso dos Colaboradores:</span>
+                    <span className="font-mono font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                      {getCodigoColaborador()}
+                    </span>
+                    <span className="text-[11px] text-slate-500 hidden md:inline">• Compartilhe para agendamento dos colaboradores</span>
+                  </div>
                 </div>
 
-                {/* Bloco do Código e Botões de Compartilhamento */}
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto shrink-0">
-                  {getCodigoColaborador() ? (
-                    <div className="bg-white/10 backdrop-blur-md border border-white/20 p-3.5 rounded-2xl flex flex-col items-center justify-center gap-1.5 shadow-inner min-w-[170px]">
-                      <span className="text-[10px] uppercase font-bold tracking-widest text-emerald-200">
-                        Código do Convênio
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-xl sm:text-2xl font-black text-sun tracking-wider select-all">
-                          {getCodigoColaborador()}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => handleCopiarCodigoColaborador(getCodigoColaborador())}
-                          className="p-1.5 bg-white/20 hover:bg-white/30 rounded-xl text-white transition-all cursor-pointer"
-                          title="Copiar Código"
-                        >
-                          {copiedCodigoColab ? <Check className="w-4 h-4 text-sun" /> : <Copy className="w-4 h-4" />}
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="bg-white/10 p-3.5 rounded-2xl text-center text-xs text-emerald-200 border border-white/10">
-                      Código em emissão
-                    </div>
-                  )}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => handleCopiarCodigoColaborador(getCodigoColaborador())}
+                    className="px-2.5 py-1 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
+                    title="Copiar Código"
+                  >
+                    {copiedCodigoColab ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                    <span>{copiedCodigoColab ? "Copiado!" : "Copiar"}</span>
+                  </button>
 
-                  {/* Ações */}
-                  {getCodigoColaborador() && (
-                    <div className="flex flex-col gap-2">
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          onClick={() => handleCopiarCodigoColaborador(getCodigoColaborador())}
-                          className="flex-1 px-3.5 py-2 bg-white text-forest hover:bg-warm font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer"
-                        >
-                          {copiedCodigoColab ? <Check className="w-3.5 h-3.5 text-emerald-700" /> : <Copy className="w-3.5 h-3.5 text-forest" />}
-                          <span>{copiedCodigoColab ? "Copiado!" : "Copiar Código"}</span>
-                        </button>
+                  <button
+                    type="button"
+                    onClick={() => handleWhatsAppColaborador(getNomeEmpresaAtiva(), getCodigoColaborador())}
+                    className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
+                    title="Enviar via WhatsApp"
+                  >
+                    <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>WhatsApp</span>
+                  </button>
 
-                        <button
-                          type="button"
-                          onClick={() => handleCopiarLinkColaborador(getLinkAcolhimentoColaborador(getCodigoColaborador()))}
-                          className="flex-1 px-3.5 py-2 bg-emerald-800/80 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all border border-emerald-600/50 cursor-pointer shadow-xs"
-                        >
-                          {copiedLinkColab ? <Check className="w-3.5 h-3.5 text-sun" /> : <Link2 className="w-3.5 h-3.5 text-emerald-300" />}
-                          <span>{copiedLinkColab ? "Link Copiado!" : "Copiar Link"}</span>
-                        </button>
-                      </div>
-
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          onClick={() => handleCompartilharColaborador(getNomeEmpresaAtiva(), getCodigoColaborador())}
-                          className="flex-1 px-3 py-2 bg-sun hover:bg-sun-dark text-forest font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer"
-                          title="Compartilhar mensagem e link com colaboradores"
-                        >
-                          <Share2 className="w-3.5 h-3.5" />
-                          <span>Compartilhar</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleWhatsAppColaborador(getNomeEmpresaAtiva(), getCodigoColaborador())}
-                          className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer"
-                          title="Enviar via WhatsApp"
-                        >
-                          <MessageCircle className="w-3.5 h-3.5" />
-                          <span>WhatsApp</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => setShowModalMensagemColaborador(true)}
-                          className="p-2 bg-white/15 hover:bg-white/25 text-white rounded-xl transition-all cursor-pointer"
-                          title="Visualizar comunicado completo"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => setShowModalMensagemColaborador(true)}
+                    className="p-1 hover:bg-slate-100 text-slate-500 hover:text-slate-800 rounded-lg transition-colors cursor-pointer"
+                    title="Visualizar comunicado completo"
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               </div>
-            </div>
+            ) : null}
 
             {/* Header da Gestão de Colaboradores & Ações em Massa */}
-            <div className="bg-white p-4 sm:p-5 rounded-2xl border border-soft shadow-xs flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3">
+            <div className="bg-white p-3 sm:p-3.5 rounded-xl border border-soft shadow-xs flex flex-col lg:flex-row items-start lg:items-center justify-between gap-2.5">
               <div>
                 <div className="flex items-center gap-2">
-                  <h2 className="font-serif text-base sm:text-lg font-bold text-forest">
+                  <h2 className="font-serif text-sm sm:text-base font-bold text-forest">
                     Quadro de Colaboradores & Dependentes
                   </h2>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-forest text-white">
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-800 border border-slate-200">
                     {vidasCadastradasAtivas} vidas ativas
                   </span>
                 </div>
@@ -2869,7 +2744,7 @@ export function PortalEmpresaView({
             </div>
 
             {/* Barra de Filtros e Busca */}
-            <div className="bg-white p-3 rounded-2xl border border-soft shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="bg-white p-2.5 rounded-xl border border-soft shadow-xs flex flex-col sm:flex-row items-center justify-between gap-2.5">
               <div className="relative w-full sm:w-80">
                 <Search className="w-3.5 h-3.5 text-forest/40 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
@@ -2919,7 +2794,7 @@ export function PortalEmpresaView({
                     type="button"
                     onClick={() => setFiltroStatusColaborador("ativo")}
                     className={`px-2 py-1 rounded-md text-[11px] font-bold cursor-pointer ${
-                      filtroStatusColaborador === "ativo" ? "bg-emerald-600 text-white shadow-2xs" : "text-forest/60"
+                      filtroStatusColaborador === "ativo" ? "bg-forest text-white shadow-2xs" : "text-forest/60"
                     }`}
                   >
                     Ativos ({vidasCadastradasAtivas})
@@ -2928,7 +2803,7 @@ export function PortalEmpresaView({
                     type="button"
                     onClick={() => setFiltroStatusColaborador("desligado")}
                     className={`px-2 py-1 rounded-md text-[11px] font-bold cursor-pointer ${
-                      filtroStatusColaborador === "desligado" ? "bg-purple-700 text-white shadow-2xs" : "text-forest/60"
+                      filtroStatusColaborador === "desligado" ? "bg-slate-700 text-white shadow-2xs" : "text-forest/60"
                     }`}
                   >
                     Turnover / Desligados ({totalDesligados})
@@ -2938,7 +2813,7 @@ export function PortalEmpresaView({
             </div>
 
             {/* Tabela de Colaboradores */}
-            <div className="bg-white rounded-2xl border border-soft shadow-xs overflow-hidden">
+            <div className="bg-white rounded-xl border border-soft shadow-xs overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs text-forest">
                   <thead className="bg-warm/60 border-b border-soft text-[11px] uppercase tracking-wider font-bold text-forest/70">

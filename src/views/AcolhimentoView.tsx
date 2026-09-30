@@ -643,7 +643,7 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
                       Profissionais experientes, vagas que acolhem!
                     </h1>
                     <p className="text-lg text-forest/80 leading-relaxed max-w-lg mt-4">
-                      Nossa rede é composta por psicólogos e terapeutas com carreiras consolidadas e consultórios ativos. Em um gesto de compromisso social, esses profissionais dedicam parte de suas agendas para disponibilizar horários com valores acessíveis para quem não consegue arcar com o custo médio de uma consulta particular tradicional (geralmente acima de R$ 150).
+                      Nossa rede é composta por psicólogos e terapeutas com carreiras consolidadas e consultórios ativos. Em um gesto de compromisso humanizado e acessível, esses profissionais dedicam parte de suas agendas para disponibilizar horários com valores acessíveis para quem não consegue arcar com o custo médio de uma consulta particular tradicional (geralmente acima de R$ 150).
                     </p>
                     <p className="text-lg text-forest/80 leading-relaxed max-w-lg">
                       Essas horas reservadas transformam-se em verdadeiras vagas de acolhimento, garantindo que você receba um atendimento ético, experiente e de altíssima qualidade, mas com um investimento coerente com sua realidade.
@@ -689,7 +689,7 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
                         <div>
                           <h4 className="font-serif font-bold text-sm text-forest">Investimento Coerente</h4>
                           <p className="text-[11px] text-forest/70 mt-1 leading-relaxed">
-                            Valores entre R$ 30 e R$ 110 por sessão. O valor combinado com o profissional é mantido fixo, com reajuste anual pelo INPC.
+                            Valores a partir de R$ 50 por sessão (faixas regulares entre R$ 50 e R$ 110). O valor combinado com o profissional é mantido fixo, com reajuste anual pelo INPC.
                           </p>
                         </div>
                       </div>

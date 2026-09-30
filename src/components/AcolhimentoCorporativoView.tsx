@@ -1198,7 +1198,7 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
                   Cuidado de alto padrão por um valor realmente acessível
                 </h4>
                 <p className="text-forest/85 leading-relaxed text-xs sm:text-[13px]">
-                  Enquanto uma consulta particular tradicional no mercado custa no mínimo <strong className="text-forest underline decoration-forest/30 font-bold">R$ 150,00</strong>, através do convênio com a sua empresa você e sua família contam com psicólogos credenciados a <strong className="text-emerald-900 bg-emerald-100/70 px-1.5 py-0.5 rounded font-bold">valores sociais exclusivos e facilitados</strong>, viabilizando um acompanhamento contínuo e sustentável.
+                  Enquanto uma consulta particular tradicional no mercado custa no mínimo <strong className="text-forest underline decoration-forest/30 font-bold">R$ 150,00</strong>, através do convênio com a sua empresa você e sua família contam com psicólogos credenciados a <strong className="text-emerald-900 bg-emerald-100/70 px-1.5 py-0.5 rounded font-bold">valores acessíveis exclusivos e facilitados</strong>, viabilizando um acompanhamento contínuo e sustentável.
                 </p>
               </div>
             </div>

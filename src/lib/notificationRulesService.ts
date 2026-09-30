@@ -26,7 +26,7 @@ export const DEFAULT_NOTIFICATION_TRIGGERS: NotificationTrigger[] = [
   <h4 style="margin-top: 0; color: #1e352f; font-family: 'Georgia', serif;">Próximos Passos do Acolhimento:</h4>
   <ul style="margin: 0; padding-left: 20px; font-size: 14px; color: #2e443e;">
     <li style="margin-bottom: 8px;"><strong>1. Triagem & Análise:</strong> Nossa equipe de psicólogos triadores está avaliando o seu perfil para encontrar o profissional ideal com a abordagem mais adequada para você.</li>
-    <li style="margin-bottom: 8px;"><strong>2. Proposta de Atendimento:</strong> Enviaremos por e-mail e WhatsApp uma proposta contendo o valor social enquadrado por sessão e a frequência.</li>
+    <li style="margin-bottom: 8px;"><strong>2. Proposta de Atendimento:</strong> Enviaremos por e-mail e WhatsApp uma proposta contendo o valor acessível enquadrado por sessão e a frequência.</li>
     <li><strong>3. Início das Sessões:</strong> Após o seu aceite, o psicólogo atribuído entrará em contato para agendar o primeiro atendimento.</li>
   </ul>
 </div>
@@ -35,12 +35,12 @@ export const DEFAULT_NOTIFICATION_TRIGGERS: NotificationTrigger[] = [
     },
     whatsapp: {
       enabled: true,
-      messageText: `Olá, *{primeiro_nome}*! 👋\n\nRecebemos o seu cadastro no *Projeto AcolheMente Saúde* com sucesso.\n\nNossa equipe de triagem já está avaliando o seu caso com muito carinho para encontrar o profissional com a abordagem ideal para você. Em breve, enviaremos por aqui e por e-mail a sua proposta com o valor social da sessão.\n\nQualquer dúvida, estamos por aqui!\n\n_Equipe AcolheMente_ 🌿`.trim(),
+      messageText: `Olá, *{primeiro_nome}*! 👋\n\nRecebemos o seu cadastro no *Projeto AcolheMente Saúde* com sucesso.\n\nNossa equipe de triagem já está avaliando o seu caso com muito carinho para encontrar o profissional com a abordagem ideal para você. Em breve, enviaremos por aqui e por e-mail a sua proposta com o valor acessível da sessão.\n\nQualquer dúvida, estamos por aqui!\n\n_Equipe AcolheMente_ 🌿`.trim(),
     },
   },
   {
     id: "envio_proposta",
-    nome: "Envio de Proposta Social de Atendimento",
+    nome: "Envio de Proposta de Atendimento Acessível",
     descricao: "Disparado quando a equipe de triagem define o psicólogo e encaminha a proposta personalizada para o paciente.",
     categoria: "paciente",
     isCustom: false,
@@ -55,7 +55,7 @@ export const DEFAULT_NOTIFICATION_TRIGGERS: NotificationTrigger[] = [
 <div style="background-color: #f7f9f7; border: 1px solid #d2e4d6; border-radius: 16px; padding: 20px; margin: 25px 0;">
   <h4 style="margin-top: 0; color: #1e352f; font-family: 'Georgia', serif; font-size: 16px;">Detalhes da sua Proposta:</h4>
   <p style="margin: 4px 0; font-size: 14px;"><strong>Profissional Atribuído:</strong> {profissional}</p>
-  <p style="margin: 4px 0; font-size: 14px;"><strong>Valor Social por Sessão:</strong> {valor_sessao}</p>
+  <p style="margin: 4px 0; font-size: 14px;"><strong>Valor Acessível por Sessão:</strong> {valor_sessao}</p>
   <p style="margin: 4px 0; font-size: 14px;"><strong>Frequência Recomendada:</strong> {frequencia}</p>
 </div>
 <div style="text-align: center; margin: 30px 0;">
@@ -70,7 +70,7 @@ export const DEFAULT_NOTIFICATION_TRIGGERS: NotificationTrigger[] = [
     },
     whatsapp: {
       enabled: true,
-      messageText: `Olá, *{primeiro_nome}*! ✨\n\nA sua proposta de atendimento no *Projeto AcolheMente* está pronta!\n\n📋 *Profissional designado:* {profissional}\n💰 *Valor social por sessão:* {valor_sessao}\n🗓️ *Frequência:* {frequencia}\n\n👉 *Clique no link abaixo para conferir os detalhes e confirmar seu início:*\n{link_proposta}\n\nEstamos prontos para caminhar ao seu lado! 🌿`.trim(),
+      messageText: `Olá, *{primeiro_nome}*! ✨\n\nA sua proposta de atendimento no *Projeto AcolheMente* está pronta!\n\n📋 *Profissional designado:* {profissional}\n💰 *Valor acessível por sessão:* {valor_sessao}\n🗓️ *Frequência:* {frequencia}\n\n👉 *Clique no link abaixo para conferir os detalhes e confirmar seu início:*\n{link_proposta}\n\nEstamos prontos para caminhar ao seu lado! 🌿`.trim(),
     },
   },
   {
@@ -136,7 +136,7 @@ export const DEFAULT_NOTIFICATION_TRIGGERS: NotificationTrigger[] = [
   {
     id: "revisao_proposta",
     nome: "Solicitação de Revisão de Proposta",
-    descricao: "Disparado quando o paciente solicita reajuste do valor ou frequência da sessão social.",
+    descricao: "Disparado quando o paciente solicita reajuste do valor ou frequência da sessão acessível.",
     categoria: "paciente",
     isCustom: false,
     active: true,

@@ -84,7 +84,7 @@ export function CampanhaPrevencaoBanner({ onNavigateAcolhimento }: CampanhaPreve
             {/* LINHA 2: Frase */}
             <p className="text-xs sm:text-sm text-white font-medium leading-tight drop-shadow-[0_1px_3px_rgba(0,0,0,0.8)] max-w-2xl px-2">
               <strong className="font-semibold text-white">Você não está sozinho.</strong>{" "}
-              Falar sobre o que sente é o primeiro passo para o acolhimento.
+              Falar é o primeiro passo para o acolhimento.
             </p>
 
             {/* LINHA 3: Botões na mesma linha */}

@@ -1,5 +1,5 @@
 import { Footer } from '../components/Footer';
-import { ArrowLeft, CheckCircle2, HeartHandshake, UserPlus, Clock, PiggyBank, Network, Wallet, Check, CreditCard, Sparkles, BookOpen, MessageSquare, Mail } from "lucide-react";
+import { ArrowLeft, CheckCircle2, HeartHandshake, UserPlus, Clock, PiggyBank, Network, Wallet, Check, CreditCard, Sparkles, BookOpen, MessageSquare, Mail, FileText, Copy } from "lucide-react";
 import React, { FormEvent, useState, useEffect } from "react";
 import { collection, addDoc, serverTimestamp, getDocs, query, where, doc, onSnapshot } from "firebase/firestore";
 import { db, handleFirestoreError, OperationType } from "../lib/firebase";
@@ -26,6 +26,65 @@ export const OPCOES_SERVICOS = [
   "Outros"
 ];
 
+export function generateTermoValoresProfissional(
+  aceitaGratuito: boolean,
+  horasGratuito: string,
+  aceita30: boolean,
+  nomeProfissional?: string
+): string {
+  const nome = (nomeProfissional || "").trim() || "o(a) Profissional Parceiro(a)";
+  let termo = `TERMO DE CIÊNCIA E COMPROMISSO SOBRE VALORES PRATICADOS NA PLATAFORMA ACOLHEMENTE\n\n`;
+
+  termo += `1. DO VALOR MÍNIMO REGULAR DA PLATAFORMA:\n`;
+  termo += `Pelo presente instrumento, declaro estar plenamente ciente de que o valor mínimo regular praticado pela plataforma AcolheMente para atendimentos particulares com valor acessível é de R$ 50,00 (cinquenta reais) por sessão clínica individual. As faixas de valores acessíveis da plataforma partem obrigatoriamente de R$ 50,00 por atendimento, sendo destinadas exclusivamente a pacientes que passam por triagem socioeconômica prévia realizada pela equipe técnica da plataforma.\n\n`;
+
+  if (!aceitaGratuito && !aceita30) {
+    termo += `2. DO REGIME DE ATENDIMENTO PADRÃO:\n`;
+    termo += `Declaro que meus atendimentos clínicos na plataforma serão conduzidos estritamente dentro da grade padrão de valores acessíveis (a partir de R$ 50,00 por sessão), não optando, no presente momento, pela realização de atendimentos em modalidade gratuita ou na faixa extraordinária de vulnerabilidade.\n\n`;
+  } else {
+    termo += `2. DAS CONDIÇÕES ESPECIAIS E EXTRAORDINÁRIAS ACORDADAS:\n`;
+    termo += `Em caráter de compromisso humanitário com o acolhimento qualificado e acessível, concordo e formalizo as seguintes condições especiais e extraordinárias selecionadas em meu cadastro:\n\n`;
+    
+    if (aceitaGratuito) {
+      termo += `• ATENDIMENTO GRATUITO (VOLUNTÁRIO / PRO BONO):\n  Declaro aceitar atender gratuitamente e manifesto minha expressa autorização para disponibilizar ${horasGratuito || "1 hora/mês"} das minhas horas de atendimento mensais declaradas para acolhimento clínico 100% gratuito (pro bono), destinado a pacientes em situação de extrema vulnerabilidade socioeconômica encaminhados pela coordenação do projeto.\n\n`;
+    }
+    
+    if (aceita30) {
+      termo += `• FAIXA EXTRAORDINÁRIA DE VULNERABILIDADE (R$ 30,00):\n  Declaro aceitar atender casos especiais e de alta vulnerabilidade pelo valor extraordinário de R$ 30,00 (trinta reais) por sessão clínica. Reconheço que esta faixa tem caráter de exceção humanitária, permanece oculta do público geral nas páginas da plataforma e é aplicada de forma seletiva pela triagem em situações emergenciais comprovadas.\n\n`;
+    }
+  }
+
+  termo += `3. DA ÉTICA, RIGOR E SIGILO PROFISSIONAL:\n`;
+  termo += `Comprometo-me a dispensar a todo e qualquer paciente acolhido na plataforma o mesmo padrão técnico de excelência, pontualidade, sigilo absoluto e conformidade ética com o Código de Ética Profissional do Conselho de Psicologia, sem distinção ou discriminação pela faixa de valor, gratuidade ou modalidade de encaminhamento.\n\n`;
+
+  termo += `4. DO TEMPO MÍNIMO DE DURAÇÃO DAS SESSÕES:\n`;
+  termo += `Comprometo-me a assegurar o tempo mínimo de duração de 45 (quarenta e cinco) minutos para cada sessão clínica ou acolhimento individual, respeitando integralmente as resoluções, diretrizes técnicas e recomendações dos conselhos regulamentadores da profissão.\n\n`;
+
+  termo += `5. DA DECLARAÇÃO E ACEITE:\n`;
+  termo += `Declaro que as informações prestadas são verdadeiras e que este termo passa a integrar as diretrizes do meu vínculo colaborativo junto à Rede AcolheMente a partir da confirmação deste cadastro.`;
+
+  return termo;
+}
+
+export function generateTermoDuracaoSessaoProfissional(nomeProfissional?: string): string {
+  const nome = (nomeProfissional || "").trim() || "o(a) Profissional Parceiro(a)";
+  return `TERMO DE CIÊNCIA E COMPROMISSO SOBRE A DURAÇÃO MÍNIMA DAS SESSÕES CLÍNICAS
+
+Pelo presente instrumento, ${nome} declara estar ciente e formalmente comprometido(a) com as seguintes diretrizes de atendimento na plataforma AcolheMente:
+
+1. DO TEMPO MÍNIMO DE DURAÇÃO:
+Comprometo-me a assegurar que cada consulta, atendimento ou sessão de psicoterapia individual realizada a pacientes encaminhados pela plataforma AcolheMente tenha o tempo mínimo de duração de 45 (quarenta e cinco) minutos.
+
+2. DA CONFORMIDADE COM CONSELHOS REGULAMENTADORES:
+Declaro que a condução das sessões observará rigorosamente os regulamentos, resoluções normativas e recomendações dos conselhos de classe pertinentes (em especial o Conselho Federal de Psicologia - CFP e Conselhos Regionais de Psicologia - CRP), bem como o respectivo Código de Ética Profissional.
+
+3. DO ENQUADRE TERAPÊUTICO E DA QUALIDADE DO ATENDIMENTO:
+Reconheço que o tempo mínimo de 45 minutos é essencial para a garantia da escuta qualificada, elaboração clínica adequada, segurança do paciente e efetividade do processo terapêutico.
+
+4. DA PONTUALIDADE E DEDICAÇÃO EXCLUSIVA:
+Comprometo-me a iniciar pontualmente os atendimentos e manter dedicação técnica exclusiva durante todo o período da sessão clínica agendada.`;
+}
+
 export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'landing' | 'acolhimento' | 'dashboard' | 'profile' | 'empresa' | 'doacao' | 'profissional') => void }) {
   const [formData, setFormData] = useState({
     nome: '',
@@ -42,6 +101,11 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
     genero: '',
     deficiencia: '',
     horasDisponiveis: '2 a 4 horas/mês',
+    aceitaAtendimentoGratuito: false,
+    horasAtendimentoGratuito: '1 hora/mês',
+    aceitaAtendimento30Reais: false,
+    termoValoresAceito: false,
+    termoDuracaoAceito: false,
     publicosExperiencia: [] as string[],
     publicosGosto: [] as string[],
     outrosPublicosExperiencia: '',
@@ -62,6 +126,8 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
   const [taxaAssociativaMensal, setTaxaAssociativaMensal] = useState("29,90");
   const [stripeConfig, setStripeConfig] = useState<any>(null);
   const [cienciaTaxa, setCienciaTaxa] = useState(false);
+  const [copiedTermo, setCopiedTermo] = useState(false);
+  const [copiedTermoDuracao, setCopiedTermoDuracao] = useState(false);
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
   const [registeredLeadId, setRegisteredLeadId] = useState<string | undefined>(undefined);
 
@@ -178,6 +244,14 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
         setErrorMsg("Por favor, preencha todos os campos obrigatórios, incluindo como conheceu nossa plataforma.");
         return;
       }
+      if (!formData.termoValoresAceito) {
+        setErrorMsg("Para prosseguir, você deve ler e declarar ciência do Termo de Valores Praticados na Plataforma.");
+        return;
+      }
+      if (!formData.termoDuracaoAceito) {
+        setErrorMsg("Para prosseguir, você deve declarar ciência e compromisso com o tempo mínimo de 45 minutos por sessão.");
+        return;
+      }
       if (!cienciaTaxa) {
         setErrorMsg(`Para prosseguir, você deve declarar estar ciente da taxa associativa de R$ ${taxaAssociativaMensal}/mês.`);
         return;
@@ -194,8 +268,24 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
           return;
         }
 
+        const termoValoresTexto = generateTermoValoresProfissional(
+          formData.aceitaAtendimentoGratuito,
+          formData.horasAtendimentoGratuito,
+          formData.aceitaAtendimento30Reais,
+          formData.nome
+        );
+        const termoDuracaoTexto = generateTermoDuracaoSessaoProfissional(formData.nome);
+
         const docRef = await addDoc(collection(db, "profissionais_leads"), {
           ...formData,
+          aceitaAtendimentoGratuito: Boolean(formData.aceitaAtendimentoGratuito),
+          horasAtendimentoGratuito: formData.aceitaAtendimentoGratuito ? formData.horasAtendimentoGratuito : "",
+          aceitaAtendimento30Reais: Boolean(formData.aceitaAtendimento30Reais),
+          termoValoresAceito: true,
+          termoValoresTexto,
+          termoDuracaoAceito: true,
+          termoDuracaoTexto,
+          duracaoMinimaSessaoMinutos: 45,
           taxaAssociativaMensal,
           cienciaTaxaAceita: true,
           statusPagamento: 'pendente',
@@ -228,6 +318,11 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
               crp: formData.crp,
               especialidade: formData.especialidade,
               taxaAssociativaMensal,
+              aceitaAtendimentoGratuito: Boolean(formData.aceitaAtendimentoGratuito),
+              horasAtendimentoGratuito: formData.aceitaAtendimentoGratuito ? formData.horasAtendimentoGratuito : "",
+              aceitaAtendimento30Reais: Boolean(formData.aceitaAtendimento30Reais),
+              duracaoMinimaSessaoMinutos: 45,
+              termoDuracaoAceito: true,
             }
           });
         } catch (webhookErr) {
@@ -806,6 +901,89 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
                               <option value="Mais de 20 horas/mês">Mais de 20 horas/mês</option>
                             </select>
                           </div>
+
+                          {/* Pergunta: Condições Especiais de Atendimento */}
+                          <div className="bg-emerald-50/70 p-5 sm:p-6 rounded-2xl border border-emerald-200/90 flex flex-col gap-4 shadow-xs mt-2">
+                            <div className="flex items-center gap-2 text-forest font-bold text-sm">
+                              <HeartHandshake className="w-5 h-5 text-emerald-700 shrink-0" />
+                              <span>Condições de Atendimento & Casos Especiais</span>
+                            </div>
+                            <div className="bg-emerald-100/60 p-3 rounded-xl border border-emerald-300/60 text-xs text-emerald-950 leading-relaxed font-medium">
+                              📌 <strong>Valores da Plataforma:</strong> O valor mínimo regular praticado na plataforma AcolheMente é de <strong>R$ 50,00 por sessão</strong> (as faixas partem de R$ 50,00). A faixa de R$ 30,00 e os atendimentos gratuitos são extraordinários para casos especiais e de muita vulnerabilidade, permanecendo ocultos do público geral.
+                            </div>
+
+                            <label className="text-xs font-bold uppercase tracking-wider text-forest/80 ml-1">
+                              Você aceita atender:
+                            </label>
+
+                            <div className="space-y-3">
+                              {/* Caixa 1: Gratuitamente */}
+                              <div className={`p-4 rounded-xl border transition-all ${formData.aceitaAtendimentoGratuito ? 'bg-white border-emerald-400 shadow-xs ring-2 ring-emerald-500/10' : 'bg-white/70 border-soft'}`}>
+                                <label className="flex items-start gap-3 cursor-pointer select-none">
+                                  <input 
+                                    type="checkbox"
+                                    name="aceitaAtendimentoGratuito"
+                                    checked={formData.aceitaAtendimentoGratuito}
+                                    onChange={(e) => setFormData(prev => ({ ...prev, aceitaAtendimentoGratuito: e.target.checked }))}
+                                    className="mt-1 w-5 h-5 rounded border-emerald-300 text-emerald-700 accent-emerald-700 cursor-pointer shrink-0"
+                                  />
+                                  <div className="flex-1">
+                                    <span className="text-sm font-bold text-forest block">
+                                      Gratuitamente (Voluntário / Pro Bono)
+                                    </span>
+                                    <span className="text-xs text-forest/75 block mt-0.5 leading-relaxed">
+                                      Atendimento 100% gratuito voltado a pessoas em extrema vulnerabilidade socioeconômica.
+                                    </span>
+                                  </div>
+                                </label>
+
+                                {formData.aceitaAtendimentoGratuito && (
+                                  <div className="mt-3.5 pt-3 border-t border-emerald-100 flex flex-col gap-1.5 pl-8 animate-in fade-in slide-in-from-top-1 duration-200">
+                                    <label className="text-xs font-bold text-forest/90">
+                                      Quantas dessas horas disponíveis relatadas você aceita atender gratuitamente? *
+                                    </label>
+                                    <select
+                                      name="horasAtendimentoGratuito"
+                                      value={formData.horasAtendimentoGratuito}
+                                      onChange={handleChange}
+                                      className="w-full sm:max-w-md px-4 py-2.5 bg-emerald-50/70 border border-emerald-300 rounded-xl text-xs font-bold text-forest focus:outline-none focus:border-emerald-600 cursor-pointer"
+                                    >
+                                      <option value="1 hora/mês">1 hora/mês</option>
+                                      <option value="2 horas/mês">2 horas/mês</option>
+                                      <option value="3 horas/mês">3 horas/mês</option>
+                                      <option value="4 horas/mês">4 horas/mês</option>
+                                      <option value="Metade das horas disponíveis relatadas">Metade das horas disponíveis relatadas</option>
+                                      <option value="Todas as horas disponíveis relatadas">Todas as horas disponíveis relatadas</option>
+                                    </select>
+                                    <p className="text-[11px] text-emerald-800">
+                                      As horas restantes da sua disponibilidade serão direcionadas para atendimentos com valores regulares acessíveis (a partir de R$ 50,00).
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Caixa 2: R$ 30 por sessão */}
+                              <div className={`p-4 rounded-xl border transition-all ${formData.aceitaAtendimento30Reais ? 'bg-white border-emerald-400 shadow-xs ring-2 ring-emerald-500/10' : 'bg-white/70 border-soft'}`}>
+                                <label className="flex items-start gap-3 cursor-pointer select-none">
+                                  <input 
+                                    type="checkbox"
+                                    name="aceitaAtendimento30Reais"
+                                    checked={formData.aceitaAtendimento30Reais}
+                                    onChange={(e) => setFormData(prev => ({ ...prev, aceitaAtendimento30Reais: e.target.checked }))}
+                                    className="mt-1 w-5 h-5 rounded border-emerald-300 text-emerald-700 accent-emerald-700 cursor-pointer shrink-0"
+                                  />
+                                  <div className="flex-1">
+                                    <span className="text-sm font-bold text-forest block">
+                                      30 reais por sessão (Faixa Extraordinária)
+                                    </span>
+                                    <span className="text-xs text-forest/75 block mt-0.5 leading-relaxed">
+                                      Faixa extraordinária reservada para casos especiais e de muita vulnerabilidade, mantida oculta na plataforma pública.
+                                    </span>
+                                  </div>
+                                </label>
+                              </div>
+                            </div>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -820,7 +998,7 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
                           Serviços profissionais que ofereço *
                         </label>
                         <p className="text-[11px] text-forest/60 -mt-1 ml-2 leading-relaxed">
-                          Marque os serviços que você realiza e selecione "Disponibilizar para orçamento acessível" caso queira oferecer valores de atendimento social/acessível para o mesmo.
+                          Marque os serviços que você realiza e selecione "Disponibilizar para orçamento acessível" caso queira oferecer valores de atendimento acessível para o mesmo.
                         </p>
                         
                         <div className="flex flex-col gap-3 mt-2">
@@ -976,6 +1154,148 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
 
                       {formData.motivacao.trim().length >= 10 && (
                         <div className="flex flex-col gap-6 animate-in fade-in duration-500 border-t border-soft pt-6">
+                          {/* Termo de Ciência sobre os Valores Praticados na Plataforma */}
+                          <div className="bg-white p-5 sm:p-6 rounded-2xl border-2 border-forest/20 flex flex-col gap-3.5 shadow-sm">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-soft pb-3">
+                              <div className="flex items-center gap-2 text-forest font-bold text-sm">
+                                <FileText className="w-5 h-5 text-forest shrink-0" />
+                                <span>Termo de Ciência sobre Valores Praticados na Plataforma</span>
+                              </div>
+                              {formData.aceitaAtendimentoGratuito || formData.aceitaAtendimento30Reais ? (
+                                <span className="px-2.5 py-0.5 bg-emerald-100 text-emerald-900 border border-emerald-300 text-[10px] font-extrabold rounded-full uppercase tracking-wider self-start sm:self-auto">
+                                  Termo Especial com Variações
+                                </span>
+                              ) : (
+                                <span className="px-2.5 py-0.5 bg-slate-100 text-slate-800 border border-slate-300 text-[10px] font-extrabold rounded-full uppercase tracking-wider self-start sm:self-auto">
+                                  Termo Padrão da Plataforma
+                                </span>
+                              )}
+                            </div>
+
+                            <p className="text-xs text-forest/80 leading-relaxed font-medium">
+                              O valor mínimo praticado na plataforma AcolheMente é de <strong>R$ 50,00 por sessão</strong>. Com base na sua declaração na etapa anterior
+                              {formData.aceitaAtendimentoGratuito || formData.aceitaAtendimento30Reais 
+                                ? " (incluindo as variações para atendimento gratuito e/ou na faixa extraordinária de R$ 30,00)" 
+                                : " (grade regular de atendimentos a partir de R$ 50,00)"}, 
+                              geramos o seu termo formal de ciência e compromisso:
+                            </p>
+
+                            {/* Visualizador do Termo Dinâmico */}
+                            <div className="relative group">
+                              <div className="bg-warm/40 border border-soft rounded-xl p-4 sm:p-5 max-h-56 overflow-y-auto font-mono text-[11px] leading-relaxed text-forest/90 whitespace-pre-wrap select-text shadow-inner">
+                                {generateTermoValoresProfissional(
+                                  formData.aceitaAtendimentoGratuito,
+                                  formData.horasAtendimentoGratuito,
+                                  formData.aceitaAtendimento30Reais,
+                                  formData.nome
+                                )}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const text = generateTermoValoresProfissional(
+                                    formData.aceitaAtendimentoGratuito,
+                                    formData.horasAtendimentoGratuito,
+                                    formData.aceitaAtendimento30Reais,
+                                    formData.nome
+                                  );
+                                  navigator.clipboard.writeText(text);
+                                  setCopiedTermo(true);
+                                  setTimeout(() => setCopiedTermo(false), 2500);
+                                }}
+                                className="absolute top-3 right-3 px-2.5 py-1 bg-white/95 hover:bg-white border border-soft text-forest text-[11px] font-bold rounded-lg shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                                title="Copiar termo para sua guarda"
+                              >
+                                {copiedTermo ? (
+                                  <>
+                                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                    <span className="text-emerald-700">Copiado</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Copy className="w-3.5 h-3.5 text-forest/70" />
+                                    <span>Copiar Termo</span>
+                                  </>
+                                )}
+                              </button>
+                            </div>
+
+                            {/* Checkbox de Ciência e Aceite Formal */}
+                            <label className="flex items-start gap-3 cursor-pointer mt-1 group">
+                              <input 
+                                type="checkbox" 
+                                required
+                                checked={formData.termoValoresAceito}
+                                onChange={(e) => setFormData(prev => ({ ...prev, termoValoresAceito: e.target.checked }))}
+                                className="mt-1 w-5 h-5 rounded border-forest/40 text-forest focus:ring-forest/20 accent-forest cursor-pointer shrink-0"
+                              />
+                              <span className="text-xs font-semibold text-forest leading-relaxed">
+                                Declaro estar ciente de que o <strong>valor mínimo praticado na plataforma é de R$ 50,00 por sessão</strong> e concordo integralmente com o <strong>Termo de Ciência e Compromisso</strong> gerado acima {formData.aceitaAtendimentoGratuito || formData.aceitaAtendimento30Reais ? "com as condições especiais declaradas" : ""}. *
+                              </span>
+                            </label>
+                          </div>
+
+                          {/* Termo de Compromisso: Duração Mínima das Sessões (Mínimo de 45 min) */}
+                          <div className="bg-white p-5 sm:p-6 rounded-2xl border-2 border-forest/20 flex flex-col gap-3.5 shadow-sm">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-soft pb-3">
+                              <div className="flex items-center gap-2 text-forest font-bold text-sm">
+                                <Clock className="w-5 h-5 text-forest shrink-0" />
+                                <span>Termo de Compromisso: Duração Mínima das Sessões</span>
+                              </div>
+                              <span className="px-2.5 py-0.5 bg-blue-100 text-blue-900 border border-blue-300 text-[10px] font-extrabold rounded-full uppercase tracking-wider self-start sm:self-auto">
+                                Mínimo de 45 min • Normas CFP/CRP
+                              </span>
+                            </div>
+
+                            <p className="text-xs text-forest/80 leading-relaxed font-medium">
+                              Em estrita consonância com os regulamentos, resoluções e recomendações dos conselhos regulamentadores da profissão, orientamos que o <strong>tempo mínimo de duração de cada sessão clínica individual é de 45 minutos</strong>:
+                            </p>
+
+                            {/* Visualizador do Termo Dinâmico de Duração Mínima */}
+                            <div className="relative group">
+                              <div className="bg-warm/40 border border-soft rounded-xl p-4 sm:p-5 max-h-52 overflow-y-auto font-mono text-[11px] leading-relaxed text-forest/90 whitespace-pre-wrap select-text shadow-inner">
+                                {generateTermoDuracaoSessaoProfissional(formData.nome)}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const text = generateTermoDuracaoSessaoProfissional(formData.nome);
+                                  navigator.clipboard.writeText(text);
+                                  setCopiedTermoDuracao(true);
+                                  setTimeout(() => setCopiedTermoDuracao(false), 2500);
+                                }}
+                                className="absolute top-3 right-3 px-2.5 py-1 bg-white/95 hover:bg-white border border-soft text-forest text-[11px] font-bold rounded-lg shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                                title="Copiar termo para sua guarda"
+                              >
+                                {copiedTermoDuracao ? (
+                                  <>
+                                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                    <span className="text-emerald-700">Copiado</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Copy className="w-3.5 h-3.5 text-forest/70" />
+                                    <span>Copiar Termo</span>
+                                  </>
+                                )}
+                              </button>
+                            </div>
+
+                            {/* Checkbox de Aceite Formal da Duração Mínima */}
+                            <label className="flex items-start gap-3 cursor-pointer mt-1 group">
+                              <input 
+                                type="checkbox" 
+                                required
+                                checked={formData.termoDuracaoAceito}
+                                onChange={(e) => setFormData(prev => ({ ...prev, termoDuracaoAceito: e.target.checked }))}
+                                className="mt-1 w-5 h-5 rounded border-forest/40 text-forest focus:ring-forest/20 accent-forest cursor-pointer shrink-0"
+                              />
+                              <span className="text-xs font-semibold text-forest leading-relaxed">
+                                Declaro estar ciente e comprometo-me a cumprir o <strong>tempo mínimo de duração de 45 minutos por sessão</strong>, respeitando integralmente os regulamentos, resoluções e recomendações dos conselhos regulamentadores da profissão. *
+                              </span>
+                            </label>
+                          </div>
+
                           {/* Taxa Associativa Awareness Box */}
                           <div className="bg-amber-50/90 p-5 rounded-2xl border border-amber-200 flex flex-col gap-3.5 shadow-xs">
                             <div className="flex items-center justify-between gap-2">

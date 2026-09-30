@@ -75,7 +75,7 @@ CLÁUSULA PRIMEIRA – DO OBJETO
 1.2. O acompanhamento visa à promoção da saúde mental, autoconhecimento e cuidado psicológico, sendo estruturado individualmente de acordo com as necessidades clínicas identificadas.
 
 CLÁUSULA SEGUNDA – DO FORMATO, FREQUÊNCIA E DURAÇÃO DAS SESSÕES
-2.1. As sessões terão duração de aproximadamente 50 (cinquenta) minutos cada.
+2.1. As sessões terão duração mínima de 45 (quarenta e cinco) a 50 (cinquenta) minutos cada, respeitando os regulamentos e recomendações dos conselhos de classe.
 2.2. A periodicidade acordada entre as partes é {FREQUENCIA_SESSOES}, em dia e horário fixados em comum acordo.
 2.3. Em caso de atraso por parte do(a) CONTRATANTE, a sessão se encerrará no horário previamente agendado para não prejudicar os atendimentos subsequentes. Em caso de atraso por parte da CONTRATADA, o tempo correspondente será reposto integralmente.
 

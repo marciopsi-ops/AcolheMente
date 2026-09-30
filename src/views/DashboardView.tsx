@@ -582,6 +582,14 @@ interface ProfissionalLead {
   cidade?: string;
   uf?: string;
   horasDisponiveis: string;
+  aceitaAtendimentoGratuito?: boolean;
+  horasAtendimentoGratuito?: string;
+  aceitaAtendimento30Reais?: boolean;
+  termoValoresAceito?: boolean;
+  termoValoresTexto?: string;
+  termoDuracaoAceito?: boolean;
+  termoDuracaoTexto?: string;
+  duracaoMinimaSessaoMinutos?: number;
   createdAt?: any;
   status?: string;
   ativo?: boolean;
@@ -906,7 +914,7 @@ export function DashboardView({
       estatisticas: "Controle",
       kanban: "Triagem & Acolhimentos",
       pacientesAcolhidos: "Gestão de Pacientes",
-      doacoes: "Apoio Solidário & Doações",
+      doacoes: "Apoio Acessível & Doações",
       profissionais: "Profissionais Parceiros",
       empresas: "Empresas Parceiras",
       tarefas: "Tarefas & Pendências",
@@ -3591,6 +3599,14 @@ export function DashboardView({
               especialidade: data.especialidade || "",
               anoFormacao: data.anoFormacao || "",
               horasDisponiveis: data.horasDisponiveis || "",
+              aceitaAtendimentoGratuito: Boolean(data.aceitaAtendimentoGratuito),
+              horasAtendimentoGratuito: data.horasAtendimentoGratuito || "",
+              aceitaAtendimento30Reais: Boolean(data.aceitaAtendimento30Reais),
+              termoValoresAceito: Boolean(data.termoValoresAceito),
+              termoValoresTexto: data.termoValoresTexto || "",
+              termoDuracaoAceito: Boolean(data.termoDuracaoAceito),
+              termoDuracaoTexto: data.termoDuracaoTexto || "",
+              duracaoMinimaSessaoMinutos: data.duracaoMinimaSessaoMinutos || 45,
               publicosExperiencia: data.publicosExperiencia || [],
               publicosGosto: data.publicosGosto || [],
               outrosPublicosExperiencia: data.outrosPublicosExperiencia || "",
@@ -3735,6 +3751,14 @@ export function DashboardView({
                     especialidade: data.especialidade || "",
                     anoFormacao: data.anoFormacao || "",
                     horasDisponiveis: data.horasDisponiveis || "",
+                    aceitaAtendimentoGratuito: Boolean(data.aceitaAtendimentoGratuito),
+                    horasAtendimentoGratuito: data.horasAtendimentoGratuito || "",
+                    aceitaAtendimento30Reais: Boolean(data.aceitaAtendimento30Reais),
+                    termoValoresAceito: Boolean(data.termoValoresAceito),
+                    termoValoresTexto: data.termoValoresTexto || "",
+                    termoDuracaoAceito: Boolean(data.termoDuracaoAceito),
+                    termoDuracaoTexto: data.termoDuracaoTexto || "",
+                    duracaoMinimaSessaoMinutos: data.duracaoMinimaSessaoMinutos || 45,
                     publicosExperiencia: data.publicosExperiencia || [],
                     publicosGosto: data.publicosGosto || [],
                     outrosPublicosExperiencia:
@@ -4654,9 +4678,9 @@ export function DashboardView({
     ) {
       const latestSol = solicitacoes[solicitacoes.length - 1];
       safeNotify(
-        "Apoio Solidário Solicitado",
+        "Apoio Acessível Solicitado",
         {
-          body: `${latestSol?.nome || "Uma pessoa"} solicitou apoio solidário. Clique para visualizar.`,
+          body: `${latestSol?.nome || "Uma pessoa"} solicitou apoio acessível. Clique para visualizar.`,
           tag: "apoio-novo",
         },
         () => {
@@ -5080,7 +5104,7 @@ export function DashboardView({
         ? {
             title: "Gestão Completa",
             content:
-              "No topo, você pode alternar entre Triagem (Kanban), Apoio Solidário (Doações) e Gerenciamento de Profissionais.",
+              "No topo, você pode alternar entre Triagem (Kanban), Apoio Acessível (Doações) e Gerenciamento de Profissionais.",
             icon: <LayoutGrid className="w-12 h-12 text-forest/70/80 mb-4" />,
           }
         : {
@@ -5640,7 +5664,7 @@ export function DashboardView({
                 onClick={() => setActiveTab("doacoes")}
                 className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "doacoes" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
               >
-                Apoio Solidário
+                Apoio Acessível
                 {pendingApoioSolidarioCount > 0 && (
                   <span className="bg-red-500 text-white text-[10px] w-4 h-4 flex items-center justify-center rounded-full font-bold ml-1">
                     {pendingApoioSolidarioCount}
@@ -6379,7 +6403,7 @@ export function DashboardView({
                           </label>
                           <DebouncedInput
                             className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
-                            placeholder={`Ex: R$ ${(index + 1) * 30},00`}
+                            placeholder={`Ex: R$ ${index === 0 ? 50 : index === 1 ? 80 : index === 2 ? 100 : index === 3 ? 120 : 150},00`}
                             value={globalConfigs.faixasValores?.[index] || ""}
                             onChange={(val) => {
                               const newFaixas = [
@@ -10441,6 +10465,16 @@ export function DashboardView({
                         <span className="text-[9px] uppercase font-bold bg-purple-50 text-purple-700 border border-purple-200 px-3 py-1 rounded-full">
                           Disponível: {lead.horasDisponiveis}
                         </span>
+                        {lead.aceitaAtendimentoGratuito && (
+                          <span className="text-[9px] uppercase font-bold bg-emerald-50 text-emerald-800 border border-emerald-300 px-2.5 py-1 rounded-full">
+                            Gratuito: {lead.horasAtendimentoGratuito || "Sim"}
+                          </span>
+                        )}
+                        {lead.aceitaAtendimento30Reais && (
+                          <span className="text-[9px] uppercase font-bold bg-amber-50 text-amber-900 border border-amber-300 px-2.5 py-1 rounded-full">
+                            Aceita R$ 30
+                          </span>
+                        )}
                         <span className="text-[9px] font-bold text-forest/70 uppercase tracking-wider bg-warm px-3 py-1 rounded-full border border-soft/50">
                           {lead.status || "Aguardando Entrevista"}
                         </span>
@@ -12377,7 +12411,7 @@ export function DashboardView({
                   />
                 </div>
 
-                {/* Bloco Socioeconômico (Particular / Social) */}
+                {/* Bloco Socioeconômico (Particular / Acessível) */}
                 <div className="mt-4 pt-4 border-t border-soft space-y-3">
                   <span className="block text-[11px] font-bold uppercase tracking-wider text-forest/70">
                     Detalhes Socioeconômicos & Habitacionais
@@ -12678,28 +12712,34 @@ export function DashboardView({
                             ? faixasGestor
                             : isCorp
                               ? ["R$ 60,00", "R$ 90,00", "R$ 120,00"]
-                              : ["R$ 30,00", "R$ 50,00", "R$ 80,00", "R$ 100,00", "R$ 120,00"];
+                              : ["R$ 50,00", "R$ 80,00", "R$ 100,00", "R$ 120,00"];
                           
-                          const options = [...baseFaixas, "Gratuito", "A combinar"];
-                          if (selectedCard.valorSessao && !options.includes(selectedCard.valorSessao)) {
+                          const options = [...baseFaixas, "R$ 30,00 (Extraordinário)", "Gratuito", "A combinar"];
+                          if (selectedCard.valorSessao && !options.includes(selectedCard.valorSessao) && selectedCard.valorSessao !== "R$ 30,00") {
                             options.unshift(selectedCard.valorSessao);
                           }
 
-                          return options.map((val) => (
-                            <button
-                              key={val}
-                              type="button"
-                              disabled={currentRole !== "master" && currentRole !== "triagem"}
-                              onClick={() => handleUpdateAcolhimentoProperty(selectedCard.id, "valorSessao", val)}
-                              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-2xs border ${
-                                selectedCard.valorSessao === val
-                                  ? "bg-forest text-white border-forest shadow-xs"
-                                  : "bg-white text-forest border-soft hover:bg-sun/30"
-                              } ${(currentRole !== "master" && currentRole !== "triagem") ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
-                            >
-                              {val}
-                            </button>
-                          ));
+                          return options.map((val) => {
+                            const is30 = val.startsWith("R$ 30,00");
+                            const actualValToSave = is30 ? "R$ 30,00" : val;
+                            const isSelected = selectedCard.valorSessao === actualValToSave;
+
+                            return (
+                              <button
+                                key={val}
+                                type="button"
+                                disabled={currentRole !== "master" && currentRole !== "triagem"}
+                                onClick={() => handleUpdateAcolhimentoProperty(selectedCard.id, "valorSessao", actualValToSave)}
+                                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-2xs border ${
+                                  isSelected
+                                    ? is30 ? "bg-amber-700 text-white border-amber-800 shadow-xs" : "bg-forest text-white border-forest shadow-xs"
+                                    : is30 ? "bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100" : "bg-white text-forest border-soft hover:bg-sun/30"
+                                } ${(currentRole !== "master" && currentRole !== "triagem") ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+                              >
+                                {val}
+                              </button>
+                            );
+                          });
                         })()}
                       </div>
                     </div>
@@ -12723,11 +12763,12 @@ export function DashboardView({
                               ? faixasGestor
                               : isCorp
                                 ? ["R$ 60,00", "R$ 90,00", "R$ 120,00"]
-                                : ["R$ 30,00", "R$ 50,00", "R$ 80,00", "R$ 100,00", "R$ 120,00"];
+                                : ["R$ 50,00", "R$ 80,00", "R$ 100,00", "R$ 120,00"];
                             return baseFaixas.map((faixa: string, idx: number) => (
                               <option key={idx} value={faixa}>{faixa}</option>
                             ));
                           })()}
+                          <option value="R$ 30,00">R$ 30,00 (Faixa Extraordinária de Vulnerabilidade)</option>
                           <option value="Gratuito">Gratuito</option>
                           <option value="A combinar">A combinar</option>
                         </select>
@@ -16289,6 +16330,65 @@ export function DashboardView({
                         }
                         isEditing={isEditingCard}
                       />
+
+                      {/* Condições Especiais: Gratuito e R$ 30 */}
+                      <div className="sm:col-span-2 p-3.5 bg-emerald-50/70 border border-emerald-200/90 rounded-2xl flex flex-col gap-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-950 flex items-center gap-1.5">
+                            <HeartHandshake className="w-4 h-4 text-emerald-700" />
+                            Condições Especiais & Termo de Valores
+                          </span>
+                          {selectedProfissional.termoValoresAceito && (
+                            <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-200/80 text-emerald-900 border border-emerald-300">
+                              Termo de Valores Aceito
+                            </span>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                          <div className="bg-white p-2.5 rounded-xl border border-emerald-100 flex items-center justify-between">
+                            <span className="text-forest/80 font-medium">Atendimento Gratuito:</span>
+                            <span className={`font-bold ${selectedProfissional.aceitaAtendimentoGratuito ? "text-emerald-800" : "text-slate-500"}`}>
+                              {selectedProfissional.aceitaAtendimentoGratuito
+                                ? `Sim (${selectedProfissional.horasAtendimentoGratuito || "Pro bono"})`
+                                : "Não optou"}
+                            </span>
+                          </div>
+                          <div className="bg-white p-2.5 rounded-xl border border-emerald-100 flex items-center justify-between">
+                            <span className="text-forest/80 font-medium">Faixa R$ 30,00 (Vulnerabilidade):</span>
+                            <span className={`font-bold ${selectedProfissional.aceitaAtendimento30Reais ? "text-amber-800" : "text-slate-500"}`}>
+                              {selectedProfissional.aceitaAtendimento30Reais ? "Sim (Aceita R$ 30)" : "Não optou"}
+                            </span>
+                          </div>
+                        </div>
+                        {selectedProfissional.termoValoresTexto && (
+                          <details className="mt-1 bg-white p-2.5 rounded-xl border border-emerald-200 text-xs text-forest/90">
+                            <summary className="font-bold text-[11px] text-emerald-900 cursor-pointer select-none">
+                              Visualizar Termo de Valores Formalizado
+                            </summary>
+                            <div className="mt-2 p-3 bg-warm/30 rounded-lg font-mono text-[10px] whitespace-pre-wrap leading-relaxed border border-soft max-h-48 overflow-y-auto">
+                              {selectedProfissional.termoValoresTexto}
+                            </div>
+                          </details>
+                        )}
+                        {selectedProfissional.termoDuracaoAceito && (
+                          <div className="mt-2 pt-2 border-t border-emerald-200/60 flex items-center justify-between text-xs">
+                            <span className="text-forest/80 font-medium">Duração Mínima das Sessões:</span>
+                            <span className="font-bold text-blue-900 bg-blue-50 px-2 py-0.5 rounded-lg border border-blue-200">
+                              45 min (Normas CFP/CRP)
+                            </span>
+                          </div>
+                        )}
+                        {selectedProfissional.termoDuracaoTexto && (
+                          <details className="mt-1 bg-white p-2.5 rounded-xl border border-blue-200 text-xs text-forest/90">
+                            <summary className="font-bold text-[11px] text-blue-900 cursor-pointer select-none">
+                              Visualizar Termo de Duração Mínima Formalizado (45 min)
+                            </summary>
+                            <div className="mt-2 p-3 bg-warm/30 rounded-lg font-mono text-[10px] whitespace-pre-wrap leading-relaxed border border-soft max-h-48 overflow-y-auto">
+                              {selectedProfissional.termoDuracaoTexto}
+                            </div>
+                          </details>
+                        )}
+                      </div>
                       <EditableField
                         label="Abordagens Psicológicas"
                         value={selectedProfissional.abordagem}
@@ -17267,7 +17367,7 @@ export function DashboardView({
                         }
                         className="w-full text-sm bg-warm/40 border border-soft px-3.5 py-2.5 rounded-xl focus:outline-none focus:border-sun-dark text-forest font-semibold"
                       >
-                        <option value="Particular">Particular / Social</option>
+                        <option value="Particular">Particular / Acessível</option>
                         <option value="Corporativo">Corporativo / Empresa Parceira</option>
                       </select>
                     </div>
@@ -18217,6 +18317,14 @@ export function DashboardView({
                               "especialidade",
                               "anoFormacao",
                               "horasDisponiveis",
+                              "aceitaAtendimentoGratuito",
+                              "horasAtendimentoGratuito",
+                              "aceitaAtendimento30Reais",
+                              "termoValoresAceito",
+                              "termoValoresTexto",
+                              "termoDuracaoAceito",
+                              "termoDuracaoTexto",
+                              "duracaoMinimaSessaoMinutos",
                               "publicosExperiencia",
                               "publicosGosto",
                               "outrosPublicosExperiencia",

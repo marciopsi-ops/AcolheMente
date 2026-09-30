@@ -408,7 +408,7 @@ export function GestaoEsteiraTarefas({
           id: capId,
           type: "alert",
           title: "Capacidade Máxima / Sobrecarga de Horas Atingida",
-          desc: `Profissional atingiu ou superou o limite de horas voluntárias/sociais disponibilizadas (${prof.horasDisponiveis || "Sem limite fixado"}).`,
+          desc: `Profissional atingiu ou superou o limite de horas voluntárias/acessíveis disponibilizadas (${prof.horasDisponiveis || "Sem limite fixado"}).`,
           date: formatDateTimeSafely(Date.now()),
           timestamp: Date.now(),
           treated: treatedItemIds.has(capId),
@@ -538,7 +538,7 @@ export function GestaoEsteiraTarefas({
       }
     });
 
-    // 4. APOIO SOLIDÁRIO (SOLICITAÇÕES DE AJUDA)
+    // 4. APOIO ACESSÍVEL (SOLICITAÇÕES DE AJUDA)
     solicitacoes.forEach((s) => {
       const items: GestaoDemandItem[] = [];
       const baseTime = getMillisVal(s.createdAt || Date.now());
@@ -548,8 +548,8 @@ export function GestaoEsteiraTarefas({
         items.push({
           id: solId,
           type: "task",
-          title: "Solicitação de Apoio Solidário Pendente",
-          desc: `Pessoa solicitou ajuda solidária/social (${s.motivo || "Sem descrição detalhada"}). Aguarda triagem socioeconômica.`,
+          title: "Solicitação de Apoio Acessível Pendente",
+          desc: `Pessoa solicitou acolhimento acessível (${s.motivo || "Sem descrição detalhada"}). Aguarda triagem socioeconômica.`,
           date: formatDateTimeSafely(s.createdAt || baseTime),
           timestamp: baseTime,
           treated: treatedItemIds.has(solId),
@@ -562,7 +562,7 @@ export function GestaoEsteiraTarefas({
         items.push({
           id: notifId,
           type: "message",
-          title: "Observação Social / Triagem",
+          title: "Observação / Triagem",
           desc: s.notificacao,
           date: formatDateTimeSafely(s.updatedAt || baseTime),
           timestamp: getMillisVal(s.updatedAt || baseTime),
@@ -578,7 +578,7 @@ export function GestaoEsteiraTarefas({
           entityId: s.id,
           entityType: "apoio_solidario",
           entityName: s.nome || "Solicitante de Apoio",
-          entitySubtitle: `Motivo: ${s.motivo || "Ajuda solidária"} • Contato: ${s.telefone || ""}`,
+          entitySubtitle: `Motivo: ${s.motivo || "Ajuda acessível"} • Contato: ${s.telefone || ""}`,
           entityContact: s.telefone,
           entityBadge: s.status || "Aguardando",
           entityRawObj: s,
@@ -599,7 +599,7 @@ export function GestaoEsteiraTarefas({
           cards.push({
             entityId: d.id,
             entityType: "doacao",
-            entityName: d.nome || "Doador Solidário",
+            entityName: d.nome || "Doador / Apoiador",
             entitySubtitle: `Valor: R$ ${d.valor || 0} • Email: ${d.email || "Não informado"}`,
             entityEmail: d.email,
             entityBadge: "Pendente",
@@ -769,7 +769,7 @@ export function GestaoEsteiraTarefas({
       case "empresa":
         return "Empresa Parceira";
       case "apoio_solidario":
-        return "Apoio Solidário";
+        return "Apoio Acessível";
       case "doacao":
         return "Doação";
       case "compliance":
@@ -952,7 +952,7 @@ export function GestaoEsteiraTarefas({
                       },
                       {
                         id: "apoio_solidario",
-                        name: "Apoio Solidário",
+                        name: "Apoio Acessível",
                         count: allCards.filter((c) => c.entityType === "apoio_solidario").length,
                       },
                       {

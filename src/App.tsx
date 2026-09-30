@@ -100,7 +100,7 @@ const JORNADAS_DATA = {
       {
         num: "01",
         titulo: "Triagem ou Código da Empresa",
-        descricao: "Preencha a triagem inicial rápida para valor social acessível ou insira o código fornecido pela sua empresa parceira.",
+        descricao: "Preencha a triagem inicial rápida para valor acessível ou insira o código fornecido pela sua empresa parceira.",
         icon: ClipboardList,
         iconBg: "bg-sun text-forest border-sun",
         badgeBg: "bg-sun/30 text-amber-950 font-bold",
@@ -251,7 +251,7 @@ const FAQ_ITEMS = [
   },
   {
     question: "Os preços são fixos?",
-    answer: "Respeitamos faixas de valores solidários que variam entre R$ 30 e R$ 110 por sessão para atendimentos particulares que passam por triagem socioeconômica. No caso de benefício corporativo, os valores são personalizados por contrato com a empresa. Em ambos os casos, o valor mantém-se fixo, sendo reajustado apenas anualmente com base no índice do INPC ou índice similar."
+    answer: "Respeitamos faixas de valores acessíveis que partem de R$ 50 por sessão (com faixas regulares entre R$ 50 e R$ 110) para atendimentos particulares que passam por triagem socioeconômica. No caso de benefício corporativo, os valores são personalizados por contrato com a empresa. Em ambos os casos, o valor mantém-se fixo, sendo reajustado apenas anualmente com base no índice do INPC ou índice similar."
   }
 ];
 
@@ -695,9 +695,9 @@ export default function App() {
               <div className="flex gap-3 items-start">
                 <span className="text-xs shrink-0 bg-sun text-forest rounded-full w-5 h-5 flex items-center justify-center font-bold">1</span>
                 <div>
-                  <h4 className="text-xs font-bold text-forest py-0.5">Fundo de Apoio Solidário</h4>
+                  <h4 className="text-xs font-bold text-forest py-0.5">Fundo de Apoio Acessível</h4>
                   <p className="text-[11px] text-forest/75 leading-relaxed">
-                    100% da sua doação é direcionada para custear consultas psicológicas de pessoas em vulnerabilidade social inscritas na nossa lista de espera.
+                    100% da sua doação é direcionada para custear consultas psicológicas de pessoas em vulnerabilidade inscritas na nossa lista de espera.
                   </p>
                 </div>
               </div>
@@ -717,7 +717,7 @@ export default function App() {
                 <div>
                   <h4 className="text-xs font-bold text-forest py-0.5">Envio do Comprovante</h4>
                   <p className="text-[11px] text-forest/75 leading-relaxed">
-                    Você pode anexar o comprovante na hora. Assim, garantimos integridade e você pode solicitar relatórios de impacto social no e-mail informado.
+                    Você pode anexar o comprovante na hora. Assim, garantimos integridade e você pode solicitar relatórios de impacto no e-mail informado.
                   </p>
                 </div>
               </div>
@@ -1011,7 +1011,7 @@ function LandingPage({
                       ))}
                     </div>
                     <span className="text-xs font-bold text-forest tracking-tight">
-                      100+ vidas acolhidas
+                      50+ vidas acolhidas
                     </span>
                   </div>
                   <span className="text-[11px] text-forest/70 font-medium leading-tight mt-0.5">
@@ -1050,22 +1050,19 @@ function LandingPage({
                 <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-warm/80 via-warm/25 to-transparent pointer-events-none z-1 group-hover:opacity-40 transition-opacity duration-500" />
               </div>
 
-              {/* Badge Flutuante com Glassmorphism refinado: Especialistas & CRP Verificado */}
+              {/* Badge Flutuante com Glassmorphism refinado: Profissionais engajados e verificados */}
               <motion.div
                 initial={{ opacity: 0, y: 15 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.6, delay: 0.2 }}
-                className="absolute -bottom-3 left-4 sm:left-6 bg-white/90 backdrop-blur-lg px-4 py-3 rounded-2xl border border-white/90 shadow-xl shadow-forest/10 flex items-center gap-3 z-10 transition-all hover:bg-white hover:scale-[1.02]"
+                className="absolute -bottom-3 left-4 sm:left-6 bg-white/95 backdrop-blur-lg px-4 py-3 rounded-2xl border border-white/90 shadow-xl shadow-forest/10 flex items-center gap-3 z-10 transition-all hover:bg-white hover:scale-[1.02]"
               >
                 <div className="w-10 h-10 rounded-xl bg-forest/10 text-forest flex items-center justify-center shrink-0">
                   <UserCheck className="w-5 h-5 text-forest" />
                 </div>
                 <div className="text-left">
-                  <span className="text-[11px] font-semibold text-forest/70 block leading-tight">
-                    50+ Especialistas
-                  </span>
                   <span className="text-xs sm:text-sm font-bold text-forest tracking-tight block">
-                    CRP Ativo e Verificado
+                    25+ Profissionais engajados e verificados
                   </span>
                 </div>
               </motion.div>
@@ -1287,7 +1284,7 @@ function LandingPage({
             <div className="mt-8 mb-12 flex flex-wrap justify-center gap-8 sm:gap-16 border-t border-soft pt-12 w-full max-w-4xl mx-auto">
               <div className="flex flex-col items-center">
                 <span className="font-serif text-3xl md:text-5xl font-semibold text-sun-dark">
-                  50+
+                  25+
                 </span>
                 <span className="text-[10px] uppercase tracking-[0.2em] font-bold mt-2 text-forest/70">
                   Profissionais
@@ -1295,7 +1292,7 @@ function LandingPage({
               </div>
               <div className="flex flex-col items-center">
                 <span className="font-serif text-3xl md:text-5xl font-semibold text-sun-dark">
-                  100+
+                  50+
                 </span>
                 <span className="text-[10px] uppercase tracking-[0.2em] font-bold mt-2 text-forest/70">
                   Vidas Acolhidas

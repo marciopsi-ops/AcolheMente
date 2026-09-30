@@ -106,7 +106,7 @@ CLÁUSULA 1ª - DO OBJETO
 O presente contrato tem por objeto a prestação de serviços de atendimento e acompanhamento psicológico clínico pelo(a) CONTRATADO(A) em favor do(a) CONTRATANTE, na modalidade ${modalidade}, em estrita consonância com a Resolução CFP nº 011/2018 e o Código de Ética Profissional do Psicólogo.
 
 CLÁUSULA 2ª - DO ENQUADRE TERAPÊUTICO, DURAÇÃO E FREQUÊNCIA
-2.1. As sessões terão duração de 50 (cinquenta) minutos cada.
+2.1. As sessões terão duração mínima de 45 (quarenta e cinco) a 50 (cinquenta) minutos cada, respeitando os regulamentos e recomendações dos conselhos regulamentadores da profissão.
 2.2. A frequência acordada para o acompanhamento é: ${frequencia}.
 2.3. Os atendimentos serão realizados em dias e horários previamente pactuados entre o(a) profissional e o(a) paciente.
 2.4. Em caso de modalidade online, o(a) paciente compromete-se a estar em local reservado, silencioso e que garanta sua privacidade durante todo o atendimento.

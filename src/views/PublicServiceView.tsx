@@ -587,7 +587,7 @@ export function PublicServiceView({ serviceId, eventId, onBack, onGoHome }: Publ
       {/* Safety Badge footer */}
       <footer className="mt-8 flex items-center gap-2 text-[11px] text-forest/40">
         <ShieldCheck className="w-4 h-4 text-forest/30" />
-        <span>AcolheMente Plataforma Solidária • Ambiente Seguro e Auditado</span>
+        <span>AcolheMente Plataforma Acessível • Ambiente Seguro e Auditado</span>
       </footer>
     </div>
   );

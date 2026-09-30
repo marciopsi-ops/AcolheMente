@@ -92,7 +92,7 @@ export async function sendPatientRegistrationEmail(nome: string, email: string, 
         <h4 style="margin-top: 0; color: #1e352f; font-family: 'Georgia', serif;">Próximos Passos do Acolhimento:</h4>
         <ul style="margin: 0; padding-left: 20px; font-size: 14px; color: #2e443e;">
           <li style="margin-bottom: 8px;"><strong>1. Triagem & Análise:</strong> Nossa equipe de psicólogos triadores está avaliando o seu perfil para encontrar o profissional com a abordagem mais adequada para você.</li>
-          <li style="margin-bottom: 8px;"><strong>2. Proposta de Atendimento:</strong> Enviaremos por e-mail e WhatsApp uma proposta contendo o valor social enquadrado por sessão e a frequência.</li>
+          <li style="margin-bottom: 8px;"><strong>2. Proposta de Atendimento:</strong> Enviaremos por e-mail e WhatsApp uma proposta contendo o valor acessível enquadrado por sessão e a frequência.</li>
           <li><strong>3. Início das Sessões:</strong> Após o seu aceite, o psicólogo atribuído entrará em contato para agendar o primeiro atendimento.</li>
         </ul>
       </div>
@@ -274,7 +274,7 @@ export async function sendProposalRevisionRequestEmail(nome: string, email: stri
       <h3 style="font-family: 'Georgia', serif; font-size: 22px; color: #1e352f; margin-top: 0;">Olá, ${nome}!</h3>
       <p>Recebemos a sua solicitação para revisar o valor acertado ou a frequência das suas sessões do Projeto AcolheMente.</p>
       
-      <p>Nossa equipe de triagem e coordenação social compreende perfeitamente e fará uma análise humana do seu caso para tentar reajustar a sua proposta de modo que ela caiba em sua realidade de forma sustentável.</p>
+      <p>Nossa equipe de triagem e coordenação de atendimento acessível compreende perfeitamente e fará uma análise humana do seu caso para tentar reajustar a sua proposta de modo que ela caiba em sua realidade de forma sustentável.</p>
       
       <div style="background-color: #faf9f6; border-left: 4px solid #e8b056; padding: 15px 20px; margin: 25px 0; font-size: 14px;">
         <strong>O que acontece agora?</strong><br>

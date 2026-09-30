@@ -35,7 +35,7 @@ const SUGESTOES_PAUSA_CANCELAMENTO = [
 const SUGESTOES_REVISAO = [
   "O valor da sessão está acima do meu orçamento atual",
   "Gostaria de solicitar uma frequência diferente (ex: quinzenal ou mensal)",
-  "Gostaria de verificar possibilidade de valor social",
+  "Gostaria de verificar possibilidade de valor acessível",
   "Incompatibilidade de horários com o profissional indicado",
   "Gostaria de conversar antes com a equipe de triagem",
   "Outro motivo",

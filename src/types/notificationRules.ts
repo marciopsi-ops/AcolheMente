@@ -67,7 +67,7 @@ export const NOTIFICATION_AVAILABLE_VARIABLES: NotificationVariableInfo[] = [
   { tag: "{email}", label: "E-mail", example: "mariana@exemplo.com" },
   { tag: "{telefone}", label: "Telefone / WhatsApp", example: "(11) 98765-4321" },
   { tag: "{profissional}", label: "Nome do Psicólogo", example: "Dr(a). Carlos Mendes" },
-  { tag: "{valor_sessao}", label: "Valor Social por Sessão", example: "R$ 60,00" },
+  { tag: "{valor_sessao}", label: "Valor Acessível por Sessão", example: "R$ 60,00" },
   { tag: "{frequencia}", label: "Frequência das Sessões", example: "Semanal" },
   { tag: "{link_proposta}", label: "Link da Proposta", example: "https://acolhemente.com.br/?view=proposta&id=123" },
   { tag: "{link_pagamento}", label: "Link do Pagamento / Stripe", example: "https://buy.stripe.com/acolhemente" },

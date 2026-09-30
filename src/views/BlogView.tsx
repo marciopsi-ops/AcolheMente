@@ -546,7 +546,7 @@ export function BlogView({
                     {selectedArtigo.autorProfissao || "Profissional Parceiro"}
                   </p>
                   <p className="text-[11px] text-sun mt-1">
-                    Atendimentos com valores sociais e acolhimento qualificado.
+                    Atendimentos com valores acessíveis e acolhimento qualificado.
                   </p>
                 </div>
               </div>

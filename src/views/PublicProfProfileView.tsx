@@ -508,7 +508,7 @@ export function PublicProfProfileView({
           <div className="bg-forest text-white p-6 sm:p-8 rounded-[2rem] shadow-sm flex flex-col sm:flex-row items-center justify-between gap-6">
             <div>
               <h3 className="font-serif text-lg sm:text-xl font-semibold mb-1">Dúvidas sobre o acolhimento?</h3>
-              <p className="text-xs text-white/80 max-w-md">O Projeto AcolheMente conecta você a profissionais dedicados com escuta qualificada e valores sociais acessíveis.</p>
+              <p className="text-xs text-white/80 max-w-md">O Projeto AcolheMente conecta você a profissionais dedicados com escuta qualificada e valores acessíveis.</p>
             </div>
             <button 
               onClick={handleGoHome}

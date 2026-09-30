@@ -318,7 +318,7 @@ export const PatientNotificationModal: React.FC<PatientNotificationModalProps> =
         name: "💳 Lembrete de Pagamento de Sessão",
         category: "operacional",
         subject: "AcolheMente - Lembrete de Regularização de Sessão",
-        body: `Olá *{primeiro_nome}*! Tudo bem?\n\nIdentificamos uma pendência referente ao acerto da sua última sessão no valor social acordado de *{valor_sessao}* com o(a) profissional *{profissional}*.\n\nPedimos a gentileza de regularizar o acerto ou enviar o comprovante para mantermos a regularidade do seu acompanhamento clínico.\n\nQualquer dúvida, conte com nossa equipe!`,
+        body: `Olá *{primeiro_nome}*! Tudo bem?\n\nIdentificamos uma pendência referente ao acerto da sua última sessão no valor acessível acordado de *{valor_sessao}* com o(a) profissional *{profissional}*.\n\nPedimos a gentileza de regularizar o acerto ou enviar o comprovante para mantermos a regularidade do seu acompanhamento clínico.\n\nQualquer dúvida, conte com nossa equipe!`,
       },
       {
         id: "documentos",
@@ -332,7 +332,7 @@ export const PatientNotificationModal: React.FC<PatientNotificationModalProps> =
         name: "✍️ Link para Assinatura do Contrato",
         category: "operacional",
         subject: "AcolheMente - Contrato de Prestação de Serviços",
-        body: `Olá *{primeiro_nome}*!\n\nSegue o link seguro para a leitura e assinatura digital do Contrato de Prestação de Serviços Psicológicos do Projeto AcolheMente:\n\n{link_contrato}\n\nA assinatura leva menos de 2 minutos e garante a formalização do valor social de *{valor_sessao}* e a frequência acordada.\n\nFicamos à disposição!`,
+        body: `Olá *{primeiro_nome}*!\n\nSegue o link seguro para a leitura e assinatura digital do Contrato de Prestação de Serviços Psicológicos do Projeto AcolheMente:\n\n{link_contrato}\n\nA assinatura leva menos de 2 minutos e garante a formalização do valor acessível de *{valor_sessao}* e a frequência acordada.\n\nFicamos à disposição!`,
       },
     ];
   }, []);

@@ -94,13 +94,13 @@ export function DoacaoView({ onNavigate }: { onNavigate: (view: 'landing' | 'aco
             <div className="w-12 h-12 bg-sun rounded-full flex items-center justify-center text-forest overflow-hidden shrink-0 shadow-sm">
                <img src={logoImage} alt="AcolheMente Logo" className="w-full h-full object-cover" />
             </div>
-            <span className="font-serif text-2xl font-semibold tracking-tight text-forest">AcolheMente <span className="text-forest/70 font-medium opacity-70">Apoio Solidário</span></span>
+            <span className="font-serif text-2xl font-semibold tracking-tight text-forest">AcolheMente <span className="text-forest/70 font-medium opacity-70">Apoio Acessível</span></span>
           </div>
         </div>
       </nav>
 
       <main className="flex-1 flex flex-col items-center pb-16">
-        <Breadcrumbs items={[{ label: "Início", onClick: () => onNavigate("landing") }, { label: "Apoio Solidário", active: true }]} />
+        <Breadcrumbs items={[{ label: "Início", onClick: () => onNavigate("landing") }, { label: "Apoio Acessível", active: true }]} />
         {activeTab === 'intro' && (
           <section className="w-full px-6 md:px-12 py-12 flex justify-center fade-in">
             <div className="max-w-[1200px] w-full flex flex-col lg:flex-row items-center justify-between gap-8">
@@ -135,7 +135,7 @@ export function DoacaoView({ onNavigate }: { onNavigate: (view: 'landing' | 'aco
               </div>
               <div className="w-full lg:w-1/2 flex justify-center lg:justify-end">
                 <div className="relative overflow-hidden rounded-3xl max-w-lg w-full group">
-                  <img src={doacaoHero} alt="Ilustração de solidariedade" className="w-full max-w-lg object-contain rounded-3xl mix-blend-multiply transition-all duration-700 group-hover:scale-[1.03]" referrerPolicy="no-referrer" />
+                  <img src={doacaoHero} alt="Ilustração de acolhimento" className="w-full max-w-lg object-contain rounded-3xl mix-blend-multiply transition-all duration-700 group-hover:scale-[1.03]" referrerPolicy="no-referrer" />
                   {/* Esmaecimento no pé da imagem */}
                   <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-warm/80 via-warm/25 to-transparent pointer-events-none z-1 group-hover:opacity-40 transition-opacity duration-500" />
                 </div>
@@ -326,7 +326,7 @@ export function DoacaoView({ onNavigate }: { onNavigate: (view: 'landing' | 'aco
                 <div className="flex flex-col gap-6 mt-8">
                   <div className="text-center mb-6">
                     <h2 className="font-serif text-3xl font-medium text-forest mb-2">Solicitar Acolhimento</h2>
-                    <p className="text-forest/70/80 text-sm">Preencha com seus dados para entrar na fila do programa solidário.</p>
+                    <p className="text-forest/70/80 text-sm">Preencha com seus dados para entrar na fila do programa acessível.</p>
                   </div>
 
                   {solError && (
@@ -402,7 +402,7 @@ export function DoacaoView({ onNavigate }: { onNavigate: (view: 'landing' | 'aco
                   </div>
                   <h2 className="font-serif text-3xl text-forest">Sua solicitação foi registrada</h2>
                   <p className="text-forest/70/80 max-w-sm mx-auto text-lg leading-relaxed">
-                    Nossa equipe avaliará seu pedido com muito carinho e entrará em contato assim que tivermos um profissional disponível através do fundo solidário.
+                    Nossa equipe avaliará seu pedido com muito carinho e entrará em contato assim que tivermos um profissional disponível através do fundo de acolhimento acessível.
                   </p>
                   <button 
                     onClick={() => {
