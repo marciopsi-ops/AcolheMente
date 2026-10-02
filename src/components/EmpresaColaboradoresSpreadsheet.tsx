@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef } from "react";
+import * as XLSX from "xlsx";
 import {
   Users,
   Plus,
@@ -21,6 +22,7 @@ import {
   Share2,
   MessageCircle,
   Link2,
+  X,
 } from "lucide-react";
 
 export interface ColaboradorItem {
@@ -77,6 +79,17 @@ export const EmpresaColaboradoresSpreadsheet: React.FC<EmpresaColaboradoresSprea
   const [copiedCodeSpreadsheet, setCopiedCodeSpreadsheet] = useState(false);
   const [copiedLinkSpreadsheet, setCopiedLinkSpreadsheet] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Modal de Upload e Reconciliação de Turnover via Excel (.xlsx / .csv)
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [reconcileResult, setReconcileResult] = useState<{
+    novos: ColaboradorItem[];
+    mantidos: ColaboradorItem[];
+    desligados: ColaboradorItem[];
+  } | null>(null);
+  const [parsedRows, setParsedRows] = useState<ColaboradorItem[]>([]);
+  const [desligarAusentes, setDesligarAusentes] = useState(false);
+  const [isProcessingUpload, setIsProcessingUpload] = useState(false);
 
   // Parse meta de vidas
   const metaVidas = useMemo(() => {
@@ -197,53 +210,240 @@ export const EmpresaColaboradoresSpreadsheet: React.FC<EmpresaColaboradoresSprea
     if (onShowToast) onShowToast("Linha duplicada com sucesso.", "info");
   };
 
-  // Export CSV
-  const handleExportCSV = () => {
-    if (colaboradores.length === 0) {
-      alert("Nenhum dado cadastrado para exportar.");
-      return;
+  // DOWNLOAD DA PLANILHA (.XLSX OU .CSV) COMPATÍVEL COM EXCEL
+  const handleDownloadPlanilha = (formato: "xlsx" | "csv" = "xlsx") => {
+    try {
+      if (colaboradores.length === 0) {
+        if (onShowToast) onShowToast("Nenhum dado cadastrado para exportar.", "info");
+        else alert("Nenhum dado cadastrado para exportar.");
+        return;
+      }
+      const dataToExport = colaboradores.map((c) => ({
+        Tipo: c.tipo === "dependente" ? "Dependente" : "Titular",
+        "Nome Completo": c.nomeCompleto || "",
+        CPF: c.cpf || "",
+        Cargo: c.cargo || "",
+        "Faixa Salarial": c.faixaSalarial || "",
+        "Data de Nascimento": c.dataNascimento || "",
+        "Nome da Mãe": c.nomeMae || "",
+        "Data de Admissão": c.dataAdmissao || "",
+        Email: c.email || "",
+        Telefone: c.telefone || "",
+        "Titular Vinculado": c.titularVinculado || "",
+        Parentesco: c.parentesco || "",
+        Status: c.status === "desligado" || c.desligado ? "Desligado" : "Ativo",
+        "Data Desligamento": c.dataDesligamento || "",
+      }));
+
+      const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Colaboradores e Dependentes");
+
+      const cleanName = (empresaNome || "Empresa").replace(/[^a-zA-Z0-9]/g, "_");
+      const nomeArquivo = `Quadro_Colaboradores_${cleanName}_${new Date().toISOString().split("T")[0]}.${formato}`;
+      XLSX.writeFile(workbook, nomeArquivo, { bookType: formato });
+      if (onShowToast) onShowToast(`Planilha ${formato.toUpperCase()} exportada com sucesso!`, "success");
+    } catch (err) {
+      console.error("Erro ao gerar planilha:", err);
+      if (onShowToast) onShowToast("Erro ao exportar planilha.", "error");
     }
-    const headers = [
-      "Tipo",
-      "Nome Completo",
-      "CPF",
-      "Cargo",
-      "Faixa Salarial",
-      "Data de Nascimento",
-      "Nome da Mãe",
-      "Data de Admissão",
-      "E-mail",
-      "Telefone",
-      "Titular Vinculado",
-      "Parentesco",
-    ];
+  };
 
-    const rows = colaboradores.map((c) => [
-      c.tipo === "dependente" ? "Dependente" : "Titular",
-      `"${(c.nomeCompleto || "").replace(/"/g, '""')}"`,
-      `"${c.cpf || ""}"`,
-      `"${(c.cargo || "").replace(/"/g, '""')}"`,
-      `"${(c.faixaSalarial || "").replace(/"/g, '""')}"`,
-      `"${c.dataNascimento || ""}"`,
-      `"${(c.nomeMae || "").replace(/"/g, '""')}"`,
-      `"${c.dataAdmissao || ""}"`,
-      `"${c.email || ""}"`,
-      `"${c.telefone || ""}"`,
-      `"${(c.titularVinculado || "").replace(/"/g, '""')}"`,
-      `"${c.parentesco || ""}"`,
-    ]);
+  // DOWNLOAD DE MODELO EM BRANCO (.XLSX)
+  const handleDownloadModeloPlanilha = () => {
+    try {
+      const modelo = [
+        {
+          Tipo: "Titular",
+          "Nome Completo": "Exemplo da Silva",
+          CPF: "000.000.000-00",
+          Cargo: "Analista de Operações",
+          "Faixa Salarial": "R$ 3.001 a R$ 5.000",
+          "Data de Nascimento": "1990-05-15",
+          "Nome da Mãe": "Maria da Silva",
+          "Data de Admissão": "2023-01-10",
+          Email: "exemplo@empresa.com",
+          Telefone: "(11) 99999-9999",
+          "Titular Vinculado": "",
+          Parentesco: "",
+          Status: "Ativo",
+        },
+        {
+          Tipo: "Dependente",
+          "Nome Completo": "Filho do Exemplo da Silva",
+          CPF: "111.111.111-11",
+          Cargo: "",
+          "Faixa Salarial": "",
+          "Data de Nascimento": "2015-08-20",
+          "Nome da Mãe": "Esposa do Exemplo",
+          "Data de Admissão": "",
+          Email: "contato@familia.com",
+          Telefone: "(11) 99999-9999",
+          "Titular Vinculado": "Exemplo da Silva",
+          Parentesco: "Filho(a)",
+          Status: "Ativo",
+        },
+      ];
 
-    const csvContent = "\uFEFF" + [headers.join(";"), ...rows.map((r) => r.join(";"))].join("\n");
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    const cleanName = empresaNome.replace(/[^a-zA-Z0-9]/g, "_");
-    link.setAttribute("href", url);
-    link.setAttribute("download", `Colaboradores_${cleanName}_${new Date().toISOString().split("T")[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    if (onShowToast) onShowToast("Planilha CSV exportada com sucesso!", "success");
+      const worksheet = XLSX.utils.json_to_sheet(modelo);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Modelo de Importação");
+      XLSX.writeFile(workbook, "Modelo_Importacao_Colaboradores_AcolheMente.xlsx");
+      if (onShowToast) onShowToast("Modelo baixado! Preencha e faça o upload.", "info");
+    } catch (err) {
+      console.error("Erro ao baixar modelo:", err);
+      if (onShowToast) onShowToast("Erro ao gerar modelo de planilha.", "error");
+    }
+  };
+
+  // UPLOAD E LEITURA DA PLANILHA COM XLSX (COMPATÍVEL COM EXCEL .XLSX, .XLS, .CSV)
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: "binary" });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        const rawJson: any[] = XLSX.utils.sheet_to_json(ws);
+
+        if (!rawJson || rawJson.length === 0) {
+          if (onShowToast) onShowToast("A planilha enviada está vazia ou sem linhas de dados.", "error");
+          else alert("A planilha enviada está vazia ou sem linhas de dados.");
+          return;
+        }
+
+        // Normalização dos campos com suporte a múltiplos sinônimos
+        const parsed: ColaboradorItem[] = rawJson
+          .map((row: any, idx: number) => {
+            const nome = row["Nome Completo"] || row["Nome"] || row["nome"] || row["NOME"] || "";
+            const rawCpf = String(row["CPF"] || row["cpf"] || row["Cpf"] || "").replace(/\D/g, "");
+            const formatCpf =
+              rawCpf.length === 11
+                ? rawCpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4")
+                : rawCpf;
+            const tipoRaw = String(row["Tipo"] || row["tipo"] || "Titular").toLowerCase();
+            const tipo: "titular" | "dependente" = tipoRaw.includes("dep") ? "dependente" : "titular";
+            const cargo =
+              tipo === "titular"
+                ? String(row["Cargo"] || row["cargo"] || row["CARGO"] || row["Função"] || row["Funcao"] || "")
+                : "";
+            const faixaSalarial =
+              tipo === "titular"
+                ? String(
+                    row["Faixa Salarial"] ||
+                      row["faixaSalarial"] ||
+                      row["Faixa"] ||
+                      row["Salário"] ||
+                      row["Salario"] ||
+                      row["Remuneração"] ||
+                      ""
+                  )
+                : "";
+
+            return {
+              id: `colab_up_${Date.now()}_${idx}`,
+              tipo,
+              nomeCompleto: String(nome).trim(),
+              cpf: formatCpf || `S/CPF_${idx + 1}`,
+              cargo,
+              faixaSalarial,
+              dataNascimento: String(row["Data de Nascimento"] || row["Nascimento"] || row["dataNascimento"] || ""),
+              nomeMae: String(row["Nome da Mãe"] || row["Nome Mae"] || row["nomeMae"] || ""),
+              dataAdmissao: String(row["Data de Admissão"] || row["Admissão"] || row["dataAdmissao"] || ""),
+              email: String(row["Email"] || row["E-mail"] || row["email"] || ""),
+              telefone: String(row["Telefone"] || row["Celular"] || row["telefone"] || ""),
+              titularVinculado: String(row["Titular Vinculado"] || row["Titular"] || ""),
+              parentesco: String(row["Parentesco"] || row["Grau"] || (tipo === "dependente" ? "Dependente" : "")),
+              status: "ativo",
+            };
+          })
+          .filter((item) => item.nomeCompleto.length > 0);
+
+        setParsedRows(parsed);
+
+        // Reconciliação de Turnover: Compara com a base atual
+        const atuaisMap = new Map<string, ColaboradorItem>();
+        colaboradores.forEach((c) => {
+          const key = c.cpf ? c.cpf.replace(/\D/g, "") : c.nomeCompleto.toLowerCase().trim();
+          atuaisMap.set(key, c);
+        });
+
+        const novos: ColaboradorItem[] = [];
+        const mantidos: ColaboradorItem[] = [];
+        const importedKeys = new Set<string>();
+
+        parsed.forEach((p) => {
+          const key = p.cpf ? p.cpf.replace(/\D/g, "") : p.nomeCompleto.toLowerCase().trim();
+          importedKeys.add(key);
+          if (atuaisMap.has(key)) {
+            const existing = atuaisMap.get(key)!;
+            mantidos.push({ ...existing, ...p, id: existing.id, status: "ativo", desligado: false });
+          } else {
+            novos.push(p);
+          }
+        });
+
+        // Identifica quem estava na base e não veio na planilha (Turnover / Desligados)
+        const desligados: ColaboradorItem[] = [];
+        colaboradores.forEach((c) => {
+          if (c.status === "desligado" || c.desligado) return; // já estava desligado
+          const key = c.cpf ? c.cpf.replace(/\D/g, "") : c.nomeCompleto.toLowerCase().trim();
+          if (!importedKeys.has(key)) {
+            desligados.push(c);
+          }
+        });
+
+        setReconcileResult({ novos, mantidos, desligados });
+        setShowUploadModal(true);
+      } catch (err) {
+        console.error("Erro ao ler planilha:", err);
+        if (onShowToast) onShowToast("Formato de planilha inválido. Use .xlsx ou .csv padrão.", "error");
+        else alert("Formato de planilha inválido. Use .xlsx ou .csv padrão.");
+      }
+    };
+    reader.readAsBinaryString(file);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  // CONFIRMAR RECONCILIAÇÃO E SALVAR
+  const handleConfirmarReconciliacao = () => {
+    if (!reconcileResult) return;
+    setIsProcessingUpload(true);
+    try {
+      let finalLista: ColaboradorItem[] = [...reconcileResult.mantidos, ...reconcileResult.novos];
+
+      if (desligarAusentes) {
+        const desligadosAtualizados = reconcileResult.desligados.map((d) => ({
+          ...d,
+          status: "desligado",
+          desligado: true,
+          dataDesligamento: new Date().toISOString().split("T")[0],
+          motivoDesligamento: "Turnover reconciliado via planilha Excel do RH",
+        }));
+        finalLista = [...finalLista, ...desligadosAtualizados];
+      } else {
+        finalLista = [...finalLista, ...reconcileResult.desligados];
+      }
+
+      onChangeColaboradores(finalLista);
+      setShowUploadModal(false);
+      setReconcileResult(null);
+      if (onShowToast) onShowToast("Quadro de colaboradores atualizado com sucesso via planilha Excel!", "success");
+    } catch (err) {
+      console.error("Erro ao atualizar base via planilha:", err);
+      if (onShowToast) onShowToast("Erro ao processar planilha.", "error");
+    } finally {
+      setIsProcessingUpload(false);
+    }
+  };
+
+  // Export CSV fallback
+  const handleExportCSV = () => {
+    handleDownloadPlanilha("csv");
   };
 
   // Process text or CSV paste for importing
@@ -509,10 +709,54 @@ export const EmpresaColaboradoresSpreadsheet: React.FC<EmpresaColaboradoresSprea
           )}
         </div>
 
-        {/* Right action buttons */}
+        {/* Right action buttons: MESMO DESIGN E MECANISMO DESENVOLVIDO NOS PORTAIS DE RH */}
         <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+          {/* Input oculto para arquivo Excel / CSV */}
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleFileChange}
+            accept=".xlsx, .xls, .csv"
+            className="hidden"
+          />
+
           {!readOnly && (
             <>
+              {/* Upload Planilha Excel (Design RH) */}
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="px-2.5 py-1.5 bg-warm text-forest hover:bg-forest hover:text-white border border-soft rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                title="Importar planilha XLSX ou CSV para atualizar a base de vidas e turnover"
+              >
+                <Upload className="w-3.5 h-3.5 text-sun" />
+                <span>Subir Planilha (Upload)</span>
+              </button>
+
+              {/* Download Planilha Atual (.xlsx) */}
+              <button
+                type="button"
+                onClick={() => handleDownloadPlanilha("xlsx")}
+                className="px-2.5 py-1.5 bg-warm text-forest hover:bg-forest hover:text-white border border-soft rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                title="Baixar lista completa de colaboradores em Excel (.xlsx)"
+              >
+                <Download className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Baixar Base (.xlsx)</span>
+              </button>
+
+              {/* Baixar Modelo (.xlsx) */}
+              <button
+                type="button"
+                onClick={handleDownloadModeloPlanilha}
+                className="px-2 py-1.5 text-forest/70 hover:text-forest text-[11px] font-medium flex items-center gap-1 cursor-pointer"
+                title="Baixar modelo em branco de planilha compatível com Excel"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                <span className="hidden sm:inline">Modelo (.xlsx)</span>
+              </button>
+
+              <div className="h-5 w-px bg-soft hidden sm:block mx-0.5" />
+
               <button
                 type="button"
                 onClick={() => handleAddRow("titular")}
@@ -529,27 +773,20 @@ export const EmpresaColaboradoresSpreadsheet: React.FC<EmpresaColaboradoresSprea
                 <Plus className="w-3.5 h-3.5 text-purple-200" />
                 <span>+ Dependente</span>
               </button>
-              <button
-                type="button"
-                onClick={() => setShowImportModal(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-warm/80 hover:bg-soft text-forest rounded-xl text-xs font-semibold border border-soft transition-colors cursor-pointer"
-                title="Importar CSV ou colar do Excel"
-              >
-                <Upload className="w-3.5 h-3.5 text-forest/70" />
-                <span>Importar Planilha</span>
-              </button>
             </>
           )}
 
-          <button
-            type="button"
-            onClick={handleExportCSV}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-warm/60 text-forest rounded-xl text-xs font-semibold border border-soft transition-colors cursor-pointer"
-            title="Exportar planilha em formato CSV (Excel)"
-          >
-            <Download className="w-3.5 h-3.5 text-forest/70" />
-            <span>Exportar CSV</span>
-          </button>
+          {readOnly && (
+            <button
+              type="button"
+              onClick={() => handleDownloadPlanilha("xlsx")}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-warm/60 text-forest rounded-xl text-xs font-semibold border border-soft transition-colors cursor-pointer"
+              title="Baixar lista completa de colaboradores em Excel (.xlsx)"
+            >
+              <Download className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Baixar Base (.xlsx)</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -1005,6 +1242,115 @@ export const EmpresaColaboradoresSpreadsheet: React.FC<EmpresaColaboradoresSprea
                   </button>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: RECONCILIAÇÃO DE TURNOVER VIA UPLOAD DE PLANILHA (DESIGN DOS PORTAIS DE RH) */}
+      {/* ========================================================================= */}
+      {showUploadModal && reconcileResult && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl border border-soft shadow-2xl max-w-2xl w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between pb-3 border-b border-soft">
+              <div>
+                <h3 className="font-serif text-base font-bold text-forest flex items-center gap-2">
+                  <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                  <span>Reconciliação Automática de Folha & Turnover</span>
+                </h3>
+                <p className="text-[11px] text-forest/70 mt-0.5">
+                  Planilha Excel lida com {parsedRows.length} linhas. Compare o impacto antes de confirmar a atualização:
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowUploadModal(false)}
+                className="p-1 hover:bg-warm rounded-lg text-forest/50 hover:text-forest"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Resumo dos 3 Grupos */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-800 block">🟢 Novas Vidas</span>
+                <span className="text-xl font-bold text-emerald-900 block mt-1">{reconcileResult.novos.length}</span>
+                <span className="text-[10px] text-emerald-700">Entrarão na base</span>
+              </div>
+
+              <div className="p-3 bg-blue-50 rounded-xl border border-blue-200">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-blue-800 block">⚪ Mantidos</span>
+                <span className="text-xl font-bold text-blue-900 block mt-1">{reconcileResult.mantidos.length}</span>
+                <span className="text-[10px] text-blue-700">Dados preservados</span>
+              </div>
+
+              <div className="p-3 bg-red-50 rounded-xl border border-red-200">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-red-800 block">🔴 Não Constam (Turnover)</span>
+                <span className="text-xl font-bold text-red-900 block mt-1">{reconcileResult.desligados.length}</span>
+                <span className="text-[10px] text-red-700">Ausentes na planilha</span>
+              </div>
+            </div>
+
+            {/* Opção de Desligar Automaticamente os Ausentes */}
+            {reconcileResult.desligados.length > 0 && (
+              <div className="p-3.5 bg-warm rounded-xl border border-soft flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  id="chkDesligarSpreadsheet"
+                  checked={desligarAusentes}
+                  onChange={(e) => setDesligarAusentes(e.target.checked)}
+                  className="mt-0.5 rounded cursor-pointer text-forest"
+                />
+                <label htmlFor="chkDesligarSpreadsheet" className="text-xs text-forest cursor-pointer">
+                  <strong>Marcar como Desligados (Turnover)</strong> os {reconcileResult.desligados.length} colaboradores que estavam na base e não constam na nova planilha enviada.
+                </label>
+              </div>
+            )}
+
+            {/* Prévia dos Novos a Incluir */}
+            {reconcileResult.novos.length > 0 && (
+              <div className="space-y-1.5">
+                <span className="text-xs font-bold text-forest block">Prévia de novos colaboradores:</span>
+                <div className="max-h-32 overflow-y-auto bg-warm/40 p-2.5 rounded-xl border border-soft text-xs space-y-1">
+                  {reconcileResult.novos.slice(0, 10).map((n, i) => (
+                    <div key={i} className="flex items-center justify-between text-[11px] text-forest">
+                      <span>• {n.nomeCompleto} ({n.tipo})</span>
+                      <span className="font-mono text-forest/60">{n.cpf}</span>
+                    </div>
+                  ))}
+                  {reconcileResult.novos.length > 10 && (
+                    <div className="text-[10px] text-forest/50 text-center pt-1">
+                      + outros {reconcileResult.novos.length - 10} cadastros...
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Botões de Confirmação */}
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-soft">
+              <button
+                type="button"
+                onClick={() => setShowUploadModal(false)}
+                className="px-3 py-2 rounded-xl text-forest/70 hover:bg-warm font-semibold text-xs cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={isProcessingUpload}
+                onClick={handleConfirmarReconciliacao}
+                className="px-4 py-2 bg-emerald-700 text-white hover:bg-emerald-800 font-bold text-xs rounded-xl shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                {isProcessingUpload ? (
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Check className="w-3.5 h-3.5" />
+                )}
+                <span>Confirmar & Atualizar Base</span>
+              </button>
             </div>
           </div>
         </div>

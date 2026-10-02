@@ -26,6 +26,9 @@ import {
   Plus,
   X,
   Phone,
+  FileSignature,
+  Copy,
+  ExternalLink,
 } from "lucide-react";
 import {
   collection,
@@ -38,6 +41,7 @@ import {
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { FichaBordoCorporativa, StatusFichaCorporativa } from "../types/corporativo";
+import { ContratoGeradorModal } from "./ContratoGeradorModal";
 
 interface TriagemCorporativaKanbanProps {
   currentRole: "master" | "triagem" | "profissional";
@@ -68,6 +72,7 @@ export const TriagemCorporativaKanban: React.FC<TriagemCorporativaKanbanProps> =
 
   // Modais
   const [fichaDetalhes, setFichaDetalhes] = useState<FichaBordoCorporativa | null>(null);
+  const [fichaParaContrato, setFichaParaContrato] = useState<FichaBordoCorporativa | null>(null);
   const [modalDesfecho, setModalDesfecho] = useState<{
     isOpen: boolean;
     ficha: FichaBordoCorporativa | null;
@@ -595,7 +600,31 @@ export const TriagemCorporativaKanban: React.FC<TriagemCorporativaKanbanProps> =
           }
           onReativar={() => handleReativarPaciente(fichaDetalhes)}
           onWhatsApp={() => handleAbrirWhatsApp(fichaDetalhes)}
+          onAbrirContrato={() => setFichaParaContrato(fichaDetalhes)}
+          showToast={showToast}
           saving={savingAction}
+        />
+      )}
+
+      {/* MODAL GERADOR DE CONTRATO TERAPÊUTICO PARA PACIENTES CORPORATIVOS */}
+      {fichaParaContrato && (
+        <ContratoGeradorModal
+          isOpen={!!fichaParaContrato}
+          onClose={() => setFichaParaContrato(null)}
+          paciente={fichaParaContrato}
+          profissionalLogado={currentUserProfile}
+          collectionName="triagem_corporativa"
+          tipoAcolhimento="corporativo"
+          showToast={showToast}
+          onContratoSalvo={(updatedFicha) => {
+            setFichas((prev) =>
+              prev.map((f) => (f.id === updatedFicha.id ? { ...f, ...updatedFicha } : f))
+            );
+            if (fichaDetalhes?.id === updatedFicha.id) {
+              setFichaDetalhes((prev) => (prev ? { ...prev, ...updatedFicha } : null));
+            }
+            setFichaParaContrato(null);
+          }}
         />
       )}
 
@@ -735,7 +764,7 @@ const CardFichaCorporativa: React.FC<CardFichaProps> = ({
 
       {/* Nome do Paciente & Vínculo */}
       <div>
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 flex-wrap">
           <h4 className="font-bold text-forest text-sm font-serif">
             {ficha.colaboradorNome}
           </h4>
@@ -744,6 +773,15 @@ const CardFichaCorporativa: React.FC<CardFichaProps> = ({
               Dependente: {ficha.dependenteParentesco || "Família"}
             </span>
           )}
+          {ficha.contratoAssinado ? (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+              <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" /> Contrato Assinado
+            </span>
+          ) : ficha.contratoText ? (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+              <FileSignature className="w-2.5 h-2.5 text-amber-600" /> Contrato Pendente
+            </span>
+          ) : null}
         </div>
         {ficha.beneficiarioTipo === "dependente" && ficha.dependenteInfo && (
           <p className="text-[11px] text-forest/60 mt-0.5">
@@ -879,6 +917,8 @@ interface ModalFichaBordoProps {
   onInterrupcao: () => void;
   onReativar: () => void;
   onWhatsApp: () => void;
+  onAbrirContrato: () => void;
+  showToast: (msg: string) => void;
   saving?: boolean;
 }
 
@@ -890,6 +930,8 @@ const ModalFichaBordoDetalhes: React.FC<ModalFichaBordoProps> = ({
   onInterrupcao,
   onReativar,
   onWhatsApp,
+  onAbrirContrato,
+  showToast,
   saving,
 }) => {
   const [novaNota, setNovaNota] = useState("");
@@ -979,6 +1021,27 @@ const ModalFichaBordoDetalhes: React.FC<ModalFichaBordoProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onAbrirContrato}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs transition-all ${
+                ficha.contratoAssinado
+                  ? "bg-emerald-700 hover:bg-emerald-800 text-white"
+                  : ficha.contratoText
+                    ? "bg-amber-600 hover:bg-amber-700 text-white"
+                    : "bg-forest hover:bg-forest/90 text-white"
+              }`}
+              title="Gerar ou visualizar contrato terapêutico com aceite digital"
+            >
+              <FileSignature className="w-3.5 h-3.5 text-sun" />
+              <span>
+                {ficha.contratoAssinado
+                  ? "Contrato Assinado"
+                  : ficha.contratoText
+                    ? "Gerenciar Contrato"
+                    : "Gerar Contrato"}
+              </span>
+            </button>
             <button
               type="button"
               onClick={onWhatsApp}
@@ -1073,6 +1136,119 @@ const ModalFichaBordoDetalhes: React.FC<ModalFichaBordoProps> = ({
                 <span className="font-semibold text-forest text-xs">{ficha.frequenciaRecomendada}</span>
               </div>
             </div>
+          </div>
+
+          {/* BLOCO: CONTRATO TERAPÊUTICO & FORMALIZAÇÃO CLÍNICA */}
+          <div className="bg-gradient-to-r from-emerald-50/70 via-warm/20 to-emerald-50/70 rounded-2xl p-4 sm:p-5 border border-emerald-200/90 space-y-3.5">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-emerald-700 text-white flex items-center justify-center shadow-xs shrink-0">
+                  <FileSignature className="w-4 h-4 text-sun" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-forest uppercase tracking-wider">
+                    Contrato Terapêutico & Aceite Digital (CFP)
+                  </h4>
+                  <p className="text-[11px] text-forest/60">
+                    Formalização do enquadre clínico, honorários conveniados e sigilo profissional
+                  </p>
+                </div>
+              </div>
+
+              {ficha.contratoAssinado ? (
+                <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Assinado & Válido
+                </span>
+              ) : ficha.contratoText ? (
+                <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1">
+                  <Clock className="w-3.5 h-3.5 text-amber-600" /> Aguardando Assinatura do Paciente
+                </span>
+              ) : (
+                <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-warm text-forest/70 border border-soft">
+                  Contrato Pendente
+                </span>
+              )}
+            </div>
+
+            {ficha.contratoAssinado ? (
+              <div className="bg-white/95 p-4 rounded-xl border border-emerald-200 space-y-2.5 text-xs shadow-2xs">
+                <div className="flex items-center justify-between flex-wrap gap-2 text-xs">
+                  <span className="text-forest/80">
+                    Signatário: <strong className="text-forest">{ficha.dadosContrato?.pacienteNome || ficha.colaboradorNome}</strong>
+                    {ficha.dadosContrato?.pacienteCpf && <span className="font-mono text-forest/60"> (CPF: {ficha.dadosContrato.pacienteCpf})</span>}
+                  </span>
+                  <span className="font-bold text-emerald-900 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                    Assinado em: {ficha.contratoAssinadoEm || ficha.dadosContrato?.dataAceiteFormatada || "Registrado"}
+                  </span>
+                </div>
+                {ficha.dadosContrato?.hashContrato && (
+                  <div className="text-[10px] text-forest/60 font-mono bg-warm/40 p-2 rounded-lg border border-soft/80 break-all select-all">
+                    Hash SHA-256: {ficha.dadosContrato.hashContrato}
+                  </div>
+                )}
+                <div className="flex items-center justify-end gap-2 pt-1 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={onAbrirContrato}
+                    className="px-3 py-1.5 bg-forest text-white rounded-xl text-xs font-semibold hover:bg-forest/90 transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                  >
+                    <FileSignature className="w-3.5 h-3.5 text-sun" />
+                    <span>Ver / Reemitir Contrato</span>
+                  </button>
+                  <a
+                    href={`/?contrato=${ficha.id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span>Abrir Via Pública</span>
+                  </a>
+                </div>
+              </div>
+            ) : ficha.contratoText ? (
+              <div className="bg-white/95 p-4 rounded-xl border border-amber-200 space-y-2.5 text-xs shadow-2xs">
+                <p className="text-forest/80 text-xs leading-relaxed">
+                  O contrato foi gerado com as regras conveniadas de <strong>R$ {ficha.valorSessao},00/sessão</strong> ({ficha.frequenciaRecomendada}) com a empresa <strong>{ficha.empresaNome}</strong>. O link seguro está pronto para envio ao paciente.
+                </p>
+                <div className="flex items-center justify-end gap-2 pt-1 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const link = `${window.location.origin}/?contrato=${ficha.id}`;
+                      navigator.clipboard.writeText(link);
+                      showToast("Link seguro do contrato copiado!");
+                    }}
+                    className="px-3 py-1.5 bg-white text-forest border border-soft hover:bg-warm rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                  >
+                    <Copy className="w-3.5 h-3.5 text-forest/60" />
+                    <span>Copiar Link de Assinatura</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onAbrirContrato}
+                    className="px-3.5 py-1.5 bg-forest text-white hover:bg-forest/90 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
+                  >
+                    <FileSignature className="w-3.5 h-3.5 text-sun" />
+                    <span>Gerenciar / Enviar WhatsApp</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="bg-white/90 p-4 rounded-xl border border-soft flex items-center justify-between gap-4 flex-wrap text-xs shadow-2xs">
+                <p className="text-forest/70 text-xs max-w-md leading-relaxed">
+                  Formalize o enquadre terapêutico corporativo (sigilo profissional, faltas e frequência acordada com a <strong>{ficha.empresaNome}</strong>) gerando um contrato com link para assinatura digital do paciente.
+                </p>
+                <button
+                  type="button"
+                  onClick={onAbrirContrato}
+                  className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
+                >
+                  <FileSignature className="w-3.5 h-3.5 text-sun" />
+                  <span>Gerar Contrato para este Paciente</span>
+                </button>
+              </div>
+            )}
           </div>
 
           {/* BLOCO 3: DEMANDA CLÍNICA & PREFERÊNCIAS */}

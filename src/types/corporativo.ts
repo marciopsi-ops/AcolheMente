@@ -255,6 +255,20 @@ export interface FichaBordoCorporativa {
   motivoDesfecho?: string;
   observacoesTriagem?: string;
   historico?: HistoricoFichaCorporativa[];
+  // Contrato Terapêutico & Aceite Digital
+  contratoText?: string;
+  contratoGeradoEm?: string;
+  contratoGeradoPor?: string;
+  statusContrato?: "aguardando_assinatura" | "assinado";
+  contratoAssinado?: boolean;
+  contratoAssinadoEm?: string;
+  contratoAssinaturaIp?: string;
+  contratoAssinaturaHash?: string;
+  contratoRubricaBase64?: string;
+  dadosContrato?: any;
+  chavePix?: string;
+  favorecidoPix?: string;
+  cpf?: string;
 }
 
 export interface ServicoAdicionalItem {
@@ -295,6 +309,7 @@ export interface FaturaHistoricoItem {
 export interface FaturamentoConfig {
   modeloCobranca?: "por_vida" | "franquia_excedente" | "fixo_mensal";
   valorPorVida?: number;
+  valorMensal?: number;
   valorTitular?: number;
   valorDependente?: number;
   franquiaMinimaVidas?: number;
@@ -309,6 +324,21 @@ export interface FaturamentoConfig {
   servicosAdicionaisMesAtual?: ServicoAdicionalItem[];
   historicoFaturas?: FaturaHistoricoItem[];
 }
+
+export interface SequenciaVidasGrupo {
+  label: string;
+  opcoes: number[];
+}
+
+export const SEQUENCIA_NUMERICA_VIDAS_OPCOES: SequenciaVidasGrupo[] = [
+  { label: "1 a 10 vidas (Micro / Individual)", opcoes: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] },
+  { label: "15 a 50 vidas (Pequeno Porte)", opcoes: [15, 20, 25, 30, 35, 40, 45, 50] },
+  { label: "60 a 200 vidas (Médio Porte)", opcoes: [60, 70, 80, 90, 100, 120, 150, 180, 200] },
+  { label: "250 a 1.000 vidas (Grande Porte)", opcoes: [250, 300, 350, 400, 500, 600, 750, 1000] },
+  { label: "1.250 a 10.000 vidas (Enterprise)", opcoes: [1250, 1500, 2000, 2500, 3000, 4000, 5000, 7500, 10000] },
+];
+
+export const TODAS_OPCOES_VIDAS_NUMEROS: number[] = SEQUENCIA_NUMERICA_VIDAS_OPCOES.flatMap((g) => g.opcoes);
 
 export type CategoriaCatalogo = "nr1_gro_pgr" | "palestras_workshops" | "diagnostico_psicossocial" | "plantao_crise" | "lideranca_saude" | "outros";
 

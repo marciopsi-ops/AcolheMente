@@ -53,6 +53,7 @@ export function ContratoLandingView({
   const [signed, setSigned] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+  const [targetCollection, setTargetCollection] = useState<"acolhimentos" | "triagem_corporativa">("acolhimentos");
 
   const [formData, setFormData] = useState({
     nome: "",
@@ -77,17 +78,39 @@ export function ContratoLandingView({
   useEffect(() => {
     const fetchAcolhimento = async () => {
       try {
-        const docSnap = await getDoc(doc(db, "acolhimentos", contratoId));
+        let docSnap = await getDoc(doc(db, "acolhimentos", contratoId));
+        let col: "acolhimentos" | "triagem_corporativa" = "acolhimentos";
+        if (!docSnap.exists()) {
+          docSnap = await getDoc(doc(db, "triagem_corporativa", contratoId));
+          if (docSnap.exists()) {
+            col = "triagem_corporativa";
+          }
+        }
         if (docSnap.exists()) {
           const docData = docSnap.data();
+          setTargetCollection(col);
           setData(docData);
+          const nomeFinal =
+            docData.nome ||
+            docData.nomeCompleto ||
+            (docData.beneficiarioTipo === "dependente" && docData.dependenteInfo ? docData.dependenteInfo : docData.colaboradorNome) ||
+            "";
+          const isMenor =
+            docData.menorIdade ||
+            docData.beneficiarioTipo === "dependente" ||
+            docData.tratamentoPara === "Filho(a) / Criança" ||
+            false;
+          const resp =
+            docData.responsavelNome ||
+            (docData.beneficiarioTipo === "dependente" ? docData.colaboradorNome : "");
+
           setFormData((prev) => ({
             ...prev,
-            nome: docData.nome || docData.nomeCompleto || "",
-            email: docData.email || "",
-            cpf: docData.cpf || "",
-            menorIdade: docData.menorIdade || docData.tratamentoPara === "Filho(a) / Criança" || false,
-            nomeMenor: docData.responsavelNome ? docData.nome : "",
+            nome: nomeFinal,
+            email: docData.email || docData.colaboradorEmail || "",
+            cpf: docData.cpf || docData.colaboradorCpf || "",
+            menorIdade: isMenor,
+            nomeMenor: resp ? nomeFinal : "",
           }));
           if (docData.contratoAssinado) {
             setSigned(true);
@@ -221,10 +244,25 @@ export function ContratoLandingView({
           ...auditTrail,
         },
         notificacao: `${notifAnterior}${notifAssinatura}`,
+        statusContrato: "assinado",
         updatedAt: serverTimestamp(),
       };
 
-      await updateDoc(doc(db, "acolhimentos", contratoId), updates);
+      if (targetCollection === "triagem_corporativa") {
+        const agora = new Date().toISOString();
+        const novoHistorico = [
+          ...(data.historico || []),
+          {
+            data: agora,
+            autor: "Paciente (Assinatura Digital)",
+            acao: "Contrato Terapêutico Assinado",
+            detalhes: `Aceite digital confirmado por ${formData.nome} (CPF: ${formData.cpf}). Hash: ${hashContrato.slice(0, 16)}...`,
+          },
+        ];
+        updates.historico = novoHistorico;
+      }
+
+      await updateDoc(doc(db, targetCollection, contratoId), updates);
 
       setData((prev: any) => ({ ...prev, ...updates }));
       setSigned(true);
@@ -415,9 +453,16 @@ export function ContratoLandingView({
       <main className="flex-1 max-w-5xl mx-auto w-full p-4 md:p-8 space-y-8">
         {/* Cabeçalho da Proposta / Contrato */}
         <div className="space-y-3">
-          <span className="text-xs font-extrabold uppercase tracking-widest text-emerald-700 bg-emerald-100/80 px-3 py-1 rounded-full">
-            Enquadre Terapêutico • Resolução CFP 11/2018
-          </span>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs font-extrabold uppercase tracking-widest text-emerald-700 bg-emerald-100/80 px-3 py-1 rounded-full">
+              Enquadre Terapêutico • Resolução CFP 11/2018
+            </span>
+            {data.empresaNome && (
+              <span className="text-xs font-bold uppercase tracking-wider text-purple-800 bg-purple-100 px-3 py-1 rounded-full border border-purple-200">
+                Convênio Corporativo: {data.empresaNome}
+              </span>
+            )}
+          </div>
           <h1 className="font-serif text-3xl sm:text-4xl lg:text-5xl text-forest font-bold leading-tight">
             Contrato de Prestação de Serviços Psicológicos
           </h1>
@@ -451,7 +496,7 @@ export function ContratoLandingView({
           <div className="bg-white p-4.5 rounded-2xl border border-soft shadow-2xs space-y-1">
             <span className="text-[10px] uppercase font-bold text-forest/50 block">Frequência Acordada</span>
             <span className="font-bold text-forest text-sm block truncate">
-              {data.frequenciaSessoes || "Semanal"}
+              {data.frequenciaSessoes || data.frequenciaRecomendada || "Semanal"}
             </span>
             <span className="text-xs text-forest/70">
               Exclusividade de horário reservado

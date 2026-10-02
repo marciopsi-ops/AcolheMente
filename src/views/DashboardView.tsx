@@ -27,6 +27,7 @@ import {
   StatusFatura,
   getEmpresaPin,
   ItemCatalogoCorporativo,
+  SEQUENCIA_NUMERICA_VIDAS_OPCOES,
 } from "../types/corporativo";
 import {
   Activity,
@@ -101,6 +102,7 @@ import {
   Settings,
   Receipt,
   Calculator,
+  Coins,
   UserX,
   Compass,
   ChevronDown,
@@ -15154,27 +15156,96 @@ export function DashboardView({
                   <Users className="w-4 h-4 text-sun-dark" /> Quantidade de Vidas & Produtos Contratados
                 </h4>
                 <div className="space-y-4">
-                  <div className="flex flex-col gap-1 max-w-sm">
-                    <label className="text-[10px] font-semibold uppercase text-forest/70 ml-2">
-                      Quantidade de Vidas
-                    </label>
-                    <DebouncedInput
-                      className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark"
-                      placeholder="Ex: 150 colaboradores"
-                      value={selectedEmpresa.quantidadeVidas || selectedEmpresa.colaboradores || ""}
-                      onChange={(val) => {
-                        handleUpdateEmpresaProperty(
-                          selectedEmpresa.id,
-                          "quantidadeVidas",
-                          val,
-                        );
-                        handleUpdateEmpresaProperty(
-                          selectedEmpresa.id,
-                          "colaboradores",
-                          val,
-                        );
-                      }}
-                    />
+                  {/* Caixa de seleção com sequência numérica para escolha de vidas */}
+                  <div className="flex flex-col gap-1.5 max-w-lg">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] font-semibold uppercase text-forest/70 ml-2 flex items-center gap-1.5">
+                        <Users className="w-3.5 h-3.5 text-sun-dark" />
+                        Quantidade de Vidas (Sequência Numérica)
+                      </label>
+                      {(selectedEmpresa.quantidadeVidas || selectedEmpresa.colaboradores) && (
+                        <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                          {selectedEmpresa.quantidadeVidas || selectedEmpresa.colaboradores} vidas
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="space-y-2">
+                      <select
+                        className="w-full text-sm bg-white border border-soft px-4 py-2.5 rounded-xl font-semibold text-forest focus:outline-none focus:border-sun-dark cursor-pointer shadow-xs"
+                        value={(() => {
+                          const val = selectedEmpresa.quantidadeVidas || selectedEmpresa.colaboradores || "";
+                          const num = parseInt(String(val).replace(/\D/g, ""), 10);
+                          return !isNaN(num) && num > 0 ? String(num) : (val ? "custom" : "");
+                        })()}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val === "custom") {
+                            // Mantém valor atual para digitação
+                          } else if (val) {
+                            handleUpdateEmpresaProperty(selectedEmpresa.id, "quantidadeVidas", val);
+                            handleUpdateEmpresaProperty(selectedEmpresa.id, "colaboradores", val);
+                          }
+                        }}
+                      >
+                        <option value="">Selecione na sequência numérica...</option>
+                        {SEQUENCIA_NUMERICA_VIDAS_OPCOES.map((grupo) => (
+                          <optgroup key={grupo.label} label={grupo.label}>
+                            {grupo.opcoes.map((num) => (
+                              <option key={num} value={String(num)}>
+                                {num} {num === 1 ? "vida (colaborador)" : "vidas (colaboradores)"}
+                              </option>
+                            ))}
+                          </optgroup>
+                        ))}
+                        <option value="custom">Outra quantidade exata (Digitar abaixo)...</option>
+                      </select>
+
+                      {/* Digitação manual se for quantidade personalizada */}
+                      <div className="flex items-center gap-2">
+                        <DebouncedInput
+                          className="flex-1 text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark font-mono font-bold"
+                          placeholder="Número exato de vidas (ex: 73)"
+                          value={selectedEmpresa.quantidadeVidas || selectedEmpresa.colaboradores || ""}
+                          onChange={(val) => {
+                            const digits = String(val).replace(/\D/g, "");
+                            handleUpdateEmpresaProperty(
+                              selectedEmpresa.id,
+                              "quantidadeVidas",
+                              digits || val,
+                            );
+                            handleUpdateEmpresaProperty(
+                              selectedEmpresa.id,
+                              "colaboradores",
+                              digits || val,
+                            );
+                          }}
+                        />
+                        <span className="text-xs text-forest/60 font-semibold pr-1">vidas</span>
+                      </div>
+
+                      {/* Atalhos Rápidos */}
+                      <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                        <span className="text-[10px] text-forest/50 font-medium">Atalhos:</span>
+                        {[10, 25, 50, 100, 200, 500].map((qtd) => (
+                          <button
+                            key={qtd}
+                            type="button"
+                            onClick={() => {
+                              handleUpdateEmpresaProperty(selectedEmpresa.id, "quantidadeVidas", String(qtd));
+                              handleUpdateEmpresaProperty(selectedEmpresa.id, "colaboradores", String(qtd));
+                            }}
+                            className={`text-[11px] px-2 py-0.5 rounded-lg border transition-all cursor-pointer ${
+                              String(selectedEmpresa.quantidadeVidas || selectedEmpresa.colaboradores) === String(qtd)
+                                ? "bg-forest text-white border-forest font-bold"
+                                : "bg-white border-soft hover:border-sun-dark text-forest/80"
+                            }`}
+                          >
+                            {qtd} vidas
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   </div>
 
                   <div className="flex flex-col gap-1">
@@ -15228,7 +15299,7 @@ export function DashboardView({
               {/* 4. CONDIÇÕES COMERCIAIS & FINANCEIRO */}
               <section className="bg-warm/30 p-5 rounded-2xl border border-soft">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-3 flex items-center gap-2">
-                  <CreditCard className="w-4 h-4 text-sun-dark" /> Valores Definidos & Forma de Pagamento
+                  <CreditCard className="w-4 h-4 text-sun-dark" /> Condições Financeiras & Variações de Contrato
                 </h4>
                 <div className="space-y-4">
                   <div className="flex items-center gap-3 bg-white p-3 rounded-xl border border-soft">
@@ -15253,13 +15324,162 @@ export function DashboardView({
                     </label>
                   </div>
 
+                  {/* Campos Dedicados: Valor por Vida (R$) e Valor Mensal (R$) */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Campo Valor por Vida */}
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center justify-between ml-2">
+                        <label className="text-[10px] font-semibold uppercase text-forest/70">
+                          Valor por Vida em Reais (R$)
+                        </label>
+                        <span className="text-[9px] text-forest/50 font-mono">Por colaborador / mês</span>
+                      </div>
+                      <div className="flex items-center gap-2 bg-white border border-soft px-3 py-1.5 rounded-xl focus-within:border-sun-dark">
+                        <span className="text-xs font-bold text-forest/50">R$</span>
+                        <input
+                          type="number"
+                          step="0.50"
+                          min="0"
+                          className="w-full text-sm font-mono font-bold text-forest outline-none bg-transparent"
+                          placeholder="0,00"
+                          value={selectedEmpresa.valorPorVida !== undefined ? selectedEmpresa.valorPorVida : (selectedEmpresa.faturamentoConfig?.valorPorVida || "")}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value) || 0;
+                            handleUpdateEmpresaProperty(selectedEmpresa.id, "valorPorVida", val);
+                            const curConfig = selectedEmpresa.faturamentoConfig || {};
+                            handleUpdateEmpresaProperty(selectedEmpresa.id, "faturamentoConfig", {
+                              ...curConfig,
+                              valorPorVida: val,
+                            });
+                          }}
+                        />
+                      </div>
+                      <span className="text-[10px] text-forest/50 ml-2">
+                        Preço por vida ativa para faturamento variável.
+                      </span>
+                    </div>
+
+                    {/* Campo Valor Mensal */}
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center justify-between ml-2">
+                        <label className="text-[10px] font-semibold uppercase text-forest/70">
+                          Valor Mensal em Reais (R$)
+                        </label>
+                        <span className="text-[9px] text-forest/50 font-mono">Fixo / Contratual</span>
+                      </div>
+                      <div className="flex items-center gap-2 bg-white border border-soft px-3 py-1.5 rounded-xl focus-within:border-sun-dark">
+                        <span className="text-xs font-bold text-forest/50">R$</span>
+                        <input
+                          type="number"
+                          step="10.00"
+                          min="0"
+                          className="w-full text-sm font-mono font-bold text-forest outline-none bg-transparent"
+                          placeholder="0,00"
+                          value={selectedEmpresa.valorMensal !== undefined ? selectedEmpresa.valorMensal : (selectedEmpresa.valorFixoMensal !== undefined ? selectedEmpresa.valorFixoMensal : (selectedEmpresa.faturamentoConfig?.valorMensal || selectedEmpresa.faturamentoConfig?.valorFixoMensal || ""))}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value) || 0;
+                            handleUpdateEmpresaProperty(selectedEmpresa.id, "valorMensal", val);
+                            handleUpdateEmpresaProperty(selectedEmpresa.id, "valorFixoMensal", val);
+                            const curConfig = selectedEmpresa.faturamentoConfig || {};
+                            handleUpdateEmpresaProperty(selectedEmpresa.id, "faturamentoConfig", {
+                              ...curConfig,
+                              valorMensal: val,
+                              valorFixoMensal: val,
+                            });
+                          }}
+                        />
+                      </div>
+                      <span className="text-[10px] text-forest/50 ml-2">
+                        Valor total acordado da mensalidade corporativa.
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Diagnóstico Contratual e Cálculos Rápidos */}
+                  {(() => {
+                    const vidasNum = parseInt(String(selectedEmpresa.quantidadeVidas || selectedEmpresa.colaboradores || "").replace(/\D/g, ""), 10) || 0;
+                    const porVidaNum = Number(selectedEmpresa.valorPorVida ?? selectedEmpresa.faturamentoConfig?.valorPorVida ?? 0);
+                    const mensalNum = Number(selectedEmpresa.valorMensal ?? selectedEmpresa.valorFixoMensal ?? selectedEmpresa.faturamentoConfig?.valorMensal ?? selectedEmpresa.faturamentoConfig?.valorFixoMensal ?? 0);
+                    const calculadoMensal = vidasNum * porVidaNum;
+                    const porVidaEquiv = vidasNum > 0 && mensalNum > 0 ? mensalNum / vidasNum : 0;
+
+                    return (
+                      <div className="bg-white/90 border border-soft rounded-xl p-3 space-y-2">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-bold text-forest flex items-center gap-1.5">
+                            <Calculator className="w-3.5 h-3.5 text-sun-dark" />
+                            Cálculo & Alinhamento de Contrato:
+                          </span>
+                          <span className="text-[10px] font-bold text-forest/70">
+                            {porVidaNum > 0 && mensalNum > 0
+                              ? "Modelo Híbrido (Por Vida + Mensal)"
+                              : porVidaNum > 0
+                              ? "Modelo Variável (Por Vida)"
+                              : mensalNum > 0
+                              ? "Modelo Fixo Mensal"
+                              : "Sem precificação definida"}
+                          </span>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2 pt-1">
+                          {vidasNum > 0 && porVidaNum > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handleUpdateEmpresaProperty(selectedEmpresa.id, "valorMensal", calculadoMensal);
+                                handleUpdateEmpresaProperty(selectedEmpresa.id, "valorFixoMensal", calculadoMensal);
+                                const curConfig = selectedEmpresa.faturamentoConfig || {};
+                                handleUpdateEmpresaProperty(selectedEmpresa.id, "faturamentoConfig", {
+                                  ...curConfig,
+                                  valorMensal: calculadoMensal,
+                                  valorFixoMensal: calculadoMensal,
+                                });
+                                const novoResumo = `R$ ${porVidaNum.toFixed(2)} por vida | R$ ${calculadoMensal.toFixed(2)} mensal`;
+                                handleUpdateEmpresaProperty(selectedEmpresa.id, "valoresDefinidos", novoResumo);
+                                handleUpdateEmpresaProperty(selectedEmpresa.id, "valoresAcertados", novoResumo);
+                                showToast(`Mensalidade sincronizada: R$ ${calculadoMensal.toFixed(2)} (${vidasNum} vidas × R$ ${porVidaNum.toFixed(2)})`, "success");
+                              }}
+                              className="text-[11px] bg-forest text-white hover:bg-forest/90 px-2.5 py-1 rounded-lg font-bold flex items-center gap-1 cursor-pointer shadow-xs"
+                            >
+                              <Sparkles className="w-3 h-3 text-sun" />
+                              <span>Sugerir Mensal: R$ {calculadoMensal.toFixed(2)}</span>
+                            </button>
+                          )}
+
+                          {vidasNum > 0 && mensalNum > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const porVidaFixed = Number(porVidaEquiv.toFixed(2));
+                                handleUpdateEmpresaProperty(selectedEmpresa.id, "valorPorVida", porVidaFixed);
+                                const curConfig = selectedEmpresa.faturamentoConfig || {};
+                                handleUpdateEmpresaProperty(selectedEmpresa.id, "faturamentoConfig", {
+                                  ...curConfig,
+                                  valorPorVida: porVidaFixed,
+                                });
+                                const novoResumo = `R$ ${porVidaFixed.toFixed(2)} por vida | R$ ${mensalNum.toFixed(2)} mensal`;
+                                handleUpdateEmpresaProperty(selectedEmpresa.id, "valoresDefinidos", novoResumo);
+                                handleUpdateEmpresaProperty(selectedEmpresa.id, "valoresAcertados", novoResumo);
+                                showToast(`Valor por vida sincronizado: R$ ${porVidaFixed.toFixed(2)}/vida`, "success");
+                              }}
+                              className="text-[11px] bg-emerald-100 hover:bg-emerald-200 text-emerald-900 px-2.5 py-1 rounded-lg font-bold flex items-center gap-1 cursor-pointer"
+                            >
+                              <Coins className="w-3 h-3" />
+                              <span>Sugerir Por Vida: R$ {porVidaEquiv.toFixed(2)}</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
+
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="flex flex-col gap-1">
                       <label className="text-[10px] font-semibold uppercase text-forest/70 ml-2">
-                        Valores Definidos
+                        Resumo / Cláusula de Valores
                       </label>
                       <DebouncedInput
-                        className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark"
+                        className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark font-medium"
                         placeholder="Ex: R$ 35,00 por vida/mês ou R$ 4.500,00 mensal"
                         value={selectedEmpresa.valoresDefinidos || selectedEmpresa.valoresAcertados || ""}
                         onChange={(val) => {
@@ -15408,14 +15628,17 @@ export function DashboardView({
               const colabs = selectedEmpresa.colaboradoresList || [];
               const vidasAtivas = colabs.filter((c) => c.status !== "inativo" && c.status !== "desligado").length || 0;
               const precoPorVida = Number(selectedEmpresa.faturamentoConfig?.valorPorVida ?? selectedEmpresa.valorPorVida ?? 18);
-              const modeloCobranca = selectedEmpresa.faturamentoConfig?.modeloCobranca || "por_vida";
+              const valorFixoMensalAtual = Number(selectedEmpresa.faturamentoConfig?.valorMensal ?? selectedEmpresa.faturamentoConfig?.valorFixoMensal ?? selectedEmpresa.valorMensal ?? selectedEmpresa.valorFixoMensal ?? 0);
+              const modeloCobranca = selectedEmpresa.faturamentoConfig?.modeloCobranca || (valorFixoMensalAtual > 0 && precoPorVida === 0 ? "fixo_mensal" : "por_vida");
               const diaVencimento = Number(selectedEmpresa.faturamentoConfig?.diaVencimento ?? selectedEmpresa.diaVencimento ?? 10);
               const chavePix = selectedEmpresa.faturamentoConfig?.chavePix || selectedEmpresa.chavePix || "45.892.120/0001-34";
               const favorecidoPix = selectedEmpresa.faturamentoConfig?.favorecidoPix || selectedEmpresa.favorecidoPix || "Rede AcolheMente Saúde Mental";
               const servicosAtuais: ServicoAdicionalItem[] = selectedEmpresa.servicosAdicionaisMesAtual || selectedEmpresa.faturamentoConfig?.servicosAdicionaisMesAtual || [];
               const historicoFaturas: FaturaHistoricoItem[] = selectedEmpresa.historicoFaturas || selectedEmpresa.faturamentoConfig?.historicoFaturas || [];
 
-              const subtotalVidas = vidasAtivas * precoPorVida;
+              const subtotalVidas = modeloCobranca === "fixo_mensal" && valorFixoMensalAtual > 0
+                ? valorFixoMensalAtual
+                : vidasAtivas * precoPorVida;
               const totalServicos = servicosAtuais.reduce((acc, s) => {
                 const qtd = Number(s.quantidade || 1);
                 const val = Number(s.valorUnitario || 0);
@@ -15682,7 +15905,7 @@ export function DashboardView({
                       <span>Parâmetros Contratuais & Dados Financeiros</span>
                     </h4>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-xs">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
                       <div>
                         <label className="block font-bold text-forest mb-1">Modelo de Cobrança</label>
                         <select
@@ -15706,6 +15929,25 @@ export function DashboardView({
                             min="0"
                             value={precoPorVida}
                             onChange={(e) => handleSalvarParametrosFinanceiros("valorPorVida", Number(e.target.value))}
+                            className="w-full px-3 py-2 bg-warm/30 border border-soft focus:border-forest rounded-xl outline-none font-bold text-forest font-mono"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block font-bold text-forest mb-1">Valor Mensal Fixo (R$)</label>
+                        <div className="flex items-center gap-2">
+                          <span className="text-forest/60 font-bold">R$</span>
+                          <input
+                            type="number"
+                            step="10.00"
+                            min="0"
+                            value={Number(selectedEmpresa.faturamentoConfig?.valorMensal ?? selectedEmpresa.faturamentoConfig?.valorFixoMensal ?? selectedEmpresa.valorMensal ?? selectedEmpresa.valorFixoMensal ?? 0)}
+                            onChange={(e) => {
+                              const val = Number(e.target.value);
+                              handleSalvarParametrosFinanceiros("valorMensal", val);
+                              handleSalvarParametrosFinanceiros("valorFixoMensal", val);
+                            }}
                             className="w-full px-3 py-2 bg-warm/30 border border-soft focus:border-forest rounded-xl outline-none font-bold text-forest font-mono"
                           />
                         </div>

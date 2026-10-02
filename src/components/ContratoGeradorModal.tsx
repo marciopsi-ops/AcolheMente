@@ -26,6 +26,8 @@ interface ContratoGeradorModalProps {
   allUsers?: any[];
   showToast: (msg: string, type?: "success" | "error" | "info") => void;
   onContratoSalvo?: (updatedPaciente: any) => void;
+  collectionName?: "acolhimentos" | "triagem_corporativa";
+  tipoAcolhimento?: "particular" | "corporativo";
 }
 
 export const ContratoGeradorModal: React.FC<ContratoGeradorModalProps> = ({
@@ -36,8 +38,20 @@ export const ContratoGeradorModal: React.FC<ContratoGeradorModalProps> = ({
   allUsers = [],
   showToast,
   onContratoSalvo,
+  collectionName,
+  tipoAcolhimento,
 }) => {
   if (!isOpen || !paciente) return null;
+
+  const isCorporativo =
+    tipoAcolhimento === "corporativo" ||
+    paciente.tipoAcolhimento === "corporativo" ||
+    !!paciente.empresaNome ||
+    !!paciente.colaboradorNome;
+
+  const targetCollection =
+    collectionName ||
+    (isCorporativo ? "triagem_corporativa" : "acolhimentos");
 
   // Busca dados do profissional vinculado ou logado
   const profVinculado =
@@ -57,19 +71,33 @@ export const ContratoGeradorModal: React.FC<ContratoGeradorModalProps> = ({
   const especialidadeProf =
     profVinculado.especialidade || profissionalLogado?.especialidade || "Psicologia Clínica";
 
-  const nomePac = paciente.nome || paciente.nomeCompleto || "Paciente";
-  const emailPac = paciente.email || "";
-  const telPac = paciente.telefone || paciente.whatsapp || "";
-  const cpfPac = paciente.cpf || "";
-  const menorIdade = paciente.menorIdade || paciente.tratamentoPara === "Filho(a) / Criança" || false;
-  const respNome = paciente.responsavelNome || "";
-  const respCpf = paciente.responsavelCpf || "";
+  const nomePac =
+    (paciente.beneficiarioTipo === "dependente" && paciente.dependenteInfo)
+      ? paciente.dependenteInfo
+      : (paciente.colaboradorNome || paciente.nome || paciente.nomeCompleto || "Paciente");
+  const emailPac = paciente.email || paciente.colaboradorEmail || "";
+  const telPac = paciente.colaboradorWhatsapp || paciente.telefone || paciente.whatsapp || "";
+  const cpfPac = paciente.cpf || paciente.colaboradorCpf || "";
+  const menorIdade =
+    paciente.menorIdade ||
+    paciente.beneficiarioTipo === "dependente" ||
+    paciente.tratamentoPara === "Filho(a) / Criança" ||
+    false;
+  const respNome =
+    paciente.responsavelNome ||
+    (paciente.beneficiarioTipo === "dependente" ? (paciente.colaboradorNome || "") : "");
+  const respCpf =
+    paciente.responsavelCpf ||
+    (paciente.beneficiarioTipo === "dependente" ? (paciente.colaboradorCpf || "") : "");
 
   const valorSessaoBase =
-    paciente.valorSessao ||
-    paciente.valorProposta ||
-    (paciente.valorRef ? `R$ ${paciente.valorRef}` : "100,00");
-  const freqSessaoBase = paciente.frequenciaSessoes || paciente.frequenciaRecomendada || "Semanal (1x por semana)";
+    paciente.valorSessao !== undefined && paciente.valorSessao !== null
+      ? String(paciente.valorSessao)
+      : (paciente.valorProposta || (paciente.valorRef ? `R$ ${paciente.valorRef}` : "100,00"));
+  const freqSessaoBase =
+    paciente.frequenciaRecomendada ||
+    paciente.frequenciaSessoes ||
+    "Semanal (1x por semana)";
 
   // Calcula estimativa mensal
   const calcularEstimativa = (valorStr: string, freqStr: string) => {
@@ -177,7 +205,21 @@ export const ContratoGeradorModal: React.FC<ContratoGeradorModalProps> = ({
         updatedAt: serverTimestamp(),
       };
 
-      await updateDoc(doc(db, "acolhimentos", paciente.id), updates);
+      if (targetCollection === "triagem_corporativa") {
+        const agora = new Date().toISOString();
+        const novoHistorico = [
+          ...(paciente.historico || []),
+          {
+            data: agora,
+            autor: profVinculado.name || profissionalLogado?.name || "Profissional",
+            acao: "Contrato Terapêutico Gerado / Disponibilizado",
+            detalhes: `Contrato formalizado com valor de R$ ${valorSessao}/sessão (${frequencia}). Link seguro gerado para assinatura digital.`,
+          },
+        ];
+        updates.historico = novoHistorico;
+      }
+
+      await updateDoc(doc(db, targetCollection, paciente.id), updates);
 
       const pacienteAtualizado = { ...paciente, ...updates };
       if (onContratoSalvo) {
@@ -202,7 +244,8 @@ export const ContratoGeradorModal: React.FC<ContratoGeradorModalProps> = ({
   const handleDispararWhatsApp = () => {
     const rawTel = telPac.replace(/\D/g, "");
     const telFormatado = rawTel.length <= 11 && !rawTel.startsWith("55") ? `55${rawTel}` : rawTel;
-    const mensagem = `Olá, ${nomePac}! 👋\n\nPara formalizarmos nosso início de acompanhamento psicológico conforme as diretrizes do Conselho de Psicologia (CFP), por favor acerte e assine os termos terapêuticos acessando o link seguro abaixo:\n\n🔗 ${linkAssinaturaPublico}\n\nVocê poderá ler com calma todas as cláusulas (sigilo, faltas, honorários e agendamento) e assinar digitalmente pelo celular.\n\nQualquer dúvida estou à disposição!`;
+    const convenioTexto = paciente.empresaNome ? ` através do convênio corporativo com a *${paciente.empresaNome}*` : "";
+    const mensagem = `Olá, ${nomePac}! 👋\n\nPara formalizarmos nosso início de acompanhamento psicológico${convenioTexto} conforme as diretrizes do Conselho de Psicologia (CFP), por favor confira e assine os termos terapêuticos acessando o link seguro abaixo:\n\n🔗 ${linkAssinaturaPublico}\n\nVocê poderá ler com calma todas as cláusulas (sigilo, faltas, horários e agendamento) e assinar digitalmente pelo celular.\n\nQualquer dúvida estou à disposição!`;
 
     const waUrl = telFormatado
       ? `https://wa.me/${telFormatado}?text=${encodeURIComponent(mensagem)}`
@@ -234,7 +277,11 @@ export const ContratoGeradorModal: React.FC<ContratoGeradorModalProps> = ({
                 )}
               </h3>
               <p className="text-xs text-forest/70">
-                Paciente: <strong className="text-forest font-bold">{nomePac}</strong> • CRP: <strong className="text-forest">{crpProf}</strong>
+                Paciente: <strong className="text-forest font-bold">{nomePac}</strong>
+                {paciente.empresaNome && (
+                  <span className="text-forest/60"> • Convênio: <strong className="text-emerald-800">{paciente.empresaNome}</strong></span>
+                )}
+                {" • "}CRP: <strong className="text-forest">{crpProf}</strong>
               </p>
             </div>
           </div>
