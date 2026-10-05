@@ -1,7 +1,7 @@
 import { Footer } from '../components/Footer';
-import { ArrowLeft, Briefcase, Building2, CheckCircle2, HeartHandshake, TrendingUp, Sparkles, UserCheck, Coins, ArrowRight, MessageCircle } from "lucide-react";
+import { ArrowLeft, Briefcase, Building2, CheckCircle2, HeartHandshake, TrendingUp, Sparkles, UserCheck, Coins, ArrowRight, MessageCircle, BarChart3, ShieldCheck, Users, CalendarCheck } from "lucide-react";
 import React, { FormEvent, useState, useEffect } from "react";
-import { collection, addDoc, serverTimestamp, getDocs, query, where, doc, getDoc } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, getDocs, query, where, doc, getDoc, onSnapshot } from "firebase/firestore";
 import { db, handleFirestoreError, OperationType } from "../lib/firebase";
 import { sendCompanyLeadEmail } from "../lib/emailService";
 import { Breadcrumbs } from "../components/Breadcrumbs";
@@ -36,23 +36,31 @@ export function EmpresaView({ onNavigate }: { onNavigate: (view: 'landing' | 'ac
   }, []);
 
   useEffect(() => {
-    const fetchConfigs = async () => {
-      try {
-        const snap = await getDoc(doc(db, "configuracoes", "master"));
-        if (snap.exists()) {
-          const data = snap.data();
-          setConfigs((prev: any) => ({
-            ...prev,
-            ...data
-          }));
+    let unsub: (() => void) | undefined;
+    try {
+      unsub = onSnapshot(
+        doc(db, "configuracoes", "master"),
+        (snap) => {
+          if (snap.exists()) {
+            const data = snap.data();
+            setConfigs((prev: any) => ({
+              ...prev,
+              ...data,
+            }));
+          }
+        },
+        (err) => {
+          if (err.code !== 'permission-denied' && !err.message?.includes('offline')) {
+            console.warn("Could not fetch realtime configs for EmpresaView:", err.message);
+          }
         }
-      } catch (err: any) {
-        if (err.code !== 'permission-denied') {
-          console.error("Error fetching configs for EmpresaView", err);
-        }
-      }
+      );
+    } catch (err: any) {
+      console.warn("Error setting up configs listener for EmpresaView:", err);
+    }
+    return () => {
+      if (unsub) unsub();
     };
-    fetchConfigs();
   }, []);
 
   const getWhatsAppUrl = () => {
@@ -168,42 +176,109 @@ export function EmpresaView({ onNavigate }: { onNavigate: (view: 'landing' | 'ac
         {/* Presentation Section */}
         <section className="w-full px-6 md:px-12 py-12 md:py-16 flex justify-center bg-warm text-forest border-b border-soft">
           <div className="max-w-[1440px] w-full flex flex-col items-center justify-between gap-8">
-            <div className="w-full flex flex-col lg:flex-row gap-8 items-center justify-between">
-              <div className="w-full lg:w-1/2 flex flex-col gap-6">
-                <div className="mb-2 px-3 py-1 bg-sun-light text-forest text-[10px] font-bold uppercase tracking-[0.2em] w-fit rounded">
-                  Prevenção e Compliance (NR1)
+            {/* Hero Container com Imagem das Pessoas Fundida Atrás do Título */}
+            <div className="w-full relative rounded-3xl overflow-hidden p-6 sm:p-10 md:p-12 border border-soft/80 bg-warm shadow-md shadow-forest/5">
+              {/* Imagem das pessoas na empresa fundida atrás do texto (visível com nitidez e esmaecimento equilibrado) */}
+              <div className="absolute inset-0 pointer-events-none select-none overflow-hidden z-0">
+                <img
+                  src={empresaHero}
+                  alt="Equipe na empresa"
+                  className="w-full h-full object-cover object-right md:object-[85%_35%] opacity-50 md:opacity-60 mix-blend-multiply filter contrast-115 saturate-105"
+                  referrerPolicy="no-referrer"
+                />
+                {/* Esmaecimento suave nas bordas para preservar a presença visual das pessoas e o contraste do texto */}
+                <div className="absolute inset-0 bg-gradient-to-r from-warm/90 via-warm/55 md:via-warm/40 to-transparent" />
+                <div className="absolute inset-0 bg-gradient-to-t from-warm/85 via-transparent to-warm/40" />
+                <div className="absolute inset-0 bg-gradient-to-b from-warm/60 via-transparent to-warm/70" />
+              </div>
+
+              {/* Conteúdo sobreposto ao fundo fundido */}
+              <div className="relative z-10 max-w-4xl flex flex-col gap-5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="px-3 py-1 bg-sun-light text-forest text-[10px] font-bold uppercase tracking-[0.2em] rounded">
+                    Soluções Modulares
+                  </span>
+                  <span className="px-3 py-1 bg-white/90 border border-soft text-forest/75 text-[10px] font-semibold tracking-wider rounded backdrop-blur-xs">
+                    Compliance NR1 & Acolhimento
+                  </span>
                 </div>
-                <h1 className="font-serif text-5xl md:text-6xl leading-[1.1] font-medium text-forest">
+
+                <h1 className="font-serif text-4xl sm:text-5xl md:text-6xl leading-[1.1] font-medium text-forest drop-shadow-xs">
                   Cuidado que protege e transforma o ambiente de trabalho.
                 </h1>
-                <p className="text-lg text-forest/80 leading-relaxed max-w-lg mt-4">
-                  Antecipe-se às exigências da <strong>NR1</strong> implementando um programa efetivo de prevenção aos riscos psicossociais e <strong>evite multas e passivos trabalhistas</strong> por não conformidade. Mais do que um benefício (como um "Gympass da Mente"), é um cuidado estratégico que garante apoio emocional e psicológico à sua equipe, blindando a empresa e valorizando as pessoas.
+
+                <p className="text-base md:text-lg text-forest/85 leading-relaxed max-w-2xl">
+                  Oferecemos <strong>dois nichos de soluções estratégicas</strong> que sua organização pode contratar de forma <strong>independente ou combinada</strong> — onde um complementa e potencializa o outro:
                 </p>
-                <div className="flex flex-wrap items-center gap-4 mt-4">
-                  <div className="relative group">
-                    <div className="absolute -inset-1 bg-gradient-to-r from-[#25D366]/40 to-emerald-400/40 rounded-full blur-md opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
-                    <a
-                      href={getWhatsAppUrl()}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="relative px-7 py-3.5 bg-[#25D366] hover:bg-[#1ebd5b] text-white rounded-full font-semibold shadow-lg shadow-[#25D366]/20 transition-all flex items-center gap-2.5 text-sm cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
-                    >
-                      <MessageCircle className="w-5 h-5" />
-                      Falar com Consultor via WhatsApp
-                    </a>
+              </div>
+            </div>
+
+            {/* Os 2 Pilares Executivos de Soluções Modulares */}
+            <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-5 -mt-3">
+              {/* Nicho 1 */}
+              <div className="bg-white/95 backdrop-blur-md p-6 rounded-3xl border border-soft hover:border-sun/60 shadow-md shadow-forest/5 hover:shadow-xl transition-all flex flex-col justify-between gap-4 group">
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-forest/70 bg-warm px-3 py-1 rounded-full border border-soft">
+                      Nicho 1 • Compliance
+                    </span>
+                    <div className="w-10 h-10 rounded-2xl bg-sun/20 flex items-center justify-center text-forest group-hover:bg-sun transition-colors">
+                      <ShieldCheck className="w-5 h-5 text-forest" />
+                    </div>
                   </div>
+                  <h3 className="font-bold text-base md:text-lg text-forest leading-snug">
+                    Adequação à NR1: do diagnóstico ao plano de ação
+                  </h3>
+                  <p className="text-sm text-forest/75 leading-relaxed">
+                    Antecipe-se às exigências da NR1 implementando um programa efetivo de prevenção aos riscos psicossociais e evite multas e passivos trabalhistas por não conformidade através de nossas soluções.
+                  </p>
                 </div>
               </div>
-              <div className="w-full lg:w-1/2 flex justify-center lg:justify-end">
-                <div className="relative overflow-hidden rounded-3xl max-w-lg w-full group">
-                  <img src={empresaHero} alt="Ilustração Empresa e RH" className="w-full object-contain rounded-3xl mix-blend-multiply transition-all duration-700 group-hover:scale-[1.03]" referrerPolicy="no-referrer" />
-                  {/* Esmaecimento no pé da imagem */}
-                  <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-warm/80 via-warm/25 to-transparent pointer-events-none z-1 group-hover:opacity-40 transition-opacity duration-500" />
+
+              {/* Nicho 2 */}
+              <div className="bg-white/95 backdrop-blur-md p-6 rounded-3xl border border-soft hover:border-sun/60 shadow-md shadow-forest/5 hover:shadow-xl transition-all flex flex-col justify-between gap-4 group">
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-forest/70 bg-warm px-3 py-1 rounded-full border border-soft">
+                      Nicho 2 • Bem-Estar
+                    </span>
+                    <div className="w-10 h-10 rounded-2xl bg-emerald-100 flex items-center justify-center text-emerald-800 group-hover:bg-emerald-200 transition-colors">
+                      <HeartHandshake className="w-5 h-5 text-emerald-700" />
+                    </div>
+                  </div>
+                  <h3 className="font-bold text-base md:text-lg text-forest leading-snug">
+                    Canal de saúde e acolhimento ao colaborador e seus dependentes
+                  </h3>
+                  <p className="text-sm text-forest/75 leading-relaxed">
+                    Mais que um benefício corporativo, colaboradores com acesso à psicoterapia com psicólogos e terapeutas engajados é um cuidado estratégico que garante apoio emocional à sua equipe, blindando a empresa e valorizando as pessoas.
+                  </p>
                 </div>
               </div>
             </div>
 
-            <div className="w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-8">
+            {/* Tarja de Flexibilidade de Contratação + CTA WhatsApp */}
+            <div className="w-full flex flex-col sm:flex-row items-center justify-between gap-4 p-5 bg-white/90 backdrop-blur-sm border border-soft rounded-2xl shadow-sm">
+              <div className="flex items-start sm:items-center gap-3 text-xs md:text-sm text-forest/80 max-w-2xl">
+                <Sparkles className="w-5 h-5 text-sun-dark shrink-0 mt-0.5 sm:mt-0" />
+                <p className="leading-relaxed">
+                  <strong>Contratação flexível e modular:</strong> A empresa tem a liberdade de contratar ambos os serviços para um ecossistema completo de ponta a ponta, ou contratar apenas um deles conforme a necessidade prioritária do momento.
+                </p>
+              </div>
+              <div className="relative group shrink-0 w-full sm:w-auto">
+                <div className="absolute -inset-1 bg-gradient-to-r from-[#25D366]/40 to-emerald-400/40 rounded-full blur-md opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
+                <a
+                  href={getWhatsAppUrl()}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="relative px-7 py-3.5 bg-[#25D366] hover:bg-[#1ebd5b] text-white rounded-full font-semibold shadow-lg shadow-[#25D366]/20 transition-all flex items-center justify-center gap-2.5 text-sm cursor-pointer hover:scale-[1.02] active:scale-[0.98] w-full sm:w-auto"
+                >
+                  <MessageCircle className="w-5 h-5" />
+                  Falar com Consultor via WhatsApp
+                </a>
+              </div>
+            </div>
+
+            <div className="w-full grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mt-8">
               <div className="bg-white/90 backdrop-blur-md p-6 rounded-3xl border border-white/80 flex flex-col gap-3 shadow-lg shadow-forest/5 hover:shadow-xl hover:border-sun/40 hover:-translate-y-1 transition-all duration-300 group">
                 <div className="w-12 h-12 rounded-2xl bg-sun/15 border border-sun/30 flex items-center justify-center text-sun-dark group-hover:bg-sun group-hover:text-forest transition-colors duration-300">
                   <Building2 className="w-6 h-6" />
@@ -230,27 +305,35 @@ export function EmpresaView({ onNavigate }: { onNavigate: (view: 'landing' | 'ac
 
               <div className="bg-white/90 backdrop-blur-md p-6 rounded-3xl border border-white/80 flex flex-col gap-3 shadow-lg shadow-forest/5 hover:shadow-xl hover:border-sun/40 hover:-translate-y-1 transition-all duration-300 group">
                 <div className="w-12 h-12 rounded-2xl bg-sun/15 border border-sun/30 flex items-center justify-center text-sun-dark group-hover:bg-sun group-hover:text-forest transition-colors duration-300">
-                  <Briefcase className="w-6 h-6" />
+                  <BarChart3 className="w-6 h-6" />
                 </div>
-                <h3 className="font-semibold text-lg text-forest">Carga Otimizada</h3>
-                <p className="text-sm text-forest/75 leading-relaxed">Planos flexíveis com excelente custo-benefício para subsidiar sua operação.</p>
+                <h3 className="font-semibold text-lg text-forest">Indicadores Estratégicos</h3>
+                <p className="text-sm text-forest/75 leading-relaxed">Métricas agregadas e anônimas sobre demandas emocionais para orientar o RH.</p>
+              </div>
+
+              <div className="bg-white/90 backdrop-blur-md p-6 rounded-3xl border border-white/80 flex flex-col gap-3 shadow-lg shadow-forest/5 hover:shadow-xl hover:border-sun/40 hover:-translate-y-1 transition-all duration-300 group">
+                <div className="w-12 h-12 rounded-2xl bg-sun/15 border border-sun/30 flex items-center justify-center text-sun-dark group-hover:bg-sun group-hover:text-forest transition-colors duration-300">
+                  <ShieldCheck className="w-6 h-6" />
+                </div>
+                <h3 className="font-semibold text-lg text-forest">Canal Seguro & Confidencial</h3>
+                <p className="text-sm text-forest/75 leading-relaxed">Espaço protegido pelo CFP e LGPD, onde o colaborador busca apoio sem receio de exposição.</p>
               </div>
             </div>
           </div>
         </section>
 
-        {/* Mapa Mental do Cuidado Psicossocial */}
+        {/* Mapa Mental do Cuidado Psicossocial / Como Funciona */}
         <section className="w-full px-6 md:px-12 py-16 bg-[#FAF8F5] flex justify-center border-b border-soft">
           <div className="max-w-4xl w-full flex flex-col items-center">
             <div className="text-center max-w-2xl mb-12 flex flex-col items-center gap-3">
               <span className="px-3 py-1 bg-sun-light text-forest text-[10px] font-bold uppercase tracking-[0.2em] w-fit rounded">
-                Ecossistema na Prática
+                Como Funciona na Prática
               </span>
               <h2 className="font-serif text-3xl md:text-4xl text-forest font-medium">
-                Cuidado Psicossocial & Compliance NR1
+                Cuidado Psicossocial & Parceria Corporativa
               </h2>
               <p className="text-sm text-forest/80 leading-relaxed">
-                Mais do que relatórios burocráticos, nossa plataforma habilita um canal de suporte humanizado e confidencial. Seus colaboradores ganham acesso integral ao nosso qualificado ecossistema de psicólogos e terapeutas.
+                Um modelo inteligente, seguro e confidencial que viabiliza o acesso da sua equipe a especialistas qualificados com condições acessíveis, sem custos de consultas para a empresa.
               </p>
             </div>
 
@@ -265,9 +348,9 @@ export function EmpresaView({ onNavigate }: { onNavigate: (view: 'landing' | 'ac
                   <Building2 className="w-5 h-5 text-forest" />
                 </div>
                 <div>
-                  <h4 className="font-bold text-base text-forest mb-1">Adesão Corporativa</h4>
+                  <h4 className="font-bold text-base text-forest mb-1">Parceria & Acesso</h4>
                   <p className="text-xs text-forest/70 leading-relaxed">
-                    Sua empresa oficializa as práticas de compliance e disponibiliza a plataforma para todos os colaboradores regulamentados.
+                    Sua empresa formaliza a parceria e disponibiliza o código corporativo exclusivo para colaboradores e seus dependentes.
                   </p>
                 </div>
               </div>
@@ -278,12 +361,12 @@ export function EmpresaView({ onNavigate }: { onNavigate: (view: 'landing' | 'ac
                   Passo 2
                 </div>
                 <div className="w-10 h-10 bg-warm/70 text-forest rounded-2xl flex items-center justify-center font-bold group-hover:bg-sun/20 transition-colors">
-                  <Sparkles className="w-5 h-5 text-forest" />
+                  <Users className="w-5 h-5 text-forest" />
                 </div>
                 <div>
-                  <h4 className="font-bold text-base text-forest mb-1">Iniciativa Segura</h4>
+                  <h4 className="font-bold text-base text-forest mb-1">Rede de Especialistas</h4>
                   <p className="text-xs text-forest/70 leading-relaxed">
-                    Em sigilo absoluto e quando sentir necessidade, o colaborador faz contato de forma autônoma e discreta.
+                    Com o código, o colaborador acessa o ambiente seguro da plataforma e escolhe livremente o especialista ideal.
                   </p>
                 </div>
               </div>
@@ -294,17 +377,17 @@ export function EmpresaView({ onNavigate }: { onNavigate: (view: 'landing' | 'ac
                   Passo 3
                 </div>
                 <div className="w-10 h-10 bg-warm/70 text-forest rounded-2xl flex items-center justify-center font-bold group-hover:bg-sun/20 transition-colors">
-                  <UserCheck className="w-5 h-5 text-forest" />
+                  <CalendarCheck className="w-5 h-5 text-forest" />
                 </div>
                 <div>
-                  <h4 className="font-bold text-base text-forest mb-1">Triagem Dedicada</h4>
+                  <h4 className="font-bold text-base text-forest mb-1">Agendamento Direto</h4>
                   <p className="text-xs text-forest/70 leading-relaxed">
-                    O paciente passa por um processo de acolhimento e triagem humana de forma 100% estruturada usando o acesso corporativo.
+                    O contato e o agendamento são realizados diretamente com o profissional, com total sigilo e privacidade garantidos.
                   </p>
                 </div>
               </div>
 
-              {/* Passo 4 - Destaque do benefício financeiro / valor social com Glassmorphism Esmeralda */}
+              {/* Passo 4 - Destaque das condições acessíveis com Glassmorphism Esmeralda */}
               <div className="bg-emerald-50/90 backdrop-blur-md p-6 rounded-3xl border border-emerald-200/80 flex flex-col gap-4 relative shadow-md shadow-emerald-700/10 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group">
                 <div className="absolute top-4 right-4 text-xs font-mono font-bold text-emerald-800 bg-emerald-100/90 border border-emerald-300/60 px-2 py-0.5 rounded-full">
                   Passo 4
@@ -313,9 +396,9 @@ export function EmpresaView({ onNavigate }: { onNavigate: (view: 'landing' | 'ac
                   <Coins className="w-5 h-5 text-emerald-700" />
                 </div>
                 <div>
-                  <h4 className="font-bold text-base text-emerald-950 mb-1">Acesso Subsidiado</h4>
+                  <h4 className="font-bold text-base text-emerald-950 mb-1">Valores Acessíveis</h4>
                   <p className="text-xs text-emerald-800 leading-relaxed font-medium">
-                    O profissional da triagem encaminha o paciente ao psicólogo especialista, cobrando do colaborador um <strong>valor de tarifa acessível imbatível</strong>, drasticamente menor que no mercado clínico comum.
+                    Atendimento em <strong>faixas de valores acessíveis</strong> predeterminados, pagos diretamente pelo colaborador ao especialista — sem custos de consultas para a empresa.
                   </p>
                 </div>
               </div>
@@ -327,7 +410,7 @@ export function EmpresaView({ onNavigate }: { onNavigate: (view: 'landing' | 'ac
                 <Sparkles className="w-5 h-5" />
               </div>
               <p className="text-xs text-forest/80 leading-relaxed">
-                <strong>Alinhamento Estratégico:</strong> Este mecanismo reduz drasticamente a barreira financeira para o funcionário, garantindo engajamento preventivo de saúde mental e preenchendo todos os requisitos legais exigidos pela regulamentação da <strong>NR1</strong>.
+                <strong>Alinhamento Estratégico:</strong> Um modelo sustentável que elimina custos com consultas para a organização e viabiliza apoio psicológico humanizado com condições acessíveis para toda a equipe, atendendo plenamente à <strong>NR1</strong>.
               </p>
             </div>
           </div>

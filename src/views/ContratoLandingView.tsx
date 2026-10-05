@@ -15,9 +15,119 @@ import {
   Lock,
   RotateCcw,
   Sparkles,
-  Info
+  Info,
+  Type,
+  PenTool,
+  Check
 } from "lucide-react";
 import { Breadcrumbs } from "../components/Breadcrumbs";
+
+// Estilos Caligráficos Formais para Assinatura Eletrônica Tipográfica
+export const ESTILOS_RUBRICA = [
+  {
+    id: 1,
+    nome: "Caligráfico Contemporâneo",
+    fontFamily: "'Dancing Script', 'Brush Script MT', cursive",
+    desc: "Traço fluido e expressivo",
+    italic: false,
+  },
+  {
+    id: 2,
+    nome: "Manuscrito Natural",
+    fontFamily: "'Caveat', cursive",
+    desc: "Espontâneo e autêntico",
+    italic: false,
+  },
+  {
+    id: 3,
+    nome: "Formal Clássico",
+    fontFamily: "'Great Vibes', cursive",
+    desc: "Caligrafia tradicional de cartório",
+    italic: false,
+  },
+  {
+    id: 4,
+    nome: "Executivo Monograma",
+    fontFamily: "'Playfair Display', Georgia, serif",
+    desc: "Sóbrio, formal e corporativo",
+    italic: true,
+  },
+];
+
+// Gera a imagem em base64 da rubrica tipográfica em alta resolução (PNG) para anexo probatório
+export function gerarImagemRubricaTipografica(
+  nome: string,
+  cpf: string,
+  estiloId: number
+): string {
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = 800;
+    canvas.height = 240;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return "";
+
+    // Fundo transparente
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Linha guia de assinatura
+    ctx.strokeStyle = "rgba(27, 77, 62, 0.35)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(60, 160);
+    ctx.lineTo(740, 160);
+    ctx.stroke();
+
+    // Estilo selecionado
+    const estilo = ESTILOS_RUBRICA.find((e) => e.id === estiloId) || ESTILOS_RUBRICA[0];
+    ctx.fillStyle = "#1b4d3e"; // Forest green
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+
+    let fontSize = 54;
+    if (estiloId === 2) fontSize = 64;
+    if (estiloId === 3) fontSize = 60;
+    if (estiloId === 4) fontSize = 48;
+
+    const nomeExibicao = (nome || "Assinatura Digital").trim();
+    if (nomeExibicao.length > 25) {
+      fontSize = Math.max(34, Math.round(fontSize * (25 / nomeExibicao.length)));
+    }
+
+    ctx.font = `${estilo.italic ? "italic bold" : "bold"} ${fontSize}px ${estilo.fontFamily}`;
+    ctx.fillText(nomeExibicao, 400, 105);
+
+    // Carimbo probatório sob a linha
+    ctx.font = "bold 13px system-ui, -apple-system, sans-serif";
+    ctx.fillStyle = "#1b4d3e";
+    const now = new Date();
+    const dataFormatada = now.toLocaleDateString("pt-BR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    ctx.fillText(
+      `ASSINADO DIGITALMENTE • ${nomeExibicao.toUpperCase()} • CPF: ${cpf || "CONFERIDO"} • ${dataFormatada}`,
+      400,
+      185
+    );
+
+    ctx.font = "10px system-ui, -apple-system, sans-serif";
+    ctx.fillStyle = "rgba(27, 77, 62, 0.65)";
+    ctx.fillText(
+      "VALIDADE JURÍDICA ASSEGURADA PELA LEI FEDERAL Nº 14.063/2020 E ART. 107 DO CÓDIGO CIVIL",
+      400,
+      205
+    );
+
+    return canvas.toDataURL("image/png");
+  } catch (err) {
+    console.error("Erro ao gerar imagem da rubrica tipográfica:", err);
+    return "";
+  }
+}
 
 // Função para gerar hash SHA-256 do texto para prova matemática de integridade
 async function gerarHashSha256(mensagem: string): Promise<string> {
@@ -66,10 +176,17 @@ export function ContratoLandingView({
     aceiteEnquadre: true,
   });
 
-  // Canvas para Rubrica com o dedo / touch / mouse
+  // Modo de Assinatura Híbrido (Alternativa C):
+  // "digitar" (Recomendado: Rubrica Tipográfica Formal) vs "desenhar" (Canvas com Dedo/Mouse Calibrado 1:1)
+  const [metodoAssinatura, setMetodoAssinatura] = useState<"digitar" | "desenhar">("digitar");
+  const [nomeRubrica, setNomeRubrica] = useState("");
+  const [estiloFonteRubrica, setEstiloFonteRubrica] = useState<number>(1);
+
+  // Canvas para Rubrica com o dedo / touch / mouse (com DPI e Bézier)
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [hasSignature, setHasSignature] = useState(false);
+  const lastPointRef = useRef<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: "instant" });
@@ -112,6 +229,9 @@ export function ContratoLandingView({
             menorIdade: isMenor,
             nomeMenor: resp ? nomeFinal : "",
           }));
+
+          setNomeRubrica((prev) => prev || nomeFinal);
+
           if (docData.contratoAssinado) {
             setSigned(true);
           }
@@ -125,43 +245,135 @@ export function ContratoLandingView({
     fetchAcolhimento();
   }, [contratoId]);
 
-  // Funções de desenho da Rubrica Digital
+  // Configuração Responsiva do Canvas com Calibração 1:1 e Suporte a Telas Retina/High-DPI
+  const setupCanvas = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    const targetW = Math.round(rect.width * dpr);
+    const targetH = Math.round(rect.height * dpr);
+
+    if (canvas.width !== targetW || canvas.height !== targetH) {
+      canvas.width = targetW;
+      canvas.height = targetH;
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        ctx.scale(dpr, dpr);
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        ctx.strokeStyle = "#1b4d3e";
+        ctx.lineWidth = 2.5;
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (metodoAssinatura === "desenhar") {
+      const timer = setTimeout(setupCanvas, 60);
+      window.addEventListener("resize", setupCanvas);
+      return () => {
+        clearTimeout(timer);
+        window.removeEventListener("resize", setupCanvas);
+      };
+    }
+  }, [metodoAssinatura]);
+
+  const getCanvasCoords = (
+    e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>
+  ) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
+    const rect = canvas.getBoundingClientRect();
+    let clientX = 0;
+    let clientY = 0;
+
+    if ("touches" in e) {
+      if (e.touches && e.touches.length > 0) {
+        clientX = e.touches[0].clientX;
+        clientY = e.touches[0].clientY;
+      } else if (e.changedTouches && e.changedTouches.length > 0) {
+        clientX = e.changedTouches[0].clientX;
+        clientY = e.changedTouches[0].clientY;
+      }
+    } else {
+      clientX = (e as React.MouseEvent).clientX;
+      clientY = (e as React.MouseEvent).clientY;
+    }
+
+    return {
+      x: clientX - rect.left,
+      y: clientY - rect.top,
+    };
+  };
+
+  // Funções de desenho da Rubrica Digital com Suavização Bézier
   const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    if ("touches" in e && e.cancelable) {
+      e.preventDefault();
+    }
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
+    setupCanvas();
+
+    const coords = getCanvasCoords(e);
     setIsDrawing(true);
-    const rect = canvas.getBoundingClientRect();
-    const x = "touches" in e ? e.touches[0].clientX - rect.left : e.clientX - rect.left;
-    const y = "touches" in e ? e.touches[0].clientY - rect.top : e.clientY - rect.top;
+    lastPointRef.current = coords;
 
     ctx.beginPath();
-    ctx.moveTo(x, y);
-    ctx.lineWidth = 2.5;
-    ctx.lineCap = "round";
-    ctx.strokeStyle = "#1b4d3e"; // Forest green signature
+    ctx.arc(coords.x, coords.y, 1.25, 0, Math.PI * 2);
+    ctx.fillStyle = "#1b4d3e";
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(coords.x, coords.y);
   };
 
   const draw = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    if ("touches" in e && e.cancelable) {
+      e.preventDefault();
+    }
     if (!isDrawing) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+    if (!ctx || !lastPointRef.current) return;
 
-    const rect = canvas.getBoundingClientRect();
-    const x = "touches" in e ? e.touches[0].clientX - rect.left : e.clientX - rect.left;
-    const y = "touches" in e ? e.touches[0].clientY - rect.top : e.clientY - rect.top;
+    const currentPoint = getCanvasCoords(e);
 
-    ctx.lineTo(x, y);
+    // Suavização contínua por Curva Bézier Quadrática usando ponto médio
+    const midPoint = {
+      x: (lastPointRef.current.x + currentPoint.x) / 2,
+      y: (lastPointRef.current.y + currentPoint.y) / 2,
+    };
+
+    ctx.strokeStyle = "#1b4d3e";
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+
+    ctx.quadraticCurveTo(
+      lastPointRef.current.x,
+      lastPointRef.current.y,
+      midPoint.x,
+      midPoint.y
+    );
     ctx.stroke();
+
+    lastPointRef.current = currentPoint;
     setHasSignature(true);
   };
 
-  const stopDrawing = () => {
+  const stopDrawing = (e?: React.MouseEvent | React.TouchEvent) => {
+    if (e && "touches" in e && e.cancelable) {
+      e.preventDefault();
+    }
     setIsDrawing(false);
+    lastPointRef.current = null;
   };
 
   const clearSignature = () => {
@@ -169,8 +381,14 @@ export function ContratoLandingView({
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
+
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.restore();
+
     setHasSignature(false);
+    lastPointRef.current = null;
   };
 
   const handlePrint = () => {
@@ -194,10 +412,28 @@ export function ContratoLandingView({
     setIsSubmitting(true);
 
     try {
-      // Captura a imagem da rubrica em base64 se desenhada
+      // Captura da rubrica eletrônica conforme o método escolhido
       let rubricaBase64 = "";
-      if (canvasRef.current && hasSignature) {
+      let metodoFinal = metodoAssinatura;
+
+      if (metodoAssinatura === "digitar") {
+        const nomeSignatario = (nomeRubrica.trim() || formData.nome.trim()) || "Assinatura Digital";
+        rubricaBase64 = gerarImagemRubricaTipografica(
+          nomeSignatario,
+          formData.cpf.trim(),
+          estiloFonteRubrica
+        );
+      } else if (canvasRef.current && hasSignature) {
         rubricaBase64 = canvasRef.current.toDataURL("image/png");
+      } else {
+        // Fallback: se estava na aba desenhar mas não desenhou, gera tipográfica automática
+        const nomeSignatario = formData.nome.trim() || "Assinatura Digital";
+        rubricaBase64 = gerarImagemRubricaTipografica(
+          nomeSignatario,
+          formData.cpf.trim(),
+          estiloFonteRubrica
+        );
+        metodoFinal = "digitar";
       }
 
       const textoParaHash = data.contratoText || "Contrato Terapêutico Padrão AcolheMente Saúde";
@@ -223,9 +459,11 @@ export function ContratoLandingView({
         menorIdade: formData.menorIdade,
         nomeMenor: formData.menorIdade ? formData.nomeMenor : "",
         rubricaBase64: rubricaBase64 || null,
+        metodoAssinatura: metodoFinal,
+        estiloFonteRubrica: metodoFinal === "digitar" ? estiloFonteRubrica : null,
         userAgent: navigator.userAgent || "Navegador Web",
         consentimentoLgpd: true,
-        versaoTermos: "1.0 - Resolução CFP 11/2018",
+        versaoTermos: "1.0 - Lei nº 14.063/2020 e Resolução CFP 11/2018",
       };
 
       const notifAnterior = data.notificacao ? data.notificacao + "\n\n" : "";
@@ -383,12 +621,16 @@ export function ContratoLandingView({
               <div className="bg-white/90 p-3 rounded-xl border border-emerald-200 flex items-center justify-between">
                 <div>
                   <span className="text-[10px] uppercase font-bold text-forest/60 block">Rubrica Digital Registrada</span>
-                  <span className="text-xs text-forest/70">Coletada via tela sensível ao toque / dispositivo</span>
+                  <span className="text-xs text-forest/70">
+                    {audit.metodoAssinatura === "digitar"
+                      ? "Assinatura Eletrônica Tipográfica Certificada (Lei Federal nº 14.063/2020)"
+                      : "Assinatura Digital Capturada na Tela (Calibração 1:1)"}
+                  </span>
                 </div>
                 <img
                   src={audit.rubricaBase64}
                   alt="Rubrica Digital"
-                  className="h-12 border border-soft rounded-lg bg-warm/30 px-3 py-1 object-contain"
+                  className="h-14 border border-soft rounded-lg bg-warm/30 px-3 py-1 object-contain"
                 />
               </div>
             )}
@@ -627,49 +869,175 @@ export function ContratoLandingView({
             )}
           </div>
 
-          {/* Rubrica Digital (Opção 2 recomendada - Canvas de toque) */}
-          <div className="p-5 bg-warm/20 rounded-2xl border border-soft space-y-3">
-            <div className="flex items-center justify-between">
+          {/* Seletor de Modo de Assinatura Híbrido (Alternativa C) */}
+          <div className="p-5 sm:p-6 bg-warm/30 rounded-2xl border border-soft space-y-4">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-soft/80 pb-3">
               <div>
-                <label className="text-xs font-bold uppercase tracking-wider text-forest/80 flex items-center gap-1.5">
-                  <FileSignature className="w-4 h-4 text-emerald-700" /> Rubrica Digital na Tela (Com o dedo ou mouse)
+                <label className="text-xs font-bold uppercase tracking-wider text-forest/90 flex items-center gap-1.5">
+                  <FileSignature className="w-4 h-4 text-emerald-700" /> Assinatura Digital do Signatário
                 </label>
-                <p className="text-[11px] text-forest/60">
-                  Desenhe sua assinatura no quadro abaixo. Ela será anexada ao seu termo de auditoria.
+                <p className="text-[11px] text-forest/65 mt-0.5">
+                  Escolha como prefere firmar o contrato: gerando uma rubrica tipográfica formal ou desenhando livremente.
                 </p>
               </div>
 
-              {hasSignature && (
+              {/* Toggle de Abas: Digitar vs Desenhar */}
+              <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-soft shadow-2xs self-stretch sm:self-auto">
                 <button
                   type="button"
-                  onClick={clearSignature}
-                  className="text-xs font-semibold text-rose-700 hover:text-rose-900 underline cursor-pointer"
+                  onClick={() => setMetodoAssinatura("digitar")}
+                  className={`flex-1 sm:flex-initial px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    metodoAssinatura === "digitar"
+                      ? "bg-emerald-700 text-white shadow-2xs"
+                      : "text-forest/70 hover:text-forest hover:bg-warm/50"
+                  }`}
                 >
-                  Limpar e redesenhar
+                  <Type className="w-3.5 h-3.5" />
+                  <span>Digitar Nome (Recomendado)</span>
                 </button>
-              )}
+
+                <button
+                  type="button"
+                  onClick={() => setMetodoAssinatura("desenhar")}
+                  className={`flex-1 sm:flex-initial px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    metodoAssinatura === "desenhar"
+                      ? "bg-emerald-700 text-white shadow-2xs"
+                      : "text-forest/70 hover:text-forest hover:bg-warm/50"
+                  }`}
+                >
+                  <PenTool className="w-3.5 h-3.5" />
+                  <span>Desenhar com Dedo/Mouse</span>
+                </button>
+              </div>
             </div>
 
-            <div className="relative bg-white rounded-xl border-2 border-dashed border-forest/20 overflow-hidden touch-none h-32 flex items-center justify-center">
-              <canvas
-                ref={canvasRef}
-                width={700}
-                height={128}
-                className="w-full h-full cursor-crosshair"
-                onMouseDown={startDrawing}
-                onMouseMove={draw}
-                onMouseUp={stopDrawing}
-                onMouseLeave={stopDrawing}
-                onTouchStart={startDrawing}
-                onTouchMove={draw}
-                onTouchEnd={stopDrawing}
-              />
-              {!hasSignature && (
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none text-forest/30 text-xs italic">
-                  ✍️ Toque ou use o mouse para assinar aqui
+            {/* CONTEÚDO DA ABA 1: DIGITAR NOME / RUBRICA TIPOGRÁFICA */}
+            {metodoAssinatura === "digitar" && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-forest mb-1">
+                      Nome para Rubrica Digital
+                    </label>
+                    <input
+                      type="text"
+                      value={nomeRubrica || formData.nome}
+                      onChange={(e) => setNomeRubrica(e.target.value)}
+                      placeholder="Nome do signatário"
+                      className="w-full bg-white text-xs text-forest font-semibold border border-soft rounded-xl p-2.5 focus:outline-none focus:border-emerald-600 shadow-2xs"
+                    />
+                    <p className="text-[10px] text-forest/50 mt-1">
+                      Você pode abreviar ou personalizar a grafia da sua assinatura.
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-forest mb-1">
+                      Estilo Caligráfico Formal
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {ESTILOS_RUBRICA.map((estilo) => (
+                        <button
+                          key={estilo.id}
+                          type="button"
+                          onClick={() => setEstiloFonteRubrica(estilo.id)}
+                          className={`p-2 rounded-xl border text-left transition-all cursor-pointer ${
+                            estiloFonteRubrica === estilo.id
+                              ? "bg-emerald-50 border-emerald-500 shadow-2xs ring-1 ring-emerald-500"
+                              : "bg-white border-soft hover:border-emerald-300"
+                          }`}
+                        >
+                          <span
+                            className="block text-base text-forest truncate"
+                            style={{
+                              fontFamily: estilo.fontFamily,
+                              fontStyle: estilo.italic ? "italic" : "normal",
+                            }}
+                          >
+                            {(nomeRubrica || formData.nome || "Assinatura").slice(0, 16)}
+                          </span>
+                          <span className="text-[9px] font-bold text-forest/60 block truncate">
+                            {estilo.nome}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
-              )}
-            </div>
+
+                {/* Prévia da Assinatura Gerada com Carimbo Legal */}
+                <div className="p-4 bg-white rounded-xl border-2 border-dashed border-emerald-600/30 flex flex-col items-center justify-center text-center gap-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-forest/40">
+                    Prévia Oficial da Rubrica no Contrato
+                  </span>
+                  <div
+                    className="text-2xl sm:text-3xl text-forest py-2 select-none"
+                    style={{
+                      fontFamily: ESTILOS_RUBRICA.find((e) => e.id === estiloFonteRubrica)?.fontFamily,
+                      fontStyle: ESTILOS_RUBRICA.find((e) => e.id === estiloFonteRubrica)?.italic ? "italic" : "normal",
+                    }}
+                  >
+                    {nomeRubrica || formData.nome || "Sua Assinatura"}
+                  </div>
+                  <div className="w-full max-w-sm h-px bg-forest/20" />
+                  <div className="flex flex-wrap items-center justify-center gap-2 text-[10px] text-forest/60 font-mono">
+                    <span className="font-bold text-emerald-800">ASSINADO DIGITALMENTE</span>
+                    <span>•</span>
+                    <span>CPF: {formData.cpf || "000.000.000-00"}</span>
+                  </div>
+                  <span className="text-[9px] text-forest/45 uppercase tracking-wider">
+                    Conformidade com a Lei Federal nº 14.063/2020 • Validade Jurídica Plena
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* CONTEÚDO DA ABA 2: DESENHO LIVRE COM O DEDO / MOUSE CALIBRADO */}
+            {metodoAssinatura === "desenhar" && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-forest/70 text-[11px]">
+                    Deslize o dedo sobre o quadro abaixo. O traçado responde em tempo real com caligrafia suave.
+                  </span>
+                  {hasSignature && (
+                    <button
+                      type="button"
+                      onClick={clearSignature}
+                      className="text-xs font-semibold text-rose-700 hover:text-rose-900 underline cursor-pointer"
+                    >
+                      Limpar e redesenhar
+                    </button>
+                  )}
+                </div>
+
+                <div className="relative bg-white rounded-xl border-2 border-dashed border-forest/25 overflow-hidden h-36 flex items-center justify-center shadow-inner">
+                  <canvas
+                    ref={canvasRef}
+                    className="w-full h-full cursor-crosshair touch-none select-none"
+                    onMouseDown={startDrawing}
+                    onMouseMove={draw}
+                    onMouseUp={stopDrawing}
+                    onMouseLeave={stopDrawing}
+                    onTouchStart={startDrawing}
+                    onTouchMove={draw}
+                    onTouchEnd={stopDrawing}
+                  />
+                  {!hasSignature && (
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none text-forest/35 text-xs font-medium">
+                      ✍️ Toque com o dedo ou mouse aqui para desenhar
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center justify-between text-[10px] text-forest/50">
+                  <span>💡 Calibração ativa 1:1 com compensação de toque e DPI</span>
+                  {hasSignature && (
+                    <span className="text-emerald-700 font-bold flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3" /> Rubrica capturada
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Declarações e Consentimento LGPD */}

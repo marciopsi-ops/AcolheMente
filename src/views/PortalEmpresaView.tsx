@@ -9,6 +9,7 @@ import {
   getDocs,
   onSnapshot,
   addDoc,
+  serverTimestamp,
 } from "firebase/firestore";
 import * as XLSX from "xlsx";
 import { db } from "../lib/firebase";
@@ -72,7 +73,11 @@ import {
   UserPlus,
   Link2,
   ExternalLink,
+  Save,
+  Calculator,
+  Coins,
 } from "lucide-react";
+import { formatMoedaBR, parseMoedaBR } from "./FichaEmpresaLandingView";
 import {
   CategoriaEmpresa,
   getEmpresaCategorias,
@@ -131,6 +136,15 @@ const MESES_ANO = [
   { valor: 10, nome: "Outubro" },
   { valor: 11, nome: "Novembro" },
   { valor: 12, nome: "Dezembro" },
+];
+
+const FORMAS_PAGAMENTO_OPCOES = [
+  "Boleto Bancário Mensal",
+  "Faturamento via Nota Fiscal (30 dias)",
+  "PIX Corporativo (PJ)",
+  "Cartão de Crédito Corporativo",
+  "Transferência Bancária (TED/DOC)",
+  "Personalizado / Negociação em Contrato",
 ];
 
 export function PortalEmpresaView({
@@ -193,6 +207,15 @@ export function PortalEmpresaView({
     tipo: "servico",
     data: new Date().toISOString().split("T")[0],
   });
+
+  // Estados para Edição de Condições Financeiras & Faturamento (Gestão Exclusiva do Canal Parceiro)
+  const [condicaoValorPorVida, setCondicaoValorPorVida] = useState("");
+  const [condicaoValorMensal, setCondicaoValorMensal] = useState("");
+  const [condicaoFormaPagamento, setCondicaoFormaPagamento] = useState("Boleto Bancário Mensal");
+  const [condicaoValoresDefinidos, setCondicaoValoresDefinidos] = useState("");
+  const [condicaoDiaVencimento, setCondicaoDiaVencimento] = useState(10);
+  const [condicaoObservacoesFinanceiras, setCondicaoObservacoesFinanceiras] = useState("");
+  const [isSavingCondicoesFinanceiras, setIsSavingCondicoesFinanceiras] = useState(false);
 
   // Dados clínicos/atendimentos agregados (anônimos)
   const [atendimentosMes, setAtendimentosMes] = useState<any[]>([]);
@@ -348,24 +371,94 @@ export function PortalEmpresaView({
     return getEmpresaCategorias(empresaPrincipal);
   }, [empresaPrincipal]);
 
+  // Se o usuário logado no portal corporativo é um Canal Parceiro
   const isCanalBeneficios = useMemo(() => {
     return categoriasEmpresa.includes("canal_parceiro");
   }, [categoriasEmpresa]);
 
-  const isEmpresaConectada = useMemo(() => {
+  // Se a empresa ativa selecionada no painel é uma empresa conectada
+  const isEmpresaAtivaConectada = useMemo(() => {
     const emp = empresaAtiva || empresaPrincipal;
     return (
       hasEmpresaCategoria(emp, "empresa_conectada") ||
-      Boolean(emp?.canalParceiroId || emp?.empresaMaeId)
+      Boolean(emp?.canalParceiroId || emp?.empresaMaeId || emp?.empresaPaiId)
     );
   }, [empresaAtiva, empresaPrincipal]);
 
-  // Se a empresa conectada tentar acessar faturamento, redireciona para indicadores
+  // Alias para compatibilidade
+  const isEmpresaConectada = isEmpresaAtivaConectada;
+
+  // Identifica se quem está acessando é o cliente conectado final diretamente (sem ser o canal gestor)
+  const isClienteConectadoFinal = useMemo(() => {
+    return !isCanalBeneficios && isEmpresaAtivaConectada;
+  }, [isCanalBeneficios, isEmpresaAtivaConectada]);
+
+  // Permissão de acesso e edição da aba financeira:
+  // - Canal Parceiro SEMPRE pode ver e editar as condições e faturamento (da sua matriz e de todas as empresas conectadas)
+  // - Cliente direto também pode ver seu faturamento
+  // - Cliente conectado final NUNCA tem acesso (valores financeiros são sigilosos e de gestão exclusiva do canal)
+  const canManageFaturamento = useMemo(() => {
+    if (isCanalBeneficios) return true;
+    if (isClienteConectadoFinal) return false;
+    return true; // Empresa direta
+  }, [isCanalBeneficios, isClienteConectadoFinal]);
+
+  // Se está visualizando uma empresa conectada no painel
+  const isViewingEmpresaConectada = useMemo(() => {
+    return isEmpresaAtivaConectada;
+  }, [isEmpresaAtivaConectada]);
+
+  // Redireciona para indicadores caso o cliente conectado final tente acessar a aba financeira
   useEffect(() => {
-    if (isEmpresaConectada && activeTab === "faturamento") {
+    if (!canManageFaturamento && activeTab === "faturamento") {
       setActiveTab("indicadores");
     }
-  }, [isEmpresaConectada, activeTab]);
+  }, [canManageFaturamento, activeTab]);
+
+  // Sincroniza formulário de Condições Financeiras quando a empresa ativa mudar
+  useEffect(() => {
+    if (!empresaAtiva) return;
+    const fc = empresaAtiva.faturamentoConfig || {};
+
+    const vpv = fc.valorPorVida !== undefined ? fc.valorPorVida : empresaAtiva.valorPorVida;
+    if (typeof vpv === "number" && vpv > 0) {
+      setCondicaoValorPorVida(formatMoedaBR(vpv));
+    } else if (typeof vpv === "string" && vpv.trim()) {
+      setCondicaoValorPorVida(vpv);
+    } else {
+      setCondicaoValorPorVida("");
+    }
+
+    const vm =
+      fc.valorMensal !== undefined
+        ? fc.valorMensal
+        : fc.valorFixoMensal !== undefined
+        ? fc.valorFixoMensal
+        : empresaAtiva.valorMensal;
+    if (typeof vm === "number" && vm > 0) {
+      setCondicaoValorMensal(formatMoedaBR(vm));
+    } else if (typeof vm === "string" && vm.trim()) {
+      setCondicaoValorMensal(vm);
+    } else {
+      setCondicaoValorMensal("");
+    }
+
+    setCondicaoFormaPagamento(
+      fc.formaPagamento || empresaAtiva.formaPagamento || "Boleto Bancário Mensal"
+    );
+    setCondicaoValoresDefinidos(
+      fc.valoresDefinidos || empresaAtiva.valoresDefinidos || ""
+    );
+    setCondicaoDiaVencimento(
+      Number(fc.diaVencimento || empresaAtiva.diaVencimento) || 10
+    );
+    setCondicaoObservacoesFinanceiras(
+      fc.observacoesFinanceiras ||
+        empresaAtiva.observacoesFinanceiras ||
+        empresaAtiva.observacoesGerais ||
+        ""
+    );
+  }, [empresaAtiva?.id]);
 
   // Carrega a empresa principal em tempo real (atualiza automaticamente quando a Gestão AcolheMente cria/altera o código)
   useEffect(() => {
@@ -1473,6 +1566,132 @@ export function PortalEmpresaView({
     showToast("Chave PIX copiada para a área de transferência!", "success");
   };
 
+  // Handlers para Edição de Condições Financeiras (Canal Parceiro)
+  const handleCondicaoValorPorVidaChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value.replace(/\D/g, "");
+    if (!raw) {
+      setCondicaoValorPorVida("");
+      return;
+    }
+    const valNum = parseInt(raw, 10) / 100;
+    setCondicaoValorPorVida(formatMoedaBR(valNum));
+  };
+
+  const handleCondicaoValorMensalChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value.replace(/\D/g, "");
+    if (!raw) {
+      setCondicaoValorMensal("");
+      return;
+    }
+    const valNum = parseInt(raw, 10) / 100;
+    setCondicaoValorMensal(formatMoedaBR(valNum));
+  };
+
+  const handleCalcularMensalSugerido = (totalCalculado: number) => {
+    if (totalCalculado > 0) {
+      setCondicaoValorMensal(formatMoedaBR(totalCalculado));
+    }
+  };
+
+  const handleCalcularPorVidaSugerido = (porVidaEquivalente: number) => {
+    if (porVidaEquivalente > 0) {
+      setCondicaoValorPorVida(formatMoedaBR(porVidaEquivalente));
+    }
+  };
+
+  const handleSalvarCondicoesFinanceiras = async () => {
+    if (!empresaAtiva?.id) return;
+    setIsSavingCondicoesFinanceiras(true);
+    try {
+      const numPorVida = parseMoedaBR(condicaoValorPorVida);
+      const numMensal = parseMoedaBR(condicaoValorMensal);
+      const modeloCobranca =
+        numMensal > 0 && numPorVida === 0
+          ? "fixo_mensal"
+          : numPorVida > 0 && numMensal > 0
+          ? "hibrido"
+          : "por_vida";
+
+      const updatedPayload: any = {
+        valorPorVida: numPorVida,
+        valorMensal: numMensal,
+        formaPagamento: condicaoFormaPagamento,
+        valoresDefinidos: condicaoValoresDefinidos,
+        diaVencimento: Number(condicaoDiaVencimento) || 10,
+        observacoesFinanceiras: condicaoObservacoesFinanceiras,
+        "faturamentoConfig.valorPorVida": numPorVida,
+        "faturamentoConfig.valorMensal": numMensal,
+        "faturamentoConfig.valorFixoMensal": numMensal,
+        "faturamentoConfig.modeloCobranca": modeloCobranca,
+        "faturamentoConfig.diaVencimento": Number(condicaoDiaVencimento) || 10,
+        "faturamentoConfig.formaPagamento": condicaoFormaPagamento,
+        "faturamentoConfig.valoresDefinidos": condicaoValoresDefinidos,
+        "faturamentoConfig.observacoesFinanceiras": condicaoObservacoesFinanceiras,
+        updatedAt: serverTimestamp(),
+      };
+
+      await updateDoc(doc(db, "empresa_leads", empresaAtiva.id), updatedPayload);
+
+      setEmpresaAtiva((prev: any) => ({
+        ...prev,
+        valorPorVida: numPorVida,
+        valorMensal: numMensal,
+        formaPagamento: condicaoFormaPagamento,
+        valoresDefinidos: condicaoValoresDefinidos,
+        diaVencimento: Number(condicaoDiaVencimento) || 10,
+        observacoesFinanceiras: condicaoObservacoesFinanceiras,
+        faturamentoConfig: {
+          ...(prev?.faturamentoConfig || {}),
+          valorPorVida: numPorVida,
+          valorMensal: numMensal,
+          valorFixoMensal: numMensal,
+          modeloCobranca,
+          diaVencimento: Number(condicaoDiaVencimento) || 10,
+          formaPagamento: condicaoFormaPagamento,
+          valoresDefinidos: condicaoValoresDefinidos,
+          observacoesFinanceiras: condicaoObservacoesFinanceiras,
+        },
+      }));
+
+      setEmpresasConectadas((prev) =>
+        prev.map((c) =>
+          c.id === empresaAtiva.id
+            ? {
+                ...c,
+                valorPorVida: numPorVida,
+                valorMensal: numMensal,
+                formaPagamento: condicaoFormaPagamento,
+                valoresDefinidos: condicaoValoresDefinidos,
+                diaVencimento: Number(condicaoDiaVencimento) || 10,
+                observacoesFinanceiras: condicaoObservacoesFinanceiras,
+                faturamentoConfig: {
+                  ...(c.faturamentoConfig || {}),
+                  valorPorVida: numPorVida,
+                  valorMensal: numMensal,
+                  valorFixoMensal: numMensal,
+                  modeloCobranca,
+                  diaVencimento: Number(condicaoDiaVencimento) || 10,
+                  formaPagamento: condicaoFormaPagamento,
+                  valoresDefinidos: condicaoValoresDefinidos,
+                  observacoesFinanceiras: condicaoObservacoesFinanceiras,
+                },
+              }
+            : c
+        )
+      );
+
+      showToast(
+        `Condições financeiras de ${empresaAtiva.nomeEmpresa || empresaAtiva.razaoSocial || "empresa conectada"} salvas com sucesso!`,
+        "success"
+      );
+    } catch (err) {
+      console.error("Erro ao salvar condições financeiras:", err);
+      showToast("Erro ao salvar condições financeiras.", "error");
+    } finally {
+      setIsSavingCondicoesFinanceiras(false);
+    }
+  };
+
   // Tela de Carregamento
   if (loading) {
     return (
@@ -1645,7 +1864,7 @@ export function PortalEmpresaView({
           )}
 
           {onGoHome && (
-            <div className="mt-6 pt-5 border-t border-soft/80 flex flex-col items-center gap-2">
+            <div className="mt-6 pt-5 border-t border-soft/80 flex flex-col items-center">
               <button
                 type="button"
                 onClick={onGoHome}
@@ -1653,14 +1872,6 @@ export function PortalEmpresaView({
               >
                 <Globe className="w-3.5 h-3.5 text-forest/70" />
                 <span>Conheça a Rede AcolheMente</span>
-              </button>
-              <button
-                type="button"
-                onClick={onGoHome}
-                className="text-[11px] text-forest/50 hover:text-forest flex items-center justify-center gap-1 mx-auto cursor-pointer"
-              >
-                <ArrowLeft className="w-3 h-3" />
-                <span>Ir para a Página Inicial</span>
               </button>
             </div>
           )}
@@ -1904,7 +2115,7 @@ export function PortalEmpresaView({
             </span>
           </button>
 
-          {!isEmpresaConectada && (
+          {canManageFaturamento && (
             <button
               onClick={() => setActiveTab("faturamento")}
               className={`py-2 px-3 border-b-2 font-bold text-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
@@ -1914,10 +2125,20 @@ export function PortalEmpresaView({
               }`}
             >
               <Receipt className="w-3.5 h-3.5 text-emerald-700" />
-              <span>Faturamento & Mensalidade</span>
-              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-emerald-50 text-emerald-800 border border-emerald-200 font-extrabold">
-                R$ {faturamentoAtualCalculado.valorTotal.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+              <span>
+                {isViewingEmpresaConectada
+                  ? "Condições Financeiras & Faturamento"
+                  : "Faturamento & Mensalidade"}
               </span>
+              {isViewingEmpresaConectada ? (
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-purple-100 text-purple-900 border border-purple-200 font-extrabold">
+                  Canal Parceiro
+                </span>
+              ) : (
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-emerald-50 text-emerald-800 border border-emerald-200 font-extrabold">
+                  R$ {faturamentoAtualCalculado.valorTotal.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                </span>
+              )}
             </button>
           )}
 
@@ -2073,8 +2294,8 @@ export function PortalEmpresaView({
               </div>
             </div>
 
-            {/* Banner Executivo de Previsão de Faturamento do Mês (apenas empresas padrão/canal, oculto para conectadas) */}
-            {!isEmpresaConectada && (
+            {/* Banner Executivo de Previsão de Faturamento do Mês (apenas empresas padrão/canal, oculto para cliente conectado final) */}
+            {canManageFaturamento && (
               <div className="bg-gradient-to-r from-forest to-forest/90 text-white p-5 rounded-2xl border border-forest/50 shadow-md flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
                   <div className="w-12 h-12 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center text-sun shrink-0">
@@ -2985,10 +3206,302 @@ export function PortalEmpresaView({
         )}
 
         {/* ========================================================================= */}
-        {/* ABA 3: FATURAMENTO & MENSALIDADE PREVISTA */}
+        {/* ABA 3: CONDIÇÕES FINANCEIRAS & FATURAMENTO */}
         {/* ========================================================================= */}
-        {!isEmpresaConectada && activeTab === "faturamento" && (
+        {canManageFaturamento && activeTab === "faturamento" && (
           <div className="space-y-6">
+            {/* PAINEL DE CONDIÇÕES FINANCEIRAS & FATURAMENTO (TRANSFERIDO DA FICHA DE IMPLANTAÇÃO - EXCLUSIVO DO CANAL PARCEIRO) */}
+            {isViewingEmpresaConectada && isCanalBeneficios && (
+              <div className="bg-white rounded-2xl p-5 sm:p-7 shadow-xs border border-soft space-y-6">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-soft pb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-purple-50 border border-purple-200 flex items-center justify-center text-purple-700 shrink-0">
+                      <CreditCard className="w-5 h-5 text-purple-700" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-serif text-base sm:text-lg font-bold text-forest">
+                          Condições Financeiras & Variações de Contrato
+                        </h3>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-purple-100 text-purple-900 border border-purple-300">
+                          Exclusivo Canal Parceiro
+                        </span>
+                      </div>
+                      <p className="text-xs text-forest/70 mt-0.5">
+                        Defina e edite os valores e acertos financeiros acordados com {empresaAtiva?.nomeEmpresa || empresaAtiva?.razaoSocial || "a empresa conectada"}.
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleSalvarCondicoesFinanceiras}
+                    disabled={isSavingCondicoesFinanceiras}
+                    className="px-4 py-2 bg-forest hover:bg-forest/90 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-xs cursor-pointer disabled:opacity-50"
+                  >
+                    {isSavingCondicoesFinanceiras ? (
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Save className="w-4 h-4 text-sun" />
+                    )}
+                    <span>{isSavingCondicoesFinanceiras ? "Salvando..." : "Salvar Condições Financeiras"}</span>
+                  </button>
+                </div>
+
+                {/* Banner de Sigilo Comercial */}
+                <div className="p-3.5 bg-purple-50/80 border border-purple-200 rounded-xl flex items-center gap-3 text-xs text-purple-950">
+                  <ShieldCheck className="w-5 h-5 text-purple-700 shrink-0" />
+                  <p>
+                    <strong>Gestão Sigilosa Intermediada:</strong> Por ser uma empresa conectada via seu Canal Parceiro, o cliente final não visualiza estes acertos financeiros no portal dele. Todos os valores, variações e cobranças são geridos estritamente por você.
+                  </p>
+                </div>
+
+                {/* Grid dos Dois Campos Financeiros em Reais */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  {/* Campo 1: Valor por Vida em Reais */}
+                  <div className="flex flex-col gap-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold uppercase tracking-wider text-forest/80 flex items-center gap-1.5">
+                        <Users className="w-3.5 h-3.5 text-purple-700" />
+                        Valor por Vida em Reais (R$)
+                      </label>
+                      <span className="text-[10px] uppercase font-bold text-forest/40">Por colaborador / mês</span>
+                    </div>
+                    <div className="relative">
+                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-bold text-forest/60">
+                        R$
+                      </span>
+                      <input
+                        type="text"
+                        value={condicaoValorPorVida}
+                        onChange={handleCondicaoValorPorVidaChange}
+                        placeholder="Ex: 25,00 ou 35,00"
+                        className="w-full pl-11 pr-4 py-2.5 bg-warm/40 border border-soft rounded-xl text-sm text-forest focus:outline-none focus:border-forest focus:bg-white transition-all font-mono font-bold"
+                      />
+                    </div>
+                    <span className="text-[11px] text-forest/50">
+                      Valor acordado por vida ativa coberta (utilizado para precificação unitária de adesão).
+                    </span>
+                  </div>
+
+                  {/* Campo 2: Valor Mensal em Reais */}
+                  <div className="flex flex-col gap-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold uppercase tracking-wider text-forest/80 flex items-center gap-1.5">
+                        <Coins className="w-3.5 h-3.5 text-purple-700" />
+                        Valor Mensal em Reais (R$)
+                      </label>
+                      <span className="text-[10px] uppercase font-bold text-forest/40">Total Fixo / Contratual</span>
+                    </div>
+                    <div className="relative">
+                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-bold text-forest/60">
+                        R$
+                      </span>
+                      <input
+                        type="text"
+                        value={condicaoValorMensal}
+                        onChange={handleCondicaoValorMensalChange}
+                        placeholder="Ex: 2.500,00 ou 4.500,00"
+                        className="w-full pl-11 pr-4 py-2.5 bg-warm/40 border border-soft rounded-xl text-sm text-forest focus:outline-none focus:border-forest focus:bg-white transition-all font-mono font-bold"
+                      />
+                    </div>
+                    <span className="text-[11px] text-forest/50">
+                      Valor total da fatura mensal (utilizado para contratos de mensalidade fixa ou franquia global).
+                    </span>
+                  </div>
+                </div>
+
+                {/* Cartão de Cálculo Inteligente e Variação de Contrato */}
+                {(() => {
+                  const numVidas = vidasCadastradasAtivas;
+                  const numPorVida = parseMoedaBR(condicaoValorPorVida);
+                  const numMensal = parseMoedaBR(condicaoValorMensal);
+                  const totalCalculado = numVidas * numPorVida;
+                  const porVidaEquivalente = numVidas > 0 && numMensal > 0 ? numMensal / numVidas : 0;
+
+                  return (
+                    <div className="bg-gradient-to-r from-purple-50/60 via-warm/40 to-emerald-50/60 border border-purple-200/70 rounded-2xl p-4 sm:p-5 space-y-3">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div className="flex items-center gap-2">
+                          <Calculator className="w-4 h-4 text-purple-800" />
+                          <span className="text-xs font-bold uppercase tracking-wider text-forest">
+                            Simulação & Variação Contratual da Plataforma
+                          </span>
+                        </div>
+
+                        {/* Variação Detectada */}
+                        <div className="flex items-center gap-1.5">
+                          {numPorVida > 0 && numMensal > 0 ? (
+                            <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-900 border border-purple-200">
+                              Contrato Híbrido (Por Vida + Fixo Mensal)
+                            </span>
+                          ) : numPorVida > 0 ? (
+                            <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-900 border border-blue-200">
+                              Contrato por Vida Ativa (Variável)
+                            </span>
+                          ) : numMensal > 0 ? (
+                            <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-200">
+                              Contrato Fixo Mensal
+                            </span>
+                          ) : (
+                            <span className="text-[11px] text-forest/50">
+                              Preencha o valor por vida e/ou mensal para ativar a simulação
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Linha de Diagnóstico e Cálculos */}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs pt-1">
+                        <div className="bg-white/80 p-2.5 rounded-xl border border-soft">
+                          <span className="text-forest/60 text-[11px] block">Base de Vidas Ativas:</span>
+                          <span className="font-bold text-forest text-sm">
+                            {numVidas > 0 ? `${numVidas} colaboradores ativos` : "Nenhum colaborador ativo"}
+                          </span>
+                        </div>
+                        <div className="bg-white/80 p-2.5 rounded-xl border border-soft">
+                          <span className="text-forest/60 text-[11px] block">Custo por Vida:</span>
+                          <span className="font-bold text-forest text-sm font-mono">
+                            {numPorVida > 0
+                              ? `R$ ${formatMoedaBR(numPorVida)}/vida`
+                              : porVidaEquivalente > 0
+                              ? `~ R$ ${formatMoedaBR(porVidaEquivalente)}/vida`
+                              : "—"}
+                          </span>
+                        </div>
+                        <div className="bg-white/80 p-2.5 rounded-xl border border-soft">
+                          <span className="text-forest/60 text-[11px] block">Mensalidade Projetada:</span>
+                          <span className="font-bold text-forest text-sm font-mono">
+                            {numMensal > 0
+                              ? `R$ ${formatMoedaBR(numMensal)}`
+                              : totalCalculado > 0
+                              ? `R$ ${formatMoedaBR(totalCalculado)}`
+                              : "—"}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Ações de sincronização rápida */}
+                      {numVidas > 0 && (numPorVida > 0 || numMensal > 0) && (
+                        <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-soft/80">
+                          {numVidas > 0 && numPorVida > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => handleCalcularMensalSugerido(totalCalculado)}
+                              className="px-3 py-1.5 bg-forest hover:bg-forest/90 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
+                            >
+                              <Sparkles className="w-3.5 h-3.5 text-sun" />
+                              <span>Preencher Mensal Automático (R$ {formatMoedaBR(totalCalculado)})</span>
+                            </button>
+                          )}
+
+                          {numVidas > 0 && numMensal > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => handleCalcularPorVidaSugerido(porVidaEquivalente)}
+                              className="px-3 py-1.5 bg-purple-100 hover:bg-purple-200 text-purple-900 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <Coins className="w-3.5 h-3.5" />
+                              <span>Preencher Valor por Vida Equivalente (R$ {formatMoedaBR(porVidaEquivalente)})</span>
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* Forma de Pagamento, Dia de Vencimento e Resumo Contratual */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-bold uppercase tracking-wider text-forest/80">
+                      Forma de Pagamento
+                    </label>
+                    <select
+                      value={condicaoFormaPagamento}
+                      onChange={(e) => setCondicaoFormaPagamento(e.target.value)}
+                      className="px-4 py-2.5 bg-warm/40 border border-soft rounded-xl text-xs sm:text-sm text-forest focus:outline-none focus:border-forest focus:bg-white transition-all cursor-pointer font-medium"
+                    >
+                      {FORMAS_PAGAMENTO_OPCOES.map((opt, i) => (
+                        <option key={i} value={opt}>
+                          {opt}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="text-[11px] text-forest/50">
+                      Formato de liquidação acordado.
+                    </span>
+                  </div>
+
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-bold uppercase tracking-wider text-forest/80">
+                      Dia de Vencimento
+                    </label>
+                    <select
+                      value={condicaoDiaVencimento}
+                      onChange={(e) => setCondicaoDiaVencimento(Number(e.target.value))}
+                      className="px-4 py-2.5 bg-warm/40 border border-soft rounded-xl text-xs sm:text-sm text-forest focus:outline-none focus:border-forest focus:bg-white transition-all cursor-pointer font-medium"
+                    >
+                      {[1, 5, 10, 15, 20, 25, 28, 30].map((d) => (
+                        <option key={d} value={d}>
+                          Dia {String(d).padStart(2, "0")} de cada mês
+                        </option>
+                      ))}
+                    </select>
+                    <span className="text-[11px] text-forest/50">
+                      Corte e vencimento da fatura mensal.
+                    </span>
+                  </div>
+
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-bold uppercase tracking-wider text-forest/80">
+                      Resumo Contratual / Cláusula
+                    </label>
+                    <input
+                      type="text"
+                      value={condicaoValoresDefinidos}
+                      onChange={(e) => setCondicaoValoresDefinidos(e.target.value)}
+                      placeholder="Ex: R$ 25,00 por vida ativa | Mensal"
+                      className="px-4 py-2.5 bg-warm/40 border border-soft rounded-xl text-xs sm:text-sm text-forest focus:outline-none focus:border-forest focus:bg-white transition-all font-medium"
+                    />
+                    <span className="text-[11px] text-forest/50">
+                      Cláusula que constará em contratos.
+                    </span>
+                  </div>
+                </div>
+
+                {/* Observações ou Instruções Financeiras Específicas */}
+                <div className="flex flex-col gap-1.5 pt-2 border-t border-soft">
+                  <label className="text-xs font-bold uppercase tracking-wider text-forest/80">
+                    Observações ou Instruções Financeiras Específicas
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={condicaoObservacoesFinanceiras}
+                    onChange={(e) => setCondicaoObservacoesFinanceiras(e.target.value)}
+                    placeholder="Ex: Enviar nota fiscal e boleto para o departamento financeiro do canal (financeiro@parceiro.com.br) até o dia 20 de cada mês."
+                    className="px-4 py-2.5 bg-warm/40 border border-soft rounded-xl text-xs sm:text-sm text-forest focus:outline-none focus:border-forest focus:bg-white transition-all resize-none"
+                  />
+                </div>
+
+                <div className="flex justify-end pt-2">
+                  <button
+                    type="button"
+                    onClick={handleSalvarCondicoesFinanceiras}
+                    disabled={isSavingCondicoesFinanceiras}
+                    className="px-5 py-2.5 bg-forest hover:bg-forest/90 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-xs cursor-pointer disabled:opacity-50"
+                  >
+                    {isSavingCondicoesFinanceiras ? (
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Save className="w-4 h-4 text-sun" />
+                    )}
+                    <span>{isSavingCondicoesFinanceiras ? "Salvando..." : "Salvar Condições Financeiras"}</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Header de Controle de Competência e Ações */}
             <div className="bg-white p-4 sm:p-5 rounded-2xl border border-soft shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
               <div>

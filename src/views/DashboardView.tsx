@@ -79,6 +79,8 @@ import {
   Heart,
   Shield,
   ShieldAlert,
+  ShieldCheck,
+  Minus,
   Stethoscope,
   MessageCircle,
   Share2,
@@ -1179,10 +1181,96 @@ export function DashboardView({
     }
   };
 
-  // Aumentar Horas Disponiveis state & handler
+  // Gerenciamento Completo de Cota de Horas (Profissional)
+  const [showGerenciarCotaModal, setShowGerenciarCotaModal] = useState(false);
+  const [cotaRegularInput, setCotaRegularInput] = useState<number>(8);
+  const [cotaAceita30, setCotaAceita30] = useState<boolean>(false);
+  const [cotaHoras30Input, setCotaHoras30Input] = useState<number>(2);
+  const [cotaAceitaGratuito, setCotaAceitaGratuito] = useState<boolean>(false);
+  const [cotaHorasGratuitoInput, setCotaHorasGratuitoInput] = useState<number>(2);
+
+  // Aumentar Horas Disponiveis legado (mantido para compatibilidade rápida)
   const [showAumentarHorasModal, setShowAumentarHorasModal] = useState(false);
   const [selectedNovaHora, setSelectedNovaHora] = useState("");
   const [customNovaHora, setCustomNovaHora] = useState("");
+
+  const parseHorasNumber = (val?: string | number): number => {
+    if (!val) return 0;
+    if (typeof val === "number") return isNaN(val) ? 0 : val;
+    const trimmed = String(val).trim();
+    if (trimmed.includes("2 a 4") || trimmed.includes("1 a 3")) return 4;
+    if (trimmed.includes("4 a 8")) return 8;
+    if (trimmed.includes("10 a 16") || trimmed.includes("9 a 15")) return 16;
+    if (trimmed.includes("16 a 20")) return 20;
+    if (trimmed.includes("Mais de 20")) return 24;
+    const match = trimmed.match(/\d+/);
+    if (!match) return 0;
+    const n = parseInt(match[0], 10);
+    return isNaN(n) ? 0 : n;
+  };
+
+  const handleOpenGerenciarCotaModal = () => {
+    const rawTotal = parseMaxHorasDisponiveis(profile?.horasDisponiveis);
+    const h30 = profile?.aceitaAtendimento30Reais ? (parseHorasNumber(profile?.horasAtendimento30Reais) || 2) : 0;
+    const hGratuito = profile?.aceitaAtendimentoGratuito ? (parseHorasNumber(profile?.horasAtendimentoGratuito) || 2) : 0;
+
+    let hRegular = profile?.horasRegular ? parseHorasNumber(profile.horasRegular) : 0;
+    if (hRegular < 8) {
+      hRegular = Math.max(8, (rawTotal > 0 ? rawTotal : 8) - (profile?.aceitaAtendimento30Reais ? h30 : 0) - (profile?.aceitaAtendimentoGratuito ? hGratuito : 0));
+      if (hRegular % 2 !== 0) hRegular += 1;
+      if (hRegular < 8) hRegular = 8;
+    }
+
+    setCotaRegularInput(hRegular);
+    setCotaAceita30(Boolean(profile?.aceitaAtendimento30Reais && h30 > 0));
+    setCotaHoras30Input(h30 > 0 ? (h30 % 2 !== 0 ? h30 + 1 : h30) : 2);
+    setCotaAceitaGratuito(Boolean(profile?.aceitaAtendimentoGratuito && hGratuito > 0));
+    setCotaHorasGratuitoInput(hGratuito > 0 ? (hGratuito % 2 !== 0 ? hGratuito + 1 : hGratuito) : 2);
+    setShowGerenciarCotaModal(true);
+  };
+
+  const handleSaveCotaHoras = async () => {
+    if (cotaRegularInput < 8) {
+      showToast("A quantidade mínima de horas regulares é de 8 horas/mês.", "error");
+      return;
+    }
+    if (cotaRegularInput % 2 !== 0) {
+      showToast("A quantidade de horas regulares deve ser um número par (ex: 8, 10, 12...).", "error");
+      return;
+    }
+    const final30 = cotaAceita30 ? (cotaHoras30Input % 2 !== 0 ? cotaHoras30Input + 1 : cotaHoras30Input) : 0;
+    const finalGratuito = cotaAceitaGratuito ? (cotaHorasGratuitoInput % 2 !== 0 ? cotaHorasGratuitoInput + 1 : cotaHorasGratuitoInput) : 0;
+
+    if (cotaAceita30 && final30 <= 0) {
+      showToast("Informe a quantidade de horas para a faixa de R$ 30 (número par: 2, 4...).", "error");
+      return;
+    }
+    if (cotaAceitaGratuito && finalGratuito <= 0) {
+      showToast("Informe a quantidade de horas para atendimento gratuito (número par: 2, 4...).", "error");
+      return;
+    }
+
+    const totalHoras = cotaRegularInput + final30 + finalGratuito;
+
+    const updates = {
+      horasRegular: `${cotaRegularInput} horas/mês`,
+      aceitaAtendimento30Reais: cotaAceita30 && final30 > 0,
+      horasAtendimento30Reais: final30 > 0 ? `${final30} horas/mês` : "0 horas/mês",
+      aceitaAtendimentoGratuito: cotaAceitaGratuito && finalGratuito > 0,
+      horasAtendimentoGratuito: finalGratuito > 0 ? `${finalGratuito} horas/mês` : "0 horas/mês",
+      horasDisponiveis: `${totalHoras} horas/mês`,
+    };
+
+    try {
+      await handleUpdateSelfProfile(updates);
+      setProfile((prev: any) => ({ ...prev, ...updates }));
+      showToast("Cota de horas e faixas atualizadas com sucesso!", "success");
+      setShowGerenciarCotaModal(false);
+    } catch (err) {
+      console.error("Erro ao salvar cota de horas:", err);
+      showToast("Erro ao atualizar cota de horas.", "error");
+    }
+  };
 
   const handleSaveAumentarHoras = async () => {
     const rawHora = customNovaHora.trim() ? customNovaHora.trim() : selectedNovaHora.trim();
@@ -3616,10 +3704,12 @@ export function DashboardView({
               abordagem: data.abordagem || "",
               especialidade: data.especialidade || "",
               anoFormacao: data.anoFormacao || "",
-              horasDisponiveis: data.horasDisponiveis || "",
+              horasRegular: data.horasRegular || data.horasDisponiveis || "8 horas/mês",
+              horasDisponiveis: data.horasDisponiveis || "8 horas/mês",
               aceitaAtendimentoGratuito: Boolean(data.aceitaAtendimentoGratuito),
               horasAtendimentoGratuito: data.horasAtendimentoGratuito || "",
               aceitaAtendimento30Reais: Boolean(data.aceitaAtendimento30Reais),
+              horasAtendimento30Reais: data.horasAtendimento30Reais || "",
               termoValoresAceito: Boolean(data.termoValoresAceito),
               termoValoresTexto: data.termoValoresTexto || "",
               termoDuracaoAceito: Boolean(data.termoDuracaoAceito),
@@ -3768,10 +3858,12 @@ export function DashboardView({
                     abordagem: data.abordagem || "",
                     especialidade: data.especialidade || "",
                     anoFormacao: data.anoFormacao || "",
-                    horasDisponiveis: data.horasDisponiveis || "",
+                    horasRegular: data.horasRegular || data.horasDisponiveis || "8 horas/mês",
+                    horasDisponiveis: data.horasDisponiveis || "8 horas/mês",
                     aceitaAtendimentoGratuito: Boolean(data.aceitaAtendimentoGratuito),
                     horasAtendimentoGratuito: data.horasAtendimentoGratuito || "",
                     aceitaAtendimento30Reais: Boolean(data.aceitaAtendimento30Reais),
+                    horasAtendimento30Reais: data.horasAtendimento30Reais || "",
                     termoValoresAceito: Boolean(data.termoValoresAceito),
                     termoValoresTexto: data.termoValoresTexto || "",
                     termoDuracaoAceito: Boolean(data.termoDuracaoAceito),
@@ -8080,7 +8172,7 @@ export function DashboardView({
                 </div>
               </div>
 
-              {/* Impacto / Horas Stats (Profissional) */}
+              {/* Card de Cota de Horas e Gestão de Capacidade (Profissional) */}
               {(() => {
                 const pacsAtivos = meusPacientes.filter(
                   (p) =>
@@ -8092,112 +8184,143 @@ export function DashboardView({
                     p.status !== "Cancelado",
                 );
                 const horasAtivas = calculateHorasMensais(pacsAtivos);
-                const maxHoras = parseMaxHorasDisponiveis(profile?.horasDisponiveis);
-                const cotaDeclarada = normalizeHorasDisponiveis(profile?.horasDisponiveis) || "Não informada";
-                const horasRestantes = maxHoras > 0 ? Math.max(0, maxHoras - horasAtivas) : 0;
-                const percentualUso = maxHoras > 0 ? Math.min(100, Math.round((horasAtivas / maxHoras) * 100)) : 0;
+                
+                // Extração e cálculo com as novas regras de cota (mínimo 8h regulares + adicionais)
+                const rawTotal = parseMaxHorasDisponiveis(profile?.horasDisponiveis);
+                const h30 = profile?.aceitaAtendimento30Reais ? (parseHorasNumber(profile?.horasAtendimento30Reais) || 0) : 0;
+                const hGratuito = profile?.aceitaAtendimentoGratuito ? (parseHorasNumber(profile?.horasAtendimentoGratuito) || 0) : 0;
+                
+                let hRegular = profile?.horasRegular ? parseHorasNumber(profile.horasRegular) : 0;
+                if (hRegular < 8) {
+                  hRegular = Math.max(8, (rawTotal > 0 ? rawTotal : 8) - h30 - hGratuito);
+                  if (hRegular % 2 !== 0) hRegular += 1;
+                }
+                const maxHoras = Math.max(8, hRegular + h30 + hGratuito);
+                const horasRestantes = Math.max(0, maxHoras - horasAtivas);
+                const percentualUso = Math.min(100, Math.round((horasAtivas / maxHoras) * 100));
 
                 return (
-                  <div className="bg-white p-6 rounded-3xl border border-soft shadow-sm flex flex-col justify-between gap-4">
+                  <div className="bg-white p-6 rounded-3xl border border-soft shadow-sm flex flex-col justify-between gap-5">
+                    {/* Cabeçalho */}
                     <div className="flex justify-between items-start">
                       <div>
-                        <h3 className="font-serif text-xl font-semibold text-forest">
-                          Horas Mensais
-                        </h3>
-                        <p className="text-xs text-forest/60">Ativas x Cota Declarada</p>
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-serif text-xl font-semibold text-forest">
+                            Cota de Horas Mensais
+                          </h3>
+                          <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                            Mín. 8h Ativo
+                          </span>
+                        </div>
+                        <p className="text-xs text-forest/60 mt-0.5">Atendimento Clínico & Subdivisão da Grade</p>
                       </div>
-                      <div className="w-10 h-10 rounded-full bg-sun/50 text-forest flex items-center justify-center shrink-0">
-                        <Clock className="w-5 h-5" />
+                      <div className="w-10 h-10 rounded-2xl bg-sun/40 text-forest flex items-center justify-center shrink-0 shadow-2xs">
+                        <Clock className="w-5 h-5 text-forest" />
                       </div>
                     </div>
 
-                    <div className="space-y-2">
+                    {/* Visão Numérica Principal & Barra */}
+                    <div className="space-y-2.5">
                       <div className="flex items-baseline justify-between">
                         <div className="text-3xl font-extrabold text-forest">
-                          {horasAtivas}<span className="text-lg font-bold text-forest/70">h ativas/mês</span>
+                          {horasAtivas}<span className="text-base font-bold text-forest/70">h ativas/mês</span>
                         </div>
-                        {maxHoras > 0 && (
-                          <span className="text-xs font-bold text-forest/80 bg-warm px-2.5 py-1 rounded-lg border border-soft">
-                            Cota Máx: {maxHoras}h/mês
-                          </span>
-                        )}
+                        <span className="text-xs font-bold text-forest/80 bg-warm px-3 py-1.5 rounded-xl border border-soft">
+                          Cota Total: <strong className="text-emerald-800 text-sm font-extrabold">{maxHoras}h/mês</strong>
+                        </span>
                       </div>
 
-                      {/* Barra de Progresso da Cota */}
-                      {maxHoras > 0 && (
-                        <div className="space-y-1">
-                          <div className="w-full bg-soft/60 h-2.5 rounded-full overflow-hidden">
-                            <div
-                              className={`h-full transition-all rounded-full ${
-                                percentualUso >= 100
-                                  ? "bg-red-500"
-                                  : percentualUso >= 80
-                                  ? "bg-amber-500"
-                                  : "bg-emerald-600"
-                              }`}
-                              style={{ width: `${percentualUso}%` }}
-                            />
-                          </div>
-                          <div className="flex justify-between text-[10px] font-medium text-forest/60">
-                            <span>{percentualUso}% da cota máx. utilizada</span>
-                            <span className="font-semibold text-forest/80">Faixa: {cotaDeclarada}</span>
-                          </div>
+                      {/* Barra de Progresso */}
+                      <div className="space-y-1">
+                        <div className="w-full bg-soft/50 h-3 rounded-full overflow-hidden p-0.5 border border-soft/40">
+                          <div
+                            className={`h-full transition-all rounded-full ${
+                              percentualUso >= 100
+                                ? "bg-red-500"
+                                : percentualUso >= 80
+                                ? "bg-amber-500"
+                                : "bg-emerald-600"
+                            }`}
+                            style={{ width: `${percentualUso}%` }}
+                          />
                         </div>
-                      )}
+                        <div className="flex justify-between text-[11px] font-medium text-forest/70 px-0.5">
+                          <span>{percentualUso}% da cota utilizada</span>
+                          <span className="font-bold text-forest">
+                            {horasRestantes === 0 ? "Cota esgotada" : `${horasRestantes}h disponíveis`}
+                          </span>
+                        </div>
+                      </div>
                     </div>
 
-                    {/* Horas Restantes e Status */}
-                    <div className="border-t border-soft pt-3 mt-1 flex flex-col gap-1.5">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="font-bold text-forest/80 uppercase tracking-wider text-[10px]">
-                          Restantes para Cota
-                        </span>
-                        <span className={`font-extrabold text-xs px-2.5 py-0.5 rounded-md ${
-                          maxHoras === 0
-                            ? "bg-gray-100 text-gray-700"
-                            : horasRestantes === 0
-                            ? "bg-red-100 text-red-800"
-                            : horasRestantes <= 2
-                            ? "bg-amber-100 text-amber-800"
-                            : "bg-emerald-100 text-emerald-800"
-                        }`}>
-                          {maxHoras === 0
-                            ? "Sem Cota Definida"
-                            : horasRestantes === 0
-                            ? "Cota Atingida (0h)"
-                            : `${horasRestantes}h disponíveis`}
-                        </span>
-                      </div>
+                    {/* Grade de Decomposição dos 3 Pilares */}
+                    <div className="p-3.5 bg-[#FAF8F5] rounded-2xl border border-soft/80 flex flex-col gap-2.5">
+                      <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-forest/70">
+                        Composição do seu Banco de Horas
+                      </span>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                        {/* Pilar 1: Regular */}
+                        <div className="p-2.5 bg-white rounded-xl border border-emerald-200/80 flex flex-col gap-1 shadow-2xs">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-bold text-emerald-800 uppercase">Regular (≥ R$ 50)</span>
+                            <ShieldCheck className="w-3.5 h-3.5 text-emerald-700" />
+                          </div>
+                          <span className="text-base font-extrabold text-forest">{hRegular}h<span className="text-[10px] font-semibold text-forest/60">/mês</span></span>
+                          <span className="text-[10px] text-forest/60 leading-tight">Base protegida da grade</span>
+                        </div>
 
+                        {/* Pilar 2: R$ 30 */}
+                        <div className={`p-2.5 rounded-xl border flex flex-col gap-1 shadow-2xs ${h30 > 0 ? "bg-amber-50/70 border-amber-200" : "bg-white/80 border-soft opacity-70"}`}>
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-bold text-amber-800 uppercase">Extraord. (R$ 30)</span>
+                            <Coins className="w-3.5 h-3.5 text-amber-700" />
+                          </div>
+                          <span className="text-base font-extrabold text-forest">
+                            {h30 > 0 ? `${h30}h` : "0h"}<span className="text-[10px] font-semibold text-forest/60">/mês</span>
+                          </span>
+                          <span className="text-[10px] text-forest/60 leading-tight">
+                            {h30 > 0 ? "Casos especiais" : "Não habilitado"}
+                          </span>
+                        </div>
+
+                        {/* Pilar 3: Gratuito */}
+                        <div className={`p-2.5 rounded-xl border flex flex-col gap-1 shadow-2xs ${hGratuito > 0 ? "bg-blue-50/70 border-blue-200" : "bg-white/80 border-soft opacity-70"}`}>
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-bold text-blue-800 uppercase">Gratuito (Pro Bono)</span>
+                            <HeartHandshake className="w-3.5 h-3.5 text-blue-700" />
+                          </div>
+                          <span className="text-base font-extrabold text-forest">
+                            {hGratuito > 0 ? `${hGratuito}h` : "0h"}<span className="text-[10px] font-semibold text-forest/60">/mês</span>
+                          </span>
+                          <span className="text-[10px] text-forest/60 leading-tight">
+                            {hGratuito > 0 ? "Eventual humanitário" : "Não habilitado"}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Resumo do Status e Ação */}
+                    <div className="border-t border-soft pt-3 flex flex-col gap-2.5">
                       <p className="text-[11px] text-forest/75 leading-tight">
-                        {maxHoras === 0 ? (
-                          <span>Defina sua disponibilidade de horas nas configurações do perfil para acompanhar o saldo da cota.</span>
-                        ) : horasRestantes === 0 ? (
+                        {horasRestantes === 0 ? (
                           <span className="text-red-700 font-semibold">
-                            Você atingiu o limite máximo da cota declarada ({cotaDeclarada}). Todos os horários estão preenchidos.
+                            Você atingiu o limite da sua cota mensal ({maxHoras}h). Todos os horários estão preenchidos.
                           </span>
                         ) : (
                           <span>
-                            Com {pacsAtivos.length} paciente(s) ativo(s) ({horasAtivas}h/mês), restam <strong>{horasRestantes}h</strong> de atendimento por mês para atingir o limite da sua cota ({cotaDeclarada}).
+                            Com {pacsAtivos.length} paciente(s) ativo(s) ({horasAtivas}h/mês), restam <strong>{horasRestantes}h</strong> de atendimento disponíveis para novos pacientes neste mês.
                           </span>
                         )}
                       </p>
 
-                      {/* Botão de Ação: Aumentar Horas Disponíveis */}
-                      <div className="pt-2.5 border-t border-soft/60">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedNovaHora(normalizeHorasDisponiveis(profile?.horasDisponiveis) || "4 a 8 horas/mês");
-                            setCustomNovaHora("");
-                            setShowAumentarHorasModal(true);
-                          }}
-                          className="w-full py-2.5 px-4 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer"
-                        >
-                          <TrendingUp className="w-4 h-4 text-emerald-200" />
-                          Aumentar Horas Disponíveis
-                        </button>
-                      </div>
+                      <button
+                        type="button"
+                        onClick={handleOpenGerenciarCotaModal}
+                        className="w-full py-3 px-4 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer hover:shadow-md active:scale-[0.99]"
+                      >
+                        <Sliders className="w-4 h-4 text-emerald-200" />
+                        Gerenciar Cota & Faixas de Horas
+                      </button>
                     </div>
                   </div>
                 );
@@ -8935,30 +9058,60 @@ export function DashboardView({
                       className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors text-sm text-forest"
                     />
                   </div>
-                  <div>
-                    <label className="text-xs uppercase font-bold tracking-wider text-forest/60">
-                      Horas Mensais Disponíveis para o Projeto
-                    </label>
-                    <select
-                      value={normalizeHorasDisponiveis(profile.horasDisponiveis) || "2 a 4 horas/mês"}
-                      onChange={(e) =>
-                        setProfile({
-                          ...profile,
-                          horasDisponiveis: e.target.value,
-                        })
+                  <div className="bg-white p-4 rounded-2xl border border-soft shadow-2xs flex flex-col justify-between gap-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs uppercase font-bold tracking-wider text-forest/70 flex items-center gap-1.5">
+                        <Clock className="w-3.5 h-3.5 text-forest" />
+                        Cota de Horas Mensais & Faixas
+                      </label>
+                      <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-200">
+                        Mín. 8h Ativo
+                      </span>
+                    </div>
+
+                    {/* Resumo da decomposição de horas */}
+                    {(() => {
+                      const rawTotal = parseMaxHorasDisponiveis(profile?.horasDisponiveis);
+                      const h30 = profile?.aceitaAtendimento30Reais ? (parseHorasNumber(profile?.horasAtendimento30Reais) || 0) : 0;
+                      const hGratuito = profile?.aceitaAtendimentoGratuito ? (parseHorasNumber(profile?.horasAtendimentoGratuito) || 0) : 0;
+                      let hRegular = profile?.horasRegular ? parseHorasNumber(profile.horasRegular) : 0;
+                      if (hRegular < 8) {
+                        hRegular = Math.max(8, (rawTotal > 0 ? rawTotal : 8) - h30 - hGratuito);
+                        if (hRegular % 2 !== 0) hRegular += 1;
                       }
-                      className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark cursor-pointer text-sm text-forest"
-                    >
-                      <option value="2 a 4 horas/mês">2 a 4 horas/mês</option>
-                      <option value="4 a 8 horas/mês">4 a 8 horas/mês</option>
-                      <option value="10 a 16 horas/mês">10 a 16 horas/mês</option>
-                      <option value="16 a 20 horas/mês">
-                        16 a 20 horas/mês
-                      </option>
-                      <option value="Mais de 20 horas/mês">
-                        Mais de 20 horas/mês
-                      </option>
-                    </select>
+                      const maxHoras = Math.max(8, hRegular + h30 + hGratuito);
+
+                      return (
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="text-forest/70">Total Ofertado:</span>
+                            <span className="font-extrabold text-forest text-sm">{maxHoras}h/mês</span>
+                          </div>
+                          <div className="grid grid-cols-3 gap-1.5 text-[10px] text-center">
+                            <div className="bg-warm/60 p-1.5 rounded-lg border border-soft">
+                              <span className="block text-forest/60">Regular</span>
+                              <strong className="text-forest font-bold">{hRegular}h</strong>
+                            </div>
+                            <div className="bg-amber-50/70 p-1.5 rounded-lg border border-amber-200">
+                              <span className="block text-amber-800">R$ 30</span>
+                              <strong className="text-amber-900 font-bold">{h30}h</strong>
+                            </div>
+                            <div className="bg-blue-50/70 p-1.5 rounded-lg border border-blue-200">
+                              <span className="block text-blue-800">Gratuito</span>
+                              <strong className="text-blue-900 font-bold">{hGratuito}h</strong>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleOpenGerenciarCotaModal}
+                            className="w-full mt-1 py-2 px-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                          >
+                            <Sliders className="w-3.5 h-3.5 text-emerald-200" />
+                            Gerenciar Cota & Faixas
+                          </button>
+                        </div>
+                      );
+                    })()}
                   </div>
                   <div>
                     <label className="text-xs uppercase font-bold tracking-wider text-forest/60">
@@ -18609,21 +18762,27 @@ export function DashboardView({
         </div>
       )}
 
-      {/* Modal de Aumentar Horas Disponíveis */}
-      {showAumentarHorasModal && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center px-4 bg-forest/30 backdrop-blur-sm animate-in fade-in">
-          <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl border border-soft overflow-hidden animate-in zoom-in-95">
+      {/* Modal Completo de Gerenciar Cota de Horas & Faixas */}
+      {(showGerenciarCotaModal || showAumentarHorasModal) && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center px-4 bg-forest/40 backdrop-blur-sm animate-in fade-in overflow-y-auto py-6">
+          <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl border border-soft overflow-hidden animate-in zoom-in-95 my-auto">
+            {/* Topo do Modal */}
             <div className="px-6 py-4 flex justify-between items-center border-b border-emerald-100 bg-emerald-50/80">
-              <div className="flex items-center gap-2">
-                <Clock className="w-5 h-5 text-emerald-700 shrink-0" />
-                <h3 className="font-serif text-lg font-bold text-emerald-950">
-                  Aumentar Horas Disponíveis
-                </h3>
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-emerald-700/10 text-emerald-800 flex items-center justify-center shrink-0">
+                  <Sliders className="w-4 h-4 text-emerald-800" />
+                </div>
+                <div>
+                  <h3 className="font-serif text-lg font-bold text-emerald-950 leading-tight">
+                    Gerenciar Cota de Horas Mensais
+                  </h3>
+                  <p className="text-[11px] text-emerald-800/80">Disponibilidade clínica e subdivisão de faixas</p>
+                </div>
               </div>
               <button
                 onClick={() => {
+                  setShowGerenciarCotaModal(false);
                   setShowAumentarHorasModal(false);
-                  setCustomNovaHora("");
                 }}
                 className="p-1.5 text-forest/60 hover:text-red-600 rounded-full hover:bg-white transition-colors cursor-pointer"
                 type="button"
@@ -18632,86 +18791,219 @@ export function DashboardView({
               </button>
             </div>
 
-            <div className="p-6 space-y-4">
-              <div className="p-3 bg-emerald-50/70 rounded-xl border border-emerald-200/80 text-xs text-forest/90 space-y-1">
-                <div className="flex justify-between font-bold text-forest">
-                  <span>Cota Atual Declarada:</span>
-                  <span className="text-emerald-800">{normalizeHorasDisponiveis(profile?.horasDisponiveis) || "Não definida"}</span>
+            <div className="p-6 space-y-5 max-h-[80vh] overflow-y-auto custom-scrollbar">
+              {/* Box de Critérios e Diretrizes */}
+              <div className="p-3.5 bg-emerald-50/70 rounded-2xl border border-emerald-200/80 text-xs text-forest/90 space-y-2">
+                <div className="font-bold text-emerald-950 flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-emerald-700" />
+                  <span>Critérios Oficiais da Plataforma</span>
                 </div>
-                <div className="text-[11px] text-forest/70">
-                  Selecione uma nova faixa de horas de atendimento mensal ou digite um valor personalizado (valores ímpares serão arredondados para números pares).
-                </div>
+                <ul className="text-[11px] text-forest/80 space-y-1 list-disc pl-4 leading-relaxed">
+                  <li>
+                    <strong>Mínimo de 8h/mês:</strong> Todo credenciado inicia com no mínimo 8h exclusivas para a grade regular remunerada (a partir de R$ 50/sessão).
+                  </li>
+                  <li>
+                    <strong>Base protegida:</strong> As 8h mínimas não podem ser convertidas para gratuito ou R$ 30.
+                  </li>
+                  <li>
+                    <strong>Números Pares:</strong> Seleções sempre em pares (8h, 10h, 12h...) para adequação exata a atendimentos quinzenais (2h) ou semanais (4h).
+                  </li>
+                </ul>
               </div>
 
-              {/* Opções de Faixa de Horas */}
-              <div className="space-y-2">
-                <label className="text-xs font-bold uppercase tracking-wider text-forest/80 block">
-                  Selecione a Nova Faixa de Horas *
-                </label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {[
-                    "2 a 4 horas/mês",
-                    "4 a 8 horas/mês",
-                    "10 a 16 horas/mês",
-                    "16 a 20 horas/mês",
-                    "Mais de 20 horas/mês",
-                  ].map((option) => (
+              {/* 1. Cota Base Regular (a partir de R$ 50) */}
+              <div className="space-y-2 bg-white p-4 rounded-2xl border border-soft shadow-2xs">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="text-xs font-bold uppercase tracking-wider text-forest block">
+                      1. Cota Base Regular (≥ R$ 50,00) *
+                    </label>
+                    <span className="text-[11px] text-forest/60">
+                      Mínimo de 8h/mês (sempre número par)
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
                     <button
-                      key={option}
                       type="button"
-                      onClick={() => {
-                        setSelectedNovaHora(option);
-                        setCustomNovaHora("");
-                      }}
-                      className={`px-3 py-2.5 rounded-xl text-xs font-bold transition-all border text-left cursor-pointer flex items-center justify-between ${
-                        selectedNovaHora === option && !customNovaHora
-                          ? "bg-emerald-700 text-white border-emerald-800 shadow-xs"
-                          : "bg-white text-emerald-900 border-emerald-200 hover:bg-emerald-50"
+                      disabled={cotaRegularInput <= 8}
+                      onClick={() => setCotaRegularInput((prev) => Math.max(8, prev - 2))}
+                      className="w-8 h-8 rounded-lg border border-soft flex items-center justify-center text-forest hover:bg-warm disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
+                      title="Diminuir 2 horas"
+                    >
+                      <Minus className="w-4 h-4" />
+                    </button>
+                    <span className="w-14 text-center font-extrabold text-base text-forest bg-warm/60 py-1 rounded-lg border border-soft">
+                      {cotaRegularInput}h
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setCotaRegularInput((prev) => prev + 2)}
+                      className="w-8 h-8 rounded-lg border border-soft flex items-center justify-center text-forest hover:bg-warm cursor-pointer transition-colors"
+                      title="Aumentar 2 horas"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Botões Rápidos */}
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {[8, 10, 12, 14, 16, 20, 24].map((h) => (
+                    <button
+                      key={h}
+                      type="button"
+                      onClick={() => setCotaRegularInput(h)}
+                      className={`px-3 py-1 rounded-lg text-xs font-bold transition-all border cursor-pointer ${
+                        cotaRegularInput === h
+                          ? "bg-emerald-700 text-white border-emerald-800 shadow-2xs"
+                          : "bg-warm/60 text-forest border-soft hover:bg-emerald-50"
                       }`}
                     >
-                      <span>{option}</span>
-                      {selectedNovaHora === option && !customNovaHora && (
-                        <CheckSquare className="w-3.5 h-3.5 text-emerald-200" />
-                      )}
+                      {h}h/mês
                     </button>
                   ))}
                 </div>
               </div>
 
-              {/* Ou Valor Personalizado */}
-              <div className="space-y-1.5 pt-1">
-                <label className="text-[11px] font-bold uppercase tracking-wider text-forest/70 block">
-                  Ou Digite um Valor Personalizado
+              {/* 2. Horas Extraordinárias a R$ 30 */}
+              <div className="space-y-3 bg-white p-4 rounded-2xl border border-soft shadow-2xs">
+                <label className="flex items-start gap-3 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={cotaAceita30}
+                    onChange={(e) => {
+                      setCotaAceita30(e.target.checked);
+                      if (e.target.checked && cotaHoras30Input === 0) {
+                        setCotaHoras30Input(2);
+                      }
+                    }}
+                    className="mt-0.5 w-4 h-4 text-emerald-700 rounded border-soft focus:ring-emerald-600 accent-emerald-700 cursor-pointer"
+                  />
+                  <div className="flex-1">
+                    <span className="text-xs font-bold text-forest block">
+                      2. Disponibilizar horas extras a R$ 30,00 (Faixa Extraordinária)
+                    </span>
+                    <span className="text-[11px] text-forest/65 block mt-0.5 leading-relaxed">
+                      Horas adicionadas além da base regular para casos emergenciais encaminhados pela coordenação.
+                    </span>
+                  </div>
                 </label>
-                <input
-                  type="text"
-                  value={customNovaHora}
-                  onChange={(e) => {
-                    setCustomNovaHora(e.target.value);
-                  }}
-                  className="w-full text-xs font-bold bg-white border border-emerald-200 px-3.5 py-2.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-600 text-forest shadow-2xs"
-                  placeholder="Ex: 25 horas/mês, 30 horas/mês..."
-                />
+
+                {cotaAceita30 && (
+                  <div className="pt-2 pl-7 flex items-center justify-between border-t border-soft/60 animate-in fade-in duration-200">
+                    <span className="text-xs font-bold text-forest/80">Quantidade de horas a R$ 30:</span>
+                    <div className="flex items-center gap-1.5">
+                      {[2, 4, 6, 8, 10].map((h) => (
+                        <button
+                          key={h}
+                          type="button"
+                          onClick={() => setCotaHoras30Input(h)}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-bold border cursor-pointer transition-all ${
+                            cotaHoras30Input === h
+                              ? "bg-amber-600 text-white border-amber-700 shadow-2xs"
+                              : "bg-warm/60 text-forest border-soft hover:bg-amber-50"
+                          }`}
+                        >
+                          +{h}h
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
-              <div className="pt-3 flex justify-end gap-2 border-t border-soft">
+              {/* 3. Horas Gratuitas (Pro Bono) */}
+              <div className="space-y-3 bg-white p-4 rounded-2xl border border-soft shadow-2xs">
+                <label className="flex items-start gap-3 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={cotaAceitaGratuito}
+                    onChange={(e) => {
+                      setCotaAceitaGratuito(e.target.checked);
+                      if (e.target.checked && cotaHorasGratuitoInput === 0) {
+                        setCotaHorasGratuitoInput(2);
+                      }
+                    }}
+                    className="mt-0.5 w-4 h-4 text-emerald-700 rounded border-soft focus:ring-emerald-600 accent-emerald-700 cursor-pointer"
+                  />
+                  <div className="flex-1">
+                    <span className="text-xs font-bold text-forest block">
+                      3. Disponibilizar horas extras gratuitas (Voluntário / Pro Bono)
+                    </span>
+                    <span className="text-[11px] text-forest/65 block mt-0.5 leading-relaxed">
+                      Horas adicionadas além da base para acolhimento de pessoas em extrema vulnerabilidade.
+                    </span>
+                  </div>
+                </label>
+
+                {cotaAceitaGratuito && (
+                  <div className="pt-2 pl-7 flex items-center justify-between border-t border-soft/60 animate-in fade-in duration-200">
+                    <span className="text-xs font-bold text-forest/80">Quantidade de horas gratuitas:</span>
+                    <div className="flex items-center gap-1.5">
+                      {[2, 4, 6, 8, 10].map((h) => (
+                        <button
+                          key={h}
+                          type="button"
+                          onClick={() => setCotaHorasGratuitoInput(h)}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-bold border cursor-pointer transition-all ${
+                            cotaHorasGratuitoInput === h
+                              ? "bg-blue-600 text-white border-blue-700 shadow-2xs"
+                              : "bg-warm/60 text-forest border-soft hover:bg-blue-50"
+                          }`}
+                        >
+                          +{h}h
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Resumo Dinâmico em Tempo Real */}
+              {(() => {
+                const totalCalculado =
+                  cotaRegularInput +
+                  (cotaAceita30 ? cotaHoras30Input : 0) +
+                  (cotaAceitaGratuito ? cotaHorasGratuitoInput : 0);
+
+                return (
+                  <div className="p-4 bg-warm/80 rounded-2xl border border-soft flex flex-col gap-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold uppercase tracking-wider text-forest/70">
+                        Cota Total Consolidada:
+                      </span>
+                      <span className="text-lg font-extrabold text-emerald-800 bg-white px-3 py-1 rounded-xl border border-soft shadow-2xs">
+                        {totalCalculado} horas/mês
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-forest/75 flex flex-wrap gap-x-3 gap-y-1">
+                      <span>• Regular: <strong>{cotaRegularInput}h</strong></span>
+                      <span>• R$ 30: <strong>{cotaAceita30 ? cotaHoras30Input : 0}h</strong></span>
+                      <span>• Gratuito: <strong>{cotaAceitaGratuito ? cotaHorasGratuitoInput : 0}h</strong></span>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Botões do Rodapé */}
+              <div className="pt-2 flex justify-end gap-2.5 border-t border-soft">
                 <button
                   type="button"
                   onClick={() => {
+                    setShowGerenciarCotaModal(false);
                     setShowAumentarHorasModal(false);
-                    setCustomNovaHora("");
                   }}
-                  className="px-4 py-2 bg-warm text-forest hover:bg-soft/50 font-bold text-xs rounded-xl transition-all cursor-pointer"
+                  className="px-4 py-2.5 bg-warm text-forest hover:bg-soft/50 font-bold text-xs rounded-xl transition-all cursor-pointer"
                 >
                   Cancelar
                 </button>
                 <button
                   type="button"
-                  onClick={handleSaveAumentarHoras}
-                  className="px-5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                  onClick={handleSaveCotaHoras}
+                  className="px-5 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl transition-all shadow-xs flex items-center gap-1.5 cursor-pointer hover:shadow-md"
                 >
-                  <TrendingUp className="w-4 h-4 text-emerald-200" />
-                  Salvar Nova Disponibilidade
+                  <CheckSquare className="w-4 h-4 text-emerald-200" />
+                  Confirmar & Salvar Cota
                 </button>
               </div>
             </div>

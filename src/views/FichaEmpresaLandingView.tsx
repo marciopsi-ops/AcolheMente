@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { doc, getDoc, updateDoc, collection, addDoc, serverTimestamp } from "firebase/firestore";
 import * as XLSX from "xlsx";
 import { db } from "../lib/firebase";
@@ -157,6 +157,19 @@ export function FichaEmpresaLandingView({
   const [nomeEmpresaExibicao, setNomeEmpresaExibicao] = useState("");
   const [empresaCategorias, setEmpresaCategorias] = useState<CategoriaEmpresa[]>(["empresa_direta"]);
   const [empresaPaiNome, setEmpresaPaiNome] = useState<string | undefined>(undefined);
+
+  // Identifica se é cliente conectado intermediado por parceiro (valores financeiros são sigilosos do canal)
+  const isClienteConectadoViaParceiro = useMemo(() => {
+    return (
+      empresaCategorias.includes("empresa_conectada") ||
+      Boolean(empresaPaiNome) ||
+      Boolean(empresaDoc?.empresaPaiId) ||
+      Boolean(empresaDoc?.canalParceiroId) ||
+      Boolean(empresaDoc?.empresaMaeId) ||
+      Boolean(parceiroIdParam) ||
+      Boolean(parceiroDoc)
+    );
+  }, [empresaCategorias, empresaPaiNome, empresaDoc, parceiroIdParam, parceiroDoc]);
 
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: "instant" });
@@ -722,7 +735,7 @@ export function FichaEmpresaLandingView({
 
       if (isNovaEmpresa) {
         const generatedPin = Math.floor(1000 + Math.random() * 9000).toString();
-        const docRef = await addDoc(collection(db, "empresa_leads"), {
+        const newDocPayload: any = {
           razaoSocial: formData.razaoSocial.trim(),
           cnpj: formData.cnpj.trim(),
           cpfResponsavel: formData.cpfResponsavel.trim(),
@@ -731,14 +744,6 @@ export function FichaEmpresaLandingView({
           telefone: formData.telefone.trim(),
           quantidadeVidas: String(parsedVidas || formData.quantidadeVidas.trim()),
           produtosContratados: formData.produtosContratados.trim(),
-          valorPorVida: numValorPorVida,
-          valorPorVidaTexto: formData.valorPorVida.trim(),
-          valorMensal: numValorMensal,
-          valorMensalTexto: formData.valorMensal.trim(),
-          valorFixoMensal: numValorMensal,
-          valoresDefinidos: resumoValores,
-          valoresAcertados: resumoValores,
-          formaPagamento: formData.formaPagamento.trim(),
           observacoesGerais: formData.observacoesGerais.trim(),
           nomeEmpresa: formData.razaoSocial.trim(),
           contatoNome: formData.nomeResponsavel.trim(),
@@ -752,18 +757,32 @@ export function FichaEmpresaLandingView({
           empresaPaiId: parceiroIdParam || null,
           empresaPaiNome: parceiroDoc?.nomeEmpresa || parceiroDoc?.razaoSocial || empresaPaiNome || "Canal Parceiro",
           pinAcessoRH: generatedPin,
-          faturamentoConfig: faturamentoConfigAtualizado,
           fichaPreenchidaPelaEmpresa: true,
           fichaPreenchidaEm: serverTimestamp(),
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
-        });
+        };
+
+        // Apenas empresas diretas preenchem condições financeiras na ficha
+        if (!isClienteConectadoViaParceiro) {
+          newDocPayload.valorPorVida = numValorPorVida;
+          newDocPayload.valorPorVidaTexto = formData.valorPorVida.trim();
+          newDocPayload.valorMensal = numValorMensal;
+          newDocPayload.valorMensalTexto = formData.valorMensal.trim();
+          newDocPayload.valorFixoMensal = numValorMensal;
+          newDocPayload.valoresDefinidos = resumoValores;
+          newDocPayload.valoresAcertados = resumoValores;
+          newDocPayload.formaPagamento = formData.formaPagamento.trim();
+          newDocPayload.faturamentoConfig = faturamentoConfigAtualizado;
+        }
+
+        const docRef = await addDoc(collection(db, "empresa_leads"), newDocPayload);
         setCreatedEmpresaId(docRef.id);
         setCreatedPin(generatedPin);
         setSavedSuccess(true);
         window.scrollTo({ top: 0, behavior: "smooth" });
       } else {
-        await updateDoc(doc(db, "empresa_leads", empresaId), {
+        const updatePayload: any = {
           razaoSocial: formData.razaoSocial.trim(),
           cnpj: formData.cnpj.trim(),
           cpfResponsavel: formData.cpfResponsavel.trim(),
@@ -772,14 +791,6 @@ export function FichaEmpresaLandingView({
           telefone: formData.telefone.trim(),
           quantidadeVidas: String(parsedVidas || formData.quantidadeVidas.trim()),
           produtosContratados: formData.produtosContratados.trim(),
-          valorPorVida: numValorPorVida,
-          valorPorVidaTexto: formData.valorPorVida.trim(),
-          valorMensal: numValorMensal,
-          valorMensalTexto: formData.valorMensal.trim(),
-          valorFixoMensal: numValorMensal,
-          valoresDefinidos: resumoValores,
-          valoresAcertados: resumoValores,
-          formaPagamento: formData.formaPagamento.trim(),
           observacoesGerais: formData.observacoesGerais.trim(),
           // Mantém sincronizado com as chaves históricas para compatibilidade
           nomeEmpresa: formData.razaoSocial.trim(),
@@ -787,11 +798,26 @@ export function FichaEmpresaLandingView({
           colaboradores: String(parsedVidas || formData.quantidadeVidas.trim()),
           servicosOferecidos: formData.produtosContratados.trim(),
           colaboradoresList: colaboradoresList,
-          faturamentoConfig: faturamentoConfigAtualizado,
           fichaPreenchidaPelaEmpresa: true,
           fichaPreenchidaEm: serverTimestamp(),
           updatedAt: serverTimestamp(),
-        });
+        };
+
+        // Apenas empresas diretas atualizam valores na ficha de implantação.
+        // Clientes conectados via parceiro têm seus valores geridos estritamente pelo Canal Parceiro em sua página.
+        if (!isClienteConectadoViaParceiro) {
+          updatePayload.valorPorVida = numValorPorVida;
+          updatePayload.valorPorVidaTexto = formData.valorPorVida.trim();
+          updatePayload.valorMensal = numValorMensal;
+          updatePayload.valorMensalTexto = formData.valorMensal.trim();
+          updatePayload.valorFixoMensal = numValorMensal;
+          updatePayload.valoresDefinidos = resumoValores;
+          updatePayload.valoresAcertados = resumoValores;
+          updatePayload.formaPagamento = formData.formaPagamento.trim();
+          updatePayload.faturamentoConfig = faturamentoConfigAtualizado;
+        }
+
+        await updateDoc(doc(db, "empresa_leads", empresaId), updatePayload);
         setSavedSuccess(true);
         window.scrollTo({ top: 0, behavior: "smooth" });
       }
@@ -1608,8 +1634,9 @@ export function FichaEmpresaLandingView({
             </div>
           </section>
 
-          {/* 4. CONDIÇÕES FINANCEIRAS & FATURAMENTO */}
-          <section className="bg-white rounded-3xl p-6 sm:p-8 shadow-sm border border-soft space-y-6">
+          {/* 4. CONDIÇÕES FINANCEIRAS & FATURAMENTO (Oculto para empresas conectadas via parceiro) */}
+          {!isClienteConectadoViaParceiro ? (
+            <section className="bg-white rounded-3xl p-6 sm:p-8 shadow-sm border border-soft space-y-6">
             <div className="flex items-center gap-3 border-b border-soft pb-4">
               <div className="w-9 h-9 rounded-xl bg-forest/5 flex items-center justify-center text-forest">
                 <CreditCard className="w-5 h-5 text-sun-dark" />
@@ -1839,6 +1866,38 @@ export function FichaEmpresaLandingView({
               />
             </div>
           </section>
+          ) : (
+            /* 4. Observações Gerais para Empresas Conectadas (Valores financeiros e faturamento sigilosos do canal parceiro) */
+            <section className="bg-white rounded-3xl p-6 sm:p-8 shadow-sm border border-soft space-y-4">
+              <div className="flex items-center gap-3 border-b border-soft pb-4">
+                <div className="w-9 h-9 rounded-xl bg-forest/5 flex items-center justify-center text-forest">
+                  <FileText className="w-5 h-5 text-sun-dark" />
+                </div>
+                <div>
+                  <h3 className="font-serif text-lg font-bold text-forest">
+                    4. Observações & Alinhamentos Gerais
+                  </h3>
+                  <p className="text-xs text-forest/60">
+                    Insira informações complementares para a equipe de acolhimento e implantação do benefício de saúde mental.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-bold uppercase tracking-wider text-forest/80">
+                  Observações da Empresa
+                </label>
+                <textarea
+                  name="observacoesGerais"
+                  rows={3}
+                  value={formData.observacoesGerais}
+                  onChange={handleChange}
+                  placeholder="Ex: Dias e horários preferenciais para divulgação aos colaboradores, alinhamento com RH/CIPA, particularidades da equipe..."
+                  className="px-4 py-3 bg-warm/40 border border-soft rounded-xl text-sm text-forest focus:outline-none focus:border-sun-dark focus:bg-white transition-all resize-y"
+                />
+              </div>
+            </section>
+          )}
 
           {/* Submission Bar */}
           <div className="bg-white rounded-3xl p-6 shadow-sm border border-soft flex flex-col sm:flex-row items-center justify-between gap-4 sticky bottom-4 z-30">

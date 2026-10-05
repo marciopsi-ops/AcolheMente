@@ -1,6 +1,6 @@
 import { Map, Mail, Phone, HeartHandshake, Leaf, User } from "lucide-react";
 import { useEffect, useState } from "react";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, onSnapshot } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import logoImage from "../assets/images/logo_acolhe.jpeg";
 import { ComplianceModal } from "./ComplianceModal";
@@ -20,23 +20,32 @@ export function Footer({ onNavigate }: { onNavigate?: (view: any) => void }) {
   const [showComplianceModal, setShowComplianceModal] = useState(false);
 
   useEffect(() => {
-    const fetchConfigs = async () => {
-      try {
-        const snap = await getDoc(doc(db, "configuracoes", "master"));
-        if (snap.exists()) {
-          const data = snap.data();
-          setConfigs((prev: any) => ({
-            ...prev,
-            ...data
-          }));
+    let unsub: (() => void) | undefined;
+    try {
+      unsub = onSnapshot(
+        doc(db, "configuracoes", "master"),
+        (snap) => {
+          if (snap.exists()) {
+            const data = snap.data();
+            setConfigs((prev: any) => ({
+              ...prev,
+              ...data,
+            }));
+          }
+        },
+        (err) => {
+          // Gracefully keep default configs if offline or temporarily unreachable
+          if (err.code !== "permission-denied" && !err.message?.includes("offline")) {
+            console.warn("Could not fetch realtime configs for footer:", err.message);
+          }
         }
-      } catch (err: any) {
-        if (err.code !== 'permission-denied') {
-          console.error("Error fetching configs for footer", err);
-        }
-      }
+      );
+    } catch (err: any) {
+      console.warn("Error setting up configs listener for footer:", err);
+    }
+    return () => {
+      if (unsub) unsub();
     };
-    fetchConfigs();
   }, []);
 
   const handleNav = (view: string) => {

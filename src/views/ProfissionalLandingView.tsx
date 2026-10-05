@@ -1,5 +1,5 @@
 import { Footer } from '../components/Footer';
-import { ArrowLeft, CheckCircle2, HeartHandshake, UserPlus, Clock, PiggyBank, Network, Wallet, Check, CreditCard, Sparkles, BookOpen, MessageSquare, Mail, FileText, Copy } from "lucide-react";
+import { ArrowLeft, CheckCircle2, HeartHandshake, UserPlus, Clock, PiggyBank, Network, Wallet, Check, CreditCard, Sparkles, BookOpen, MessageSquare, Mail, FileText, Copy, ShieldCheck, Coins } from "lucide-react";
 import React, { FormEvent, useState, useEffect } from "react";
 import { collection, addDoc, serverTimestamp, getDocs, query, where, doc, onSnapshot } from "firebase/firestore";
 import { db, handleFirestoreError, OperationType } from "../lib/firebase";
@@ -26,32 +26,68 @@ export const OPCOES_SERVICOS = [
   "Outros"
 ];
 
+export const OPCOES_HORAS_REGULARES = [
+  "8 horas/mês",
+  "10 horas/mês",
+  "12 horas/mês",
+  "14 horas/mês",
+  "16 horas/mês",
+  "18 horas/mês",
+  "20 horas/mês",
+  "24 horas/mês",
+  "28 horas/mês",
+  "32 horas/mês",
+];
+
+export const OPCOES_HORAS_ADICIONAIS = [
+  "2 horas/mês",
+  "4 horas/mês",
+  "6 horas/mês",
+  "8 horas/mês",
+  "10 horas/mês",
+  "12 horas/mês",
+];
+
 export function generateTermoValoresProfissional(
   aceitaGratuito: boolean,
   horasGratuito: string,
   aceita30: boolean,
-  nomeProfissional?: string
+  nomeProfissional?: string,
+  horasRegular?: string,
+  horas30?: string
 ): string {
   const nome = (nomeProfissional || "").trim() || "o(a) Profissional Parceiro(a)";
-  let termo = `TERMO DE CIÊNCIA E COMPROMISSO SOBRE VALORES PRATICADOS NA PLATAFORMA ACOLHEMENTE\n\n`;
+  const regularStr = horasRegular || "8 horas/mês";
+  const h30Str = aceita30 ? (horas30 || "2 horas/mês") : "0 horas/mês";
+  const hGratuitoStr = aceitaGratuito ? (horasGratuito || "2 horas/mês") : "0 horas/mês";
 
-  termo += `1. DO VALOR MÍNIMO REGULAR DA PLATAFORMA:\n`;
-  termo += `Pelo presente instrumento, declaro estar plenamente ciente de que o valor mínimo regular praticado pela plataforma AcolheMente para atendimentos particulares com valor acessível é de R$ 50,00 (cinquenta reais) por sessão clínica individual. As faixas de valores acessíveis da plataforma partem obrigatoriamente de R$ 50,00 por atendimento, sendo destinadas exclusivamente a pacientes que passam por triagem socioeconômica prévia realizada pela equipe técnica da plataforma.\n\n`;
+  const numRegular = parseInt(regularStr.replace(/\D+/g, "") || "8", 10);
+  const num30 = aceita30 ? parseInt(h30Str.replace(/\D+/g, "") || "2", 10) : 0;
+  const numGratuito = aceitaGratuito ? parseInt(hGratuitoStr.replace(/\D+/g, "") || "2", 10) : 0;
+  const numTotal = numRegular + num30 + numGratuito;
+
+  let termo = `TERMO DE CIÊNCIA E COMPROMISSO SOBRE VALORES E COTA DE HORAS PRATICADOS NA PLATAFORMA ACOLHEMENTE\n\n`;
+
+  termo += `1. DA COTA MÍNIMA REGULAR E VALORES PRATICADOS:\n`;
+  termo += `Pelo presente instrumento, declaro estar plenamente ciente de que a cota mínima obrigatória para credenciamento na plataforma AcolheMente é de 8 (oito) horas mensais destinadas exclusivamente à grade regular de atendimentos particulares com valor acessível (partindo obrigatoriamente de R$ 50,00 por sessão clínica individual). As horas são sempre estruturadas em números pares para compatibilização com as frequências semanais (4h/mês) ou quinzenais (2h/mês).\n\n`;
+  termo += `Declaro expressamente que minha cota base regular é fixada em ${regularStr}, sendo esta base protegida e não passível de conversão em atendimentos gratuitos ou na faixa extraordinária de R$ 30,00.\n\n`;
 
   if (!aceitaGratuito && !aceita30) {
-    termo += `2. DO REGIME DE ATENDIMENTO PADRÃO:\n`;
-    termo += `Declaro que meus atendimentos clínicos na plataforma serão conduzidos estritamente dentro da grade padrão de valores acessíveis (a partir de R$ 50,00 por sessão), não optando, no presente momento, pela realização de atendimentos em modalidade gratuita ou na faixa extraordinária de vulnerabilidade.\n\n`;
+    termo += `2. DO REGIME DE ATENDIMENTO:\n`;
+    termo += `Declaro que meus atendimentos clínicos na plataforma serão conduzidos estritamente dentro da grade padrão regular com valores a partir de R$ 50,00 por sessão, totalizando ${numTotal} horas/mês, não optando, no presente momento, pela realização de atendimentos em modalidade gratuita ou na faixa extraordinária de vulnerabilidade.\n\n`;
   } else {
-    termo += `2. DAS CONDIÇÕES ESPECIAIS E EXTRAORDINÁRIAS ACORDADAS:\n`;
-    termo += `Em caráter de compromisso humanitário com o acolhimento qualificado e acessível, concordo e formalizo as seguintes condições especiais e extraordinárias selecionadas em meu cadastro:\n\n`;
-    
-    if (aceitaGratuito) {
-      termo += `• ATENDIMENTO GRATUITO (VOLUNTÁRIO / PRO BONO):\n  Declaro aceitar atender gratuitamente e manifesto minha expressa autorização para disponibilizar ${horasGratuito || "1 hora/mês"} das minhas horas de atendimento mensais declaradas para acolhimento clínico 100% gratuito (pro bono), destinado a pacientes em situação de extrema vulnerabilidade socioeconômica encaminhados pela coordenação do projeto.\n\n`;
-    }
+    termo += `2. DAS HORAS ADICIONAIS EXTRAORDINÁRIAS E CONDIÇÕES ESPECIAIS:\n`;
+    termo += `Em caráter de compromisso humanitário com o acolhimento qualificado e acessível, manifesto minha expressa autorização para adicionar à minha cota regular as seguintes horas extraordinárias (em números pares, sem dedução das 8h mínimas regulares):\n\n`;
     
     if (aceita30) {
-      termo += `• FAIXA EXTRAORDINÁRIA DE VULNERABILIDADE (R$ 30,00):\n  Declaro aceitar atender casos especiais e de alta vulnerabilidade pelo valor extraordinário de R$ 30,00 (trinta reais) por sessão clínica. Reconheço que esta faixa tem caráter de exceção humanitária, permanece oculta do público geral nas páginas da plataforma e é aplicada de forma seletiva pela triagem em situações emergenciais comprovadas.\n\n`;
+      termo += `• FAIXA EXTRAORDINÁRIA DE VULNERABILIDADE (R$ 30,00):\n  Declaro aceitar atender casos especiais e de alta vulnerabilidade pelo valor extraordinário de R$ 30,00 (trinta reais) por sessão clínica individual, disponibilizando ${h30Str} adicionais para encaminhamentos seletivos da coordenação. Reconheço que esta faixa tem caráter de exceção humanitária e permanece oculta do público geral.\n\n`;
     }
+    
+    if (aceitaGratuito) {
+      termo += `• ATENDIMENTO GRATUITO (VOLUNTÁRIO / PRO BONO):\n  Declaro aceitar atender gratuitamente e disponibilizo ${hGratuitoStr} adicionais para acolhimento clínico 100% gratuito (pro bono), destinado a pacientes em situação de extrema vulnerabilidade socioeconômica encaminhados pela coordenação do projeto.\n\n`;
+    }
+
+    termo += `• COTA TOTAL CONSOLIDADA: ${numTotal} horas/mês (sendo ${regularStr} na base regular a partir de R$ 50, ${aceita30 ? `${h30Str} a R$ 30` : '0h a R$ 30'} e ${aceitaGratuito ? `${hGratuitoStr} gratuitas` : '0h gratuitas'}).\n\n`;
   }
 
   termo += `3. DA ÉTICA, RIGOR E SIGILO PROFISSIONAL:\n`;
@@ -100,10 +136,12 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
     uf: '',
     genero: '',
     deficiencia: '',
-    horasDisponiveis: '2 a 4 horas/mês',
+    horasDisponiveis: '8 horas/mês',
+    horasRegular: '8 horas/mês',
     aceitaAtendimentoGratuito: false,
-    horasAtendimentoGratuito: '1 hora/mês',
+    horasAtendimentoGratuito: '2 horas/mês',
     aceitaAtendimento30Reais: false,
+    horasAtendimento30Reais: '2 horas/mês',
     termoValoresAceito: false,
     termoDuracaoAceito: false,
     publicosExperiencia: [] as string[],
@@ -268,19 +306,33 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
           return;
         }
 
+        const regularHoras = parseInt((formData.horasRegular || formData.horasDisponiveis || "8").replace(/\D+/g, "") || "8", 10);
+        const h30Num = formData.aceitaAtendimento30Reais
+          ? parseInt((formData.horasAtendimento30Reais || "2").replace(/\D+/g, "") || "2", 10)
+          : 0;
+        const hGratuitoNum = formData.aceitaAtendimentoGratuito
+          ? parseInt((formData.horasAtendimentoGratuito || "2").replace(/\D+/g, "") || "2", 10)
+          : 0;
+        const totalHorasCalculado = regularHoras + h30Num + hGratuitoNum;
+
         const termoValoresTexto = generateTermoValoresProfissional(
           formData.aceitaAtendimentoGratuito,
           formData.horasAtendimentoGratuito,
           formData.aceitaAtendimento30Reais,
-          formData.nome
+          formData.nome,
+          `${regularHoras} horas/mês`,
+          `${h30Num} horas/mês`
         );
         const termoDuracaoTexto = generateTermoDuracaoSessaoProfissional(formData.nome);
 
         const docRef = await addDoc(collection(db, "profissionais_leads"), {
           ...formData,
-          aceitaAtendimentoGratuito: Boolean(formData.aceitaAtendimentoGratuito),
-          horasAtendimentoGratuito: formData.aceitaAtendimentoGratuito ? formData.horasAtendimentoGratuito : "",
+          horasRegular: `${regularHoras} horas/mês`,
           aceitaAtendimento30Reais: Boolean(formData.aceitaAtendimento30Reais),
+          horasAtendimento30Reais: formData.aceitaAtendimento30Reais ? `${h30Num} horas/mês` : "0 horas/mês",
+          aceitaAtendimentoGratuito: Boolean(formData.aceitaAtendimentoGratuito),
+          horasAtendimentoGratuito: formData.aceitaAtendimentoGratuito ? `${hGratuitoNum} horas/mês` : "0 horas/mês",
+          horasDisponiveis: `${totalHorasCalculado} horas/mês`,
           termoValoresAceito: true,
           termoValoresTexto,
           termoDuracaoAceito: true,
@@ -885,54 +937,132 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
                             </div>
                           </div>
 
-                          <div className="flex flex-col gap-1">
-                            <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">Horas mensais disponíveis *</label>
+                          {/* Cota Base Regular */}
+                          <div className="flex flex-col gap-1.5 bg-white p-5 rounded-2xl border border-soft shadow-2xs">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                              <label className="text-xs font-bold uppercase tracking-wider text-forest flex items-center gap-1.5">
+                                <ShieldCheck className="w-4 h-4 text-emerald-700" />
+                                Cota Base Regular (≥ R$ 50,00 por sessão) *
+                              </label>
+                              <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2.5 py-0.5 rounded-full border border-emerald-200 w-fit">
+                                Mínimo de 8h/mês • Números Pares
+                              </span>
+                            </div>
+                            <p className="text-xs text-forest/70 leading-relaxed">
+                              Todo credenciado inicia com no mínimo 8h exclusivas para a grade regular da plataforma (a partir de R$ 50/sessão). Esta base é protegida e não pode ser convertida para gratuidades ou R$ 30.
+                            </p>
                             <select 
                               required 
-                              name="horasDisponiveis"
-                              value={formData.horasDisponiveis}
-                              onChange={handleChange}
-                              className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest appearance-none" 
+                              name="horasRegular"
+                              value={formData.horasRegular || formData.horasDisponiveis || "8 horas/mês"}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setFormData(prev => ({
+                                  ...prev,
+                                  horasRegular: val,
+                                  horasDisponiveis: val
+                                }));
+                              }}
+                              className="mt-1 px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm font-bold text-forest cursor-pointer" 
                             >
-                              <option value="2 a 4 horas/mês">2 a 4 horas/mês</option>
-                              <option value="4 a 8 horas/mês">4 a 8 horas/mês</option>
-                              <option value="10 a 16 horas/mês">10 a 16 horas/mês</option>
-                              <option value="16 a 20 horas/mês">16 a 20 horas/mês</option>
-                              <option value="Mais de 20 horas/mês">Mais de 20 horas/mês</option>
+                              {OPCOES_HORAS_REGULARES.map((op) => (
+                                <option key={op} value={op}>{op} {op === "8 horas/mês" ? "(Mínimo obrigatório)" : ""}</option>
+                              ))}
                             </select>
                           </div>
 
-                          {/* Pergunta: Condições Especiais de Atendimento */}
+                          {/* Pergunta: Condições Especiais de Atendimento & Horas Extras */}
                           <div className="bg-emerald-50/70 p-5 sm:p-6 rounded-2xl border border-emerald-200/90 flex flex-col gap-4 shadow-xs mt-2">
                             <div className="flex items-center gap-2 text-forest font-bold text-sm">
                               <HeartHandshake className="w-5 h-5 text-emerald-700 shrink-0" />
-                              <span>Condições de Atendimento & Casos Especiais</span>
+                              <span>Condições de Atendimento & Horas Extraordinárias / Pro Bono</span>
                             </div>
-                            <div className="bg-emerald-100/60 p-3 rounded-xl border border-emerald-300/60 text-xs text-emerald-950 leading-relaxed font-medium">
-                              📌 <strong>Valores da Plataforma:</strong> O valor mínimo regular praticado na plataforma AcolheMente é de <strong>R$ 50,00 por sessão</strong> (as faixas partem de R$ 50,00). A faixa de R$ 30,00 e os atendimentos gratuitos são extraordinários para casos especiais e de muita vulnerabilidade, permanecendo ocultos do público geral.
+                            
+                            {/* Caixa de Critérios Oficiais */}
+                            <div className="bg-emerald-100/70 p-3.5 rounded-xl border border-emerald-300/70 text-xs text-emerald-950 leading-relaxed font-medium space-y-1.5">
+                              <div className="font-bold flex items-center gap-1.5 text-emerald-900">
+                                📌 <strong>Critérios Oficiais da Plataforma:</strong>
+                              </div>
+                              <ul className="list-disc pl-4 space-y-1 text-[11px] text-emerald-900/90 leading-relaxed">
+                                <li><strong>Base regular mínima:</strong> 8h/mês remuneradas a partir de R$ 50/sessão (essas horas não podem ser revertidas para gratuito ou R$ 30).</li>
+                                <li><strong>Horas Adicionais:</strong> Caso queira atender a R$ 30 ou Pro Bono, você adiciona horas extras à sua grade.</li>
+                                <li><strong>Números Pares:</strong> Seleções sempre em números pares para adequação a frequências semanais (4h/mês) ou quinzenais (2h/mês).</li>
+                              </ul>
                             </div>
 
                             <label className="text-xs font-bold uppercase tracking-wider text-forest/80 ml-1">
-                              Você aceita atender:
+                              Disponibilidade adicional opcional:
                             </label>
 
                             <div className="space-y-3">
-                              {/* Caixa 1: Gratuitamente */}
+                              {/* Caixa 1: R$ 30 por sessão */}
+                              <div className={`p-4 rounded-xl border transition-all ${formData.aceitaAtendimento30Reais ? 'bg-white border-amber-300 shadow-xs ring-2 ring-amber-500/10' : 'bg-white/70 border-soft'}`}>
+                                <label className="flex items-start gap-3 cursor-pointer select-none">
+                                  <input 
+                                    type="checkbox"
+                                    name="aceitaAtendimento30Reais"
+                                    checked={formData.aceitaAtendimento30Reais}
+                                    onChange={(e) => setFormData(prev => ({ 
+                                      ...prev, 
+                                      aceitaAtendimento30Reais: e.target.checked,
+                                      horasAtendimento30Reais: e.target.checked ? (prev.horasAtendimento30Reais || "2 horas/mês") : "0 horas/mês"
+                                    }))}
+                                    className="mt-1 w-5 h-5 rounded border-amber-300 text-amber-700 accent-amber-600 cursor-pointer shrink-0"
+                                  />
+                                  <div className="flex-1">
+                                    <span className="text-sm font-bold text-forest flex items-center gap-1.5">
+                                      <Coins className="w-4 h-4 text-amber-600" />
+                                      30 reais por sessão (Faixa Extraordinária)
+                                    </span>
+                                    <span className="text-xs text-forest/75 block mt-0.5 leading-relaxed">
+                                      Horas extras adicionadas além da base regular para casos de alta vulnerabilidade encaminhados pontualmente pela triagem (mantida oculta do público geral).
+                                    </span>
+                                  </div>
+                                </label>
+
+                                {formData.aceitaAtendimento30Reais && (
+                                  <div className="mt-3.5 pt-3 border-t border-amber-100 flex flex-col gap-1.5 pl-8 animate-in fade-in slide-in-from-top-1 duration-200">
+                                    <label className="text-xs font-bold text-forest/90">
+                                      Quantas horas extras por mês gostaria de dispor para a faixa de R$ 30? *
+                                    </label>
+                                    <select
+                                      name="horasAtendimento30Reais"
+                                      value={formData.horasAtendimento30Reais}
+                                      onChange={handleChange}
+                                      className="w-full sm:max-w-md px-4 py-2.5 bg-amber-50/70 border border-amber-300 rounded-xl text-xs font-bold text-forest focus:outline-none focus:border-amber-600 cursor-pointer"
+                                    >
+                                      {OPCOES_HORAS_ADICIONAIS.map((op) => (
+                                        <option key={`30-${op}`} value={op}>+{op}</option>
+                                      ))}
+                                    </select>
+                                    <p className="text-[11px] text-amber-900 font-medium">
+                                      Estas horas serão somadas à sua cota regular como capacidade extra de acolhimento.
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Caixa 2: Gratuitamente */}
                               <div className={`p-4 rounded-xl border transition-all ${formData.aceitaAtendimentoGratuito ? 'bg-white border-emerald-400 shadow-xs ring-2 ring-emerald-500/10' : 'bg-white/70 border-soft'}`}>
                                 <label className="flex items-start gap-3 cursor-pointer select-none">
                                   <input 
                                     type="checkbox"
                                     name="aceitaAtendimentoGratuito"
                                     checked={formData.aceitaAtendimentoGratuito}
-                                    onChange={(e) => setFormData(prev => ({ ...prev, aceitaAtendimentoGratuito: e.target.checked }))}
+                                    onChange={(e) => setFormData(prev => ({ 
+                                      ...prev, 
+                                      aceitaAtendimentoGratuito: e.target.checked,
+                                      horasAtendimentoGratuito: e.target.checked ? (prev.horasAtendimentoGratuito || "2 horas/mês") : "0 horas/mês"
+                                    }))}
                                     className="mt-1 w-5 h-5 rounded border-emerald-300 text-emerald-700 accent-emerald-700 cursor-pointer shrink-0"
                                   />
                                   <div className="flex-1">
-                                    <span className="text-sm font-bold text-forest block">
+                                    <span className="text-sm font-bold text-forest flex items-center gap-1.5">
+                                      <HeartHandshake className="w-4 h-4 text-emerald-700" />
                                       Gratuitamente (Voluntário / Pro Bono)
                                     </span>
                                     <span className="text-xs text-forest/75 block mt-0.5 leading-relaxed">
-                                      Atendimento 100% gratuito voltado a pessoas em extrema vulnerabilidade socioeconômica.
+                                      Horas extras adicionadas além da base regular para acolhimento 100% gratuito de pessoas em extrema vulnerabilidade.
                                     </span>
                                   </div>
                                 </label>
@@ -940,7 +1070,7 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
                                 {formData.aceitaAtendimentoGratuito && (
                                   <div className="mt-3.5 pt-3 border-t border-emerald-100 flex flex-col gap-1.5 pl-8 animate-in fade-in slide-in-from-top-1 duration-200">
                                     <label className="text-xs font-bold text-forest/90">
-                                      Quantas dessas horas disponíveis relatadas você aceita atender gratuitamente? *
+                                      Quantas horas extras por mês aceitaria atender gratuitamente? *
                                     </label>
                                     <select
                                       name="horasAtendimentoGratuito"
@@ -948,41 +1078,43 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
                                       onChange={handleChange}
                                       className="w-full sm:max-w-md px-4 py-2.5 bg-emerald-50/70 border border-emerald-300 rounded-xl text-xs font-bold text-forest focus:outline-none focus:border-emerald-600 cursor-pointer"
                                     >
-                                      <option value="1 hora/mês">1 hora/mês</option>
-                                      <option value="2 horas/mês">2 horas/mês</option>
-                                      <option value="3 horas/mês">3 horas/mês</option>
-                                      <option value="4 horas/mês">4 horas/mês</option>
-                                      <option value="Metade das horas disponíveis relatadas">Metade das horas disponíveis relatadas</option>
-                                      <option value="Todas as horas disponíveis relatadas">Todas as horas disponíveis relatadas</option>
+                                      {OPCOES_HORAS_ADICIONAIS.map((op) => (
+                                        <option key={`grat-${op}`} value={op}>+{op}</option>
+                                      ))}
                                     </select>
-                                    <p className="text-[11px] text-emerald-800">
-                                      As horas restantes da sua disponibilidade serão direcionadas para atendimentos com valores regulares acessíveis (a partir de R$ 50,00).
+                                    <p className="text-[11px] text-emerald-800 font-medium">
+                                      Estas horas serão somadas à sua cota como acolhimento social/humanitário pro bono.
                                     </p>
                                   </div>
                                 )}
                               </div>
+                            </div>
 
-                              {/* Caixa 2: R$ 30 por sessão */}
-                              <div className={`p-4 rounded-xl border transition-all ${formData.aceitaAtendimento30Reais ? 'bg-white border-emerald-400 shadow-xs ring-2 ring-emerald-500/10' : 'bg-white/70 border-soft'}`}>
-                                <label className="flex items-start gap-3 cursor-pointer select-none">
-                                  <input 
-                                    type="checkbox"
-                                    name="aceitaAtendimento30Reais"
-                                    checked={formData.aceitaAtendimento30Reais}
-                                    onChange={(e) => setFormData(prev => ({ ...prev, aceitaAtendimento30Reais: e.target.checked }))}
-                                    className="mt-1 w-5 h-5 rounded border-emerald-300 text-emerald-700 accent-emerald-700 cursor-pointer shrink-0"
-                                  />
-                                  <div className="flex-1">
-                                    <span className="text-sm font-bold text-forest block">
-                                      30 reais por sessão (Faixa Extraordinária)
+                            {/* Card de Consolidação da Cota */}
+                            {(() => {
+                              const regNum = parseInt((formData.horasRegular || formData.horasDisponiveis || "8").replace(/\D+/g, "") || "8", 10);
+                              const h30Num = formData.aceitaAtendimento30Reais ? parseInt((formData.horasAtendimento30Reais || "2").replace(/\D+/g, "") || "2", 10) : 0;
+                              const hGratNum = formData.aceitaAtendimentoGratuito ? parseInt((formData.horasAtendimentoGratuito || "2").replace(/\D+/g, "") || "2", 10) : 0;
+                              const totalNum = regNum + h30Num + hGratNum;
+
+                              return (
+                                <div className="p-4 bg-white/90 rounded-2xl border border-emerald-200 flex flex-col gap-2 mt-2 shadow-2xs">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-xs font-bold uppercase tracking-wider text-forest/80">
+                                      Cota Total Mensal Consolidada:
                                     </span>
-                                    <span className="text-xs text-forest/75 block mt-0.5 leading-relaxed">
-                                      Faixa extraordinária reservada para casos especiais e de muita vulnerabilidade, mantida oculta na plataforma pública.
+                                    <span className="text-base font-extrabold text-emerald-900 bg-emerald-100 px-3 py-1 rounded-xl border border-emerald-300">
+                                      {totalNum} horas/mês
                                     </span>
                                   </div>
-                                </label>
-                              </div>
-                            </div>
+                                  <div className="text-[11px] text-forest/75 flex flex-wrap gap-x-3 gap-y-1 pt-1 border-t border-soft/50">
+                                    <span>• Regular (≥ R$ 50): <strong>{regNum}h</strong></span>
+                                    <span>• Extraordinário (R$ 30): <strong>{h30Num}h</strong></span>
+                                    <span>• Gratuito (Pro Bono): <strong>{hGratNum}h</strong></span>
+                                  </div>
+                                </div>
+                              );
+                            })()}
                           </div>
                         </div>
                       )}
@@ -1187,7 +1319,9 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
                                   formData.aceitaAtendimentoGratuito,
                                   formData.horasAtendimentoGratuito,
                                   formData.aceitaAtendimento30Reais,
-                                  formData.nome
+                                  formData.nome,
+                                  formData.horasRegular || formData.horasDisponiveis,
+                                  formData.horasAtendimento30Reais
                                 )}
                               </div>
                               <button
@@ -1197,7 +1331,9 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
                                     formData.aceitaAtendimentoGratuito,
                                     formData.horasAtendimentoGratuito,
                                     formData.aceitaAtendimento30Reais,
-                                    formData.nome
+                                    formData.nome,
+                                    formData.horasRegular || formData.horasDisponiveis,
+                                    formData.horasAtendimento30Reais
                                   );
                                   navigator.clipboard.writeText(text);
                                   setCopiedTermo(true);

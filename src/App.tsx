@@ -1338,7 +1338,7 @@ function LandingPage({
                   {/* Badge */}
                   <div className="w-fit px-4 py-1.5 rounded-full bg-black/50 backdrop-blur-md border border-white/25 text-sun group-hover:bg-sun group-hover:text-forest group-hover:border-sun font-bold text-xs uppercase tracking-wider shadow-md transition-all duration-300 flex items-center gap-2">
                     <Briefcase className="w-3.5 h-3.5 text-sun group-hover:text-forest transition-colors" />
-                    <span>Programa Corporativo</span>
+                    <span>Programa Corporativo Modular</span>
                   </div>
 
                   {/* Ícone Container */}
@@ -1355,10 +1355,7 @@ function LandingPage({
 
                   {/* Parágrafo com Alto Contraste Natural */}
                   <p className="text-base sm:text-[17px] text-white group-hover:text-white font-normal leading-relaxed max-w-xl transition-colors duration-300 drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)]">
-                    Antecipe-se às exigências da NR1 implementando um programa
-                    efetivo de prevenção aos riscos psicossociais. Mais do que um
-                    benefício, um cuidado estratégico que protege sua empresa e
-                    transforma o ambiente de trabalho.
+                    Duas frentes complementares para sua organização: <strong>1. Adequação técnica à NR1</strong> (do diagnóstico ao plano de ação) e <strong>2. Canal de saúde e acolhimento</strong> para colaboradores e dependentes. Contrate apenas o que sua empresa precisa ou o ecossistema completo.
                   </p>
                 </div>
 
