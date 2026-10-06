@@ -106,6 +106,15 @@ export function FichaEmpresaLandingView({
   const [colaboradoresList, setColaboradoresList] = useState<ColaboradorEmpresa[]>([]);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
+  // Auto-dismiss do Toast para garantir que nunca fique travado cobrindo a tela
+  useEffect(() => {
+    if (!toastMsg) return;
+    const timer = setTimeout(() => {
+      setToastMsg(null);
+    }, 3500);
+    return () => clearTimeout(timer);
+  }, [toastMsg]);
+
   // Parâmetros de URL para onboarding / novo vínculo com Canal Parceiro
   const isNovaEmpresa = empresaId === "nova" || empresaId === "novo";
   const urlParams = new URLSearchParams(window.location.search);
@@ -1150,11 +1159,28 @@ export function FichaEmpresaLandingView({
           </div>
         </div>
 
-        {/* Floating Toast */}
+        {/* Floating Toast - Com auto-dismiss e botão fechar */}
         {toastMsg && (
-          <div className="fixed bottom-6 right-6 z-50 bg-forest text-white px-5 py-3 rounded-2xl shadow-xl flex items-center gap-3 border border-sun/30 animate-in fade-in slide-in-from-bottom-4">
-            <CheckCircle2 className="w-5 h-5 text-sun" />
-            <span className="text-sm font-semibold">{toastMsg}</span>
+          <div
+            onClick={() => setToastMsg(null)}
+            className="fixed bottom-6 right-6 z-[9999] bg-forest text-white px-5 py-3 rounded-2xl shadow-xl flex items-center justify-between gap-3 border border-sun/30 animate-in fade-in slide-in-from-bottom-4 cursor-pointer max-w-md transition-all hover:scale-[1.01] active:scale-[0.99]"
+            title="Clique para fechar aviso"
+          >
+            <div className="flex items-center gap-2.5">
+              <CheckCircle2 className="w-5 h-5 text-sun shrink-0" />
+              <span className="text-sm font-semibold leading-snug">{toastMsg}</span>
+            </div>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setToastMsg(null);
+              }}
+              className="p-1 rounded-lg text-white/70 hover:text-white hover:bg-white/10 transition-colors shrink-0 ml-1 cursor-pointer"
+              title="Fechar aviso"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
         )}
 
@@ -1193,30 +1219,41 @@ export function FichaEmpresaLandingView({
 
         {/* Success Alert */}
         {savedSuccess && activeTab === "empresa" && (
-          <div className="bg-emerald-50 border border-emerald-300 text-emerald-950 rounded-2xl p-5 sm:p-6 flex flex-col gap-4 animate-in fade-in slide-in-from-top-2 shadow-sm">
-            <div className="flex items-start gap-3">
-              <CheckCircle2 className="w-6 h-6 text-emerald-600 shrink-0 mt-0.5" />
-              <div>
-                <h4 className="font-bold text-base text-emerald-950">
-                  {createdEmpresaId ? "Ficha de Implantação concluída com sucesso!" : "Ficha de Implantação salva com sucesso!"}
-                </h4>
-                <p className="text-xs text-emerald-800 mt-1 leading-relaxed">
-                  {createdEmpresaId
-                    ? `Os dados foram salvos e a empresa foi cadastrada como Empresa Conectada vinculada ao parceiro ${empresaPaiNome || "Canal Parceiro"}.`
-                    : "Os dados contratuais e operacionais foram sincronizados diretamente com a gestão da plataforma AcolheMente."}
-                </p>
+          <div className="bg-emerald-50 border border-emerald-300 text-emerald-950 rounded-2xl p-4 sm:p-6 flex flex-col gap-3.5 sm:gap-4 animate-in fade-in slide-in-from-top-2 shadow-sm relative">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <CheckCircle2 className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-600 shrink-0 mt-0.5" />
+                <div>
+                  <h4 className="font-bold text-sm sm:text-base text-emerald-950">
+                    {createdEmpresaId ? "Ficha de Implantação concluída com sucesso!" : "Ficha de Implantação salva com sucesso!"}
+                  </h4>
+                  <p className="text-xs text-emerald-800 mt-0.5 sm:mt-1 leading-relaxed">
+                    {createdEmpresaId
+                      ? `Os dados foram salvos e a empresa foi cadastrada como Empresa Conectada vinculada ao parceiro ${empresaPaiNome || "Canal Parceiro"}.`
+                      : "Os dados contratuais e operacionais foram sincronizados diretamente com a gestão da plataforma AcolheMente."}
+                  </p>
+                </div>
               </div>
+              <button
+                type="button"
+                onClick={() => setSavedSuccess(false)}
+                className="p-1.5 text-emerald-800/60 hover:text-emerald-950 hover:bg-emerald-100/80 rounded-full transition-colors cursor-pointer shrink-0"
+                title="Fechar este aviso e liberar espaço na tela"
+                aria-label="Fechar aviso"
+              >
+                <X className="w-4 h-4 sm:w-5 sm:h-5" />
+              </button>
             </div>
 
             {createdEmpresaId && createdPin && (
-              <div className="p-4 bg-white rounded-xl border border-emerald-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                <div className="space-y-1">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-900 block">
+              <div className="p-3 sm:p-4 bg-white rounded-xl border border-emerald-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
+                <div className="space-y-0.5 sm:space-y-1">
+                  <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-emerald-900 block">
                     Acesso ao Portal do RH da Empresa Conectada
                   </span>
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-forest/70">Senha PIN de Acesso:</span>
-                    <span className="font-mono font-bold text-base text-forest bg-amber-100 border border-amber-300 px-2 py-0.5 rounded">
+                    <span className="font-mono font-bold text-sm sm:text-base text-forest bg-amber-100 border border-amber-300 px-2 py-0.5 rounded">
                       {createdPin}
                     </span>
                   </div>
@@ -1228,9 +1265,12 @@ export function FichaEmpresaLandingView({
                       const link = `${window.location.origin}/?portal_rh=${createdEmpresaId}`;
                       navigator.clipboard.writeText(link);
                       setToastMsg(`Link do Portal do RH copiado! PIN: ${createdPin}`);
-                      setTimeout(() => setToastMsg(null), 3500);
+                      setTimeout(() => setToastMsg(null), 3000);
+                      // Fecha o aviso para não cobrir a tela após o clique
+                      setSavedSuccess(false);
                     }}
                     className="flex-1 sm:flex-initial px-3 py-2 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                    title="Copiar link do Portal do RH e fechar aviso"
                   >
                     <Copy className="w-3.5 h-3.5" />
                     <span>Copiar Link do Portal RH</span>
@@ -1239,7 +1279,12 @@ export function FichaEmpresaLandingView({
                     href={`/?portal_rh=${createdEmpresaId}`}
                     target="_blank"
                     rel="noreferrer"
+                    onClick={() => {
+                      // Fecha o aviso ao abrir o link para não cobrir a tela
+                      setSavedSuccess(false);
+                    }}
                     className="flex-1 sm:flex-initial px-3.5 py-2 bg-forest hover:bg-forest/90 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+                    title="Abrir Portal do RH em nova aba e fechar aviso"
                   >
                     <ExternalLink className="w-3.5 h-3.5 text-sun" />
                     <span>Abrir Portal RH</span>

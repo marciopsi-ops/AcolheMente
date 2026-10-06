@@ -2432,28 +2432,28 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-forest/75 backdrop-blur-xs animate-in fade-in duration-200">
           <div className="bg-white rounded-3xl max-w-xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-soft overflow-hidden">
             {/* Header */}
-            <div className="p-5 sm:p-6 bg-warm/30 border-b border-soft flex items-center justify-between gap-4 shrink-0">
-              <div className="flex items-center gap-3">
+            <div className="px-3.5 sm:px-6 py-2.5 sm:py-4 bg-warm/30 border-b border-soft flex items-center justify-between gap-3 shrink-0">
+              <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
                 {modalConfigurarContato.prof.foto ? (
                   <img
                     src={modalConfigurarContato.prof.foto}
                     alt={modalConfigurarContato.prof.name}
-                    className="w-11 h-11 rounded-full object-cover border-2 border-emerald-600 shrink-0"
+                    className="w-9 h-9 sm:w-11 sm:h-11 rounded-full object-cover border-2 border-emerald-600 shrink-0"
                   />
                 ) : (
-                  <div className="w-11 h-11 rounded-full bg-forest text-white font-serif font-bold flex items-center justify-center shrink-0">
+                  <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-forest text-white font-serif font-bold flex items-center justify-center shrink-0">
                     {modalConfigurarContato.prof.name.charAt(0)}
                   </div>
                 )}
-                <div>
-                  <span className="text-[11px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                <div className="min-w-0 flex-1">
+                  <span className="text-[10px] sm:text-[11px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 inline-block">
                     Iniciar Acolhimento Corporativo
                   </span>
-                  <h3 className="font-bold font-serif text-forest text-base sm:text-lg mt-0.5">
+                  <h3 className="font-bold font-serif text-forest text-sm sm:text-lg mt-0.5 truncate leading-tight" title={modalConfigurarContato.prof.name}>
                     Dr(a). {modalConfigurarContato.prof.name}
                   </h3>
                   {modalConfigurarContato.prof.crp && (
-                    <span className="text-[11px] text-forest/60 font-mono">
+                    <span className="text-[10px] sm:text-[11px] text-forest/60 font-mono">
                       CRP: {modalConfigurarContato.prof.crp}
                     </span>
                   )}

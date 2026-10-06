@@ -276,11 +276,18 @@ export function PortalEmpresaView({
   const [filtroCategoriaCatalogo, setFiltroCategoriaCatalogo] = useState<string>("todas");
   const [acessosCorporativos, setAcessosCorporativos] = useState<any[]>([]);
 
-  // Helper de Toast
+  // Helper de Toast com auto-dismiss garantido via useEffect
   const showToast = (text: string, type: "success" | "error" | "info" = "success") => {
     setToastMsg({ text, type });
-    setTimeout(() => setToastMsg(null), 4000);
   };
+
+  useEffect(() => {
+    if (!toastMsg) return;
+    const timer = setTimeout(() => {
+      setToastMsg(null);
+    }, 4000);
+    return () => clearTimeout(timer);
+  }, [toastMsg]);
 
   // Estados para Código de Acesso do Colaborador (Exposto para o RH repassar aos colaboradores)
   const [copiedCodigoColab, setCopiedCodigoColab] = useState(false);
@@ -1882,23 +1889,38 @@ export function PortalEmpresaView({
 
   return (
     <div className="min-h-screen bg-warm flex flex-col">
-      {/* Toast Notification - Alinhado no rodapé à direita para não sobrepor o cabeçalho nem os botões */}
+      {/* Toast Notification - Alinhado no rodapé à direita, com auto-dismiss e botão para fechar */}
       {toastMsg && (
         <div
-          className={`fixed bottom-5 right-5 z-50 px-4 py-3 rounded-2xl shadow-xl border text-xs font-semibold flex items-center gap-2.5 animate-in fade-in slide-in-from-bottom-3 max-w-md ${
+          onClick={() => setToastMsg(null)}
+          className={`fixed bottom-5 right-5 z-[9999] px-4 py-3 rounded-2xl shadow-xl border text-xs font-semibold flex items-center justify-between gap-3 animate-in fade-in slide-in-from-bottom-3 max-w-md cursor-pointer transition-all hover:scale-[1.01] active:scale-[0.99] ${
             toastMsg.type === "success"
-              ? "bg-white text-slate-800 border-emerald-300 shadow-emerald-950/10"
+              ? "bg-white text-slate-800 border-emerald-400 shadow-emerald-950/15"
               : toastMsg.type === "error"
-              ? "bg-white text-slate-800 border-red-300 shadow-red-950/10"
-              : "bg-white text-slate-800 border-slate-200 shadow-slate-950/10"
+              ? "bg-white text-slate-800 border-red-400 shadow-red-950/15"
+              : "bg-white text-slate-800 border-slate-300 shadow-slate-950/15"
           }`}
+          title="Clique para fechar aviso"
         >
-          {toastMsg.type === "success" ? (
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-          ) : (
-            <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
-          )}
-          <span>{toastMsg.text}</span>
+          <div className="flex items-center gap-2.5">
+            {toastMsg.type === "success" ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            ) : (
+              <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
+            )}
+            <span className="leading-snug">{toastMsg.text}</span>
+          </div>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setToastMsg(null);
+            }}
+            className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors shrink-0 ml-1 cursor-pointer"
+            title="Fechar aviso"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
       )}
 
@@ -1973,10 +1995,10 @@ export function PortalEmpresaView({
                 onClick={() => {
                   const link = `${window.location.origin}/?ficha_implantacao=nova&parceiro_id=${empresaPrincipal.id}`;
                   navigator.clipboard.writeText(link);
-                  setToastMsg({
-                    type: "success",
-                    text: "Link de Implantação do Canal copiado! Envie para a empresa cliente preencher os dados e colaboradores para vincular automaticamente.",
-                  });
+                  showToast(
+                    "Link de Implantação do Canal copiado! Envie para a empresa cliente preencher os dados e colaboradores para vincular automaticamente.",
+                    "success"
+                  );
                 }}
                 className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer"
                 title="Ficha de Implantação - Primeiros Cadastros: Envie para a empresa contratada preencher seus dados e colaboradores. Ela ficará automaticamente vinculada ao seu canal parceiro como empresa conectada."
@@ -2017,10 +2039,10 @@ export function PortalEmpresaView({
                   const link = `${window.location.origin}/?portal_rh=${empresaAtiva.id}`;
                   const pin = getEmpresaPin(empresaAtiva);
                   navigator.clipboard.writeText(link);
-                  setToastMsg({
-                    type: "success",
-                    text: `Link do Portal RH da empresa ${empresaAtiva.nomeEmpresa || empresaAtiva.razaoSocial} copiado! PIN de Acesso: ${pin}`,
-                  });
+                  showToast(
+                    `Link do Portal RH da empresa ${empresaAtiva.nomeEmpresa || empresaAtiva.razaoSocial} copiado! PIN de Acesso: ${pin}`,
+                    "success"
+                  );
                 }}
                 className="px-2 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1 transition-all cursor-pointer"
                 title={`Copiar link de acesso ao Portal do RH desta empresa conectada (PIN: ${getEmpresaPin(empresaAtiva)})`}

@@ -819,31 +819,35 @@ export function ProfissionalEsteiraTarefas({
               )}
             </div>
 
-            {/* FIFO / LIFO Ordering */}
-            <div className="flex items-center bg-warm/60 p-1 rounded-xl border border-soft shrink-0">
+            {/* Seletor de Ordenação / Comando de Filtrar (Sem termo FIFO) */}
+            <div className="flex items-center gap-1 bg-warm/60 p-0.5 sm:p-1 rounded-xl border border-soft shrink-0">
+              <span className="text-[10px] sm:text-[11px] font-bold text-forest/50 pl-1.5 pr-0.5 hidden sm:flex items-center gap-1 shrink-0">
+                <Filter className="w-3 h-3 text-forest/40" />
+                <span>Filtrar:</span>
+              </span>
               <button
                 onClick={() => setSortOrder("fifo")}
-                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 ${
+                className={`px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-lg text-[10px] sm:text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer ${
                   sortOrder === "fifo"
-                    ? "bg-white text-forest shadow-xs"
+                    ? "bg-white text-forest shadow-2xs font-bold"
                     : "text-forest/60 hover:text-forest"
                 }`}
-                title="Mais antigos primeiro (Fila FIFO de atendimento)"
+                title="Filtrar por mais antigos primeiro (ordem de entrada)"
               >
-                <Clock className="w-3 h-3 text-amber-600" />
-                <span className="hidden sm:inline">Mais Antigos (FIFO)</span>
-                <span className="sm:hidden">FIFO</span>
+                <Clock className="w-3 h-3 text-amber-600 shrink-0" />
+                <span className="hidden sm:inline">Mais Antigos</span>
+                <span className="sm:hidden">Antigos</span>
               </button>
               <button
                 onClick={() => setSortOrder("recent")}
-                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 ${
+                className={`px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-lg text-[10px] sm:text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer ${
                   sortOrder === "recent"
-                    ? "bg-white text-forest shadow-xs"
+                    ? "bg-white text-forest shadow-2xs font-bold"
                     : "text-forest/60 hover:text-forest"
                 }`}
-                title="Mais recentes primeiro"
+                title="Filtrar por mais recentes primeiro"
               >
-                <ArrowUpDown className="w-3 h-3" />
+                <ArrowUpDown className="w-3 h-3 shrink-0" />
                 <span className="hidden sm:inline">Mais Recentes</span>
                 <span className="sm:hidden">Recentes</span>
               </button>

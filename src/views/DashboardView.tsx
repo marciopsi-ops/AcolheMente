@@ -47,6 +47,7 @@ import {
   Grip,
   XCircle,
   Search,
+  Filter,
   FileText,
   FileSignature,
   HandHeart,
@@ -1612,11 +1613,16 @@ export function DashboardView({
     type: "success" | "error" | "info";
   }>({ show: false, message: "", type: "success" });
 
+  const toastTimeoutRef = useRef<any>(null);
+
   const showToast = (message: string, type: "success" | "error" | "info" = "success") => {
+    if (toastTimeoutRef.current) {
+      clearTimeout(toastTimeoutRef.current);
+    }
     setToast({ show: true, message, type });
-    setTimeout(() => {
+    toastTimeoutRef.current = setTimeout(() => {
       setToast((prev) => ({ ...prev, show: false }));
-    }, 4000);
+    }, 2800);
   };
 
   // Gestao Treated Items State (Persisted in safeLocalStorage)
@@ -5649,10 +5655,12 @@ export function DashboardView({
       <AnimatePresence>
         {toast.show && (
           <motion.div
-            initial={{ opacity: 0, y: -50, scale: 0.95 }}
+            initial={{ opacity: 0, y: 25, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -20, scale: 0.95 }}
-            className="fixed top-6 left-1/2 -translate-x-1/2 z-[9999] flex items-center gap-3 bg-white/95 backdrop-blur border border-soft shadow-xl px-5 py-3.5 rounded-2xl min-w-[320px] max-w-md"
+            exit={{ opacity: 0, y: 20, scale: 0.95 }}
+            onClick={() => setToast((prev) => ({ ...prev, show: false }))}
+            className="fixed bottom-5 right-5 sm:bottom-6 sm:right-6 z-[9999] flex items-center gap-3 bg-white/95 backdrop-blur-md border border-soft shadow-2xl px-4 py-3 rounded-2xl min-w-[280px] max-w-sm sm:max-w-md cursor-pointer hover:scale-[1.01] active:scale-[0.99] transition-transform"
+            title="Clique para fechar aviso"
           >
             {toast.type === "success" && (
               <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 shrink-0">
@@ -5669,13 +5677,17 @@ export function DashboardView({
                 <Info className="w-5 h-5" />
               </div>
             )}
-            <div className="flex-1">
+            <div className="flex-1 min-w-0">
               <p className="text-[10px] font-bold font-sans uppercase tracking-wider text-forest/40">Notificação</p>
-              <p className="text-sm font-medium text-forest/90 leading-snug mt-0.5">{toast.message}</p>
+              <p className="text-xs sm:text-sm font-medium text-forest/90 leading-snug mt-0.5 break-words">{toast.message}</p>
             </div>
             <button
-              onClick={() => setToast((prev) => ({ ...prev, show: false }))}
-              className="p-1 hover:bg-forest/5 rounded-lg text-forest/30 hover:text-forest/70 transition-colors"
+              onClick={(e) => {
+                e.stopPropagation();
+                setToast((prev) => ({ ...prev, show: false }));
+              }}
+              className="p-1 hover:bg-forest/5 rounded-lg text-forest/40 hover:text-forest transition-colors shrink-0"
+              title="Fechar aviso"
             >
               <X className="w-4 h-4" />
             </button>
@@ -5727,14 +5739,6 @@ export function DashboardView({
                 </span>
               )}
             </button>
-            {currentRole === "master" && (
-              <button
-                onClick={() => setActiveTab("estatisticas")}
-                className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "estatisticas" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
-              >
-                Controle
-              </button>
-            )}
             <button
               onClick={() => setActiveTab("kanban")}
               className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "kanban" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
@@ -6528,46 +6532,6 @@ export function DashboardView({
                               newFaixas[index] = val;
                               handleUpdateConfiguracoesProperty(
                                 "faixasValores",
-                                newFaixas,
-                              );
-                            }}
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="bg-warm/30 p-6 rounded-2xl border border-soft space-y-4">
-                    <div className="flex items-center gap-2 border-b border-soft pb-2 mb-4">
-                      <Building2 className="w-4 h-4 text-forest/70" />
-                      <h4 className="text-sm font-bold uppercase tracking-wider text-forest/70">
-                        Faixas de Valor de Sessão (Público Corporativo)
-                      </h4>
-                    </div>
-                    <p className="text-xs text-forest/70 mb-4">
-                      Defina até 3 opções de faixas de valores para atendimentos corporativos. Estas 3 faixas aparecerão como atalhos dedicados nas fichas de bordo dos pacientes que ingressarem via Corporativo.
-                    </p>
-                    <div className="flex flex-col gap-3">
-                      {[0, 1, 2].map((index) => (
-                        <div key={index} className="flex flex-col gap-1">
-                          <label className="text-[10px] font-semibold uppercase text-forest/70/60 ml-2">
-                            Faixa Corporativa {index + 1}
-                          </label>
-                          <DebouncedInput
-                            className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark transition-colors"
-                            placeholder={`Ex: R$ ${(index + 1) * 30 + 30},00`}
-                            value={globalConfigs.faixasValoresCorporativo?.[index] || ""}
-                            onChange={(val) => {
-                              const newFaixas = [
-                                ...(globalConfigs.faixasValoresCorporativo || [
-                                  "",
-                                  "",
-                                  "",
-                                ]),
-                              ];
-                              newFaixas[index] = val;
-                              handleUpdateConfiguracoesProperty(
-                                "faixasValoresCorporativo",
                                 newFaixas,
                               );
                             }}
@@ -9802,7 +9766,7 @@ export function DashboardView({
           formatDateTimeSafely={formatDateTimeSafely}
         />
       ) : activeTab === "triagemCorporativa" ? (
-        <div className="flex-1 overflow-y-auto bg-warm p-4 sm:p-6 lg:p-8">
+        <div className="flex-1 overflow-y-auto bg-warm p-2.5 sm:p-5 lg:p-8">
           <div className="max-w-7xl mx-auto">
             <TriagemCorporativaKanban
               currentRole={currentRole}
@@ -9818,24 +9782,25 @@ export function DashboardView({
         </div>
       ) : activeTab === "kanban" || activeTab === "pacientesAcolhidos" ? (
         <div className="flex-1 flex flex-col h-full bg-warm overflow-hidden">
-          <div className="flex flex-wrap justify-between items-center gap-2.5 px-4 sm:px-6 pt-4 pb-1.5 shrink-0">
-            <div className="flex items-center gap-2.5">
-              <h2 className="font-serif text-lg sm:text-xl font-bold text-forest">
+          <div className="flex flex-wrap justify-between items-center gap-2 px-3 sm:px-6 pt-3 sm:pt-4 pb-1.5 shrink-0">
+            <div className="flex items-center gap-2">
+              <h2 className="font-serif text-base sm:text-xl font-bold text-forest">
                 {activeTab === "kanban" ? "Triagem" : "Pacientes"}
               </h2>
               {isMasterOrTriagem && (
                 <button
                   type="button"
                   onClick={() => setShowNovoPacienteModal(true)}
-                  className="px-2.5 py-1 bg-forest text-white hover:bg-forest/90 rounded-lg font-semibold text-[11px] flex items-center gap-1.5 transition-all shadow-2xs hover:scale-102 active:scale-98 cursor-pointer"
+                  className="px-2 sm:px-2.5 py-1 bg-forest text-white hover:bg-forest/90 rounded-lg font-semibold text-[10px] sm:text-[11px] flex items-center gap-1 sm:gap-1.5 transition-all shadow-2xs hover:scale-102 active:scale-98 cursor-pointer"
                   title="Cadastrar paciente manualmente na triagem"
                 >
-                  <UserPlus className="w-3.5 h-3.5 text-sun" />
-                  <span>Incluir Paciente</span>
+                  <UserPlus className="w-3.5 h-3.5 text-sun shrink-0" />
+                  <span className="hidden sm:inline">Incluir Paciente</span>
+                  <span className="sm:hidden">Incluir</span>
                 </button>
               )}
             </div>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1.5 sm:gap-2">
               {/* Alternar Expandir/Recolher Todos os Cards de Pacientes no Kanban */}
               <button
                 type="button"
@@ -9851,49 +9816,57 @@ export function DashboardView({
                     setExpandedKanbanCards(all);
                   }
                 }}
-                className="px-2.5 py-1 text-forest/70 hover:text-forest bg-white hover:bg-warm rounded-lg text-[11px] font-semibold flex items-center gap-1 border border-soft transition-colors cursor-pointer shadow-2xs"
+                className="px-2 sm:px-2.5 py-1 text-forest/70 hover:text-forest bg-white hover:bg-warm rounded-lg text-[10px] sm:text-[11px] font-semibold flex items-center gap-1 border border-soft transition-colors cursor-pointer shadow-2xs"
                 title="Expandir ou recolher todos os cards de pacientes no quadro"
               >
                 {Object.values(expandedKanbanCards).filter(Boolean).length > 0 ? (
                   <>
-                    <ChevronUp className="w-3.5 h-3.5" />
-                    <span>Recolher Cards</span>
+                    <ChevronUp className="w-3.5 h-3.5 shrink-0" />
+                    <span className="hidden sm:inline">Recolher Cards</span>
+                    <span className="sm:hidden">Recolher</span>
                   </>
                 ) : (
                   <>
-                    <ChevronDown className="w-3.5 h-3.5" />
-                    <span>Expandir Cards</span>
+                    <ChevronDown className="w-3.5 h-3.5 shrink-0" />
+                    <span className="hidden sm:inline">Expandir Cards</span>
+                    <span className="sm:hidden">Expandir</span>
                   </>
                 )}
               </button>
 
-              {/* Seletor de Ordenação por Entrada / Cadastro */}
+              {/* Seletor de Ordenação / Comando de Filtrar (Sem termo FIFO) */}
               <div className="bg-white border border-soft rounded-lg p-0.5 flex items-center shadow-2xs">
+                <span className="text-[10px] sm:text-[11px] font-bold text-forest/50 pl-1.5 pr-0.5 hidden sm:flex items-center gap-1 shrink-0">
+                  <Filter className="w-3 h-3 text-forest/40" />
+                  <span>Filtrar:</span>
+                </span>
                 <button
                   type="button"
                   onClick={() => setPatientSortOrder("fifo")}
-                  className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-all flex items-center gap-1 cursor-pointer ${
+                  className={`px-1.5 sm:px-2.5 py-0.5 sm:py-1 rounded-md text-[10px] sm:text-[11px] transition-all flex items-center gap-1 cursor-pointer ${
                     patientSortOrder === "fifo"
                       ? "bg-sun text-forest shadow-2xs font-bold"
-                      : "text-forest/60 hover:text-forest"
+                      : "text-forest/60 hover:text-forest font-medium"
                   }`}
-                  title="Organizar por Ordem de Cadastro (FIFO)"
+                  title="Filtrar por mais antigos primeiro (ordem de entrada)"
                 >
-                  <Clock className="w-3 h-3 text-amber-700" />
-                  <span>Entrada (FIFO)</span>
+                  <Clock className="w-3 h-3 text-amber-800 shrink-0" />
+                  <span className="hidden sm:inline">Mais Antigos</span>
+                  <span className="sm:hidden">Antigos</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setPatientSortOrder("recent")}
-                  className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-all flex items-center gap-1 cursor-pointer ${
+                  className={`px-1.5 sm:px-2.5 py-0.5 sm:py-1 rounded-md text-[10px] sm:text-[11px] transition-all flex items-center gap-1 cursor-pointer ${
                     patientSortOrder === "recent"
                       ? "bg-sun text-forest shadow-2xs font-bold"
-                      : "text-forest/60 hover:text-forest"
+                      : "text-forest/60 hover:text-forest font-medium"
                   }`}
-                  title="Organizar por Mais Recentes primeiro"
+                  title="Filtrar por mais recentes primeiro"
                 >
-                  <ArrowUpDown className="w-3 h-3" />
-                  <span>Mais Recentes</span>
+                  <ArrowUpDown className="w-3 h-3 shrink-0" />
+                  <span className="hidden sm:inline">Mais Recentes</span>
+                  <span className="sm:hidden">Recentes</span>
                 </button>
               </div>
             </div>
@@ -12188,11 +12161,11 @@ export function DashboardView({
       {selectedCard && (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-1 sm:px-4 bg-forest/25 backdrop-blur-sm animate-in fade-in py-1 sm:py-3">
           <div className="bg-white rounded-2xl sm:rounded-3xl w-full max-w-[98vw] 2xl:max-w-[1550px] h-[96vh] sm:h-[95vh] flex flex-col shadow-2xl border border-soft overflow-hidden animate-in zoom-in-95">
-            {/* Header */}
-            <div className="px-3.5 sm:px-6 py-2.5 sm:py-3.5 flex flex-col border-b border-soft bg-gradient-to-r from-warm/70 via-white to-warm/40 gap-2 shrink-0">
-              <div className="flex justify-between items-start sm:items-center gap-2.5">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className={`p-2.5 rounded-xl shadow-xs shrink-0 flex items-center justify-center ${
+            {/* Header Compacto & Otimizado para Telas Pequenas */}
+            <div className="px-3 sm:px-6 py-2 sm:py-3 flex flex-col border-b border-soft bg-gradient-to-r from-warm/70 via-white to-warm/40 gap-1.5 sm:gap-2 shrink-0">
+              <div className="flex justify-between items-center gap-2">
+                <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+                  <div className={`p-1.5 sm:p-2.5 rounded-xl shadow-xs shrink-0 flex items-center justify-center ${
                     getPatientFlowDetails(selectedCard).isAtribuicaoDevolvida
                       ? "bg-rose-600 text-white"
                       : "bg-forest text-white"
@@ -12203,78 +12176,71 @@ export function DashboardView({
                       <User className="w-4 h-4 sm:w-5 sm:h-5" />
                     )}
                   </div>
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-                      <h3 className="font-serif text-lg sm:text-2xl text-forest font-semibold truncate max-w-[200px] sm:max-w-none">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+                      <h3
+                        className="font-serif text-sm sm:text-2xl text-forest font-bold truncate leading-tight flex-1"
+                        title={selectedCard.nome || (selectedCard as any).nomeCompleto || "Paciente sem nome"}
+                      >
                         {selectedCard.nome || (selectedCard as any).nomeCompleto || "Paciente sem nome"}
                       </h3>
 
-                      {/* Status Primário: Devolvido para nova atribuição em destaque máximo */}
+                      {/* Status Primário Compacto ao Lado do Nome */}
                       {getPatientFlowDetails(selectedCard).isAtribuicaoDevolvida ? (
-                        <span className="text-[10px] sm:text-xs font-extrabold uppercase px-2.5 sm:px-3 py-0.5 rounded-full bg-rose-100 text-rose-800 border border-rose-300 shadow-2xs flex items-center gap-1.5 animate-pulse">
-                          <RotateCcw className="w-3.5 h-3.5 text-rose-600" />
-                          Devolvido para nova atribuição
+                        <span className="text-[9px] sm:text-xs font-extrabold uppercase px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 border border-rose-300 shadow-2xs flex items-center gap-1 shrink-0 animate-pulse">
+                          <RotateCcw className="w-3 h-3 text-rose-600" />
+                          <span className="hidden xs:inline">Devolvido</span>
                         </span>
                       ) : (
-                        <>
-                          <span
-                            className={`text-[9px] sm:text-[10px] font-extrabold uppercase px-2 sm:px-2.5 py-0.5 rounded-full border ${
-                              isCardInStandby(selectedCard)
-                                ? "bg-amber-100 text-amber-900 border-amber-300"
-                                : selectedCard.ativo === false
-                                  ? "bg-slate-100 text-slate-600 border-slate-200"
-                                  : "bg-emerald-100 text-emerald-800 border-emerald-200"
-                            }`}
-                          >
-                            {isCardInStandby(selectedCard) ? "Standby" : selectedCard.ativo === false ? "Inativo" : "Ativo"}
-                          </span>
-                          {selectedCard.status && !isCardInStandby(selectedCard) && (
-                            <span className="text-[9px] sm:text-[10px] font-bold uppercase px-2 sm:px-2.5 py-0.5 rounded-full bg-sun/30 text-forest border border-sun/50">
-                              {selectedCard.status === "Aprovado" ? "Aguardando atribuição" : selectedCard.status}
-                            </span>
-                          )}
-                          {isCardInStandby(selectedCard) && (
-                            <span className="text-[9px] sm:text-[10px] font-bold uppercase px-2 sm:px-2.5 py-0.5 rounded-full bg-amber-200/90 text-amber-950 border border-amber-300">
-                              Etapa: Standby
-                            </span>
-                          )}
-                        </>
-                      )}
-
-                      {selectedCard.empresaNome && (
-                        <span className="text-[9px] sm:text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-800 border border-blue-200 flex items-center gap-1">
-                          <Building2 className="w-3 h-3 text-blue-600" /> {selectedCard.empresaNome}
+                        <span
+                          className={`text-[9px] sm:text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full border shrink-0 ${
+                            isCardInStandby(selectedCard)
+                              ? "bg-amber-100 text-amber-900 border-amber-300"
+                              : selectedCard.ativo === false
+                                ? "bg-slate-100 text-slate-600 border-slate-200"
+                                : "bg-emerald-100 text-emerald-800 border-emerald-200"
+                          }`}
+                        >
+                          {isCardInStandby(selectedCard) ? "Standby" : selectedCard.ativo === false ? "Inativo" : "Ativo"}
                         </span>
                       )}
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-[10px] sm:text-[11px] font-medium text-forest/70 mt-0.5">
-                      <span className="font-mono text-forest/50">
-                        ID: #{selectedCard.id?.slice(0, 6)}
+                    {/* Linha 2 de Metadados: ID, Entrada e Tags Compactas */}
+                    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2.5 text-[10px] sm:text-[11px] font-medium text-forest/70 mt-0.5">
+                      <span className="font-mono text-forest/60 shrink-0">
+                        #{selectedCard.id?.slice(0, 6)}
                       </span>
+                      {selectedCard.status && !isCardInStandby(selectedCard) && !getPatientFlowDetails(selectedCard).isAtribuicaoDevolvida && (
+                        <span className="text-[9px] sm:text-[10px] font-bold uppercase px-1.5 py-0.2 rounded-md bg-sun/30 text-forest border border-sun/50 truncate max-w-[110px] sm:max-w-none">
+                          {selectedCard.status === "Aprovado" ? "Aguardando atribuição" : selectedCard.status}
+                        </span>
+                      )}
+                      {selectedCard.empresaNome && (
+                        <span className="text-[9px] sm:text-[10px] font-bold px-1.5 py-0.2 rounded-md bg-blue-50 text-blue-800 border border-blue-200 flex items-center gap-1 truncate max-w-[110px] sm:max-w-none">
+                          <Building2 className="w-2.5 h-2.5 text-blue-600 shrink-0" />
+                          <span className="truncate">{selectedCard.empresaNome}</span>
+                        </span>
+                      )}
                       {selectedCard.createdAt && (
-                        <span className="flex items-center gap-1">
+                        <span className="hidden sm:flex items-center gap-1">
                           <Clock className="w-3 h-3 text-forest/40" /> Entrada: {formatDate(selectedCard.createdAt)}
                         </span>
                       )}
-                      {selectedCard.statusUpdatedAt && (
-                        <span className="flex items-center gap-1">
-                          <Calendar className="w-3 h-3 text-forest/40" /> Ativação: {formatDate(selectedCard.statusUpdatedAt)}
-                        </span>
-                      )}
                       {selectedCard.profissionalId && (
-                        <span className="flex items-center gap-1 text-emerald-800 font-semibold bg-emerald-50 px-2 py-0.2 rounded border border-emerald-200/60">
-                          <UserCheck className="w-3 h-3 text-emerald-600" /> Profissional Atribuído
+                        <span className="hidden md:flex items-center gap-1 text-emerald-800 font-semibold bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200/60">
+                          <UserCheck className="w-3 h-3 text-emerald-600" /> Profissional
                         </span>
                       )}
                     </div>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-1.5 shrink-0">
+                {/* Ações Rápidas do Topo: WhatsApp + Editar + Fechar (Super Otimizados em Mobile) */}
+                <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
                   {currentRole === "profissional" && selectedCard.atribuicaoStatus !== "Aceito" ? (
                     <div
-                      className="flex items-center gap-1.5 font-bold text-[11px] sm:text-xs px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-xl bg-amber-100/90 text-amber-900 border border-amber-300 shadow-2xs shrink-0 cursor-not-allowed"
+                      className="flex items-center gap-1 font-bold text-[10px] sm:text-xs p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl bg-amber-100/90 text-amber-900 border border-amber-300 shadow-2xs shrink-0 cursor-not-allowed"
                       title="O WhatsApp do paciente fica oculto e será liberado automaticamente após o aceite do caso na seção 6."
                     >
                       <Lock className="w-3.5 h-3.5 text-amber-700" />
@@ -12284,29 +12250,30 @@ export function DashboardView({
                     <button
                       type="button"
                       onClick={() => handleOpenPatientWhatsApp(selectedCard)}
-                      className="flex items-center gap-1.5 font-bold text-[11px] sm:text-xs px-2.5 sm:px-3 py-1.5 rounded-xl bg-[#25D366] hover:bg-[#20b858] text-white shadow-2xs transition-all hover:scale-105 shrink-0 cursor-pointer"
+                      className="flex items-center justify-center gap-1 font-bold text-[10px] sm:text-xs p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl bg-[#25D366] hover:bg-[#20b858] text-white shadow-2xs transition-all shrink-0 cursor-pointer"
                       title="Enviar WhatsApp para o paciente"
                     >
                       <Phone className="w-3.5 h-3.5 text-white" />
-                      <span>WhatsApp</span>
+                      <span className="hidden sm:inline">WhatsApp</span>
                     </button>
                   )}
 
                   <button
                     onClick={() => setIsEditingCard(!isEditingCard)}
-                    className={`sm:hidden flex items-center gap-1 font-bold text-[11px] px-2.5 py-1.5 rounded-xl border transition-all shadow-2xs ${
+                    className={`flex items-center justify-center gap-1 font-bold text-[10px] sm:text-xs p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl border transition-all shadow-2xs shrink-0 ${
                       isEditingCard
                         ? "bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700"
                         : "bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100"
                     }`}
+                    title={isEditingCard ? "Salvar alterações da ficha" : "Editar dados da ficha"}
                   >
-                    <Edit3 className="w-3 h-3" />
-                    {isEditingCard ? "Salvar" : "Editar"}
+                    <Edit3 className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">{isEditingCard ? "Salvar" : "Editar"}</span>
                   </button>
 
                   <button
                     onClick={() => setSelectedCard(null)}
-                    className="p-1 sm:p-1.5 text-forest/50 hover:text-red-500 rounded-full hover:bg-red-50 transition-colors"
+                    className="p-1 sm:p-1.5 text-forest/50 hover:text-red-500 rounded-full hover:bg-red-50 transition-colors shrink-0"
                     title="Fechar Ficha"
                   >
                     <XCircle className="w-5 h-5 sm:w-6 sm:h-6" />
@@ -12316,14 +12283,14 @@ export function DashboardView({
 
               {/* Banner Informativo de Devolução (quando o paciente for devolvido por um profissional) */}
               {getPatientFlowDetails(selectedCard).isAtribuicaoDevolvida && (
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-3 py-2 rounded-xl bg-rose-50 border border-rose-200 text-rose-950 text-xs">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl bg-rose-50 border border-rose-200 text-rose-950 text-xs">
                   <div className="flex items-center gap-2 min-w-0">
-                    <div className="w-6 h-6 rounded-lg bg-rose-200 text-rose-800 flex items-center justify-center shrink-0">
-                      <RotateCcw className="w-3.5 h-3.5 text-rose-700" />
+                    <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-lg bg-rose-200 text-rose-800 flex items-center justify-center shrink-0">
+                      <RotateCcw className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-rose-700" />
                     </div>
                     <div className="min-w-0">
-                      <span className="font-bold text-rose-900 mr-2">Devolvido para nova atribuição:</span>
-                      <span className="text-rose-800 text-[11px]">
+                      <span className="font-bold text-rose-900 mr-2 text-[11px] sm:text-xs">Devolvido para nova atribuição:</span>
+                      <span className="text-rose-800 text-[10px] sm:text-[11px]">
                         {selectedCard.devolvidoMotivo || "Encaminhamento anterior devolvido pelo profissional para a triagem."}
                       </span>
                     </div>
@@ -12335,7 +12302,7 @@ export function DashboardView({
                 </div>
               )}
 
-              {/* Patient Journey Flow Progress */}
+              {/* Patient Journey Flow Progress - Otimizado e Compacto */}
               {(() => {
                 const status = selectedCard.status || "Aguardando Avaliação";
                 if (
@@ -12349,26 +12316,26 @@ export function DashboardView({
                 const flow = getPatientFlowDetails(selectedCard);
 
                 return (
-                  <div className="w-full bg-white/90 p-2 sm:p-2.5 rounded-xl border border-soft shadow-2xs space-y-1.5">
-                    {/* Mobile Summary Bar */}
-                    <div className="sm:hidden flex items-center justify-between text-[11px] font-bold">
-                      <div className="flex items-center gap-1.5 text-forest">
-                        <span className={`w-2 h-2 rounded-full ${flow.isAtribuicaoDevolvida ? "bg-rose-500 animate-ping" : "bg-emerald-500 animate-pulse"}`}></span>
-                        <span>
-                          Jornada ({flow.activeStep}/6): {flow.isAtribuicaoDevolvida ? "Devolvido para nova atribuição" : flow.propostaRevisao ? "Revisão Solicitada" : flow.propostaAceita ? "Proposta Aceita" : flow.isAtribuido ? "Atribuído" : "Triagem"}
+                  <div className="w-full bg-white/90 p-1.5 sm:p-2.5 rounded-xl border border-soft shadow-2xs space-y-1">
+                    {/* Mobile Summary Bar - Compacto & Discreto */}
+                    <div className="sm:hidden flex items-center justify-between text-[10px] font-bold">
+                      <div className="flex items-center gap-1.5 text-forest min-w-0 flex-1">
+                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${flow.isAtribuicaoDevolvida ? "bg-rose-500 animate-ping" : "bg-emerald-500 animate-pulse"}`}></span>
+                        <span className="truncate">
+                          Jornada ({flow.activeStep}/6): {flow.isAtribuicaoDevolvida ? "Devolvido" : flow.propostaRevisao ? "Revisão" : flow.propostaAceita ? "Aceita" : flow.isAtribuido ? "Atribuído" : "Triagem"}
                         </span>
                       </div>
                       <button
                         type="button"
                         onClick={() => setShowJourneyMobileDetails(!showJourneyMobileDetails)}
-                        className="text-[10px] text-forest/70 hover:text-forest bg-warm/80 px-2 py-0.5 rounded-md border border-soft flex items-center gap-0.5"
+                        className="text-[9px] text-forest/70 hover:text-forest bg-warm/80 px-1.5 py-0.5 rounded-md border border-soft flex items-center gap-0.5 shrink-0 ml-1"
                       >
-                        {showJourneyMobileDetails ? "Ocultar" : "Ver Etapas"}
-                        <ChevronDown className={`w-3 h-3 transition-transform ${showJourneyMobileDetails ? "rotate-180" : ""}`} />
+                        {showJourneyMobileDetails ? "Ocultar" : "Etapas"}
+                        <ChevronDown className={`w-2.5 h-2.5 transition-transform ${showJourneyMobileDetails ? "rotate-180" : ""}`} />
                       </button>
                     </div>
 
-                    <div className={`${showJourneyMobileDetails ? "grid" : "hidden sm:grid"} grid-cols-2 sm:grid-cols-6 gap-1 text-center text-[9px] sm:text-[10px] font-bold uppercase tracking-wider mb-1`}>
+                    <div className={`${showJourneyMobileDetails ? "grid" : "hidden sm:grid"} grid-cols-2 sm:grid-cols-6 gap-1 text-center text-[9px] sm:text-[10px] font-bold uppercase tracking-wider mb-0.5`}>
                       <div className={`p-1 sm:p-1.5 rounded-lg border transition-colors ${flow.propostaRevisao ? "text-amber-800 bg-amber-50/90 border-amber-300 font-extrabold" : flow.activeStep >= 1 ? "text-emerald-800 bg-emerald-50/90 border-emerald-200" : "text-forest/40 bg-warm/30 border-transparent"}`}>
                         1. Questionário {flow.propostaRevisao ? "(Revisão)" : ""}
                       </div>
@@ -12389,7 +12356,7 @@ export function DashboardView({
                       </div>
                     </div>
 
-                    <div className="flex gap-1 h-1.5 w-full">
+                    <div className="flex gap-1 h-1 sm:h-1.5 w-full">
                       <div className={`flex-1 rounded-full transition-colors ${flow.propostaRevisao ? "bg-amber-500" : "bg-emerald-500"}`}></div>
                       <div className={`flex-1 rounded-full transition-colors ${flow.propostaRevisao ? "bg-amber-300" : (flow.isPropostaEnviada || flow.propostaAceita) ? "bg-emerald-500" : "bg-warm-dark/30"}`}></div>
                       <div className={`flex-1 rounded-full transition-colors ${flow.propostaAceita ? "bg-emerald-500" : flow.propostaRevisao ? "bg-amber-500" : flow.isPropostaEnviada ? "bg-blue-400" : "bg-warm-dark/30"}`}></div>
@@ -12402,18 +12369,20 @@ export function DashboardView({
               })()}
             </div>
 
-            {/* Action Bar */}
-            <div className="flex items-center justify-between gap-2 px-3 sm:px-6 py-2 bg-white border-b border-soft shrink-0 overflow-x-auto custom-scrollbar">
+            {/* Action Bar - Ultra Compacta em Telas Pequenas */}
+            <div className="flex items-center justify-between gap-1.5 sm:gap-2 px-2.5 sm:px-6 py-1.5 sm:py-2 bg-white border-b border-soft shrink-0 overflow-x-auto scrollbar-none">
               {/* Left Group */}
-              <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+              <div className="flex items-center gap-1 sm:gap-2 shrink-0">
                 <button
                   onClick={() => {
                     setShowNotificarModal(true);
                   }}
-                  className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] sm:text-xs px-3 py-1.5 rounded-xl border border-emerald-500/80 transition-all shadow-2xs whitespace-nowrap"
+                  className="flex items-center gap-1 sm:gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] sm:text-xs px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg sm:rounded-xl border border-emerald-500/80 transition-all shadow-2xs whitespace-nowrap"
                   title="Disparar notificação via WhatsApp (Evolution) e E-mail Webhook (Brevo)"
                 >
-                  <Send className="w-3.5 h-3.5 text-sun" /> Notificar Paciente (Whats/E-mail)
+                  <Send className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-sun" />
+                  <span className="hidden sm:inline">Notificar Paciente (Whats/E-mail)</span>
+                  <span className="sm:hidden">Notificar</span>
                 </button>
 
                 <button
@@ -12423,9 +12392,12 @@ export function DashboardView({
                     showToast("Link da Proposta copiado para a área de transferência!", "success");
                     handleUpdateAcolhimentoProperty(selectedCard.id, "propostaEnviada", true);
                   }}
-                  className="flex items-center gap-1 bg-white hover:bg-warm text-forest font-semibold text-[11px] sm:text-xs px-2.5 sm:px-3 py-1.5 rounded-xl border border-soft transition-colors shadow-2xs whitespace-nowrap"
+                  className="flex items-center gap-1 bg-white hover:bg-warm text-forest font-semibold text-[10px] sm:text-xs px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg sm:rounded-xl border border-soft transition-colors shadow-2xs whitespace-nowrap"
+                  title="Copiar link da proposta"
                 >
-                  <Copy className="w-3.5 h-3.5 text-forest/60" /> Link Proposta
+                  <Copy className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-forest/60" />
+                  <span className="hidden sm:inline">Link Proposta</span>
+                  <span className="sm:hidden">Proposta</span>
                 </button>
 
                 <button
@@ -12434,25 +12406,29 @@ export function DashboardView({
                     navigator.clipboard.writeText(link);
                     showToast("Link do contrato copiado para a área de transferência!", "success");
                   }}
-                  className="flex items-center gap-1 bg-white hover:bg-warm text-forest font-semibold text-[11px] sm:text-xs px-2.5 sm:px-3 py-1.5 rounded-xl border border-soft transition-colors shadow-2xs whitespace-nowrap"
+                  className="flex items-center gap-1 bg-white hover:bg-warm text-forest font-semibold text-[10px] sm:text-xs px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg sm:rounded-xl border border-soft transition-colors shadow-2xs whitespace-nowrap"
+                  title="Copiar link do contrato"
                 >
-                  <FileText className="w-3.5 h-3.5 text-forest/60" /> Link Contrato
+                  <FileText className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-forest/60" />
+                  <span className="hidden sm:inline">Link Contrato</span>
+                  <span className="sm:hidden">Contrato</span>
                 </button>
 
                 <button
                   onClick={() => {
                     setShowContratoModal(true);
                   }}
-                  className="flex items-center gap-1.5 text-xs font-bold text-forest bg-warm/60 hover:bg-warm px-3 py-1.5 rounded-xl border border-soft transition-colors whitespace-nowrap shadow-2xs cursor-pointer"
+                  className="flex items-center gap-1 sm:gap-1.5 text-[10px] sm:text-xs font-bold text-forest bg-warm/60 hover:bg-warm px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg sm:rounded-xl border border-soft transition-colors whitespace-nowrap shadow-2xs cursor-pointer"
                   title="Gerenciar e enviar contrato terapêutico com aceite digital"
                 >
-                  <FileSignature className="w-3.5 h-3.5 text-emerald-700" />
-                  {selectedCard.contratoAssinado ? "Ver Contrato Assinado" : "Gerar Contrato"}
+                  <FileSignature className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-700" />
+                  <span className="hidden sm:inline">{selectedCard.contratoAssinado ? "Ver Contrato Assinado" : "Gerar Contrato"}</span>
+                  <span className="sm:hidden">{selectedCard.contratoAssinado ? "Assinado" : "Gerar"}</span>
                 </button>
 
                 {/* Contrato Pill */}
-                <div className="flex items-center gap-1 px-2.5 py-1 bg-warm/50 border border-soft rounded-xl text-[11px] sm:text-xs font-bold whitespace-nowrap">
-                  <div className={`w-2 h-2 rounded-full ${selectedCard.contratoAssinado ? "bg-green-500 animate-pulse" : "bg-amber-500"}`}></div>
+                <div className="hidden xs:flex items-center gap-1 px-1.5 sm:px-2.5 py-0.5 sm:py-1 bg-warm/50 border border-soft rounded-lg sm:rounded-xl text-[10px] sm:text-xs font-bold whitespace-nowrap">
+                  <div className={`w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full ${selectedCard.contratoAssinado ? "bg-green-500 animate-pulse" : "bg-amber-500"}`}></div>
                   <span className={selectedCard.contratoAssinado ? "text-green-700" : "text-amber-700"}>
                     {selectedCard.contratoAssinado ? "Assinado" : "Pendente"}
                   </span>
@@ -12460,7 +12436,7 @@ export function DashboardView({
               </div>
 
               {/* Right Edit & Status Toggles */}
-              <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+              <div className="flex items-center gap-1 sm:gap-2 shrink-0">
                 <button
                   onClick={() => setIsEditingCard(!isEditingCard)}
                   className={`hidden sm:flex items-center gap-1.5 font-bold text-xs px-3.5 py-1.5 rounded-xl border transition-all shadow-2xs whitespace-nowrap ${
@@ -12482,16 +12458,17 @@ export function DashboardView({
                       setDesligamentoDetalhes("");
                       setShowDesligamentoModal(true);
                     }}
-                    className="flex items-center gap-1 font-bold text-[11px] sm:text-xs px-2.5 sm:px-3 py-1.5 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 transition-colors shadow-2xs whitespace-nowrap"
+                    className="flex items-center gap-1 font-bold text-[10px] sm:text-xs px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg sm:rounded-xl border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 transition-colors shadow-2xs whitespace-nowrap"
                     title="Iniciar fluxo de desligamento do paciente"
                   >
-                    <UserX className="w-3.5 h-3.5 text-rose-600" /> Desligar
+                    <UserX className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-rose-600" />
+                    <span>Desligar</span>
                   </button>
                 )}
 
                 {/* Multibotão de Status: Ativar / Standby */}
                 {(currentRole === "master" || currentRole === "triagem") && (
-                  <div className="flex items-center p-0.5 bg-warm/80 rounded-xl border border-soft shadow-2xs shrink-0">
+                  <div className="flex items-center p-0.5 bg-warm/80 rounded-lg sm:rounded-xl border border-soft shadow-2xs shrink-0">
                     <button
                       type="button"
                       onClick={() => {
@@ -12506,15 +12483,16 @@ export function DashboardView({
                           showToast("Status alterado para Ativo", "success");
                         }
                       }}
-                      className={`px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-[10px] sm:text-xs font-bold transition-all flex items-center gap-1 ${
+                      className={`px-1.5 sm:px-3 py-0.5 sm:py-1.5 rounded-md sm:rounded-lg text-[9px] sm:text-xs font-bold transition-all flex items-center gap-1 ${
                         !isCardInStandby(selectedCard) && selectedCard.ativo !== false && selectedCard.statusInativacao !== "Inativo" && selectedCard.status !== "Alta" && selectedCard.status !== "Quebra de Contrato"
                           ? "bg-emerald-600 text-white shadow-2xs"
                           : "text-forest/70 hover:text-forest hover:bg-white/60"
                       }`}
                       title={isCardInStandby(selectedCard) ? "Reativar paciente e retornar para Em Análise" : "Ativar paciente"}
                     >
-                      <CheckCircle2 className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                      <CheckCircle2 className="w-2.5 h-2.5 sm:w-3.5 sm:h-3.5" />
                       <span className="hidden sm:inline">{isCardInStandby(selectedCard) ? "Reativar (Em Análise)" : "Ativar"}</span>
+                      <span className="sm:hidden">Ativar</span>
                     </button>
 
                     <button
@@ -12522,14 +12500,16 @@ export function DashboardView({
                       onClick={() => {
                         handleColocarEmStandby(selectedCard.id);
                       }}
-                      className={`px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-[10px] sm:text-xs font-bold transition-all flex items-center gap-1 ${
+                      className={`px-1.5 sm:px-3 py-0.5 sm:py-1.5 rounded-md sm:rounded-lg text-[9px] sm:text-xs font-bold transition-all flex items-center gap-1 ${
                         isCardInStandby(selectedCard)
                           ? "bg-amber-500 text-white shadow-2xs"
                           : "text-forest/70 hover:text-forest hover:bg-white/60"
                       }`}
                       title="Armazenar paciente na etapa Standby da Triagem"
                     >
-                      <Clock className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> <span className="hidden sm:inline">Standby</span>
+                      <Clock className="w-2.5 h-2.5 sm:w-3.5 sm:h-3.5" />
+                      <span className="hidden sm:inline">Standby</span>
+                      <span className="sm:hidden">Pause</span>
                     </button>
                   </div>
                 )}
@@ -16559,19 +16539,24 @@ export function DashboardView({
 
       {/* Profissional Details Modal */}
       {selectedProfissional && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-forest/20 backdrop-blur-sm animate-in fade-in py-4">
-          <div className="bg-white rounded-3xl w-full max-w-5xl max-h-[95vh] flex flex-col shadow-2xl border border-soft overflow-hidden animate-in zoom-in-95">
-            <div className="px-6 py-4 flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-soft bg-warm/50 gap-2">
-              <div className="flex flex-col">
-                <h3 className="font-serif text-2xl text-forest">
-                  Ficha de Bordo (Psicólogo)
-                </h3>
-                <span className="text-sm font-semibold uppercase tracking-wider text-forest/60">
-                  {("nome" in selectedProfissional
-                    ? selectedProfissional.nome
-                    : selectedProfissional.name) || "Profissional"}
-                </span>
-                <div className="flex flex-col sm:flex-row gap-2 sm:gap-4 text-[11px] uppercase tracking-wider font-semibold text-forest/50 mt-1">
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-2 sm:px-4 bg-forest/20 backdrop-blur-sm animate-in fade-in py-2 sm:py-4">
+          <div className="bg-white rounded-2xl sm:rounded-3xl w-full max-w-5xl max-h-[95vh] flex flex-col shadow-2xl border border-soft overflow-hidden animate-in zoom-in-95">
+            <div className="px-3.5 sm:px-6 py-2.5 sm:py-4 flex justify-between items-center border-b border-soft bg-warm/50 gap-2 shrink-0">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5 sm:gap-2">
+                  <h3
+                    className="font-serif text-base sm:text-2xl text-forest font-bold truncate leading-tight flex-1"
+                    title={("nome" in selectedProfissional ? selectedProfissional.nome : selectedProfissional.name) || "Profissional"}
+                  >
+                    {("nome" in selectedProfissional
+                      ? selectedProfissional.nome
+                      : selectedProfissional.name) || "Profissional"}
+                  </h3>
+                  <span className="text-[9px] sm:text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-forest text-white shrink-0">
+                    Psicólogo
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-[10px] sm:text-[11px] font-semibold text-forest/50 mt-0.5">
                   {selectedProfissional.createdAt && (
                     <span>
                       Entrada: {formatDate(selectedProfissional.createdAt)}
@@ -16580,17 +16565,17 @@ export function DashboardView({
                   {"statusUpdatedAt" in selectedProfissional &&
                     selectedProfissional.statusUpdatedAt && (
                       <span>
-                        Status:{" "}
-                        {formatDate(selectedProfissional.statusUpdatedAt)}
+                        • Status: {formatDate(selectedProfissional.statusUpdatedAt)}
                       </span>
                     )}
                 </div>
               </div>
               <button
                 onClick={() => setSelectedProfissional(null)}
-                className="p-2 text-forest/70 hover:text-red-500 rounded-full hover:bg-white transition-colors self-end sm:self-auto"
+                className="p-1 sm:p-2 text-forest/70 hover:text-red-500 rounded-full hover:bg-white transition-colors shrink-0"
+                title="Fechar"
               >
-                <XCircle className="w-6 h-6" />
+                <XCircle className="w-5 h-5 sm:w-6 sm:h-6" />
               </button>
             </div>
 

@@ -852,7 +852,7 @@ export function GestaoEsteiraTarefas({
                 </span>
               </div>
               <p className="text-[11px] text-forest/70 mt-0.5 max-w-2xl leading-relaxed">
-                Demandas pendentes agrupadas por paciente, profissional ou empresa em ordem cronológica (FIFO).
+                Demandas pendentes agrupadas por paciente, profissional ou empresa em ordem cronológica de entrada.
               </p>
             </div>
           </div>
@@ -1014,45 +1014,53 @@ export function GestaoEsteiraTarefas({
                 )}
               </div>
 
-              {/* Sort Switcher */}
-              <div className="flex items-center gap-1 bg-warm/50 border border-soft rounded-full p-1 shrink-0">
+              {/* Seletor de Ordenação / Comando de Filtrar (Sem termo FIFO) */}
+              <div className="flex items-center gap-1 bg-warm/50 border border-soft rounded-full p-0.5 sm:p-1 shrink-0">
+                <span className="text-[10px] sm:text-[11px] font-bold text-forest/50 pl-1.5 pr-0.5 hidden sm:flex items-center gap-1 shrink-0">
+                  <Filter className="w-3 h-3 text-forest/40" />
+                  <span>Filtrar:</span>
+                </span>
                 <button
                   type="button"
                   onClick={() => setSortOrder("fifo")}
-                  className={`px-2.5 py-1 text-[11px] font-bold rounded-full transition-all flex items-center gap-1 ${
+                  className={`px-2 sm:px-2.5 py-0.5 sm:py-1 text-[10px] sm:text-[11px] font-bold rounded-full transition-all flex items-center gap-1 cursor-pointer ${
                     sortOrder === "fifo"
-                      ? "bg-white text-forest shadow-xs font-black"
-                      : "text-forest/60 hover:text-forest"
+                      ? "bg-white text-forest shadow-2xs font-black"
+                      : "text-forest/60 hover:text-forest font-medium"
                   }`}
-                  title="Ordem da Esteira: Mais antigos no topo (FIFO)"
+                  title="Filtrar por mais antigos primeiro (ordem de entrada)"
                 >
-                  <ArrowUpDown className="w-3 h-3 text-sun-dark" />
-                  <span>Mais Antigos (Esteira)</span>
+                  <Clock className="w-3 h-3 text-amber-700 shrink-0" />
+                  <span className="hidden sm:inline">Mais Antigos</span>
+                  <span className="sm:hidden">Antigos</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setSortOrder("recent")}
-                  className={`px-2.5 py-1 text-[11px] font-bold rounded-full transition-all flex items-center gap-1 ${
+                  className={`px-2 sm:px-2.5 py-0.5 sm:py-1 text-[10px] sm:text-[11px] font-bold rounded-full transition-all flex items-center gap-1 cursor-pointer ${
                     sortOrder === "recent"
-                      ? "bg-white text-forest shadow-xs font-black"
-                      : "text-forest/60 hover:text-forest"
+                      ? "bg-white text-forest shadow-2xs font-black"
+                      : "text-forest/60 hover:text-forest font-medium"
                   }`}
-                  title="Mais recentes primeiro"
+                  title="Filtrar por mais recentes primeiro"
                 >
-                  <span>Mais Recentes</span>
+                  <ArrowUpDown className="w-3 h-3 shrink-0" />
+                  <span className="hidden sm:inline">Mais Recentes</span>
+                  <span className="sm:hidden">Recentes</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setSortOrder("priority")}
-                  className={`px-2.5 py-1 text-[11px] font-bold rounded-full transition-all flex items-center gap-1 ${
+                  className={`px-2 sm:px-2.5 py-0.5 sm:py-1 text-[10px] sm:text-[11px] font-bold rounded-full transition-all flex items-center gap-1 cursor-pointer ${
                     sortOrder === "priority"
-                      ? "bg-white text-red-700 shadow-xs font-black"
-                      : "text-forest/60 hover:text-red-700"
+                      ? "bg-white text-red-700 shadow-2xs font-black"
+                      : "text-forest/60 hover:text-red-700 font-medium"
                   }`}
-                  title="Alertas críticos primeiro"
+                  title="Filtrar por alertas críticos primeiro"
                 >
-                  <AlertTriangle className="w-3 h-3 text-red-500" />
-                  <span>Críticos 1º</span>
+                  <AlertTriangle className="w-3 h-3 text-red-500 shrink-0" />
+                  <span className="hidden sm:inline">Críticos 1º</span>
+                  <span className="sm:hidden">Críticos</span>
                 </button>
               </div>
             </div>
@@ -1113,7 +1121,7 @@ export function GestaoEsteiraTarefas({
                 Exibindo {filteredAndSortedCards.length} {filteredAndSortedCards.length === 1 ? "caso" : "casos"} na esteira de trabalho
               </span>
               <span className="text-[11px] italic">
-                {sortOrder === "fifo" ? "Ordem: Mais antigos no topo (FIFO)" : sortOrder === "recent" ? "Ordem: Mais recentes no topo" : "Ordem: Prioridade crítica"}
+                {sortOrder === "fifo" ? "Ordem: Mais antigos primeiro" : sortOrder === "recent" ? "Ordem: Mais recentes primeiro" : "Ordem: Prioridade crítica"}
               </span>
             </div>
 

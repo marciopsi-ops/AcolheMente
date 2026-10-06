@@ -18,7 +18,8 @@ import {
   Plus,
   Layers,
   Calendar,
-  Briefcase
+  Briefcase,
+  X
 } from "lucide-react";
 import { doc, updateDoc } from "firebase/firestore";
 import { db } from "../lib/firebase";
@@ -274,9 +275,19 @@ export function EmpresaBeneficioManager({ empresa, onUpdateSuccess }: EmpresaBen
       </div>
 
       {feedback && (
-        <div className="p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-xl font-medium flex items-center gap-2 animate-in fade-in">
-          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-          <span>{feedback}</span>
+        <div className="p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-xl font-medium flex items-center justify-between gap-2 animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>{feedback}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setFeedback(null)}
+            className="p-1 text-emerald-700/60 hover:text-emerald-950 rounded-lg transition-colors cursor-pointer"
+            title="Fechar aviso"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
         </div>
       )}
 

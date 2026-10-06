@@ -258,93 +258,98 @@ export const ContratoGeradorModal: React.FC<ContratoGeradorModalProps> = ({
     <div className="fixed inset-0 z-[70] flex items-center justify-center px-4 bg-forest/30 backdrop-blur-sm animate-in fade-in py-4">
       <div className="bg-white rounded-3xl w-full max-w-4xl max-h-[92vh] shadow-2xl border border-soft overflow-hidden animate-in zoom-in-95 flex flex-col">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-soft bg-gradient-to-r from-emerald-50 via-warm/30 to-emerald-50 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-emerald-700 text-white rounded-2xl shadow-xs">
-              <FileSignature className="w-5 h-5" />
+        <div className="px-3.5 sm:px-6 py-2.5 sm:py-4 border-b border-soft bg-gradient-to-r from-emerald-50 via-warm/30 to-emerald-50 flex items-center justify-between gap-2 shrink-0">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
+            <div className="p-2 sm:p-2.5 bg-emerald-700 text-white rounded-xl sm:rounded-2xl shadow-xs shrink-0">
+              <FileSignature className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
-            <div>
-              <h3 className="font-serif text-lg font-bold text-forest flex items-center gap-2">
-                Contrato Terapêutico & Aceite Digital
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+                <h3 className="font-serif text-sm sm:text-lg font-bold text-forest truncate flex-1 leading-tight" title={nomePac}>
+                  Contrato: {nomePac}
+                </h3>
                 {paciente.contratoAssinado ? (
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 font-sans font-bold flex items-center gap-1">
-                    <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Assinado & Válido
+                  <span className="text-[9px] sm:text-[10px] px-1.5 sm:px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 font-sans font-bold flex items-center gap-1 shrink-0">
+                    <CheckCircle2 className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-emerald-600" /> Assinado
                   </span>
                 ) : (
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 font-sans font-bold">
-                    Pendente de Assinatura
+                  <span className="text-[9px] sm:text-[10px] px-1.5 sm:px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 font-sans font-bold shrink-0">
+                    Pendente
                   </span>
                 )}
-              </h3>
-              <p className="text-xs text-forest/70">
-                Paciente: <strong className="text-forest font-bold">{nomePac}</strong>
+              </div>
+              <p className="text-[10px] sm:text-xs text-forest/70 truncate mt-0.5">
+                CRP: <strong className="text-forest">{crpProf}</strong>
                 {paciente.empresaNome && (
-                  <span className="text-forest/60"> • Convênio: <strong className="text-emerald-800">{paciente.empresaNome}</strong></span>
+                  <span className="text-forest/60"> • <strong className="text-emerald-800">{paciente.empresaNome}</strong></span>
                 )}
-                {" • "}CRP: <strong className="text-forest">{crpProf}</strong>
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 sm:gap-2 shrink-0">
             <button
               type="button"
               onClick={onClose}
-              className="p-1.5 text-forest/50 hover:text-rose-600 rounded-full hover:bg-rose-50 transition-colors"
+              className="p-1 sm:p-1.5 text-forest/50 hover:text-rose-600 rounded-full hover:bg-rose-50 transition-colors shrink-0"
               title="Fechar"
             >
-              <X className="w-5 h-5" />
+              <X className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
           </div>
         </div>
 
         {/* Action Bar / Status */}
-        <div className="bg-warm/40 px-6 py-3 border-b border-soft flex flex-wrap items-center justify-between gap-3 text-xs shrink-0">
-          <div className="flex items-center gap-2">
-            <span className="font-bold text-forest/80 uppercase text-[11px] tracking-wider">Modo de Visualização:</span>
+        <div className="bg-warm/40 px-3.5 sm:px-6 py-2 sm:py-3 border-b border-soft flex flex-wrap items-center justify-between gap-2 sm:gap-3 text-xs shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            <span className="hidden sm:inline font-bold text-forest/80 uppercase text-[11px] tracking-wider">Modo:</span>
             <div className="flex bg-white rounded-xl border border-soft p-0.5 shadow-2xs">
               <button
                 type="button"
                 onClick={() => setActiveTab("previa")}
-                className={`px-3 py-1 rounded-lg font-bold transition-all flex items-center gap-1.5 ${
+                className={`px-2.5 sm:px-3 py-1 rounded-lg font-bold text-[11px] sm:text-xs transition-all flex items-center gap-1 sm:gap-1.5 ${
                   activeTab === "previa"
                     ? "bg-emerald-700 text-white shadow-2xs"
                     : "text-forest/70 hover:text-forest"
                 }`}
               >
-                <Eye className="w-3.5 h-3.5" /> Prévia Completa
+                <Eye className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> Prévia
               </button>
               <button
                 type="button"
                 onClick={() => setActiveTab("editar")}
-                className={`px-3 py-1 rounded-lg font-bold transition-all flex items-center gap-1.5 ${
+                className={`px-2.5 sm:px-3 py-1 rounded-lg font-bold text-[11px] sm:text-xs transition-all flex items-center gap-1 sm:gap-1.5 ${
                   activeTab === "editar"
                     ? "bg-emerald-700 text-white shadow-2xs"
                     : "text-forest/70 hover:text-forest"
                 }`}
               >
-                <Sparkles className="w-3.5 h-3.5" /> Ajustar Cláusulas
+                <Sparkles className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> Cláusulas
               </button>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             <button
               type="button"
               onClick={handleRegerarModelo}
-              className="px-2.5 py-1 text-forest/70 hover:text-forest bg-white rounded-lg border border-soft hover:bg-warm font-semibold flex items-center gap-1"
+              className="px-2 sm:px-2.5 py-1 text-forest/70 hover:text-forest bg-white rounded-lg border border-soft hover:bg-warm font-semibold text-[11px] sm:text-xs flex items-center gap-1"
               title="Restaurar modelo padrão com os dados da ficha de bordo"
             >
-              <RefreshCw className="w-3 h-3 text-emerald-600" /> Restaurar Padrão CFP
+              <RefreshCw className="w-3 h-3 text-emerald-600" />
+              <span className="hidden sm:inline">Restaurar Padrão CFP</span>
+              <span className="sm:hidden">Restaurar</span>
             </button>
 
             <a
               href={linkAssinaturaPublico}
               target="_blank"
               rel="noopener noreferrer"
-              className="px-2.5 py-1 text-emerald-800 hover:text-emerald-950 bg-emerald-50 rounded-lg border border-emerald-200 font-bold flex items-center gap-1"
+              className="px-2 sm:px-2.5 py-1 text-emerald-800 hover:text-emerald-950 bg-emerald-50 rounded-lg border border-emerald-200 font-bold text-[11px] sm:text-xs flex items-center gap-1"
             >
-              <ExternalLink className="w-3 h-3 text-emerald-700" /> Abrir Link Público
+              <ExternalLink className="w-3 h-3 text-emerald-700" />
+              <span className="hidden sm:inline">Abrir Link Público</span>
+              <span className="sm:hidden">Link</span>
             </a>
           </div>
         </div>
