@@ -30,6 +30,8 @@ import {
   Copy,
   ExternalLink,
   RotateCcw,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import {
   collection,
@@ -70,6 +72,12 @@ export const TriagemCorporativaKanban: React.FC<TriagemCorporativaKanbanProps> =
   const [busca, setBusca] = useState("");
   const [filtroEmpresa, setFiltroEmpresa] = useState<string>("todas");
   const [filtroProfissional, setFiltroProfissional] = useState<string>("todos");
+
+  // Estado de Expansão/Minimização dos Cards de Pacientes Corporativos
+  const [expandedFichas, setExpandedFichas] = useState<Record<string, boolean>>({});
+  const toggleExpandFicha = (id: string) => {
+    setExpandedFichas((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
 
   // Modais
   const [fichaDetalhes, setFichaDetalhes] = useState<FichaBordoCorporativa | null>(null);
@@ -413,6 +421,36 @@ export const TriagemCorporativaKanban: React.FC<TriagemCorporativaKanbanProps> =
               ))}
             </select>
           </div>
+
+          {/* Botões rápidos: Expandir Todos / Recolher Todos */}
+          <div className="flex items-center gap-1 border-l border-soft pl-1.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                const map: Record<string, boolean> = {};
+                fichasFiltradas.forEach((f) => {
+                  map[f.id] = true;
+                });
+                setExpandedFichas(map);
+              }}
+              className="px-2 py-1 bg-warm/60 hover:bg-warm text-forest/70 hover:text-forest rounded-lg text-[10px] sm:text-[11px] font-semibold transition-all border border-soft/60 flex items-center gap-1 cursor-pointer"
+              title="Expandir todos os cards visíveis"
+            >
+              <ChevronDown className="w-3 h-3 text-emerald-600" />
+              <span className="hidden sm:inline">Expandir Todos</span>
+              <span className="sm:hidden">Expandir</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setExpandedFichas({})}
+              className="px-2 py-1 bg-warm/60 hover:bg-warm text-forest/70 hover:text-forest rounded-lg text-[10px] sm:text-[11px] font-semibold transition-all border border-soft/60 flex items-center gap-1 cursor-pointer"
+              title="Recolher todos os cards"
+            >
+              <ChevronUp className="w-3 h-3 text-forest/50" />
+              <span className="hidden sm:inline">Recolher Todos</span>
+              <span className="sm:hidden">Recolher</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -455,6 +493,8 @@ export const TriagemCorporativaKanban: React.FC<TriagemCorporativaKanbanProps> =
                       <CardFichaCorporativa
                         key={ficha.id}
                         ficha={ficha}
+                        isExpanded={!!expandedFichas[ficha.id]}
+                        onToggleExpand={() => toggleExpandFicha(ficha.id)}
                         onVerDetalhes={() => setFichaDetalhes(ficha)}
                         onAceitar={() => handleAceitarFicha(ficha)}
                         onWhatsApp={() => handleAbrirWhatsApp(ficha)}
@@ -494,6 +534,8 @@ export const TriagemCorporativaKanban: React.FC<TriagemCorporativaKanbanProps> =
                       <CardFichaCorporativa
                         key={ficha.id}
                         ficha={ficha}
+                        isExpanded={!!expandedFichas[ficha.id]}
+                        onToggleExpand={() => toggleExpandFicha(ficha.id)}
                         onVerDetalhes={() => setFichaDetalhes(ficha)}
                         onAlta={() =>
                           setModalDesfecho({ isOpen: true, ficha, tipo: "alta", motivo: "" })
@@ -540,6 +582,8 @@ export const TriagemCorporativaKanban: React.FC<TriagemCorporativaKanbanProps> =
                       <CardFichaCorporativa
                         key={ficha.id}
                         ficha={ficha}
+                        isExpanded={!!expandedFichas[ficha.id]}
+                        onToggleExpand={() => toggleExpandFicha(ficha.id)}
                         onVerDetalhes={() => setFichaDetalhes(ficha)}
                         onReativar={() => handleReativarPaciente(ficha)}
                         onWhatsApp={() => handleAbrirWhatsApp(ficha)}
@@ -579,6 +623,8 @@ export const TriagemCorporativaKanban: React.FC<TriagemCorporativaKanbanProps> =
                       <CardFichaCorporativa
                         key={ficha.id}
                         ficha={ficha}
+                        isExpanded={!!expandedFichas[ficha.id]}
+                        onToggleExpand={() => toggleExpandFicha(ficha.id)}
                         onVerDetalhes={() => setFichaDetalhes(ficha)}
                         onReativar={() => handleReativarPaciente(ficha)}
                         onWhatsApp={() => handleAbrirWhatsApp(ficha)}
@@ -718,6 +764,8 @@ export const TriagemCorporativaKanban: React.FC<TriagemCorporativaKanbanProps> =
 // ==========================================
 interface CardFichaProps {
   ficha: FichaBordoCorporativa;
+  isExpanded?: boolean;
+  onToggleExpand?: () => void;
   onVerDetalhes: () => void;
   onAceitar?: () => void;
   onAlta?: () => void;
@@ -729,6 +777,8 @@ interface CardFichaProps {
 
 const CardFichaCorporativa: React.FC<CardFichaProps> = ({
   ficha,
+  isExpanded = false,
+  onToggleExpand,
   onVerDetalhes,
   onAceitar,
   onAlta,
@@ -755,162 +805,247 @@ const CardFichaCorporativa: React.FC<CardFichaProps> = ({
   };
 
   return (
-    <div className="bg-white rounded-2xl p-4 sm:p-5 border border-soft shadow-xs hover:shadow-md transition-all space-y-3.5">
-      {/* Cabeçalho do Card: Empresa, Data e Badge de Dependente */}
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-warm text-[10px] font-bold text-forest/70 border border-soft/80">
-            <Building2 className="w-3 h-3 text-emerald-700" />
-            {ficha.empresaNome} • {ficha.cargoNome}
+    <div
+      onClick={onToggleExpand}
+      className={`bg-white rounded-2xl border transition-all cursor-pointer ${
+        isExpanded
+          ? "p-4 sm:p-5 border-forest/30 shadow-md ring-1 ring-forest/10 space-y-3.5"
+          : "p-3.5 sm:p-4 border-soft shadow-xs hover:border-forest/20 hover:shadow-sm space-y-2.5"
+      }`}
+    >
+      {/* 1. TOPO DO CARD: Empresa + Tag de Cargo + Botão Recolher/Expandir */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-warm text-[10px] font-bold text-forest/70 border border-soft/80 truncate">
+            <Building2 className="w-3 h-3 text-emerald-700 shrink-0" />
+            <span className="truncate">{ficha.empresaNome}</span>
           </span>
-        </div>
-        <span className="text-[10px] text-forest/50 font-medium shrink-0">
-          {formatData(ficha.createdAt)}
-        </span>
-      </div>
 
-      {/* Nome do Paciente & Vínculo */}
-      <div>
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <h4 className="font-bold text-forest text-sm font-serif">
-            {ficha.colaboradorNome}
-          </h4>
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 text-[10px] font-bold text-blue-900 border border-blue-200/80 truncate">
+            <Briefcase className="w-2.5 h-2.5 text-blue-600 shrink-0" />
+            <span className="truncate">{ficha.cargoNome || "Cargo não informado"}</span>
+          </span>
+
           {ficha.beneficiarioTipo === "dependente" && (
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
-              Dependente: {ficha.dependenteParentesco || "Família"}
+            <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-50 text-amber-800 border border-amber-200 shrink-0">
+              Dep: {ficha.dependenteParentesco || "Família"}
             </span>
           )}
+        </div>
+
+        <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+          <span className="text-[10px] text-forest/40 font-medium hidden sm:inline">
+            {formatData(ficha.createdAt)}
+          </span>
+
+          {onToggleExpand && (
+            <button
+              type="button"
+              onClick={onToggleExpand}
+              className="p-1 text-forest/50 hover:text-forest hover:bg-warm rounded-md transition-colors cursor-pointer"
+              title={isExpanded ? "Recolher card" : "Expandir card"}
+            >
+              {isExpanded ? (
+                <ChevronUp className="w-4 h-4" />
+              ) : (
+                <ChevronDown className="w-4 h-4" />
+              )}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* 2. PROTAGONISTA: Nome do Paciente / Colaborador */}
+      <div>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <h4 className="font-bold text-forest text-sm sm:text-base font-serif leading-snug">
+            {ficha.colaboradorNome}
+          </h4>
+
           {ficha.contratoAssinado ? (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 shrink-0">
               <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" /> Contrato Assinado
             </span>
           ) : ficha.contratoText ? (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-800 border border-amber-300 shrink-0">
               <FileSignature className="w-2.5 h-2.5 text-amber-600" /> Contrato Pendente
             </span>
           ) : null}
         </div>
+
         {ficha.beneficiarioTipo === "dependente" && ficha.dependenteInfo && (
           <p className="text-[11px] text-forest/60 mt-0.5">
-            Paciente: <strong>{ficha.dependenteInfo}</strong>
+            Beneficiário atendido: <strong>{ficha.dependenteInfo}</strong>
           </p>
         )}
       </div>
 
-      {/* Serviço, Valor e Frequência Fixados pela Tabela da Empresa */}
-      <div className="bg-emerald-50/50 rounded-xl p-3 border border-emerald-100/80 space-y-1.5 text-xs">
-        <div className="flex items-center justify-between text-forest/80 font-medium">
-          <span className="truncate">{ficha.servicoNome}</span>
-          <span className="font-bold text-emerald-900 font-serif shrink-0">
+      {/* 3. RESUMO VISÍVEL SEMPRE (Nome, Cargo, Valor e Profissional Escolhido/Responsável) */}
+      <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-soft/60">
+        {/* Valor da Sessão Acordado pela Tabela Corporativa */}
+        <div className="flex items-center gap-1.5">
+          <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-800 px-2 py-0.5 rounded-lg border border-emerald-200/70 text-xs font-bold font-serif shrink-0 shadow-2xs">
+            <DollarSign className="w-3 h-3 text-emerald-600" />
             R$ {ficha.valorSessao},00/sessão
           </span>
+          {!isExpanded && ficha.servicoNome && (
+            <span className="text-[11px] text-forest/60 truncate max-w-[120px] sm:max-w-[180px]">
+              • {ficha.servicoNome}
+            </span>
+          )}
         </div>
-        <div className="flex items-center justify-between text-[11px] text-forest/60">
-          <span>Freq: {ficha.frequenciaRecomendada}</span>
-          <span className="bg-white/80 px-2 py-0.5 rounded-md text-[10px] font-semibold text-forest/70 border border-soft">
-            Turno: {ficha.turnoPreferencia || "A combinar"}
-          </span>
-        </div>
-      </div>
 
-      {/* Profissional Requisitado */}
-      <div className="flex items-center justify-between gap-2 pt-1 border-t border-soft/50 text-xs">
-        <div className="flex items-center gap-2 min-w-0">
+        {/* Profissional Escolhido ou Responsável */}
+        <div className="flex items-center gap-1.5 min-w-0 max-w-[200px] sm:max-w-xs shrink-0">
           {ficha.profissionalFoto ? (
             <img
               src={ficha.profissionalFoto}
               alt={ficha.profissionalNome}
-              className="w-6 h-6 rounded-full object-cover border border-emerald-600 shrink-0"
+              className="w-5 h-5 rounded-full object-cover border border-emerald-600 shrink-0"
             />
           ) : (
-            <div className="w-6 h-6 rounded-full bg-forest/10 flex items-center justify-center text-[10px] font-bold text-forest shrink-0">
+            <div className="w-5 h-5 rounded-full bg-forest/10 flex items-center justify-center text-[9px] font-bold text-forest shrink-0">
               {ficha.profissionalNome ? ficha.profissionalNome.charAt(0) : "P"}
             </div>
           )}
-          <span className="text-[11px] text-forest/70 font-medium truncate">
-            Requisitado: <strong>{ficha.profissionalNome}</strong>
+          <span className="text-[11px] text-forest/80 font-medium truncate">
+            {ficha.status === "paciente" ? "Resp:" : "Escolhido:"}{" "}
+            <strong className="text-forest font-semibold">{ficha.profissionalNome || "Não atribuído"}</strong>
           </span>
         </div>
-
-        <button
-          type="button"
-          onClick={onWhatsApp}
-          title="Falar no WhatsApp"
-          className="p-1.5 text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer"
-        >
-          <Phone className="w-3.5 h-3.5" />
-        </button>
       </div>
 
-      {/* Queixa Inicial (Resumo) */}
-      {ficha.queixa && (
-        <div className="bg-warm/30 rounded-lg p-2 text-[11px] text-forest/70 italic line-clamp-2">
-          "{ficha.queixa}"
+      {/* 4. CONTEÚDO EXPANDIDO (Visível apenas quando expandido) */}
+      {isExpanded && (
+        <div className="space-y-3 pt-2 border-t border-soft/80 animate-in fade-in duration-150">
+          {/* Serviço e Frequência Detalhados */}
+          <div className="bg-emerald-50/50 rounded-xl p-3 border border-emerald-100/80 space-y-1.5 text-xs">
+            <div className="flex items-center justify-between text-forest/80 font-medium">
+              <span className="font-semibold text-emerald-950 truncate">{ficha.servicoNome}</span>
+              <span className="font-bold text-emerald-900 font-serif shrink-0">
+                R$ {ficha.valorSessao},00/sessão
+              </span>
+            </div>
+            <div className="flex items-center justify-between text-[11px] text-forest/60">
+              <span>Frequência: {ficha.frequenciaRecomendada}</span>
+              <span className="bg-white/80 px-2 py-0.5 rounded-md text-[10px] font-semibold text-forest/70 border border-soft">
+                Turno: {ficha.turnoPreferencia || "A combinar"}
+              </span>
+            </div>
+          </div>
+
+          {/* Queixa Inicial Completa */}
+          {ficha.queixa && (
+            <div className="bg-warm/30 rounded-xl p-2.5 text-xs text-forest/80 border border-soft/60">
+              <span className="text-[10px] uppercase font-bold text-forest/50 block mb-0.5">
+                Queixa / Motivo Informado:
+              </span>
+              <p className="italic leading-relaxed">"{ficha.queixa}"</p>
+            </div>
+          )}
+
+          {/* Dados Adicionais de Contato / Responsável */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-forest/70 bg-warm/20 p-2.5 rounded-xl border border-soft/50">
+            <div>
+              <span className="text-[10px] uppercase font-bold text-forest/50 block">Profissional Responsável</span>
+              <span className="font-medium text-forest">{ficha.profissionalNome} {ficha.profissionalCrp ? `(${ficha.profissionalCrp})` : ""}</span>
+            </div>
+            <div>
+              <span className="text-[10px] uppercase font-bold text-forest/50 block">Cargo & Benefício</span>
+              <span className="font-medium text-forest">{ficha.cargoNome} • {ficha.empresaNome}</span>
+            </div>
+          </div>
         </div>
       )}
 
-      {/* AÇÕES NO CARD (Otimizadas para Telas Pequenas) */}
-      <div className="pt-2 border-t border-soft flex items-center justify-between gap-1.5 sm:gap-2 flex-wrap">
-        <button
-          type="button"
-          onClick={onVerDetalhes}
-          className="px-2 sm:px-2.5 py-1 rounded-lg text-[10px] sm:text-[11px] font-semibold text-forest/80 hover:text-forest bg-warm/50 hover:bg-warm transition-all flex items-center gap-1 cursor-pointer border border-soft/60"
-        >
-          <FileText className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-forest/50" />
-          <span>Ficha</span>
-          <span className="hidden sm:inline">de Bordo</span>
-        </button>
-
-        {/* Botão de Aceite se for Solicitação de Serviço */}
-        {ficha.status === "solicitacao_servico" && onAceitar && (
+      {/* 5. AÇÕES NO RODAPÉ DO CARD */}
+      <div
+        className="pt-2 border-t border-soft flex items-center justify-between gap-1.5 sm:gap-2 flex-wrap"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-1.5">
           <button
             type="button"
-            disabled={saving}
-            onClick={onAceitar}
-            className="px-2.5 sm:px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] sm:text-[11px] font-bold transition-all shadow-2xs flex items-center gap-1 cursor-pointer disabled:opacity-50"
+            onClick={onVerDetalhes}
+            className="px-2 sm:px-2.5 py-1 rounded-lg text-[10px] sm:text-[11px] font-semibold text-forest/80 hover:text-forest bg-warm/50 hover:bg-warm transition-all flex items-center gap-1 cursor-pointer border border-soft/60 shadow-2xs"
           >
-            <Check className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-            <span>Aceitar</span>
-            <span className="hidden sm:inline">Ficha</span>
+            <FileText className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-forest/50" />
+            <span>Ficha de Bordo</span>
           </button>
-        )}
 
-        {/* Botões de Alta / Interrupção se for Paciente ativo */}
-        {ficha.status === "paciente" && (
-          <div className="flex items-center gap-1">
-            {onAlta && (
-              <button
-                type="button"
-                onClick={onAlta}
-                className="px-2 py-0.5 sm:px-2.5 sm:py-1 text-[10px] sm:text-[11px] font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-md sm:rounded-lg transition-all cursor-pointer border border-blue-200/60"
-              >
-                Alta
-              </button>
-            )}
-            {onInterrupcao && (
-              <button
-                type="button"
-                onClick={onInterrupcao}
-                className="px-2 py-0.5 sm:px-2.5 sm:py-1 text-[10px] sm:text-[11px] font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 rounded-md sm:rounded-lg transition-all cursor-pointer border border-rose-200/60"
-              >
-                Interromper
-              </button>
-            )}
-          </div>
-        )}
-
-        {/* Botão de Reativar se estiver em Alta ou Interrupção */}
-        {(ficha.status === "alta" || ficha.status === "interrupcao") && onReativar && (
           <button
             type="button"
-            disabled={saving}
-            onClick={onReativar}
-            className="px-2.5 py-1 bg-forest text-white rounded-lg text-[10px] sm:text-[11px] font-semibold hover:bg-forest/90 transition-all cursor-pointer disabled:opacity-50 flex items-center gap-1"
+            onClick={onWhatsApp}
+            title="Falar no WhatsApp"
+            className="p-1.5 text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer border border-emerald-200/50"
           >
-            <RotateCcw className="w-3 h-3" />
-            <span>Reativar</span>
+            <Phone className="w-3.5 h-3.5" />
           </button>
-        )}
+        </div>
+
+        <div className="flex items-center gap-1">
+          {/* Botão de Aceite se for Solicitação de Serviço */}
+          {ficha.status === "solicitacao_servico" && onAceitar && (
+            <button
+              type="button"
+              disabled={saving}
+              onClick={onAceitar}
+              className="px-2.5 sm:px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] sm:text-[11px] font-bold transition-all shadow-2xs flex items-center gap-1 cursor-pointer disabled:opacity-50"
+            >
+              <Check className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+              <span>Aceitar Ficha</span>
+            </button>
+          )}
+
+          {/* Botões de Alta / Interrupção se for Paciente ativo */}
+          {ficha.status === "paciente" && (
+            <div className="flex items-center gap-1">
+              {onAlta && (
+                <button
+                  type="button"
+                  onClick={onAlta}
+                  className="px-2 py-0.5 sm:px-2.5 sm:py-1 text-[10px] sm:text-[11px] font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-md sm:rounded-lg transition-all cursor-pointer border border-blue-200/60"
+                >
+                  Alta
+                </button>
+              )}
+              {onInterrupcao && (
+                <button
+                  type="button"
+                  onClick={onInterrupcao}
+                  className="px-2 py-0.5 sm:px-2.5 sm:py-1 text-[10px] sm:text-[11px] font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 rounded-md sm:rounded-lg transition-all cursor-pointer border border-rose-200/60"
+                >
+                  Interromper
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Botão de Reativar se estiver em Alta ou Interrupção */}
+          {(ficha.status === "alta" || ficha.status === "interrupcao") && onReativar && (
+            <button
+              type="button"
+              disabled={saving}
+              onClick={onReativar}
+              className="px-2.5 py-1 bg-forest text-white rounded-lg text-[10px] sm:text-[11px] font-semibold hover:bg-forest/90 transition-all cursor-pointer disabled:opacity-50 flex items-center gap-1"
+            >
+              <RotateCcw className="w-3 h-3" />
+              <span>Reativar</span>
+            </button>
+          )}
+
+          {/* Botão sutil de alternar expandir/recolher no rodapé */}
+          {onToggleExpand && (
+            <button
+              type="button"
+              onClick={onToggleExpand}
+              className="text-forest/60 hover:text-forest font-semibold flex items-center gap-0.5 px-1.5 py-0.5 rounded hover:bg-warm cursor-pointer text-[10px] uppercase tracking-wider shrink-0 transition-colors"
+            >
+              <span>{isExpanded ? "Menos" : "Mais"}</span>
+              {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

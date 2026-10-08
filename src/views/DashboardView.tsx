@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useMemo } from "react";
 import { sendWebhookNotification } from "../lib/webhookNotifier";
 import { sendPatientRegistrationEmail } from "../lib/emailService";
 import { StripeCheckoutModal } from "../components/StripeCheckoutModal";
@@ -28,6 +28,7 @@ import {
   getEmpresaPin,
   ItemCatalogoCorporativo,
   SEQUENCIA_NUMERICA_VIDAS_OPCOES,
+  FichaBordoCorporativa,
 } from "../types/corporativo";
 import {
   Activity,
@@ -1057,6 +1058,16 @@ export function DashboardView({
   const toggleExpandKanbanCard = (id: string) => {
     setExpandedKanbanCards((prev) => ({ ...prev, [id]: !prev[id] }));
   };
+
+  // Estados de Expansão/Minimização para Cards de Profissionais
+  const [expandedProfissionais, setExpandedProfissionais] = useState<Record<string, boolean>>({});
+  const toggleExpandProfissional = (id: string) => {
+    setExpandedProfissionais((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+  const [expandedLeads, setExpandedLeads] = useState<Record<string, boolean>>({});
+  const toggleExpandLead = (id: string) => {
+    setExpandedLeads((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
   const [showNovaEmpresaModal, setShowNovaEmpresaModal] = useState(false);
   const [isSubmittingNovaEmpresa, setIsSubmittingNovaEmpresa] = useState(false);
   const [novaEmpresaForm, setNovaEmpresaForm] = useState({
@@ -1812,31 +1823,37 @@ export function DashboardView({
     return () => unsubscribe();
   }, []);
 
-  // Monitoramento em tempo real de novas solicitações corporativas
+  // Monitoramento em tempo real de triagem corporativa (todas as fichas de bordo)
+  const [fichasCorporativas, setFichasCorporativas] = useState<FichaBordoCorporativa[]>([]);
   const [solicitacoesCorpCount, setSolicitacoesCorpCount] = useState(0);
 
   useEffect(() => {
     try {
-      const q = query(
-        collection(db, "triagem_corporativa"),
-        where("status", "==", "solicitacao_servico")
-      );
+      const q = query(collection(db, "triagem_corporativa"));
       const unsubscribe = onSnapshot(
         q,
         (snapshot) => {
+          const list: FichaBordoCorporativa[] = [];
+          snapshot.forEach((d) => {
+            list.push({ id: d.id, ...(d.data() as Omit<FichaBordoCorporativa, "id">) });
+          });
+          setFichasCorporativas(list);
+
           if (currentRole === "profissional" && profile?.uid) {
-            const count = snapshot.docs.filter((d) => {
-              const data = d.data();
-              return (
-                data.profissionalId === profile.uid ||
-                (data.profissionalNome &&
-                  profile.name &&
-                  data.profissionalNome.trim().toLowerCase() === profile.name.trim().toLowerCase())
-              );
+            const count = list.filter((data) => {
+              const isMatch =
+                data.status === "solicitacao_servico" &&
+                (data.profissionalId === profile.uid ||
+                  (data.profissionalNome &&
+                    profile.name &&
+                    data.profissionalNome.trim().toLowerCase() === profile.name.trim().toLowerCase()));
+              return isMatch;
             }).length;
             setSolicitacoesCorpCount(count);
           } else {
-            setSolicitacoesCorpCount(snapshot.size);
+            setSolicitacoesCorpCount(
+              list.filter((d) => d.status === "solicitacao_servico").length
+            );
           }
         },
         (err) => {
@@ -2414,6 +2431,7 @@ export function DashboardView({
         setProfissionaisAtivos([]);
         setEmpresasLeads([]);
         setMeusPacientes([]);
+        setFichasCorporativas([]);
         setLoadingObj(false);
       }
     });
@@ -4327,6 +4345,23 @@ export function DashboardView({
       return timeA - timeB;
     });
 
+  const minhasFichasCorporativas = useMemo(() => {
+    if (!profile) return [];
+    const profUid = profile.uid || "";
+    const profName = (profile.name || profile.nome || "").trim().toLowerCase();
+    return fichasCorporativas.filter((f) => {
+      if (f.profissionalId && profUid && f.profissionalId === profUid) return true;
+      if (
+        f.profissionalNome &&
+        profName &&
+        f.profissionalNome.trim().toLowerCase() === profName
+      ) {
+        return true;
+      }
+      return false;
+    });
+  }, [fichasCorporativas, profile]);
+
   const getProfissionalNotifications = () => {
     if (!profile || currentRole !== "profissional") return [];
 
@@ -5342,6 +5377,50 @@ export function DashboardView({
     }, 0);
   };
 
+  const calculateHorasCorporativas = (fichas: FichaBordoCorporativa[]): number => {
+    return fichas.reduce((sum, f) => {
+      const freq = (f.frequenciaRecomendada || "").toLowerCase();
+      if (
+        freq.includes("quinzenal") ||
+        freq.includes("2x/mês") ||
+        freq.includes("2x por mês") ||
+        freq.includes("2 sessões")
+      ) {
+        return sum + 2;
+      }
+      if (
+        freq.includes("mensal") ||
+        freq.includes("1x/mês") ||
+        freq.includes("1x por mês") ||
+        freq.includes("1 sessão")
+      ) {
+        return sum + 1;
+      }
+      if (freq.includes("demanda")) return sum + 1;
+      if (freq.includes("2x por semana") || freq.includes("2x/semana")) return sum + 8;
+      if (freq.includes("3x por semana") || freq.includes("3x/semana")) return sum + 12;
+      if (
+        freq.includes("semanal") ||
+        freq.includes("4x/mês") ||
+        freq.includes("4x por mês") ||
+        freq.includes("4 sessões")
+      ) {
+        return sum + 4;
+      }
+      return sum + 4; // Padrão semanal (4h/mês)
+    }, 0);
+  };
+
+  const parseValorSessaoNumber = (val?: string | number): number => {
+    if (typeof val === "number") return isNaN(val) ? 0 : val;
+    if (!val) return 0;
+    const str = val.toString().toLowerCase();
+    if (str.includes("gratuito") || str.includes("social gratuito")) return 0;
+    const cleaned = str.replace(/[^0-9,-]/g, "").replace(",", ".");
+    const num = parseFloat(cleaned);
+    return isNaN(num) ? 0 : num;
+  };
+
   const normalizeHorasDisponiveis = (horasDisp?: string): string => {
     if (!horasDisp) return "";
     const trimmed = horasDisp.trim();
@@ -5494,23 +5573,76 @@ export function DashboardView({
         a.status === "Em Atendimento" &&
         a.atribuicaoStatus === "Aceito",
     );
-    const ativosCount = profAcolhimentos.length;
-    const valorTotal = profAcolhimentos.reduce(
-      (sum, a) =>
-        sum +
-        (parseFloat(
-          (a.valorSessao || "0").replace(/\./g, "").replace(",", "."),
-        ) || 0),
+    const profCorp = fichasCorporativas.filter(
+      (f) => f.profissionalId === uid && f.status === "paciente",
+    );
+
+    const ativosParticulares = profAcolhimentos.length;
+    const ativosCorp = profCorp.length;
+    const ativosCount = ativosParticulares + ativosCorp;
+
+    // Horas mensais clínicas ocupadas na cota (particulares + corporativos)
+    const horasParticulares = calculateHorasMensais(profAcolhimentos);
+    const horasCorp = calculateHorasCorporativas(profCorp);
+    const horasMensais = horasParticulares + horasCorp;
+
+    // Horas por faixa:
+    // 1. Gratuitas / Pro Bono (R$ 0 ou solidário)
+    const pacsGratuitos = profAcolhimentos.filter((a) => {
+      const v = parseValorSessaoNumber(a.valorSessao);
+      return v === 0 || a.viaAcesso === "Solidário" || a.tipoAcolhimento === "gratuito";
+    });
+    const horasGratuitas = calculateHorasMensais(pacsGratuitos);
+
+    // 2. Extraordinárias R$ 30 (sociais)
+    const pacs30 = profAcolhimentos.filter((a) => {
+      const v = parseValorSessaoNumber(a.valorSessao);
+      return v > 0 && v <= 30;
+    });
+    const horas30 = calculateHorasMensais(pacs30);
+
+    // 3. Regulares monetizadas (> R$ 30)
+    const pacsRegularPart = profAcolhimentos.filter((a) => {
+      const v = parseValorSessaoNumber(a.valorSessao);
+      return v > 30 && a.viaAcesso !== "Solidário";
+    });
+    const horasRegular = calculateHorasMensais(pacsRegularPart) + horasCorp;
+
+    // Faturamento e Média Comercial Monetizada (EXCLUINDO Gratuitos e R$ 30):
+    const valorPartComercial = pacsRegularPart.reduce(
+      (sum, a) => sum + parseValorSessaoNumber(a.valorSessao),
       0,
     );
-    const horasMensais = calculateHorasMensais(profAcolhimentos);
+    const valorCorpComercial = profCorp.reduce(
+      (sum, f) => sum + (parseValorSessaoNumber(f.valorSessao) || 0),
+      0,
+    );
+    const valorTotal = valorPartComercial + valorCorpComercial;
+    const ativosMonetizadosCount = pacsRegularPart.length + profCorp.length;
+    const mediaMonetizada =
+      ativosMonetizadosCount > 0 ? valorTotal / ativosMonetizadosCount : 0;
 
     const prof =
       profissionaisAtivos.find((p) => p.uid === uid) ||
       profissionaisLeads.find((p) => p.id === uid);
     const maxHoras = parseMaxHorasDisponiveis(prof?.horasDisponiveis);
 
-    return { ativosCount, valorTotal, horasMensais, maxHoras };
+    return {
+      ativosCount,
+      ativosParticulares,
+      ativosCorp,
+      valorTotal,
+      mediaMonetizada,
+      horasMensais,
+      horasParticulares,
+      horasCorp,
+      horasGratuitas,
+      horas30,
+      horasRegular,
+      pacsGratuitosCount: pacsGratuitos.length,
+      pacs30Count: pacs30.length,
+      maxHoras,
+    };
   };
 
   const notificarTarget =
@@ -5738,6 +5870,13 @@ export function DashboardView({
                   {untreatedGestaoCount}
                 </span>
               )}
+            </button>
+            <button
+              onClick={() => setActiveTab("estatisticas")}
+              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "estatisticas" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70 hover:text-forest"}`}
+            >
+              <BarChart2 className="w-3.5 h-3.5 text-forest/70" />
+              <span>Controle</span>
             </button>
             <button
               onClick={() => setActiveTab("kanban")}
@@ -6237,195 +6376,447 @@ export function DashboardView({
               <span>Controle da Plataforma</span>
             </h2>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              {/* Pacientes Stats */}
-              <div className="bg-white p-6 rounded-3xl border border-soft shadow-sm flex flex-col gap-4">
-                <div className="flex justify-between items-center">
-                  <h3 className="font-serif text-xl font-semibold text-forest">
-                    Pacientes
-                  </h3>
-                  <div className="w-10 h-10 rounded-full bg-sun-light/50 text-sun-dark flex items-center justify-center">
-                    <User className="w-5 h-5" />
+            {/* Bloco de Métricas Analíticas por Fluxo e Panorama Geral */}
+            {(() => {
+              // --- Fluxo Particular ---
+              const isPacienteAtivo = (a: any) => {
+                if (a.ativo === false) return false;
+                if (a.status === "Alta") return false;
+                const flow = getPatientFlowDetails(a);
+                return (
+                  (a.status === "Em Atendimento" && a.atribuicaoStatus === "Aceito") ||
+                  a.atribuicaoStatus === "Aceito" ||
+                  (flow.activeStep === 6 && a.status === "Em Atendimento")
+                );
+              };
+
+              const isPacienteTriagem = (a: any) => {
+                if (a.ativo === false) return false;
+                if (a.status === "Alta") return false;
+                if (isPacienteAtivo(a)) return false;
+                const flow = getPatientFlowDetails(a);
+                return flow.activeStep < 6 && a.status !== "Em Atendimento";
+              };
+
+              const partAtivos = acolhimentos.filter(isPacienteAtivo);
+              const partAtivosCount = partAtivos.length;
+              const partTriagemCount = acolhimentos.filter(isPacienteTriagem).length;
+              const partOutrosCount = Math.max(
+                0,
+                acolhimentos.length - partAtivosCount - partTriagemCount,
+              );
+              const horasParticulares = calculateHorasMensais(
+                acolhimentos.filter(
+                  (a) =>
+                    a.status === "Em Atendimento" &&
+                    a.atribuicaoStatus === "Aceito",
+                ),
+              );
+
+              // --- Fluxo Corporativo ---
+              const corpSolicitados = fichasCorporativas.filter(
+                (f) => f.status === "solicitacao_servico",
+              );
+              const corpAtivos = fichasCorporativas.filter(
+                (f) => f.status === "paciente",
+              );
+              const corpAltas = fichasCorporativas.filter((f) => f.status === "alta");
+              const corpInterrupcoes = fichasCorporativas.filter(
+                (f) => f.status === "interrupcao",
+              );
+              const corpDesfechosCount = corpAltas.length + corpInterrupcoes.length;
+              const horasCorporativas = calculateHorasCorporativas(corpAtivos);
+
+              // --- Panorama Consolidado ---
+              const totalVidasGeral = acolhimentos.length + fichasCorporativas.length;
+              const totalAtivosGeral = partAtivosCount + corpAtivos.length;
+              const totalTriagemSolicitacoesGeral =
+                partTriagemCount + corpSolicitados.length;
+              const totalDesfechosGeral = partOutrosCount + corpDesfechosCount;
+              const totalHorasClinicasGeral = horasParticulares + horasCorporativas;
+
+              // --- Indicador Específico Social (Extraordinárias da Rede) ---
+              const pacsGratuitosGlobal = acolhimentos.filter((a) => {
+                const v = parseValorSessaoNumber(a.valorSessao);
+                return (
+                  (v === 0 ||
+                    a.viaAcesso === "Solidário" ||
+                    a.tipoAcolhimento === "gratuito") &&
+                  a.status === "Em Atendimento" &&
+                  a.atribuicaoStatus === "Aceito"
+                );
+              });
+              const pacs30Global = acolhimentos.filter((a) => {
+                const v = parseValorSessaoNumber(a.valorSessao);
+                return (
+                  v > 0 &&
+                  v <= 30 &&
+                  a.status === "Em Atendimento" &&
+                  a.atribuicaoStatus === "Aceito"
+                );
+              });
+              const horasGratuitasGlobal = calculateHorasMensais(pacsGratuitosGlobal);
+              const horas30Global = calculateHorasMensais(pacs30Global);
+              const totalHorasSociaisExtraordinarias =
+                horasGratuitasGlobal + horas30Global;
+
+              return (
+                <div className="space-y-6">
+                  {/* Grid Principal 4 Cards */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    {/* 1. Panorama Geral de Pacientes */}
+                    <div className="bg-white p-6 rounded-3xl border border-soft shadow-sm flex flex-col justify-between gap-4">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-forest/50">
+                            Visão Geral Consolidada
+                          </span>
+                          <h3 className="font-serif text-xl font-semibold text-forest">
+                            Total de Pacientes
+                          </h3>
+                        </div>
+                        <div className="w-10 h-10 rounded-full bg-sun-light/60 text-forest flex items-center justify-center shrink-0">
+                          <Users className="w-5 h-5 text-forest" />
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-4xl font-extrabold text-forest">
+                          {totalVidasGeral}
+                        </div>
+                        <p className="text-[11px] text-forest/60 mt-0.5">
+                          Particulares ({acolhimentos.length}) + Corporativos (
+                          {fichasCorporativas.length})
+                        </p>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 border-t border-soft pt-3 mt-1 text-center">
+                        <div className="flex flex-col">
+                          <span className="text-[9px] uppercase font-bold text-emerald-600 tracking-wider">
+                            Ativos
+                          </span>
+                          <span className="text-base font-bold text-forest">
+                            {totalAtivosGeral}
+                          </span>
+                        </div>
+                        <div className="flex flex-col border-l border-soft pl-1">
+                          <span className="text-[9px] uppercase font-bold text-amber-600 tracking-wider">
+                            Triagem/Sol.
+                          </span>
+                          <span className="text-base font-bold text-forest">
+                            {totalTriagemSolicitacoesGeral}
+                          </span>
+                        </div>
+                        <div className="flex flex-col border-l border-soft pl-1">
+                          <span className="text-[9px] uppercase font-bold text-forest/50 tracking-wider">
+                            Desfechos
+                          </span>
+                          <span className="text-base font-bold text-forest">
+                            {totalDesfechosGeral}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 2. Fluxo Particular */}
+                    <div className="bg-white p-6 rounded-3xl border border-soft shadow-sm flex flex-col justify-between gap-4">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                            Fluxo Clínico 1
+                          </span>
+                          <h3 className="font-serif text-xl font-semibold text-forest mt-1">
+                            Pacientes Particulares
+                          </h3>
+                        </div>
+                        <div className="w-10 h-10 rounded-full bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0">
+                          <User className="w-5 h-5" />
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-4xl font-extrabold text-forest">
+                          {acolhimentos.length}
+                        </div>
+                        <p className="text-[11px] text-emerald-700 font-semibold mt-0.5">
+                          {horasParticulares}h clínicas ativas/mês
+                        </p>
+                      </div>
+                      <div className="grid grid-cols-3 gap-1 border-t border-soft pt-3 mt-1 text-center">
+                        <div className="flex flex-col">
+                          <span className="text-[9px] uppercase font-bold text-emerald-600 tracking-wider">
+                            Ativos
+                          </span>
+                          <span className="text-base font-bold text-forest">
+                            {partAtivosCount}
+                          </span>
+                        </div>
+                        <div className="flex flex-col border-l border-soft pl-1">
+                          <span className="text-[9px] uppercase font-bold text-amber-600 tracking-wider">
+                            Triagem
+                          </span>
+                          <span className="text-base font-bold text-forest">
+                            {partTriagemCount}
+                          </span>
+                        </div>
+                        <div className="flex flex-col border-l border-soft pl-1">
+                          <span className="text-[9px] uppercase font-bold text-forest/50 tracking-wider">
+                            Altas/Inat.
+                          </span>
+                          <span className="text-base font-bold text-forest">
+                            {partOutrosCount}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 3. Fluxo Corporativo (B2B) */}
+                    <div className="bg-white p-6 rounded-3xl border border-soft shadow-sm flex flex-col justify-between gap-4">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">
+                            Fluxo Clínico 2
+                          </span>
+                          <h3 className="font-serif text-xl font-semibold text-forest mt-1">
+                            Pacientes Corporativos
+                          </h3>
+                        </div>
+                        <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-700 flex items-center justify-center shrink-0">
+                          <Building2 className="w-5 h-5" />
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-4xl font-extrabold text-blue-900">
+                          {fichasCorporativas.length}
+                        </div>
+                        <p className="text-[11px] text-blue-700 font-semibold mt-0.5">
+                          {horasCorporativas}h clínicas ativas/mês
+                        </p>
+                      </div>
+                      <div className="grid grid-cols-3 gap-1 border-t border-soft pt-3 mt-1 text-center">
+                        <div className="flex flex-col">
+                          <span className="text-[9px] uppercase font-bold text-amber-600 tracking-wider">
+                            Solicitados
+                          </span>
+                          <span className="text-base font-bold text-forest">
+                            {corpSolicitados.length}
+                          </span>
+                        </div>
+                        <div className="flex flex-col border-l border-soft pl-1">
+                          <span className="text-[9px] uppercase font-bold text-blue-700 tracking-wider">
+                            Atendimento
+                          </span>
+                          <span className="text-base font-bold text-blue-900">
+                            {corpAtivos.length}
+                          </span>
+                        </div>
+                        <div className="flex flex-col border-l border-soft pl-1">
+                          <span className="text-[9px] uppercase font-bold text-forest/50 tracking-wider">
+                            Alta/Interr.
+                          </span>
+                          <span className="text-base font-bold text-forest">
+                            {corpDesfechosCount}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 4. Cota Global & Horas Totais */}
+                    <div className="bg-white p-6 rounded-3xl border border-soft shadow-sm flex flex-col justify-between gap-4">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-forest/50">
+                            Capacidade Clínica
+                          </span>
+                          <h3 className="font-serif text-xl font-semibold text-forest mt-1">
+                            Horas Clínicas/Mês
+                          </h3>
+                        </div>
+                        <div className="w-10 h-10 rounded-full bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0">
+                          <Clock className="w-5 h-5" />
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-4xl font-extrabold text-emerald-700">
+                          {totalHorasClinicasGeral}
+                          <span className="text-xl font-bold text-forest/60">h</span>
+                        </div>
+                        <p className="text-[11px] text-forest/60 mt-0.5">
+                          Cota de horas ativas na esteira
+                        </p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 border-t border-soft pt-3 mt-1 text-center">
+                        <div className="flex flex-col">
+                          <span className="text-[9px] uppercase font-bold text-emerald-700 tracking-wider">
+                            Particulares
+                          </span>
+                          <span className="text-base font-bold text-forest">
+                            {horasParticulares}h
+                          </span>
+                        </div>
+                        <div className="flex flex-col border-l border-soft pl-2">
+                          <span className="text-[9px] uppercase font-bold text-blue-700 tracking-wider">
+                            Corporativos
+                          </span>
+                          <span className="text-base font-bold text-forest">
+                            {horasCorporativas}h
+                          </span>
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                </div>
-                <div className="text-4xl font-bold text-forest">
-                  {acolhimentos.length}
-                </div>
-                {(() => {
-                  const isPacienteAtivo = (a: any) => {
-                    if (a.ativo === false) return false;
-                    if (a.status === "Alta") return false;
-                    const flow = getPatientFlowDetails(a);
-                    return (
-                      (a.status === "Em Atendimento" && a.atribuicaoStatus === "Aceito") ||
-                      a.atribuicaoStatus === "Aceito" ||
-                      (flow.activeStep === 6 && a.status === "Em Atendimento")
-                    );
-                  };
 
-                  const isPacienteTriagem = (a: any) => {
-                    if (a.ativo === false) return false;
-                    if (a.status === "Alta") return false;
-                    if (isPacienteAtivo(a)) return false;
-                    const flow = getPatientFlowDetails(a);
-                    return flow.activeStep < 6 && a.status !== "Em Atendimento";
-                  };
-
-                  const ativosCount = acolhimentos.filter(isPacienteAtivo).length;
-                  const triagemCount = acolhimentos.filter(isPacienteTriagem).length;
-                  const outrosInativosCount = Math.max(
-                    0,
-                    acolhimentos.length - ativosCount - triagemCount,
-                  );
-
-                  return (
-                    <div className="grid grid-cols-3 gap-2 border-t border-soft pt-4 mt-2">
-                      <div className="flex flex-col">
-                        <span className="text-[9px] uppercase font-bold text-emerald-600 tracking-wider">
-                          Ativos
+                  {/* Card Específico: Indicador de Compromisso & Iniciativa Social (Extraordinárias) */}
+                  <div className="bg-gradient-to-r from-[#FAF8F5] via-amber-50/40 to-blue-50/40 p-6 rounded-3xl border border-amber-200/70 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+                    <div className="space-y-1.5 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-100 text-amber-900 border border-amber-200 flex items-center gap-1">
+                          <HeartHandshake className="w-3.5 h-3.5 text-amber-700" />
+                          Iniciativa & Compromisso Social
                         </span>
-                        <span className="text-lg font-semibold text-forest">
-                          {ativosCount}
+                        <span className="text-xs font-semibold text-forest/70">
+                          Horas Extraordinárias de Ajuda Humanitária
                         </span>
                       </div>
-                      <div className="flex flex-col border-l border-soft pl-2">
-                        <span className="text-[9px] uppercase font-bold text-amber-600 tracking-wider">
-                          Triagem
+                      <p className="text-xs text-forest/75 leading-relaxed max-w-3xl">
+                        Indicador dedicado à doação de horas e democratização da saúde mental pela rede.
+                        <strong> As horas sociais a R$ 30 e atendimentos gratuitos são geridos aqui de forma separada</strong>, valorizando o compromisso dos profissionais sem reduzir ou penalizar as médias gerais de monetização comercial.
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-3 shrink-0 flex-wrap sm:flex-nowrap">
+                      {/* Faixa Extraordinária R$ 30 */}
+                      <div className="bg-white px-4 py-3 rounded-2xl border border-amber-200 shadow-2xs flex flex-col items-center min-w-[120px]">
+                        <span className="text-[10px] font-bold text-amber-800 uppercase tracking-wider">
+                          Sociais (R$ 30)
                         </span>
-                        <span className="text-lg font-semibold text-forest">
-                          {triagemCount}
+                        <span className="text-2xl font-extrabold text-forest mt-0.5">
+                          {horas30Global}h
+                        </span>
+                        <span className="text-[10px] font-medium text-forest/60">
+                          {pacs30Global.length} paciente(s)
                         </span>
                       </div>
-                      <div className="flex flex-col border-l border-soft pl-2">
-                        <span className="text-[9px] uppercase font-bold text-forest/50 tracking-wider">
-                          Outros/Inativos
+
+                      {/* Faixa Gratuita / Pro Bono */}
+                      <div className="bg-white px-4 py-3 rounded-2xl border border-blue-200 shadow-2xs flex flex-col items-center min-w-[120px]">
+                        <span className="text-[10px] font-bold text-blue-800 uppercase tracking-wider">
+                          Pro Bono (Gratuito)
                         </span>
-                        <span className="text-lg font-semibold text-forest">
-                          {outrosInativosCount}
+                        <span className="text-2xl font-extrabold text-forest mt-0.5">
+                          {horasGratuitasGlobal}h
+                        </span>
+                        <span className="text-[10px] font-medium text-forest/60">
+                          {pacsGratuitosGlobal.length} acolhido(s)
+                        </span>
+                      </div>
+
+                      {/* Total Social */}
+                      <div className="bg-amber-100/60 px-4 py-3 rounded-2xl border border-amber-300/80 shadow-2xs flex flex-col items-center min-w-[130px]">
+                        <span className="text-[10px] font-extrabold text-amber-950 uppercase tracking-wider">
+                          Total Extraordinário
+                        </span>
+                        <span className="text-2xl font-extrabold text-amber-900 mt-0.5">
+                          {totalHorasSociaisExtraordinarias}h
+                        </span>
+                        <span className="text-[10px] font-bold text-amber-800">
+                          Impacto social ativo
                         </span>
                       </div>
                     </div>
-                  );
-                })()}
-              </div>
+                  </div>
 
-              {/* Profissionais Stats */}
-              <div className="bg-white p-6 rounded-3xl border border-soft shadow-sm flex flex-col gap-4">
-                <div className="flex justify-between items-center">
-                  <h3 className="font-serif text-xl font-semibold text-forest">
-                    Profissionais
-                  </h3>
-                  <div className="w-10 h-10 rounded-full bg-warm text-sun-dark flex items-center justify-center">
-                    <Briefcase className="w-5 h-5" />
-                  </div>
-                </div>
-                <div className="text-4xl font-bold text-forest">
-                  {profissionaisAtivos.length + profissionaisLeads.length}
-                </div>
-                <div className="flex gap-4 border-t border-soft pt-4 mt-2">
-                  <div className="flex flex-col">
-                    <span className="text-[10px] uppercase font-bold text-emerald-600 tracking-wider">
-                      Ativos
-                    </span>
-                    <span className="text-lg font-semibold text-forest">
-                      {profissionaisAtivos.filter((p) => p.ativo !== false)
-                        .length +
-                        profissionaisLeads.filter(
-                          (p) =>
-                            !p.status ||
-                            p.status === "Aprovado" ||
-                            p.status === "Stand-by",
-                        ).length}
-                    </span>
-                  </div>
-                  <div className="w-px bg-soft h-full"></div>
-                  <div className="flex flex-col">
-                    <span className="text-[10px] uppercase font-bold text-forest/50 tracking-wider">
-                      Inativos/Rejeitados
-                    </span>
-                    <span className="text-lg font-semibold text-forest">
-                      {profissionaisAtivos.filter((p) => p.ativo === false)
-                        .length +
-                        profissionaisLeads.filter(
-                          (p) => p.status === "Rejeitado",
-                        ).length}
-                    </span>
-                  </div>
-                </div>
-              </div>
+                  {/* Grid 2 Cards: Profissionais & Empresas */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Profissionais Stats */}
+                    <div className="bg-white p-6 rounded-3xl border border-soft shadow-sm flex flex-col justify-between gap-4">
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-forest/50">
+                            Corpo Clínico
+                          </span>
+                          <h3 className="font-serif text-xl font-semibold text-forest">
+                            Profissionais Cadastrados
+                          </h3>
+                        </div>
+                        <div className="w-10 h-10 rounded-full bg-warm text-sun-dark flex items-center justify-center shrink-0">
+                          <Briefcase className="w-5 h-5" />
+                        </div>
+                      </div>
+                      <div className="text-4xl font-extrabold text-forest">
+                        {profissionaisAtivos.length + profissionaisLeads.length}
+                      </div>
+                      <div className="flex gap-4 border-t border-soft pt-4 mt-2">
+                        <div className="flex flex-col">
+                          <span className="text-[10px] uppercase font-bold text-emerald-600 tracking-wider">
+                            Ativos na Grade
+                          </span>
+                          <span className="text-lg font-bold text-forest">
+                            {profissionaisAtivos.filter((p) => p.ativo !== false)
+                              .length +
+                              profissionaisLeads.filter(
+                                (p) =>
+                                  !p.status ||
+                                  p.status === "Aprovado" ||
+                                  p.status === "Stand-by",
+                              ).length}
+                          </span>
+                        </div>
+                        <div className="w-px bg-soft h-full"></div>
+                        <div className="flex flex-col">
+                          <span className="text-[10px] uppercase font-bold text-forest/50 tracking-wider">
+                            Inativos / Rejeitados
+                          </span>
+                          <span className="text-lg font-semibold text-forest">
+                            {profissionaisAtivos.filter((p) => p.ativo === false)
+                              .length +
+                              profissionaisLeads.filter(
+                                (p) => p.status === "Rejeitado",
+                              ).length}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
 
-              {/* Empresas Stats */}
-              <div className="bg-white p-6 rounded-3xl border border-soft shadow-sm flex flex-col gap-4">
-                <div className="flex justify-between items-center">
-                  <h3 className="font-serif text-xl font-semibold text-forest">
-                    Empresas (NR1)
-                  </h3>
-                  <div className="w-10 h-10 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center">
-                    <Building2 className="w-5 h-5" />
+                    {/* Empresas Stats */}
+                    <div className="bg-white p-6 rounded-3xl border border-soft shadow-sm flex flex-col justify-between gap-4">
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-forest/50">
+                            Parcerias B2B
+                          </span>
+                          <h3 className="font-serif text-xl font-semibold text-forest">
+                            Empresas Parceiras (NR1)
+                          </h3>
+                        </div>
+                        <div className="w-10 h-10 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+                          <Building2 className="w-5 h-5" />
+                        </div>
+                      </div>
+                      <div className="text-4xl font-extrabold text-forest">
+                        {empresasLeads.length}
+                      </div>
+                      <div className="flex gap-4 border-t border-soft pt-4 mt-2">
+                        <div className="flex flex-col">
+                          <span className="text-[10px] uppercase font-bold text-emerald-600 tracking-wider">
+                            Ativas com Convênio
+                          </span>
+                          <span className="text-lg font-bold text-forest">
+                            {empresasLeads.filter((e) => e.ativo !== false).length}
+                          </span>
+                        </div>
+                        <div className="w-px bg-soft h-full"></div>
+                        <div className="flex flex-col">
+                          <span className="text-[10px] uppercase font-bold text-forest/50 tracking-wider">
+                            Inativas
+                          </span>
+                          <span className="text-lg font-semibold text-forest">
+                            {empresasLeads.filter((e) => e.ativo === false).length}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
-                <div className="text-4xl font-bold text-forest">
-                  {empresasLeads.length}
-                </div>
-                <div className="flex gap-4 border-t border-soft pt-4 mt-2">
-                  <div className="flex flex-col">
-                    <span className="text-[10px] uppercase font-bold text-emerald-600 tracking-wider">
-                      Ativas
-                    </span>
-                    <span className="text-lg font-semibold text-forest">
-                      {empresasLeads.filter((e) => e.ativo !== false).length}
-                    </span>
-                  </div>
-                  <div className="w-px bg-soft h-full"></div>
-                  <div className="flex flex-col">
-                    <span className="text-[10px] uppercase font-bold text-forest/50 tracking-wider">
-                      Inativas
-                    </span>
-                    <span className="text-lg font-semibold text-forest">
-                      {empresasLeads.filter((e) => e.ativo === false).length}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Impacto / Horas Stats */}
-              <div className="bg-white p-6 rounded-3xl border border-soft shadow-sm flex flex-col gap-4">
-                <div className="flex justify-between items-center">
-                  <h3 className="font-serif text-xl font-semibold text-forest">
-                    Impacto (Horas/Mês)
-                  </h3>
-                  <div className="w-10 h-10 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center">
-                    <Clock className="w-5 h-5" />
-                  </div>
-                </div>
-                <div className="text-4xl font-bold text-emerald-700">
-                  {calculateHorasMensais(
-                    acolhimentos.filter(
-                      (a) =>
-                        a.status === "Em Atendimento" &&
-                        a.atribuicaoStatus === "Aceito",
-                    ),
-                  )}
-                  h
-                </div>
-                <div className="flex gap-4 border-t border-soft pt-4 mt-2">
-                  <div className="flex flex-col">
-                    <span className="text-[10px] uppercase font-bold text-forest/50 tracking-wider">
-                      Em Atendimento Regular
-                    </span>
-                    <span className="text-lg font-semibold text-forest">
-                      {
-                        acolhimentos.filter(
-                          (a) =>
-                            a.status === "Em Atendimento" &&
-                            a.atribuicaoStatus === "Aceito",
-                        ).length
-                      }
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
+              );
+            })()}
 
             <div className="bg-white p-8 rounded-[2rem] border border-soft shadow-sm mt-8">
               <h2 className="font-serif text-2xl text-forest mb-6 flex items-center gap-3">
@@ -8006,197 +8397,466 @@ export function DashboardView({
         </div>
       ) : currentRole === "profissional" && activeTab === "estatisticas" ? (
         <div className="flex-1 overflow-auto p-6 md:p-8 flex flex-col gap-8 slide-up">
-          <div className="max-w-5xl w-full mx-auto space-y-8">
-            <h2 className="font-serif text-3xl text-forest bg-white px-8 py-6 rounded-[2rem] shadow-sm border border-soft flex items-center gap-4">
-              <BarChart2 className="w-8 h-8 text-forest/70" />
-              Meu Desempenho
-            </h2>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {/* Pacientes Stats */}
-              <div className="bg-white p-6 rounded-3xl border border-soft shadow-sm flex flex-col gap-4">
-                <div className="flex justify-between items-center">
-                  <h3 className="font-serif text-xl font-semibold text-forest">
-                    Meus Pacientes
-                  </h3>
-                  <div className="w-10 h-10 rounded-full bg-sun text-forest flex items-center justify-center">
-                    <User className="w-5 h-5" />
-                  </div>
+          <div className="max-w-6xl w-full mx-auto space-y-8">
+            {/* Cabeçalho */}
+            <div className="bg-white px-8 py-6 rounded-[2rem] shadow-sm border border-soft flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-forest/5 flex items-center justify-center text-forest shrink-0">
+                  <BarChart2 className="w-7 h-7 text-forest" />
                 </div>
-                <div className="text-4xl font-bold text-forest">
-                  {meusPacientes.length}
-                </div>
-                <div className="flex gap-4 border-t border-soft pt-4 mt-2">
-                  <div className="flex flex-col">
-                    <span className="text-[10px] uppercase font-bold text-emerald-600 tracking-wider">
-                      Ativos
-                    </span>
-                    <span className="text-lg font-semibold text-forest">
-                      {
-                        meusPacientes.filter(
-                          (a) =>
-                            a.atribuicaoStatus === "Aceito" &&
-                            a.status !== "Alta" &&
-                            a.status !== "Rejeitado" &&
-                            a.status !== "Encerrado" &&
-                            a.status !== "Desistência" &&
-                            a.status !== "Cancelado",
-                        ).length
-                      }
-                    </span>
-                  </div>
-                  <div className="w-px bg-soft h-full"></div>
-                  <div className="flex flex-col">
-                    <span className="text-[10px] uppercase font-bold text-forest/50 tracking-wider">
-                      Alta/Rejeitados
-                    </span>
-                    <span className="text-lg font-semibold text-forest">
-                      {
-                        meusPacientes.filter(
-                          (a) =>
-                            a.status === "Alta" ||
-                            a.status === "Encerrado" ||
-                            a.atribuicaoStatus === "Rejeitado",
-                        ).length
-                      }
-                    </span>
-                  </div>
+                <div>
+                  <h2 className="font-serif text-2xl sm:text-3xl font-bold text-forest">
+                    Meu Desempenho & Controle Clínico
+                  </h2>
+                  <p className="text-xs text-forest/60 mt-0.5">
+                    Acompanhamento integrado de atendimentos particulares, fluxo corporativo e cotas
+                  </p>
                 </div>
               </div>
+              <button
+                type="button"
+                onClick={handleOpenGerenciarCotaModal}
+                className="py-2.5 px-4 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer self-start sm:self-auto shrink-0"
+              >
+                <Sliders className="w-4 h-4 text-emerald-200" />
+                Gerenciar Cota & Faixas
+              </button>
+            </div>
 
-              {/* Financeiro Stats */}
-              <div className="bg-white p-6 rounded-3xl border border-soft shadow-sm flex flex-col gap-4">
-                <div className="flex justify-between items-center">
-                  <h3 className="font-serif text-xl font-semibold text-forest">
-                    Valor de Sessões
-                  </h3>
-                  <div className="w-10 h-10 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center">
-                    <DollarSign className="w-5 h-5" />
-                  </div>
-                </div>
-                <div className="text-4xl font-bold text-emerald-700">
-                  R${" "}
-                  {meusPacientes
-                    .filter(
-                      (p) =>
-                        p.atribuicaoStatus === "Aceito" &&
-                        p.status !== "Alta" &&
-                        p.status !== "Rejeitado" &&
-                        p.status !== "Encerrado" &&
-                        p.status !== "Desistência" &&
-                        p.status !== "Cancelado",
-                    )
-                    .reduce(
-                      (sum, p) =>
-                        sum +
-                        (parseFloat(
-                          (p.valorSessao || "0")
-                            .replace(/\./g, "")
-                            .replace(",", "."),
-                        ) || 0),
-                      0,
-                    )
-                    .toFixed(2)
-                    .replace(".", ",")}
-                </div>
-                <div className="flex gap-4 border-t border-soft pt-4 mt-2">
-                  <div className="flex flex-col">
-                    <span className="text-[10px] uppercase font-bold text-forest/50 tracking-wider">
-                      Média por Paciente Ativo
-                    </span>
-                    <span className="text-lg font-semibold text-forest">
-                      R${" "}
-                      {(() => {
-                        const actives = meusPacientes.filter(
-                          (p) =>
-                            p.atribuicaoStatus === "Aceito" &&
-                            p.status !== "Alta" &&
-                            p.status !== "Rejeitado" &&
-                            p.status !== "Encerrado" &&
-                            p.status !== "Desistência" &&
-                            p.status !== "Cancelado",
-                        );
-                        if (actives.length === 0) return "0,00";
-                        const total = actives.reduce(
-                          (sum, p) =>
-                            sum +
-                            (parseFloat(
-                              (p.valorSessao || "0")
-                                .replace(/\./g, "")
-                                .replace(",", "."),
-                            ) || 0),
-                          0,
-                        );
-                        return (total / actives.length)
-                          .toFixed(2)
-                          .replace(".", ",");
-                      })()}
-                    </span>
-                  </div>
-                </div>
-              </div>
+            {(() => {
+              // --- Fluxo Particular do Profissional ---
+              const pacsPartAtivos = meusPacientes.filter(
+                (a) =>
+                  a.atribuicaoStatus === "Aceito" &&
+                  a.status !== "Alta" &&
+                  a.status !== "Rejeitado" &&
+                  a.status !== "Encerrado" &&
+                  a.status !== "Desistência" &&
+                  a.status !== "Cancelado",
+              );
+              const pacsPartAltas = meusPacientes.filter(
+                (a) =>
+                  a.status === "Alta" ||
+                  a.status === "Encerrado" ||
+                  a.atribuicaoStatus === "Rejeitado" ||
+                  a.status === "Desistência" ||
+                  a.status === "Cancelado",
+              );
+              const horasPartAtivas = calculateHorasMensais(pacsPartAtivos);
 
-              {/* Card de Cota de Horas e Gestão de Capacidade (Profissional) */}
-              {(() => {
-                const pacsAtivos = meusPacientes.filter(
-                  (p) =>
-                    p.atribuicaoStatus === "Aceito" &&
-                    p.status !== "Alta" &&
-                    p.status !== "Rejeitado" &&
-                    p.status !== "Encerrado" &&
-                    p.status !== "Desistência" &&
-                    p.status !== "Cancelado",
-                );
-                const horasAtivas = calculateHorasMensais(pacsAtivos);
-                
-                // Extração e cálculo com as novas regras de cota (mínimo 8h regulares + adicionais)
-                const rawTotal = parseMaxHorasDisponiveis(profile?.horasDisponiveis);
-                const h30 = profile?.aceitaAtendimento30Reais ? (parseHorasNumber(profile?.horasAtendimento30Reais) || 0) : 0;
-                const hGratuito = profile?.aceitaAtendimentoGratuito ? (parseHorasNumber(profile?.horasAtendimentoGratuito) || 0) : 0;
-                
-                let hRegular = profile?.horasRegular ? parseHorasNumber(profile.horasRegular) : 0;
-                if (hRegular < 8) {
-                  hRegular = Math.max(8, (rawTotal > 0 ? rawTotal : 8) - h30 - hGratuito);
-                  if (hRegular % 2 !== 0) hRegular += 1;
-                }
-                const maxHoras = Math.max(8, hRegular + h30 + hGratuito);
-                const horasRestantes = Math.max(0, maxHoras - horasAtivas);
-                const percentualUso = Math.min(100, Math.round((horasAtivas / maxHoras) * 100));
+              // --- Fluxo Corporativo do Profissional ---
+              const fichasCorpSolicitadas = minhasFichasCorporativas.filter(
+                (f) => f.status === "solicitacao_servico",
+              );
+              const fichasCorpAtivas = minhasFichasCorporativas.filter(
+                (f) => f.status === "paciente",
+              );
+              const fichasCorpAltas = minhasFichasCorporativas.filter(
+                (f) => f.status === "alta",
+              );
+              const fichasCorpInterrupcoes = minhasFichasCorporativas.filter(
+                (f) => f.status === "interrupcao",
+              );
+              const fichasCorpDesfechosCount =
+                fichasCorpAltas.length + fichasCorpInterrupcoes.length;
+              const horasCorpAtivas = calculateHorasCorporativas(fichasCorpAtivas);
 
+              // --- Vidas e Horas Totais (AMBOS os fluxos contam na cota!) ---
+              const totalVidasAtivas = pacsPartAtivos.length + fichasCorpAtivas.length;
+              const totalVidasGeral =
+                meusPacientes.length + minhasFichasCorporativas.length;
+              const totalHorasAtivas = horasPartAtivas + horasCorpAtivas;
+
+              // --- Iniciativa & Compromisso Social (Extraordinárias) ---
+              // 1. Pacientes R$ 30
+              const pacs30 = pacsPartAtivos.filter((a) => {
+                const v = parseValorSessaoNumber(a.valorSessao);
+                return v > 0 && v <= 30;
+              });
+              const horas30Ativas = calculateHorasMensais(pacs30);
+
+              // 2. Pacientes Gratuitos / Pro Bono
+              const pacsGratuito = pacsPartAtivos.filter((a) => {
+                const v = parseValorSessaoNumber(a.valorSessao);
                 return (
-                  <div className="bg-white p-6 rounded-3xl border border-soft shadow-sm flex flex-col justify-between gap-5">
+                  v === 0 ||
+                  a.viaAcesso === "Solidário" ||
+                  a.tipoAcolhimento === "gratuito"
+                );
+              });
+              const horasGratuitoAtivas = calculateHorasMensais(pacsGratuito);
+              const totalHorasExtraordinarias = horas30Ativas + horasGratuitoAtivas;
+
+              const h30Configurada = profile?.aceitaAtendimento30Reais
+                ? parseHorasNumber(profile?.horasAtendimento30Reais) || 0
+                : 0;
+              const hGratuitoConfigurada = profile?.aceitaAtendimentoGratuito
+                ? parseHorasNumber(profile?.horasAtendimentoGratuito) || 0
+                : 0;
+
+              // --- Faturamento e Médias Comerciais Monetizadas (EXCLUINDO Gratuitos e R$ 30) ---
+              const pacsPartRegular = pacsPartAtivos.filter((a) => {
+                const v = parseValorSessaoNumber(a.valorSessao);
+                return v > 30 && a.viaAcesso !== "Solidário";
+              });
+              const valorPartRegular = pacsPartRegular.reduce(
+                (sum, a) => sum + parseValorSessaoNumber(a.valorSessao),
+                0,
+              );
+              const valorCorp = fichasCorpAtivas.reduce(
+                (sum, f) => sum + (parseValorSessaoNumber(f.valorSessao) || 0),
+                0,
+              );
+              const valorTotalMonetizado = valorPartRegular + valorCorp;
+              const totalVidasMonetizadas =
+                pacsPartRegular.length + fichasCorpAtivas.length;
+              const mediaComercial =
+                totalVidasMonetizadas > 0
+                  ? valorTotalMonetizado / totalVidasMonetizadas
+                  : 0;
+
+              // --- Cota de Horas Mensais & Capacidade ---
+              const rawTotal = parseMaxHorasDisponiveis(profile?.horasDisponiveis);
+              let hRegular = profile?.horasRegular
+                ? parseHorasNumber(profile.horasRegular)
+                : 0;
+              if (hRegular < 8) {
+                hRegular = Math.max(
+                  8,
+                  (rawTotal > 0 ? rawTotal : 8) -
+                    h30Configurada -
+                    hGratuitoConfigurada,
+                );
+                if (hRegular % 2 !== 0) hRegular += 1;
+              }
+              const maxHoras = Math.max(
+                8,
+                hRegular + h30Configurada + hGratuitoConfigurada,
+              );
+              const horasRestantes = Math.max(0, maxHoras - totalHorasAtivas);
+              const percentualUso = Math.min(
+                100,
+                Math.round((totalHorasAtivas / maxHoras) * 100),
+              );
+
+              return (
+                <div className="space-y-6">
+                  {/* Grid 2 Cards: Vidas / Fluxos & Faturamento Comercial */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Card 1: Meus Pacientes & Indicadores por Fluxo */}
+                    <div className="bg-white p-6 sm:p-7 rounded-3xl border border-soft shadow-sm flex flex-col justify-between gap-5">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-forest/50">
+                            Atendimento Clínico
+                          </span>
+                          <h3 className="font-serif text-xl sm:text-2xl font-bold text-forest mt-0.5">
+                            Meus Pacientes
+                          </h3>
+                        </div>
+                        <div className="w-11 h-11 rounded-2xl bg-sun/40 text-forest flex items-center justify-center shrink-0">
+                          <Users className="w-5 h-5 text-forest" />
+                        </div>
+                      </div>
+
+                      <div className="flex items-baseline justify-between flex-wrap gap-2">
+                        <div>
+                          <div className="text-4xl font-extrabold text-forest">
+                            {totalVidasAtivas}
+                            <span className="text-base font-bold text-forest/60 ml-1">
+                              ativos
+                            </span>
+                          </div>
+                          <span className="text-xs text-forest/60">
+                            {totalVidasGeral} paciente(s) vinculado(s) no total
+                          </span>
+                        </div>
+                        <span className="text-xs font-bold bg-warm px-3 py-1.5 rounded-xl border border-soft text-forest/80">
+                          {totalHorasAtivas}h clínicas ativas/mês
+                        </span>
+                      </div>
+
+                      {/* Desdobramento por Fluxo */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 border-t border-soft pt-4">
+                        {/* Fluxo Particular */}
+                        <div className="bg-[#FAF8F5] p-3.5 rounded-2xl border border-emerald-200/80 flex flex-col gap-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-800 flex items-center gap-1">
+                              <User className="w-3 h-3 text-emerald-700" />
+                              Fluxo Particular
+                            </span>
+                            <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100/70 px-2 py-0.5 rounded-full">
+                              {horasPartAtivas}h/mês
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="text-forest/70">Ativos:</span>
+                            <strong className="text-emerald-900 font-extrabold text-sm">
+                              {pacsPartAtivos.length}
+                            </strong>
+                          </div>
+                          <div className="flex items-center justify-between text-xs border-t border-soft/60 pt-1.5">
+                            <span className="text-forest/60 text-[11px]">Altas / Encerrados:</span>
+                            <span className="font-semibold text-forest/70">
+                              {pacsPartAltas.length}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Fluxo Corporativo */}
+                        <div className="bg-[#FAF8F5] p-3.5 rounded-2xl border border-blue-200/80 flex flex-col gap-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-blue-800 flex items-center gap-1">
+                              <Building2 className="w-3 h-3 text-blue-700" />
+                              Fluxo Corporativo
+                            </span>
+                            <span className="text-[10px] font-bold text-blue-800 bg-blue-100/70 px-2 py-0.5 rounded-full">
+                              {horasCorpAtivas}h/mês
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="text-forest/70">Em Atendimento:</span>
+                            <strong className="text-blue-950 font-extrabold text-sm">
+                              {fichasCorpAtivas.length}
+                            </strong>
+                          </div>
+                          <div className="flex items-center justify-between text-xs border-t border-soft/60 pt-1.5">
+                            <span className="text-forest/60 text-[11px]">
+                              Solicitados: <strong>{fichasCorpSolicitadas.length}</strong>
+                            </span>
+                            <span className="text-forest/60 text-[11px]">
+                              Desfechos: <strong>{fichasCorpDesfechosCount}</strong>
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Card 2: Faturamento & Média Comercial Monetizada */}
+                    <div className="bg-white p-6 sm:p-7 rounded-3xl border border-soft shadow-sm flex flex-col justify-between gap-5">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                            Honorários & Rentabilidade
+                          </span>
+                          <h3 className="font-serif text-xl sm:text-2xl font-bold text-forest mt-1.5">
+                            Faturamento Comercial
+                          </h3>
+                        </div>
+                        <div className="w-11 h-11 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0">
+                          <DollarSign className="w-5 h-5" />
+                        </div>
+                      </div>
+
+                      <div>
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-sm font-bold text-emerald-800">R$</span>
+                          <span className="text-4xl font-extrabold text-emerald-700 font-mono">
+                            {valorTotalMonetizado.toFixed(2).replace(".", ",")}
+                          </span>
+                          <span className="text-xs text-forest/60">/sessões ativas</span>
+                        </div>
+                        <p className="text-xs text-forest/70 mt-1">
+                          Soma das sessões comerciais monetizadas (Particulares regulares + Corporativos)
+                        </p>
+                      </div>
+
+                      {/* Média Comercial Monetizada (Foco na remuneração comercial sem distorção) */}
+                      <div className="p-3.5 bg-emerald-50/70 rounded-2xl border border-emerald-200/80 flex flex-col gap-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-bold uppercase text-emerald-900 tracking-wider">
+                            Média Comercial por Sessão
+                          </span>
+                          <span className="text-xs font-bold text-emerald-800 font-mono">
+                            {totalVidasMonetizadas} atendimento(s) comercial(is)
+                          </span>
+                        </div>
+                        <div className="flex items-baseline gap-1.5">
+                          <span className="text-2xl font-extrabold text-emerald-900 font-mono">
+                            R$ {mediaComercial.toFixed(2).replace(".", ",")}
+                          </span>
+                          <span className="text-xs font-semibold text-emerald-800">
+                            /sessão monetizada
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-emerald-900/80 leading-tight">
+                          ✨ <strong>Média preservada:</strong> Calculada exclusivamente sobre os atendimentos comerciais regulares. As horas sociais de R$ 30 e gratuidades foram retiradas desta média para não depreciar o valor da sua sessão.
+                        </p>
+                      </div>
+
+                      {/* Detalhamento */}
+                      <div className="grid grid-cols-2 gap-2 text-xs border-t border-soft pt-3">
+                        <div className="flex flex-col">
+                          <span className="text-[10px] text-forest/60">Particular Regular:</span>
+                          <span className="font-bold text-forest">
+                            R$ {valorPartRegular.toFixed(2).replace(".", ",")} ({pacsPartRegular.length} pac.)
+                          </span>
+                        </div>
+                        <div className="flex flex-col border-l border-soft pl-3">
+                          <span className="text-[10px] text-forest/60">Corporativo B2B:</span>
+                          <span className="font-bold text-blue-900">
+                            R$ {valorCorp.toFixed(2).replace(".", ",")} ({fichasCorpAtivas.length} colab.)
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Card 3: Indicador Específico: Iniciativa & Compromisso Social (Extraordinárias) */}
+                  <div className="bg-gradient-to-r from-[#FAF8F5] via-amber-50/50 to-blue-50/50 p-6 sm:p-7 rounded-3xl border border-amber-200 shadow-sm flex flex-col gap-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-2xl bg-amber-100 text-amber-900 flex items-center justify-center shrink-0 border border-amber-200">
+                          <HeartHandshake className="w-5 h-5 text-amber-800" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h3 className="font-serif text-xl font-bold text-forest">
+                              Iniciativa & Compromisso Social
+                            </h3>
+                            <span className="text-[10px] font-bold uppercase tracking-wider bg-amber-100 text-amber-900 px-2.5 py-0.5 rounded-full border border-amber-200">
+                              Horas Extraordinárias
+                            </span>
+                          </div>
+                          <p className="text-xs text-forest/70 mt-0.5">
+                            Indicador exclusivo para horas voluntárias e solidárias disponibilizadas na sua grade
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="bg-white px-3.5 py-2 rounded-xl border border-amber-200/80 shadow-2xs self-start sm:self-auto">
+                        <span className="text-[10px] font-bold text-amber-800 uppercase block">
+                          Total Extraordinário Ativo
+                        </span>
+                        <span className="text-xl font-extrabold text-forest">
+                          {totalHorasExtraordinarias}h<span className="text-xs font-semibold text-forest/60">/mês</span>
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Blocos dos 2 tipos de ajuda extraordinária */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                      {/* Faixa Extraordinária R$ 30 */}
+                      <div className={`p-4 rounded-2xl border flex flex-col justify-between gap-3 ${h30Configurada > 0 ? "bg-white border-amber-200 shadow-2xs" : "bg-white/60 border-soft opacity-70"}`}>
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <div className="flex items-center gap-1.5">
+                              <Coins className="w-4 h-4 text-amber-700" />
+                              <span className="text-xs font-bold text-amber-900 uppercase tracking-wider">
+                                Atendimento Social (R$ 30)
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-forest/60 mt-0.5">
+                              Preço social fixo para casos especiais de vulnerabilidade
+                            </p>
+                          </div>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${h30Configurada > 0 ? "bg-amber-100 text-amber-900" : "bg-warm text-forest/50"}`}>
+                            {h30Configurada > 0 ? "Habilitado" : "Desabilitado"}
+                          </span>
+                        </div>
+
+                        <div className="flex items-baseline justify-between border-t border-soft/60 pt-3">
+                          <div>
+                            <span className="text-[10px] text-forest/60 uppercase font-semibold">Em Atendimento:</span>
+                            <div className="text-2xl font-extrabold text-forest">
+                              {horas30Ativas}h<span className="text-xs font-semibold text-forest/60">/mês ({pacs30.length} pac.)</span>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-[10px] text-forest/60 uppercase font-semibold">Cota Ofertada:</span>
+                            <div className="text-sm font-extrabold text-amber-900">
+                              {h30Configurada}h/mês
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Faixa Pro Bono / Gratuita */}
+                      <div className={`p-4 rounded-2xl border flex flex-col justify-between gap-3 ${hGratuitoConfigurada > 0 ? "bg-white border-blue-200 shadow-2xs" : "bg-white/60 border-soft opacity-70"}`}>
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <div className="flex items-center gap-1.5">
+                              <HeartHandshake className="w-4 h-4 text-blue-700" />
+                              <span className="text-xs font-bold text-blue-900 uppercase tracking-wider">
+                                Atendimento Pro Bono (Gratuito)
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-forest/60 mt-0.5">
+                              Acolhimento 100% gratuito e voluntário solidário
+                            </p>
+                          </div>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${hGratuitoConfigurada > 0 ? "bg-blue-100 text-blue-900" : "bg-warm text-forest/50"}`}>
+                            {hGratuitoConfigurada > 0 ? "Habilitado" : "Desabilitado"}
+                          </span>
+                        </div>
+
+                        <div className="flex items-baseline justify-between border-t border-soft/60 pt-3">
+                          <div>
+                            <span className="text-[10px] text-forest/60 uppercase font-semibold">Em Atendimento:</span>
+                            <div className="text-2xl font-extrabold text-forest">
+                              {horasGratuitoAtivas}h<span className="text-xs font-semibold text-forest/60">/mês ({pacsGratuito.length} acolhido(s))</span>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-[10px] text-forest/60 uppercase font-semibold">Cota Ofertada:</span>
+                            <div className="text-sm font-extrabold text-blue-900">
+                              {hGratuitoConfigurada}h/mês
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="bg-amber-100/50 p-3 rounded-xl border border-amber-200/60 text-[11px] text-amber-950 flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-amber-700 shrink-0" />
+                      <span>
+                        <strong>Reconhecimento Ético:</strong> Esta área valoriza a sua generosidade e compromisso com o cuidado social. Nenhuma hora gratuita ou social interfere negativamente na média de remuneração da sua clínica particular.
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Card 4: Cota de Horas Mensais & Gestão de Capacidade da Grade */}
+                  <div className="bg-white p-6 sm:p-7 rounded-3xl border border-soft shadow-sm flex flex-col justify-between gap-5">
                     {/* Cabeçalho */}
                     <div className="flex justify-between items-start">
                       <div>
                         <div className="flex items-center gap-2">
-                          <h3 className="font-serif text-xl font-semibold text-forest">
-                            Cota de Horas Mensais
+                          <h3 className="font-serif text-xl sm:text-2xl font-bold text-forest">
+                            Cota de Horas Mensais & Grade Clínica
                           </h3>
                           <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full border border-emerald-200">
                             Mín. 8h Ativo
                           </span>
                         </div>
-                        <p className="text-xs text-forest/60 mt-0.5">Atendimento Clínico & Subdivisão da Grade</p>
+                        <p className="text-xs text-forest/60 mt-0.5">
+                          Capacidade total configurada — contabilizando atendimentos particulares e corporativos
+                        </p>
                       </div>
-                      <div className="w-10 h-10 rounded-2xl bg-sun/40 text-forest flex items-center justify-center shrink-0 shadow-2xs">
+                      <div className="w-11 h-11 rounded-2xl bg-sun/40 text-forest flex items-center justify-center shrink-0 shadow-2xs">
                         <Clock className="w-5 h-5 text-forest" />
                       </div>
                     </div>
 
                     {/* Visão Numérica Principal & Barra */}
-                    <div className="space-y-2.5">
-                      <div className="flex items-baseline justify-between">
-                        <div className="text-3xl font-extrabold text-forest">
-                          {horasAtivas}<span className="text-base font-bold text-forest/70">h ativas/mês</span>
+                    <div className="space-y-3">
+                      <div className="flex items-baseline justify-between flex-wrap gap-2">
+                        <div className="text-3xl sm:text-4xl font-extrabold text-forest">
+                          {totalHorasAtivas}
+                          <span className="text-base font-bold text-forest/70 ml-1">
+                            h ocupadas/mês
+                          </span>
                         </div>
                         <span className="text-xs font-bold text-forest/80 bg-warm px-3 py-1.5 rounded-xl border border-soft">
-                          Cota Total: <strong className="text-emerald-800 text-sm font-extrabold">{maxHoras}h/mês</strong>
+                          Cota Total da Grade:{" "}
+                          <strong className="text-emerald-800 text-sm font-extrabold">
+                            {maxHoras}h/mês
+                          </strong>
                         </span>
                       </div>
 
-                      {/* Barra de Progresso */}
-                      <div className="space-y-1">
-                        <div className="w-full bg-soft/50 h-3 rounded-full overflow-hidden p-0.5 border border-soft/40">
+                      {/* Barra de Progresso com Multi-Cores */}
+                      <div className="space-y-1.5">
+                        <div className="w-full bg-soft/50 h-3.5 rounded-full overflow-hidden p-0.5 border border-soft/40 flex">
                           <div
                             className={`h-full transition-all rounded-full ${
                               percentualUso >= 100
@@ -8209,70 +8869,111 @@ export function DashboardView({
                           />
                         </div>
                         <div className="flex justify-between text-[11px] font-medium text-forest/70 px-0.5">
-                          <span>{percentualUso}% da cota utilizada</span>
+                          <span>
+                            <strong>{percentualUso}%</strong> da capacidade preenchida ({horasPartAtivas}h particulares + {horasCorpAtivas}h corporativas)
+                          </span>
                           <span className="font-bold text-forest">
-                            {horasRestantes === 0 ? "Cota esgotada" : `${horasRestantes}h disponíveis`}
+                            {horasRestantes === 0
+                              ? "Cota esgotada (100%)"
+                              : `${horasRestantes}h livres para novos acolhimentos`}
                           </span>
                         </div>
                       </div>
                     </div>
 
                     {/* Grade de Decomposição dos 3 Pilares */}
-                    <div className="p-3.5 bg-[#FAF8F5] rounded-2xl border border-soft/80 flex flex-col gap-2.5">
+                    <div className="p-4 bg-[#FAF8F5] rounded-2xl border border-soft/80 flex flex-col gap-2.5">
                       <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-forest/70">
                         Composição do seu Banco de Horas
                       </span>
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
                         {/* Pilar 1: Regular */}
-                        <div className="p-2.5 bg-white rounded-xl border border-emerald-200/80 flex flex-col gap-1 shadow-2xs">
+                        <div className="p-3 bg-white rounded-xl border border-emerald-200/80 flex flex-col gap-1 shadow-2xs">
                           <div className="flex items-center justify-between">
-                            <span className="text-[10px] font-bold text-emerald-800 uppercase">Regular (≥ R$ 50)</span>
+                            <span className="text-[10px] font-bold text-emerald-800 uppercase">
+                              Regular (≥ R$ 50)
+                            </span>
                             <ShieldCheck className="w-3.5 h-3.5 text-emerald-700" />
                           </div>
-                          <span className="text-base font-extrabold text-forest">{hRegular}h<span className="text-[10px] font-semibold text-forest/60">/mês</span></span>
-                          <span className="text-[10px] text-forest/60 leading-tight">Base protegida da grade</span>
+                          <span className="text-lg font-extrabold text-forest">
+                            {hRegular}h
+                            <span className="text-[10px] font-semibold text-forest/60">
+                              /mês
+                            </span>
+                          </span>
+                          <span className="text-[10px] text-forest/60 leading-tight">
+                            Base protegida da grade (mínimo 8h)
+                          </span>
                         </div>
 
                         {/* Pilar 2: R$ 30 */}
-                        <div className={`p-2.5 rounded-xl border flex flex-col gap-1 shadow-2xs ${h30 > 0 ? "bg-amber-50/70 border-amber-200" : "bg-white/80 border-soft opacity-70"}`}>
+                        <div
+                          className={`p-3 rounded-xl border flex flex-col gap-1 shadow-2xs ${
+                            h30Configurada > 0
+                              ? "bg-amber-50/70 border-amber-200"
+                              : "bg-white/80 border-soft opacity-70"
+                          }`}
+                        >
                           <div className="flex items-center justify-between">
-                            <span className="text-[10px] font-bold text-amber-800 uppercase">Extraord. (R$ 30)</span>
+                            <span className="text-[10px] font-bold text-amber-800 uppercase">
+                              Extraord. (R$ 30)
+                            </span>
                             <Coins className="w-3.5 h-3.5 text-amber-700" />
                           </div>
-                          <span className="text-base font-extrabold text-forest">
-                            {h30 > 0 ? `${h30}h` : "0h"}<span className="text-[10px] font-semibold text-forest/60">/mês</span>
+                          <span className="text-lg font-extrabold text-forest">
+                            {h30Configurada > 0 ? `${h30Configurada}h` : "0h"}
+                            <span className="text-[10px] font-semibold text-forest/60">
+                              /mês
+                            </span>
                           </span>
                           <span className="text-[10px] text-forest/60 leading-tight">
-                            {h30 > 0 ? "Casos especiais" : "Não habilitado"}
+                            {h30Configurada > 0
+                              ? `${horas30Ativas}h em atendimento`
+                              : "Não habilitado"}
                           </span>
                         </div>
 
                         {/* Pilar 3: Gratuito */}
-                        <div className={`p-2.5 rounded-xl border flex flex-col gap-1 shadow-2xs ${hGratuito > 0 ? "bg-blue-50/70 border-blue-200" : "bg-white/80 border-soft opacity-70"}`}>
+                        <div
+                          className={`p-3 rounded-xl border flex flex-col gap-1 shadow-2xs ${
+                            hGratuitoConfigurada > 0
+                              ? "bg-blue-50/70 border-blue-200"
+                              : "bg-white/80 border-soft opacity-70"
+                          }`}
+                        >
                           <div className="flex items-center justify-between">
-                            <span className="text-[10px] font-bold text-blue-800 uppercase">Gratuito (Pro Bono)</span>
+                            <span className="text-[10px] font-bold text-blue-800 uppercase">
+                              Gratuito (Pro Bono)
+                            </span>
                             <HeartHandshake className="w-3.5 h-3.5 text-blue-700" />
                           </div>
-                          <span className="text-base font-extrabold text-forest">
-                            {hGratuito > 0 ? `${hGratuito}h` : "0h"}<span className="text-[10px] font-semibold text-forest/60">/mês</span>
+                          <span className="text-lg font-extrabold text-forest">
+                            {hGratuitoConfigurada > 0
+                              ? `${hGratuitoConfigurada}h`
+                              : "0h"}
+                            <span className="text-[10px] font-semibold text-forest/60">
+                              /mês
+                            </span>
                           </span>
                           <span className="text-[10px] text-forest/60 leading-tight">
-                            {hGratuito > 0 ? "Eventual humanitário" : "Não habilitado"}
+                            {hGratuitoConfigurada > 0
+                              ? `${horasGratuitoAtivas}h em atendimento`
+                              : "Não habilitado"}
                           </span>
                         </div>
                       </div>
                     </div>
 
                     {/* Resumo do Status e Ação */}
-                    <div className="border-t border-soft pt-3 flex flex-col gap-2.5">
-                      <p className="text-[11px] text-forest/75 leading-tight">
+                    <div className="border-t border-soft pt-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <p className="text-xs text-forest/75 leading-tight">
                         {horasRestantes === 0 ? (
                           <span className="text-red-700 font-semibold">
-                            Você atingiu o limite da sua cota mensal ({maxHoras}h). Todos os horários estão preenchidos.
+                            Você atingiu o limite da sua cota mensal ({maxHoras}h). Todos os seus horários disponíveis estão ocupados.
                           </span>
                         ) : (
                           <span>
-                            Com {pacsAtivos.length} paciente(s) ativo(s) ({horasAtivas}h/mês), restam <strong>{horasRestantes}h</strong> de atendimento disponíveis para novos pacientes neste mês.
+                            Com {totalVidasAtivas} paciente(s) ativo(s) ({totalHorasAtivas}h/mês ocupadas), restam <strong>{horasRestantes}h</strong> disponíveis na sua grade para novos encaminhamentos.
                           </span>
                         )}
                       </p>
@@ -8280,16 +8981,16 @@ export function DashboardView({
                       <button
                         type="button"
                         onClick={handleOpenGerenciarCotaModal}
-                        className="w-full py-3 px-4 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer hover:shadow-md active:scale-[0.99]"
+                        className="py-2.5 px-4 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer shrink-0"
                       >
                         <Sliders className="w-4 h-4 text-emerald-200" />
-                        Gerenciar Cota & Faixas de Horas
+                        Alterar Cota & Faixas
                       </button>
                     </div>
                   </div>
-                );
-              })()}
-            </div>
+                </div>
+              );
+            })()}
           </div>
         </div>
       ) : currentRole === "profissional" && activeTab === "pacientes" ? (
@@ -8432,7 +9133,7 @@ export function DashboardView({
                               <h4 className="font-bold text-xs sm:text-sm text-forest truncate" title={p.nomeDesejado || p.nomeCivil || p.nome || "Paciente sem nome"}>
                                 {p.nomeDesejado || p.nomeCivil || p.nome || "Paciente sem nome"}
                               </h4>
-                              {p.viaAcesso && (
+                              {p.viaAcesso && p.viaAcesso !== "Particular" && (
                                 <span className="text-[10px] text-forest/50 hidden sm:inline shrink-0 font-medium">
                                   • {p.viaAcesso}
                                 </span>
@@ -10102,17 +10803,17 @@ export function DashboardView({
                                     <span className="text-[10px] font-bold text-forest/70 bg-warm px-2 py-0.5 rounded-md border border-soft shrink-0">
                                       #{cardIdx + 1}
                                     </span>
-                                    <span
-                                      className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border shrink-0 ${
-                                        card.viaAcesso === "Particular"
-                                          ? "bg-amber-50 text-amber-900 border-amber-200"
-                                          : card.viaAcesso === "Corporativo"
+                                    {card.viaAcesso && card.viaAcesso !== "Particular" && (
+                                      <span
+                                        className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border shrink-0 ${
+                                          card.viaAcesso === "Corporativo"
                                             ? "bg-blue-50 text-blue-900 border-blue-200"
                                             : "bg-emerald-50 text-emerald-900 border-emerald-200"
-                                      }`}
-                                    >
-                                      {card.viaAcesso || "Particular"}
-                                    </span>
+                                        }`}
+                                      >
+                                        {card.viaAcesso}
+                                      </span>
+                                    )}
                                     {!isCardInStandby(card) && (card.status === "Alta" || card.ativo === false || card.desligado || card.statusInativacao === "Inativo" || card.statusInativacao === "Desligado") && (
                                       <span className="text-[9px] font-bold text-rose-800 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-200 flex items-center gap-0.5 shrink-0">
                                         <XCircle className="w-2.5 h-2.5 text-rose-600" />
@@ -11275,6 +11976,37 @@ export function DashboardView({
                 Profissionais Ativos na Plataforma
               </h2>
               <div className="flex flex-wrap items-center gap-2">
+                {/* Botão Alternar Expandir/Recolher Todos */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const currentlyExpandedCount = Object.values(expandedProfissionais).filter(Boolean).length;
+                    if (currentlyExpandedCount > 0) {
+                      setExpandedProfissionais({});
+                    } else {
+                      const all: Record<string, boolean> = {};
+                      filteredAtivos.forEach((p) => {
+                        all[p.uid || p.id] = true;
+                      });
+                      setExpandedProfissionais(all);
+                    }
+                  }}
+                  className="px-3 py-1.5 text-forest/70 hover:text-forest hover:bg-warm rounded-full text-xs font-semibold flex items-center gap-1.5 border border-soft transition-colors cursor-pointer"
+                  title="Expandir ou recolher todos os cards de profissionais"
+                >
+                  {Object.values(expandedProfissionais).filter(Boolean).length > 0 ? (
+                    <>
+                      <ChevronUp className="w-3.5 h-3.5" />
+                      <span>Recolher Todos</span>
+                    </>
+                  ) : (
+                    <>
+                      <ChevronDown className="w-3.5 h-3.5" />
+                      <span>Expandir Todos</span>
+                    </>
+                  )}
+                </button>
+
                 <button
                   onClick={handleReconcileExistingProfs}
                   disabled={isReconciling}
@@ -11294,218 +12026,481 @@ export function DashboardView({
                 </button>
               </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+
+            <div className="flex flex-col gap-2.5 w-full">
               {filteredAtivos.length === 0 ? (
-                <div className="col-span-full text-center p-8 bg-white/50 border border-dashed border-soft rounded-[2rem] text-forest/70/70 text-sm">
+                <div className="w-full text-center p-8 bg-white/50 border border-dashed border-soft rounded-[2rem] text-forest/70/70 text-sm">
                   Nenhum profissional com conta criada no Firebase Auth. Crie a
                   conta deles pelo botão acima.
                 </div>
               ) : (
                 filteredAtivos.map((p) => {
+                  const profId = p.uid || p.id;
                   const stats = getProfStats(p.uid!);
+                  const isExpanded = Boolean(expandedProfissionais[profId]);
+
+                  // Acolhimentos do profissional em atendimento ativo
+                  const profAcolhimentos = acolhimentos.filter(
+                    (a) =>
+                      a.profissionalId === p.uid &&
+                      a.status === "Em Atendimento" &&
+                      a.atribuicaoStatus === "Aceito",
+                  );
+
+                  // Capacidade e Faixas configuradas pelo profissional em seu controle:
+                  const rawTotal = parseMaxHorasDisponiveis(p.horasDisponiveis);
+                  const h30Disponivel = p.aceitaAtendimento30Reais
+                    ? parseHorasNumber(p.horasAtendimento30Reais) || 0
+                    : 0;
+                  const hGratuitoDisponivel = p.aceitaAtendimentoGratuito
+                    ? parseHorasNumber(p.horasAtendimentoGratuito) || 0
+                    : 0;
+
+                  let hRegularDisponivel = p.horasRegular
+                    ? parseHorasNumber(p.horasRegular)
+                    : 0;
+                  if (hRegularDisponivel < 8) {
+                    hRegularDisponivel = Math.max(
+                      8,
+                      (rawTotal > 0 ? rawTotal : 8) -
+                        h30Disponivel -
+                        hGratuitoDisponivel,
+                    );
+                    if (hRegularDisponivel % 2 !== 0) hRegularDisponivel += 1;
+                  }
+                  const totalHorasDisponiveis = Math.max(
+                    8,
+                    hRegularDisponivel + h30Disponivel + hGratuitoDisponivel,
+                  );
+
+                  // Horas utilizadas por faixa (integrando atendimentos particulares e corporativos):
+                  const hGratuitoUtilizadas = stats.horasGratuitas;
+                  const h30Utilizadas = stats.horas30;
+                  const hRegularUtilizadas = stats.horasRegular;
+                  const totalHorasUtilizadas = stats.horasMensais;
+                  const percentualUso =
+                    totalHorasDisponiveis > 0
+                      ? Math.min(
+                          100,
+                          Math.round(
+                            (totalHorasUtilizadas / totalHorasDisponiveis) *
+                              100,
+                          ),
+                        )
+                      : 0;
+                  const isAtCap =
+                    stats.maxHoras > 0 && stats.horasMensais >= stats.maxHoras;
+
+                  // Média de ganho comercial monetizada (sem distorção de R$ 30 e gratuidades):
+                  const mediaGanho = stats.mediaMonetizada;
+
                   return (
                     <div
-                      key={p.uid}
-                      className="bg-white p-6 rounded-[2rem] shadow-md border border-soft hover:shadow-lg transition-all duration-300 flex flex-col gap-5 relative justify-between"
+                      key={profId}
+                      className="bg-white rounded-2xl border border-soft shadow-2xs hover:border-forest/30 transition-all overflow-hidden"
                     >
-                      {/* Header Row */}
-                      <div>
-                        <div className="flex items-center justify-between gap-2 mb-2">
-                          <span className="text-[10px] font-bold text-forest/70 bg-warm px-2.5 py-1 rounded-full uppercase tracking-wider">
-                            Membro da Rede
-                          </span>
-                          <span
-                            className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
-                              p.ativo === false
-                                ? "bg-red-100 text-red-700"
-                                : "bg-emerald-100 text-emerald-700"
-                            }`}
-                          >
-                            {p.ativo === false ? "Inativo" : "Ativo"}
-                          </span>
-                        </div>
-                        <h4 className="font-serif text-lg font-bold text-forest leading-tight break-words">
-                          {p.name || p.email}
-                        </h4>
-                        <span className="text-xs text-forest/50 font-medium font-mono">
-                          {p.email}
-                        </span>
-                      </div>
+                      {/* Linha Resumo Compacta (Visível Sempre - Clique alterna expansão) */}
+                      <div
+                        onClick={() => toggleExpandProfissional(profId)}
+                        className="p-3.5 sm:p-4.5 flex flex-col xl:flex-row xl:items-center justify-between gap-3 cursor-pointer hover:bg-warm/30 transition-colors select-none"
+                      >
+                        {/* 1. Nome do Profissional em Evidência */}
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          <div className="w-10 h-10 rounded-2xl bg-warm border border-soft flex items-center justify-center shrink-0 font-bold text-forest text-sm shadow-2xs overflow-hidden">
+                            {p.photoURL ? (
+                              <img
+                                src={p.photoURL}
+                                alt={p.name || p.email}
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              (p.name || p.email || "P")
+                                .charAt(0)
+                                .toUpperCase()
+                            )}
+                          </div>
 
-                      {/* Information organized in lines (Rows) */}
-                      <div className="bg-warm/25 rounded-2xl border border-soft/50 p-4 flex flex-col gap-2.5 text-xs text-forest/85">
-                        <div className="flex items-center justify-between py-1 border-b border-soft/30">
-                          <span className="text-forest/50 font-medium flex items-center gap-1.5">
-                            <User className="w-3.5 h-3.5 text-forest/40" />{" "}
-                            Papel:
-                          </span>
-                          <span className="font-semibold text-forest/90 capitalize">
-                            {p.role}
-                          </span>
-                        </div>
-
-                        {p.role === "profissional" && (
-                          <>
-                            <div className="flex items-center justify-between py-1 border-b border-soft/30">
-                              <span className="text-forest/50 font-medium flex items-center gap-1.5">
-                                <Users className="w-3.5 h-3.5 text-forest/40" />{" "}
-                                Pacientes Ativos:
-                              </span>
-                              <span className="font-bold text-forest/90">
-                                {stats.ativosCount}
-                              </span>
-                            </div>
-
-                            <div className="flex items-center justify-between py-1 border-b border-soft/30">
-                              <span className="text-forest/50 font-medium flex items-center gap-1.5">
-                                <DollarSign className="w-3.5 h-3.5 text-forest/40" />{" "}
-                                Total Sessões:
-                              </span>
-                              <span className="font-bold text-emerald-700 font-mono">
-                                R${" "}
-                                {stats.valorTotal.toFixed(2).replace(".", ",")}
-                              </span>
-                            </div>
-
-                            <div className="flex items-center justify-between py-1 border-b border-soft/30">
-                              <span className="text-forest/50 font-medium flex items-center gap-1.5">
-                                <Clock className="w-3.5 h-3.5 text-forest/40" />{" "}
-                                Horas Mensais (Est.):
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h4 className="font-serif text-base sm:text-lg font-bold text-forest leading-tight truncate">
+                                {p.name || p.email}
+                              </h4>
+                              <span className="text-[10px] font-bold uppercase tracking-wider bg-warm px-2 py-0.5 rounded-full border border-soft text-forest/70 shrink-0">
+                                CRP: {p.crp || "Pendente"}
                               </span>
                               <span
-                                className={`font-bold font-mono ${stats.maxHoras > 0 && stats.horasMensais >= stats.maxHoras ? "text-red-600" : "text-forest/90"}`}
+                                className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider shrink-0 ${
+                                  p.ativo === false
+                                    ? "bg-red-100 text-red-700"
+                                    : "bg-emerald-100 text-emerald-700"
+                                }`}
                               >
-                                {stats.horasMensais}h{" "}
-                                {stats.maxHoras > 0 && `/ ${stats.maxHoras}h`}
+                                {p.ativo === false ? "Inativo" : "Ativo"}
+                              </span>
+                              {isAtCap && (
+                                <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-red-50 text-red-700 border border-red-200 shrink-0 flex items-center gap-1">
+                                  <ShieldAlert className="w-2.5 h-2.5 text-red-600" />
+                                  Capacidade Esgotada
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-3 text-xs text-forest/60 mt-0.5 truncate">
+                              <span className="font-mono text-[11px] truncate">
+                                {p.email}
+                              </span>
+                              <span className="hidden sm:inline">•</span>
+                              <span className="hidden sm:inline">
+                                {p.telefone ||
+                                  p.whatsapp ||
+                                  p.celular ||
+                                  "Sem telefone"}
                               </span>
                             </div>
+                          </div>
+                        </div>
 
-                            {stats.maxHoras > 0 &&
-                              stats.horasMensais >= stats.maxHoras && (
-                                <div className="mt-1 flex items-start gap-1.5 bg-red-50 text-red-700 p-2 rounded-lg border border-red-100">
-                                  <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />
-                                  <span className="text-[10px] leading-tight font-medium">
-                                    Limite de horas atingido ou excedido.
+                        {/* 2. Relação de Horas (Total + Faixas do Controle) e Média de Ganho */}
+                        <div className="flex flex-wrap items-center gap-2 lg:gap-3 shrink-0">
+                          {/* Cota Total de Horas */}
+                          <div
+                            className="flex flex-col bg-warm/60 px-2.5 py-1.5 rounded-xl border border-soft/80 shrink-0"
+                            title="Horas utilizadas / Horas disponíveis totais no mês"
+                          >
+                            <span className="text-[9px] font-bold uppercase text-forest/50">
+                              Cota Total
+                            </span>
+                            <div className="flex items-baseline gap-1">
+                              <span className="text-xs sm:text-sm font-extrabold text-forest">
+                                {totalHorasUtilizadas}h
+                              </span>
+                              <span className="text-[10px] font-bold text-forest/60">
+                                / {totalHorasDisponiveis}h
+                              </span>
+                              <span
+                                className={`text-[9px] font-bold px-1 rounded ${
+                                  isAtCap
+                                    ? "bg-red-100 text-red-700"
+                                    : "bg-emerald-100 text-emerald-800"
+                                }`}
+                              >
+                                {percentualUso}%
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Faixas conforme o profissional escolheu em seu controle */}
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {/* Faixa Regular */}
+                            <div
+                              className="px-2 py-1 bg-emerald-50 rounded-lg border border-emerald-200/80 text-[10px] flex items-center gap-1 shrink-0"
+                              title="Faixa Regular (≥ R$ 50): Horas utilizadas / Horas disponíveis"
+                            >
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 shrink-0"></span>
+                              <span className="font-semibold text-emerald-950">
+                                Regular:
+                              </span>
+                              <strong className="text-emerald-900">
+                                {hRegularUtilizadas}h/{hRegularDisponivel}h
+                              </strong>
+                            </div>
+
+                            {/* Faixa Extraordinária R$ 30 (se habilitada no controle) */}
+                            {h30Disponivel > 0 ? (
+                              <div
+                                className="px-2 py-1 bg-amber-50 rounded-lg border border-amber-200/80 text-[10px] flex items-center gap-1 shrink-0"
+                                title="Faixa Extraordinária R$ 30: Horas utilizadas / Horas ofertadas"
+                              >
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-600 shrink-0"></span>
+                                <span className="font-semibold text-amber-950">
+                                  R$ 30:
+                                </span>
+                                <strong className="text-amber-900">
+                                  {h30Utilizadas}h/{h30Disponivel}h
+                                </strong>
+                              </div>
+                            ) : null}
+
+                            {/* Faixa Pro Bono / Gratuita (se habilitada no controle) */}
+                            {hGratuitoDisponivel > 0 ? (
+                              <div
+                                className="px-2 py-1 bg-blue-50 rounded-lg border border-blue-200/80 text-[10px] flex items-center gap-1 shrink-0"
+                                title="Faixa Pro Bono Gratuita: Horas utilizadas / Horas ofertadas"
+                              >
+                                <span className="w-1.5 h-1.5 rounded-full bg-blue-600 shrink-0"></span>
+                                <span className="font-semibold text-blue-950">
+                                  Gratuito:
+                                </span>
+                                <strong className="text-blue-900">
+                                  {hGratuitoUtilizadas}h/{hGratuitoDisponivel}h
+                                </strong>
+                              </div>
+                            ) : null}
+                          </div>
+
+                          {/* Média Comercial Monetizada */}
+                          <div
+                            className="flex flex-col bg-emerald-50/70 px-2.5 py-1.5 rounded-xl border border-emerald-200/80 shrink-0"
+                            title="Média de honorários por sessão comercial regular (exclui horas a R$ 30 e gratuidades)"
+                          >
+                            <span className="text-[9px] font-bold uppercase text-emerald-800">
+                              Média Comercial
+                            </span>
+                            <div className="flex items-baseline gap-1">
+                              <span className="text-xs sm:text-sm font-extrabold text-emerald-900 font-mono">
+                                R${" "}
+                                {mediaGanho > 0
+                                  ? mediaGanho.toFixed(2).replace(".", ",")
+                                  : "0,00"}
+                              </span>
+                              <span className="text-[9px] font-semibold text-emerald-700">
+                                /sessão
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Badge de Iniciativa Social Extraordinária (se houver horas realizadas) */}
+                          {h30Utilizadas + hGratuitoUtilizadas > 0 ? (
+                            <div
+                              className="hidden sm:flex items-center gap-1 bg-amber-50 px-2 py-1.5 rounded-xl border border-amber-200/80 text-[10px] shrink-0"
+                              title="Horas voluntárias e extraordinárias dedicadas a impacto social"
+                            >
+                              <HeartHandshake className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                              <span className="font-bold text-amber-900">
+                                Social: {h30Utilizadas + hGratuitoUtilizadas}h
+                              </span>
+                            </div>
+                          ) : null}
+
+                          {/* Ações Rápidas no Header */}
+                          <div
+                            className="flex items-center gap-1.5 shrink-0 ml-auto xl:ml-0"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedProfissional(p);
+                                setIsEditingCard(false);
+                              }}
+                              className="px-2.5 py-1.5 text-xs font-semibold bg-sun hover:bg-sun-dark text-forest rounded-xl transition-colors flex items-center gap-1 shadow-2xs cursor-pointer"
+                              title="Ver Ficha de Bordo"
+                            >
+                              <FileText className="w-3.5 h-3.5" />
+                              <span className="hidden sm:inline">
+                                Ficha de Bordo
+                              </span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                toggleExpandProfissional(profId)
+                              }
+                              className="p-1.5 text-forest/50 hover:text-forest hover:bg-warm rounded-xl transition-colors cursor-pointer"
+                              title={
+                                isExpanded
+                                  ? "Recolher detalhes"
+                                  : "Expandir detalhes"
+                              }
+                            >
+                              {isExpanded ? (
+                                <ChevronUp className="w-4 h-4" />
+                              ) : (
+                                <ChevronDown className="w-4 h-4" />
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* 3. Seção Expandida: Outras Informações Aparecem Somente ao Expandir */}
+                      {isExpanded && (
+                        <div className="px-4 pb-5 pt-3 border-t border-soft/60 bg-gradient-to-b from-warm/20 to-white flex flex-col gap-4 animate-in fade-in duration-200">
+                          {/* Grade de Detalhes Administrativos */}
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
+                            {/* Bloco 1: Vínculo e Contatos */}
+                            <div className="bg-white p-3.5 rounded-xl border border-soft shadow-2xs space-y-2">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-forest/50 block border-b border-soft/50 pb-1">
+                                Identificação & Vínculo
+                              </span>
+                              <div className="space-y-1.5 text-forest/80">
+                                <p className="flex justify-between">
+                                  <strong className="text-forest/60">Papel:</strong>
+                                  <span className="capitalize font-semibold text-forest">
+                                    {p.role}
                                   </span>
+                                </p>
+                                <p className="flex justify-between">
+                                  <strong className="text-forest/60">CRP:</strong>
+                                  <span className="font-mono">{p.crp || "Pendente"}</span>
+                                </p>
+                                <p className="flex justify-between truncate">
+                                  <strong className="text-forest/60">E-mail:</strong>
+                                  <span className="truncate font-mono text-[11px]">{p.email}</span>
+                                </p>
+                                <p className="flex justify-between">
+                                  <strong className="text-forest/60">Telefone:</strong>
+                                  <span>{p.telefone || p.whatsapp || p.celular || "Não cadastrado"}</span>
+                                </p>
+                              </div>
+                            </div>
+
+                            {/* Bloco 2: Atendimentos & Sessões */}
+                            <div className="bg-white p-3.5 rounded-xl border border-soft shadow-2xs space-y-2">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-forest/50 block border-b border-soft/50 pb-1">
+                                Pacientes & Rendimentos
+                              </span>
+                              <div className="space-y-1.5 text-forest/80 text-xs">
+                                <p className="flex justify-between">
+                                  <strong className="text-forest/60">Pacientes Ativos:</strong>
+                                  <span className="font-bold text-forest">
+                                    {stats.ativosCount} vidas ({stats.ativosParticulares} part. + {stats.ativosCorp} corp.)
+                                  </span>
+                                </p>
+                                <p className="flex justify-between">
+                                  <strong className="text-forest/60">Média Comercial:</strong>
+                                  <span className="font-bold text-emerald-800 font-mono">
+                                    R$ {stats.mediaMonetizada.toFixed(2).replace(".", ",")} /sessão
+                                  </span>
+                                </p>
+                                <p className="flex justify-between">
+                                  <strong className="text-forest/60">Total Comercial Ativo:</strong>
+                                  <span className="font-bold text-emerald-700 font-mono">
+                                    R$ {stats.valorTotal.toFixed(2).replace(".", ",")}
+                                  </span>
+                                </p>
+                                <p className="flex justify-between">
+                                  <strong className="text-forest/60">Impacto Social:</strong>
+                                  <span className="font-semibold text-amber-900 bg-amber-50 px-1.5 py-0.5 rounded text-[11px] border border-amber-200">
+                                    {stats.horas30 + stats.horasGratuitas}h extras ({stats.pacs30Count} R$ 30, {stats.pacsGratuitosCount} pro bono)
+                                  </span>
+                                </p>
+                                <p className="flex justify-between">
+                                  <strong className="text-forest/60">Horas Mensais:</strong>
+                                  <span className="font-bold font-mono text-forest">
+                                    {stats.horasMensais}h ({stats.horasParticulares}h part. + {stats.horasCorp}h corp.) / {stats.maxHoras > 0 ? `${stats.maxHoras}h` : "Livre"}
+                                  </span>
+                                </p>
+                              </div>
+                            </div>
+
+                            {/* Bloco 3: Pagamento & Adimplência */}
+                            <div className="bg-white p-3.5 rounded-xl border border-soft shadow-2xs space-y-2">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-forest/50 block border-b border-soft/50 pb-1">
+                                Situação Financeira (Associação)
+                              </span>
+                              <div className="flex items-center justify-between">
+                                <span className="text-forest/60 font-medium">Status:</span>
+                                {p.isCortesia ? (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200 flex items-center gap-1">
+                                    <Gift className="w-3 h-3 text-purple-600" />
+                                    Cortesia / Isento
+                                  </span>
+                                ) : p.statusPagamento === "pago" ? (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1">
+                                    <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                    Adimplente (Pago)
+                                  </span>
+                                ) : p.solicitacaoCancelamento ? (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200 flex items-center gap-1">
+                                    <ShieldAlert className="w-3 h-3 text-amber-600" />
+                                    Desligamento Solicitado
+                                  </span>
+                                ) : (() => {
+                                    const admDateStr = p.dataAdmissao || p.createdAt;
+                                    const admDate = parseDateSafely(admDateStr);
+                                    const vencDateStr = p.vencimentoPagamento;
+                                    const vencDate = vencDateStr
+                                      ? parseDateSafely(vencDateStr)
+                                      : new Date(admDate.getTime() + 7 * 86400000);
+                                    const now = new Date();
+                                    const isTrial = vencDate.getTime() > now.getTime();
+                                    return isTrial ? (
+                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200 flex items-center gap-1">
+                                        <Clock className="w-3 h-3 text-blue-600" />
+                                        Prazo 1º Pagto ({formatDateSafely(vencDate)})
+                                      </span>
+                                    ) : (
+                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-800 border border-red-200 flex items-center gap-1">
+                                        <XCircle className="w-3 h-3 text-red-600" />
+                                        Inadimplente / Pendente
+                                      </span>
+                                    );
+                                  })()}
+                              </div>
+
+                              {profile?.role === "master" && (
+                                <div className="pt-2 border-t border-soft/50 flex items-center justify-between">
+                                  <span className="text-[11px] font-medium text-forest/70">
+                                    Isenção:
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleToggleCortesia(p.uid!, !!p.isCortesia)}
+                                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1 cursor-pointer border ${
+                                      p.isCortesia
+                                        ? "bg-purple-600 text-white border-purple-700 hover:bg-purple-700"
+                                        : "bg-white text-forest/80 border-soft hover:bg-purple-50 hover:text-purple-700"
+                                    }`}
+                                  >
+                                    <Gift className="w-3 h-3" />
+                                    {p.isCortesia ? "Cortesia Ativa" : "Tornar Cortesia"}
+                                  </button>
                                 </div>
                               )}
-                          </>
-                        )}
-                      </div>
-
-                      {p.role === "profissional" && p.servicosOferecidos && p.servicosOferecidos.length > 0 && (
-                        <div className="flex flex-col gap-1.5 px-1">
-                          <span className="text-[10px] font-bold text-forest/50 uppercase tracking-wider">
-                            Serviços Oferecidos:
-                          </span>
-                          <div className="flex flex-wrap gap-1">
-                            {p.servicosOferecidos.map((srv: string) => {
-                              const isAcessivel = p.servicosOrcamentoAcessivel?.includes(srv);
-                              return (
-                                <span key={srv} className="inline-flex items-center gap-1 text-[10px] font-semibold text-forest bg-warm px-2 py-0.5 rounded-md border border-soft/80" title={isAcessivel ? "Disponível para orçamento acessível" : ""}>
-                                  {srv === "Outros" ? `Outros: ${p.outrosServicos || "Especifique"}` : srv}
-                                  {isAcessivel && (
-                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" title="Orçamento Acessível" />
-                                  )}
-                                </span>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Payment & Adimplência Status Box */}
-                      {p.role === "profissional" && (
-                        <div className="bg-warm/40 p-3.5 rounded-2xl border border-soft/80 flex flex-col gap-2.5 text-xs">
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-forest/60 flex items-center gap-1">
-                              <CreditCard className="w-3.5 h-3.5 text-forest/50" />
-                              Pagamento / Adimplência:
-                            </span>
-                            {p.isCortesia ? (
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200 flex items-center gap-1">
-                                <Gift className="w-3 h-3 text-purple-600" />
-                                Cortesia / Convidado
-                              </span>
-                            ) : p.statusPagamento === "pago" ? (
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1">
-                                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                                Adimplente (Pago)
-                              </span>
-                            ) : p.solicitacaoCancelamento ? (
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200 flex items-center gap-1">
-                                <ShieldAlert className="w-3 h-3 text-amber-600" />
-                                Desligamento Solicitado
-                              </span>
-                            ) : (() => {
-                                const admDateStr = p.dataAdmissao || p.createdAt;
-                                const admDate = parseDateSafely(admDateStr);
-                                const vencDateStr = p.vencimentoPagamento;
-                                const vencDate = vencDateStr ? parseDateSafely(vencDateStr) : new Date(admDate.getTime() + 7 * 86400000);
-                                const now = new Date();
-                                const isTrial = vencDate.getTime() > now.getTime();
-                                return isTrial ? (
-                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200 flex items-center gap-1">
-                                    <Clock className="w-3 h-3 text-blue-600" />
-                                    Prazo 1º Pagamento ({formatDateSafely(vencDate)})
-                                  </span>
-                                ) : (
-                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-800 border border-red-200 flex items-center gap-1">
-                                    <XCircle className="w-3 h-3 text-red-600" />
-                                    Inadimplente / Pendente
-                                  </span>
-                                );
-                              })()}
+                            </div>
                           </div>
 
-                          {/* Toggle Cortesia Button */}
-                          {profile?.role === "master" && (
-                            <div className="flex items-center justify-between pt-2 border-t border-soft/50">
-                              <span className="text-[11px] font-medium text-forest/70">
-                                Cortesia / Convidado:
+                          {/* Serviços Oferecidos */}
+                          {p.role === "profissional" && p.servicosOferecidos && p.servicosOferecidos.length > 0 && (
+                            <div className="flex flex-col gap-1.5 bg-white p-3.5 rounded-xl border border-soft shadow-2xs">
+                              <span className="text-[10px] font-bold text-forest/50 uppercase tracking-wider">
+                                Serviços & Modalidades Cadastradas:
                               </span>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleToggleCortesia(p.uid!, !!p.isCortesia);
-                                }}
-                                className={`px-2.5 py-1 rounded-xl text-[10px] font-bold transition-all flex items-center gap-1 cursor-pointer border ${
-                                  p.isCortesia
-                                    ? "bg-purple-600 text-white border-purple-700 shadow-xs hover:bg-purple-700"
-                                    : "bg-white text-forest/80 border-soft hover:bg-purple-50 hover:text-purple-700 hover:border-purple-300"
-                                }`}
-                                title={p.isCortesia ? "Clique para desativar cortesia" : "Clique para isentar cobrança deste profissional"}
-                              >
-                                <Gift className="w-3.5 h-3.5" />
-                                {p.isCortesia ? "Cortesia Ativa (Isento)" : "Tornar Cortesia / Convidado"}
-                              </button>
+                              <div className="flex flex-wrap gap-1.5">
+                                {p.servicosOferecidos.map((srv: string) => {
+                                  const isAcessivel = p.servicosOrcamentoAcessivel?.includes(srv);
+                                  return (
+                                    <span
+                                      key={srv}
+                                      className="inline-flex items-center gap-1 text-[11px] font-semibold text-forest bg-warm px-2.5 py-0.5 rounded-md border border-soft/80"
+                                      title={isAcessivel ? "Disponível para orçamento acessível" : ""}
+                                    >
+                                      {srv === "Outros" ? `Outros: ${p.outrosServicos || "Especifique"}` : srv}
+                                      {isAcessivel && (
+                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" title="Orçamento Acessível" />
+                                      )}
+                                    </span>
+                                  );
+                                })}
+                              </div>
                             </div>
                           )}
+
+                          {/* Ações Administrativas no rodapé expandido */}
+                          <div className="flex items-center justify-between gap-2 pt-2 border-t border-soft/60">
+                            <button
+                              onClick={() => {
+                                setSelectedProfissional(p);
+                                setIsEditingCard(false);
+                              }}
+                              className="px-4 py-2 bg-sun hover:bg-sun-dark text-forest font-semibold rounded-xl text-xs transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer"
+                            >
+                              <FileText className="w-4 h-4" /> Abrir Ficha de Bordo Completa
+                            </button>
+
+                            {profile?.role === "master" && (
+                              <button
+                                onClick={() => handleDeleteProfissional(p.uid!, "ativos")}
+                                className="px-3 py-2 bg-red-50 text-red-600 rounded-xl hover:bg-red-100 border border-red-200/40 text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer"
+                                title="Excluir Permanentemente"
+                              >
+                                <Trash2 className="w-4 h-4" /> Excluir Conta
+                              </button>
+                            )}
+                          </div>
                         </div>
                       )}
-
-                      {/* Action buttons */}
-                      <div className="flex items-center gap-2 pt-2 border-t border-soft/60">
-                        <button
-                          onClick={() => setSelectedProfissional(p)}
-                          className="flex-1 py-2 bg-sun hover:bg-sun-dark text-forest font-semibold rounded-xl text-xs transition-colors flex items-center justify-center gap-1.5 shadow-xs"
-                        >
-                          <FileText className="w-4 h-4" /> Ficha de Bordo
-                        </button>
-                        {profile?.role === "master" && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteProfissional(p.uid!, "ativos");
-                            }}
-                            className="p-2 bg-red-50 text-red-600 rounded-xl hover:bg-red-100 border border-red-200/40 transition-colors flex items-center justify-center"
-                            title="Excluir Permanentemente"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
                     </div>
                   );
                 })
@@ -13206,29 +14201,30 @@ export function DashboardView({
                       <div className="flex items-center justify-between">
                         <span className="text-[10px] font-bold uppercase text-forest/50 block">
                           {selectedCard.viaAcesso === "Corporativo" || Boolean(selectedCard.empresa)
-                            ? "Atalhos de Valor (3 Faixas Corporativas):"
+                            ? "Valor da Sessão (Convênio Corporativo):"
                             : "Atalhos de Valor (Área do Gestor):"}
                         </span>
                         {(selectedCard.viaAcesso === "Corporativo" || Boolean(selectedCard.empresa)) && (
                           <span className="text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 border border-blue-200">
-                            Via Corporativa
+                            Convênio Corporativo
                           </span>
                         )}
                       </div>
                       <div className="flex flex-wrap gap-1.5">
                         {(() => {
                           const isCorp = selectedCard.viaAcesso === "Corporativo" || Boolean(selectedCard.empresa);
-                          const faixasGestor = isCorp
-                            ? (globalConfigs.faixasValoresCorporativo || []).filter((f) => f && f.trim() !== "")
-                            : (globalConfigs.faixasValores || []).filter((f) => f && f.trim() !== "");
-                          
-                          const baseFaixas = faixasGestor.length > 0
-                            ? faixasGestor
-                            : isCorp
-                              ? ["R$ 60,00", "R$ 90,00", "R$ 120,00"]
+                          let options: string[] = [];
+
+                          if (isCorp) {
+                            options = ["Conforme Contrato", "Integral pelo Convênio", "Co-participação", "A combinar"];
+                          } else {
+                            const faixasGestor = (globalConfigs.faixasValores || []).filter((f) => f && f.trim() !== "");
+                            const baseFaixas = faixasGestor.length > 0
+                              ? faixasGestor
                               : ["R$ 50,00", "R$ 80,00", "R$ 100,00", "R$ 120,00"];
-                          
-                          const options = [...baseFaixas, "R$ 30,00 (Extraordinário)", "Gratuito", "A combinar"];
+                            options = [...baseFaixas, "R$ 30,00 (Extraordinário)", "Gratuito", "A combinar"];
+                          }
+
                           if (selectedCard.valorSessao && !options.includes(selectedCard.valorSessao) && selectedCard.valorSessao !== "R$ 30,00") {
                             options.unshift(selectedCard.valorSessao);
                           }
@@ -13270,14 +14266,20 @@ export function DashboardView({
                           <option value="">Outro / Personalizado...</option>
                           {(() => {
                             const isCorp = selectedCard.viaAcesso === "Corporativo" || Boolean(selectedCard.empresa);
-                            const faixasGestor = isCorp
-                              ? (globalConfigs.faixasValoresCorporativo || []).filter((f) => f && f.trim() !== "")
-                              : (globalConfigs.faixasValores || []).filter((f) => f && f.trim() !== "");
+                            if (isCorp) {
+                              return (
+                                <>
+                                  <option value="Conforme Contrato">Conforme Contrato</option>
+                                  <option value="Integral pelo Convênio">Integral pelo Convênio</option>
+                                  <option value="Co-participação">Co-participação</option>
+                                  <option value="A combinar">A combinar</option>
+                                </>
+                              );
+                            }
+                            const faixasGestor = (globalConfigs.faixasValores || []).filter((f) => f && f.trim() !== "");
                             const baseFaixas = faixasGestor.length > 0
                               ? faixasGestor
-                              : isCorp
-                                ? ["R$ 60,00", "R$ 90,00", "R$ 120,00"]
-                                : ["R$ 50,00", "R$ 80,00", "R$ 100,00", "R$ 120,00"];
+                              : ["R$ 50,00", "R$ 80,00", "R$ 100,00", "R$ 120,00"];
                             return baseFaixas.map((faixa: string, idx: number) => (
                               <option key={idx} value={faixa}>{faixa}</option>
                             ));

@@ -329,7 +329,7 @@ export function GestaoEsteiraTarefas({
           entityId: a.id,
           entityType: "paciente",
           entityName: pName,
-          entitySubtitle: `Via: ${a.viaAcesso || "Particular"}${a.empresa ? ` • ${a.empresa}` : ""} | Queixa: ${a.motivo || "Geral"}`,
+          entitySubtitle: `${a.viaAcesso && a.viaAcesso !== "Particular" ? `Via: ${a.viaAcesso} • ` : ""}${a.empresa ? `Empresa: ${a.empresa} • ` : ""}Queixa: ${a.motivo || "Geral"}`,
           entityContact: a.telefone,
           entityEmail: a.email,
           entityBadge: a.status || "Aguardando Avaliação",

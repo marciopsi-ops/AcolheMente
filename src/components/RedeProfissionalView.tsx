@@ -832,9 +832,9 @@ export function RedeProfissionalView({
     <div className="w-full max-w-full min-w-0 space-y-4 sm:space-y-6 animate-in fade-in duration-300 pb-16">
       {/* Cabeçalho da Aba Otimizado para Telas Pequenas */}
       {!isBannerMinimized ? (
-        <div className="bg-white rounded-2xl sm:rounded-3xl p-3.5 sm:p-5 md:p-6 border border-soft shadow-xs transition-all">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-5">
-            <div className="space-y-1 min-w-0 flex-1">
+        <div className="bg-white rounded-2xl sm:rounded-3xl p-3.5 sm:p-4 md:p-5 border border-soft shadow-xs transition-all">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
+            <div className="min-w-0 flex-1 space-y-1">
               <div className="flex items-center justify-between sm:justify-start gap-2">
                 <div className="flex items-center gap-1.5 flex-wrap">
                   <span className="px-2.5 py-0.5 rounded-full text-[10px] sm:text-[11px] font-black uppercase tracking-wider bg-forest/10 text-forest border border-forest/20 flex items-center gap-1">
@@ -868,22 +868,21 @@ export function RedeProfissionalView({
                 </div>
               </div>
 
-              <h1 className="text-base sm:text-xl md:text-2xl font-serif font-bold text-forest leading-snug">
+              <h1 className="text-base sm:text-lg md:text-xl font-serif font-bold text-forest leading-snug">
                 Conecte-se com Colegas &amp; Compartilhe Demandas
               </h1>
 
-              {/* Texto explicativo: oculto em telas pequenas por padrão para economizar espaço e permitir rolar para os profissionais */}
-              <p className={`text-xs sm:text-sm text-forest/70 leading-relaxed ${showBannerInfo ? "block" : "hidden sm:block"}`}>
-                Uma rede de apoio mútuo, supervisão e interconsultas. Encontre profissionais por abordagem,
-                conecte-se via WhatsApp e publique alertas para encaminhar ou solicitar serviços clínicos.
+              {/* Texto explicativo compacto: oculto em telas pequenas por padrão para economizar espaço */}
+              <p className={`text-xs sm:text-[13px] text-forest/70 leading-relaxed max-w-2xl ${showBannerInfo ? "block" : "hidden sm:block"}`}>
+                Rede de apoio mútuo, supervisão e interconsultas. Conecte-se via WhatsApp e publique alertas para encaminhar demandas.
               </p>
             </div>
 
-            <div className="flex items-center gap-2 shrink-0 pt-0.5 sm:pt-0">
+            <div className="flex items-center gap-2 shrink-0 self-start sm:self-center">
               <button
                 type="button"
                 onClick={() => setIsNovaDemandaOpen(true)}
-                className="w-full sm:w-auto px-4 py-2 sm:px-5 sm:py-2.5 bg-forest hover:bg-forest/90 text-white rounded-xl sm:rounded-2xl text-xs sm:text-sm font-bold shadow-xs hover:shadow-md transition-all flex items-center justify-center gap-1.5 sm:gap-2"
+                className="w-full sm:w-auto px-3.5 sm:px-4 py-2 sm:py-2.5 bg-forest hover:bg-forest/90 text-white rounded-xl text-xs sm:text-sm font-bold shadow-xs hover:shadow-sm transition-all flex items-center justify-center gap-1.5 whitespace-nowrap"
               >
                 <Plus className="w-4 h-4 text-sun" />
                 <span>Criar Alerta</span>

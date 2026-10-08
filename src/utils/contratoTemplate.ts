@@ -115,6 +115,8 @@ CLÁUSULA 3ª - DOS HONORÁRIOS E FORMA DE PAGAMENTO
 3.1. Pelos serviços prestados, o(a) CONTRATANTE pagará o valor de: ${valor}.
 3.2. Os pagamentos deverão ser realizados via PIX ou transferência bancária conforme chave e orientações informadas pelo(a) profissional.
 3.3. O envio do comprovante de pagamento consolida a confirmação da sessão e garante a reserva da agenda profissional.
+3.4. Em caso de não pagamento na data acordada, as sessões subsequentes serão temporariamente suspensas, sendo retomadas imediatamente após a devida regularização financeira.
+3.5. A reincidência de inadimplência sem comunicação prévia ou justificativa plausível acarretará na quebra deste contrato, encerrando automaticamente a prestação dos serviços e liberando a vaga na agenda profissional.
 
 CLÁUSULA 4ª - DA POLÍTICA DE FALTAS, CANCELAMENTOS E REMARCAÇÕES
 4.1. Remarcações ou cancelamentos deverão ser comunicados com antecedência mínima de 24 (vinte e quatro) horas em relação ao horário agendado.
@@ -132,7 +134,7 @@ CLÁUSULA 6ª - DA PROTEÇÃO DE DADOS (LGPD)
 CLÁUSULA 7ª - DO ENCERRAMENTO E ALTA CLÍNICA
 7.1. O acompanhamento psicológico poderá ser encerrado a qualquer tempo por consenso entre as partes ou mediante notificação por qualquer uma delas.
 7.2. Recomenda-se a realização de pelo menos 1 (uma) sessão de fechamento e conclusão para a devida devolutiva e síntese do processo terapêutico.
-7.3. Em caso de absenteísmo contínuo, inadimplência injustificada ou interrupção unilateral sem comunicação, o vínculo poderá ser finalizado formalmente com a devida anotação em prontuário.
+7.3. Em caso de absenteísmo contínuo, inadimplência reiterada e injustificada (conforme item 3.5 da Cláusula 3ª) ou interrupção unilateral sem comunicação, o vínculo será finalizado formalmente por quebra contratual com a devida anotação em prontuário.
 
 CLÁUSULA 8ª - DA VALIDADE DO ACEITE ELETRÔNICO
 8.1. As partes reconhecem expressamente a plena validade jurídica, eficácia probatória e legitimidade deste contrato por meio de aceite eletrônico, assinatura digital em tela, registro de carimbo temporal e hash criptográfico SHA-256 gerado no momento da confirmação, em conformidade com o Art. 10, § 2º da Medida Provisória nº 2.200-2/2001 e com a Lei nº 14.063/2020.

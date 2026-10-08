@@ -83,6 +83,8 @@ CLÁUSULA TERCEIRA – DOS HONORÁRIOS E FORMA DE PAGAMENTO
 3.1. Pelo serviço prestado, o(a) CONTRATANTE pagará o valor de R$ {VALOR_SESSAO} por sessão individual.
 3.2. A estimativa mensal é calculada de acordo com o número de sessões no mês de referência (média estimada: {ESTIMATIVA_MENSAL}).
 3.3. Os pagamentos deverão ser realizados via transferência/Pix {DADOS_PIX} ou conforme alinhamento prévio entre as partes até a data acordada.
+3.4. Em caso de não pagamento na data aprazada, as sessões subsequentes serão temporariamente suspensas, sendo retomadas imediatamente após a devida regularização financeira.
+3.5. A reincidência de inadimplência sem comunicação prévia ou justificativa plausível acarretará na quebra deste contrato, encerrando automaticamente a prestação dos serviços e liberando a vaga na agenda profissional.
 
 CLÁUSULA QUARTA – DAS FALTAS, DESMARCAÇÕES E REAGENDAMENTOS
 4.1. O horário da sessão é reservado com exclusividade para o(a) CONTRATANTE.
@@ -102,6 +104,7 @@ CLÁUSULA SEXTA – DA PROTEÇÃO DE DADOS (LGPD - LEI Nº 13.709/2018)
 CLÁUSULA SÉTIMA – DA RESCISÃO E ALTA TERAPÊUTICA
 7.1. O processo terapêutico poderá ser encerrado a qualquer momento por iniciativa de qualquer uma das partes, recomendando-se, sempre que possível, a realização de ao menos uma sessão de encerramento para elaboração do desligamento ou alta clínica.
 7.2. Faltas reiteradas sem comunicação por mais de 3 (três) semanas consecutivas caracterizam interrupção voluntária por desistência, facultando à CONTRATADA disponibilizar o horário.
+7.3. A ocorrência de inadimplência reiterada e sem justificativa, nos moldes do item 3.5 da Cláusula Terceira, opera a quebra e rescisão imediata do contrato, com encerramento automático da prestação de serviços.
 
 CLÁUSULA OITAVA – DO ACEITE ELETRÔNICO E VALIDADE JURÍDICA
 8.1. As partes reconhecem como plenamente válida, eficaz e com força executiva a formalização deste contrato por meio de assinatura eletrônica simples/avançada nos termos da Medida Provisória nº 2.200-2/2001 (Art. 10, § 2º) e Lei nº 14.063/2020.
