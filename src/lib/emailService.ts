@@ -311,7 +311,7 @@ export async function sendTrialExpiredCheckoutEmail(
   });
 
   if (!dispatched.triggerFound) {
-    const subject = "AcolheMente - Link para pagamento da taxa associativa (Vencimento 1ª Taxa)";
+    const subject = "AcolheMente - Link para pagamento da Taxa de Uso e Intermediação da Plataforma (Vencimento 1ª Taxa)";
     const html = `
       <h3 style="font-family: 'Georgia', serif; font-size: 22px; color: #1e352f; margin-top: 0;">Olá, Dr(a). ${nome}!</h3>
       <p>Esperamos que os seus primeiros dias no <strong>Projeto AcolheMente Saúde</strong> estejam sendo muito produtivos!</p>
@@ -321,12 +321,12 @@ export async function sendTrialExpiredCheckoutEmail(
       <div style="background-color: #faf9f6; border: 1px solid #ebdcb9; border-radius: 16px; padding: 20px; margin: 25px 0;">
         <h4 style="margin-top: 0; color: #1e352f; font-family: 'Georgia', serif; font-size: 16px;">Manutenção do Seu Perfil & Atendimentos:</h4>
         <p style="font-size: 14px; color: #2e443e; margin-bottom: 15px;">
-          Para manter a visibilidade do seu perfil no catálogo oficial, continuar recebendo encaminhamentos de pacientes e utilizar as ferramentas de gestão clínica, efetue o pagamento da sua taxa associativa mensal.
+          Para manter a visibilidade do seu perfil no catálogo oficial, continuar recebendo encaminhamentos de pacientes e utilizar as ferramentas de gestão clínica, efetue o pagamento da sua Taxa de Uso e Intermediação da Plataforma mensal.
         </p>
         
         <div style="text-align: center; margin: 25px 0;">
           <a href="${finalCheckoutUrl}" target="_blank" style="background-color: #1e352f; color: #ffffff; padding: 14px 28px; border-radius: 50px; text-decoration: none; font-weight: bold; font-size: 15px; display: inline-block; box-shadow: 0 4px 12px rgba(30, 53, 47, 0.15);">
-            💳 Efetuar Pagamento da Taxa Associativa
+            💳 Efetuar Pagamento da Taxa de Uso e Intermediação da Plataforma
           </a>
         </div>
         

@@ -185,9 +185,14 @@ export function PropostaLandingView({
     try {
       setIsSubmitting(true);
       const newStatus = 'Proposta aceita pelo paciente';
+      const nowStr = new Date().toLocaleString("pt-BR");
+      const notifAnterior = data.notificacao ? data.notificacao + "\n\n" : "";
       
       const updateData: any = {
         propostaStatus: newStatus,
+        status: "Aprovado", // Passa automaticamente para a 3ª etapa da Triagem: "Aguardando atribuição"
+        propostaAceitaEm: new Date().toISOString(),
+        notificacao: `${notifAnterior}[${nowStr}] Proposta ACEITA pelo paciente através do link seguro. Movido para "Aguardando atribuição" na Triagem.`,
       };
 
       await updateDoc(doc(db, "acolhimentos", propostaId), updateData);

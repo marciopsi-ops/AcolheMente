@@ -189,6 +189,8 @@ import { NotificationRulesManager } from "../components/NotificationRulesManager
 import { PatientNotificationModal } from "../components/PatientNotificationModal";
 import { RedeProfissionalView } from "../components/RedeProfissionalView";
 import { EmpresaColaboradoresSpreadsheet, ColaboradorItem } from "../components/EmpresaColaboradoresSpreadsheet";
+import { PacienteFaturamentoSpreadsheet, SessaoFaturamentoItem } from "../components/PacienteFaturamentoSpreadsheet";
+import { ProfissionalFaturamentoDashboard } from "../components/ProfissionalFaturamentoDashboard";
 
 const safeLocalStorage = {
   getItem: (key: string): string | null => {
@@ -658,13 +660,13 @@ interface EmpresaLead {
 const COLUMNS = [
   {
     id: "Aguardando Avaliação",
-    label: "Novos Acolhimentos",
+    label: "Novo acolhimento para análise",
     role: ["master", "triagem"],
     tab: "kanban",
   },
   {
     id: "Em Triagem",
-    label: "Em Análise",
+    label: "Aguardando aceite de proposta",
     role: ["master", "triagem"],
     tab: "kanban",
   },
@@ -917,7 +919,7 @@ export function DashboardView({
   const getDashboardBreadcrumbs = () => {
     const roleName = currentRole === "master" ? "Gestão" : currentRole === "triagem" ? "Equipe de Triagem" : (profile?.profissao ? `${profile.profissao} Parceiro(a)` : "Profissional Parceiro");
     const tabNames: Record<string, string> = {
-      estatisticas: "Controle",
+      estatisticas: currentRole === "profissional" ? "Dashboard" : "Controle da Plataforma",
       kanban: "Triagem & Acolhimentos",
       pacientesAcolhidos: "Gestão de Pacientes",
       doacoes: "Apoio Acessível & Doações",
@@ -925,18 +927,18 @@ export function DashboardView({
       empresas: "Empresas Parceiras",
       tarefas: "Tarefas & Pendências",
       acessos: "Níveis de Acesso",
-      eventos: "Gestão de Eventos",
-      servicos: "Parcerias de Serviços",
+      eventos: "Eventos e Parcerias",
+      servicos: "Eventos e Parcerias",
       gestaoArtigos: "Artigos & Blog",
       artigosProfissional: "Meus Artigos",
       compliance: "Compliance Legal & Termos",
       backup: "Backup & Restauração",
-      pacientes: "Meus Pacientes Clínicos",
-      tarefasProfissional: "Minhas Pendências",
-      perfil: "Configurações de Perfil",
-      pagamentosProfissional: "Gerenciar Meus Pagamentos",
-      redeProfissional: "Rede de Conexão",
-      triagemCorporativa: "Triagem Corporativa",
+      pacientes: "Meus Pacientes",
+      tarefasProfissional: "Alertas e Pendências",
+      perfil: "Meu Perfil",
+      pagamentosProfissional: "Status / Plano",
+      redeProfissional: "Rede Profissional",
+      triagemCorporativa: "Acolhimento Corporativo",
     };
     return [
       { label: "Painel", onClick: () => onNavigate("landing") },
@@ -977,6 +979,16 @@ export function DashboardView({
     "all" | "assignment" | "alert" | "system" | "contract"
   >("all");
   const [msgSearchQuery, setMsgSearchQuery] = useState("");
+
+  // Sub-aba de Meus Pacientes (Valores Acessíveis vs Corporativo)
+  const [subTabPacientes, setSubTabPacientes] = useState<"acessiveis" | "corporativo">("acessiveis");
+
+  useEffect(() => {
+    if (currentRole === "profissional" && activeTab === "triagemCorporativa") {
+      setActiveTab("pacientes");
+      setSubTabPacientes("corporativo");
+    }
+  }, [activeTab, currentRole]);
 
   // Auth form
   const [isLogin, setIsLogin] = useState(true);
@@ -1636,6 +1648,9 @@ export function DashboardView({
     }, 2800);
   };
 
+  // Sub-aba dentro da área de Estatísticas do Profissional ("cotas" | "faturamento")
+  const [subAbaEstatisticas, setSubAbaEstatisticas] = useState<"cotas" | "faturamento">("faturamento");
+
   // Gestao Treated Items State (Persisted in safeLocalStorage)
   const [treatedItemIds, setTreatedItemIds] = useState<Set<string>>(() => {
     try {
@@ -2078,7 +2093,7 @@ export function DashboardView({
           await updateDoc(userRef, {
             checkoutTrial7DiasEnviado: true,
             checkoutTrial7DiasEnviadoEm: new Date().toISOString(),
-            notificacao: `Link de checkout para a taxa associativa enviado por e-mail 7 dias após a admissão realizada em ${admFmt}.`,
+            notificacao: `Link de checkout para a Taxa de Uso e Intermediação da Plataforma enviado por e-mail 7 dias após a admissão realizada em ${admFmt}.`,
             updatedAt: serverTimestamp(),
           });
         }
@@ -3449,7 +3464,11 @@ export function DashboardView({
     const profFirstName = rawFirstName
       ? rawFirstName.charAt(0).toUpperCase() + rawFirstName.slice(1)
       : "Profissional";
-    const defaultMsg = `Olá, sou o ${profFirstName}, faço parte do Projeto Acolhemente.`;
+    const patientFirstName = (card.nomeDesejado || card.nomeCivil || card.nome || "Paciente").trim().split(" ")[0];
+    const origin = typeof window !== "undefined" ? window.location.origin : "https://acolhemente.com.br";
+    const profUid = profile?.uid || card.profissionalId || "";
+    const linkPerfil = profUid ? `${origin}/?prof=${profUid}` : origin;
+    const defaultMsg = `Olá, ${patientFirstName}! 👋 Tudo bem? Sou o(a) psicólogo(a) ${profFirstName}, responsável pelo seu acompanhamento no Projeto AcolheMente Saúde. Estou entrando em contato para combinarmos a nossa primeira sessão! Você também pode conhecer mais sobre o meu perfil e atuação em: ${linkPerfil}`;
     const rawPhone =
       card.telefone ||
       card.whatsapp ||
@@ -3565,15 +3584,13 @@ export function DashboardView({
       if (property === "frequenciaSessoes") {
         showToast("Frequência de sessões salva com sucesso!", "success");
       }
-      if (selectedCard && selectedCard.id === id) {
-        setSelectedCard({ ...selectedCard, ...updates });
-      }
+      setSelectedCard((prev: any) => (prev && prev.id === id ? { ...prev, ...updates } : prev));
       setAcolhimentos((prev) =>
         prev.map((a) => (a.id === id ? { ...a, ...updates } : a))
       );
     } catch (error) {
       console.error(error);
-      alert("Erro ao salvar.");
+      showToast("Erro ao salvar alterações no acolhimento.", "error");
     }
   };
 
@@ -3804,8 +3821,8 @@ export function DashboardView({
       const vencimentoFmt = vencimentoPagamento.toLocaleDateString("pt-BR");
 
       const emailBodyProvider = useGoogleLogin
-        ? `Sua conta e admissão foram aprovadas no Projeto AcolheMente em ${dataAdmissaoFmt}.\n\nComo você utiliza e-mail Google (Gmail), acesse a plataforma clicando no botão "Entrar com Conta Google".\n\n📌 PRAZO PARA 1º PAGAMENTO (7 DIAS): O seu primeiro pagamento da taxa associativa mensal (R$ ${taxaAssociativaVal}) vence em ${vencimentoFmt} (7 dias após a admissão). O pagamento pode ser realizado e gerenciado no seu painel em "Gerenciar Meus Pagamentos".`
-        : `Sua conta e admissão foram aprovadas no Projeto AcolheMente em ${dataAdmissaoFmt}.\n\nLink de Acesso: ${window.location.origin}\nEmail: ${newProfEmail}\nSenha Provisória: ${newProfPassword}\n\n📌 PRAZO PARA 1º PAGAMENTO (7 DIAS): O seu primeiro pagamento da taxa associativa mensal (R$ ${taxaAssociativaVal}) vence em ${vencimentoFmt} (7 dias após a admissão). O pagamento pode ser realizado e gerenciado no seu painel no menu "Gerenciar Meus Pagamentos".\n\nPor favor, acesse o sistema e redefina sua senha no primeiro acesso.`;
+        ? `Sua conta e admissão foram aprovadas no Projeto AcolheMente em ${dataAdmissaoFmt}.\n\nComo você utiliza e-mail Google (Gmail), acesse a plataforma clicando no botão "Entrar com Conta Google".\n\n📌 PRAZO PARA 1º PAGAMENTO (7 DIAS): O seu primeiro pagamento da Taxa de Uso e Intermediação da Plataforma mensal (R$ ${taxaAssociativaVal}) vence em ${vencimentoFmt} (7 dias após a admissão). O pagamento pode ser realizado e gerenciado no seu painel em "Gerenciar Meus Pagamentos".`
+        : `Sua conta e admissão foram aprovadas no Projeto AcolheMente em ${dataAdmissaoFmt}.\n\nLink de Acesso: ${window.location.origin}\nEmail: ${newProfEmail}\nSenha Provisória: ${newProfPassword}\n\n📌 PRAZO PARA 1º PAGAMENTO (7 DIAS): O seu primeiro pagamento da Taxa de Uso e Intermediação da Plataforma mensal (R$ ${taxaAssociativaVal}) vence em ${vencimentoFmt} (7 dias após a admissão). O pagamento pode ser realizado e gerenciado no seu painel no menu "Gerenciar Meus Pagamentos".\n\nPor favor, acesse o sistema e redefina sua senha no primeiro acesso.`;
 
       const emailParams = `subject=Bem-vindo(a) ao Projeto AcolheMente Saúde&body=Olá ${newProfName},%0A%0A${encodeURIComponent(emailBodyProvider)}`;
 
@@ -5238,7 +5255,7 @@ export function DashboardView({
   const roleLabels = {
     master: "Gestão",
     triagem: "Triagem",
-    profissional: "Psicólogo",
+    profissional: "Profissional",
   };
 
   const renderOnboardingModal = () => {
@@ -5828,385 +5845,437 @@ export function DashboardView({
       </AnimatePresence>
 
       {renderOnboardingModal()}
-      {/* Topbar */}
-      <nav className="shrink-0 bg-white border-b border-soft px-4 sm:px-6 py-3 flex flex-wrap gap-3 sm:gap-4 justify-between items-center z-10 w-full shadow-sm">
-        <div className="flex items-center gap-3 sm:gap-4">
-          <button
-            onClick={() => onNavigate("landing")}
-            className="text-forest/70 hover:text-forest"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </button>
-          <div className="h-6 w-px bg-soft"></div>
-          <div className="flex items-center gap-2">
-            <div className="w-11 h-11 bg-sun rounded-full flex items-center justify-center text-forest overflow-hidden hidden sm:flex shadow-sm">
-              <img
-                src={logoImage}
-                alt="AcolheMente Logo"
-                className="w-full h-full object-cover"
-              />
+      {/* Topbar Reestruturada: Linha 1 (Topo Fixo com Controles) e Linha 2 (Abas de Navegação) */}
+      <nav className="shrink-0 bg-white border-b border-soft z-10 w-full shadow-xs flex flex-col">
+        {/* Linha 1: Topo Superior Sempre Fixo com Painel à Esquerda e Ações à Direita */}
+        <div className="px-4 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between gap-3 sm:gap-4 w-full">
+          <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+            <button
+              onClick={() => onNavigate("landing")}
+              className="text-forest/70 hover:text-forest shrink-0 cursor-pointer"
+              title="Voltar ao início"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+            <div className="h-6 w-px bg-soft shrink-0"></div>
+            <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+              <div className="w-9 h-9 sm:w-10 sm:h-10 bg-sun rounded-full flex items-center justify-center text-forest overflow-hidden hidden sm:flex shadow-xs shrink-0">
+                <img
+                  src={logoImage}
+                  alt="AcolheMente Logo"
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              <div className="flex flex-col min-w-0">
+                <span className="font-serif text-sm sm:text-base lg:text-lg font-bold text-forest flex items-center gap-1.5 leading-tight truncate">
+                  Painel
+                  <span className="text-forest/40 hidden sm:inline-block">
+                    /
+                  </span>
+                  <span className="hidden sm:inline-block font-semibold">
+                    {roleLabels[currentRole]}
+                  </span>
+                </span>
+                {currentRole === "profissional" ? (
+                  <span className="text-[11px] sm:text-xs text-forest/70 font-medium leading-tight truncate">
+                    Bem-vindo(a), {profile?.name ? profile.name.trim().split(" ")[0] : "Profissional"} • Cuidando de quem cuida.
+                  </span>
+                ) : (
+                  <span className="text-[11px] sm:text-xs text-forest/60 font-medium leading-tight hidden sm:inline-block truncate">
+                    AcolheMente • Gestão Integrada
+                  </span>
+                )}
+              </div>
             </div>
-            <span className="font-serif text-lg sm:text-xl font-medium text-forest flex items-center gap-2">
-              Painel
-              <span className="text-forest/70 opacity-50 hidden sm:inline-block">
-                /
-              </span>
-              <span className="hidden sm:inline-block">
-                {roleLabels[currentRole]}
-              </span>
-            </span>
+          </div>
+
+          {/* Lado Direito do Topo: Troca de Papel, Blog Público, Botão de Perfil/Engrenagem e Sair */}
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            {profile?.roles && profile.roles.length > 1 && (
+              <div className="flex items-center gap-1 bg-warm border border-soft rounded-full p-0.5 shadow-xs shrink-0">
+                {profile.roles.map((r: Role) => (
+                  <button
+                    key={r}
+                    onClick={() => {
+                      setActiveRoleView(r);
+                      if (r === "profissional") {
+                        setActiveTab("pacientes");
+                      } else if (r === "master" || r === "triagem") {
+                        setActiveTab("kanban");
+                      }
+                    }}
+                    className={`px-2 sm:px-2.5 py-1 rounded-full text-[10px] font-bold uppercase transition-all whitespace-nowrap cursor-pointer ${
+                      currentRole === r
+                        ? "bg-forest text-white shadow-xs"
+                        : "text-forest/60 hover:text-forest"
+                    }`}
+                  >
+                    {r === "master"
+                      ? "Gestão"
+                      : r === "triagem"
+                        ? "Triagem"
+                        : "Profissional"}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setShowRoleSelectionModal(true)}
+                  className="p-1 text-forest/60 hover:text-forest hover:bg-forest/10 rounded-full transition-colors cursor-pointer"
+                  title="Mudar painel ou ver opções de acesso"
+                >
+                  <ChevronDown className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+
+            <button
+              onClick={() => onNavigate("blog")}
+              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-warm hover:bg-warm/80 text-forest text-xs font-semibold rounded-full border border-soft transition-all cursor-pointer shadow-2xs"
+              title="Acessar Blog & Artigos"
+            >
+              <BookOpen className="w-3.5 h-3.5 text-forest/70" />
+              <span>Blog Público</span>
+            </button>
+
+            {/* Botão do Profissional: Foto real com fallback de iniciais, Iniciais em telas pequenas e Ícone de Engrenagem */}
+            {(() => {
+              const profName = profile?.name || "Profissional";
+              const nameParts = profName.trim().split(/\s+/).filter(Boolean);
+              const initials =
+                nameParts.length === 0
+                  ? "PR"
+                  : nameParts.length === 1
+                    ? nameParts[0].slice(0, 2).toUpperCase()
+                    : `${nameParts[0][0]}${nameParts[nameParts.length - 1][0]}`.toUpperCase();
+
+              const photoSource =
+                profile?.photoUrl ||
+                (profile as any)?.photoURL ||
+                (profile as any)?.photo ||
+                (profile as any)?.fotoUrl ||
+                (profile as any)?.foto;
+
+              return (
+                <button
+                  type="button"
+                  onClick={() => setShowAccountDetailsModal(true)}
+                  className="flex items-center gap-2 sm:gap-2.5 text-xs sm:text-sm text-forest font-medium bg-warm hover:bg-emerald-50/70 hover:border-emerald-200 px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-full border border-soft transition-all cursor-pointer shadow-2xs group"
+                  title="Configuração de Acesso, E-mail e Credenciais"
+                >
+                  {photoSource ? (
+                    <img
+                      src={photoSource}
+                      alt={profName}
+                      className="w-7 h-7 sm:w-8 sm:h-8 rounded-full object-cover shrink-0 border border-emerald-600/30 ring-1 ring-white shadow-2xs"
+                    />
+                  ) : (
+                    <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-forest text-sun flex items-center justify-center font-bold text-xs shrink-0 shadow-2xs">
+                      {initials}
+                    </div>
+                  )}
+
+                  {/* Nome do Profissional: Iniciais no mobile (ex: MR) e Nome completo no desktop */}
+                  <div className="flex items-center min-w-0 pr-0.5">
+                    <span className="sm:hidden font-bold text-xs text-forest">
+                      {initials}
+                    </span>
+                    <span className="hidden sm:inline font-semibold text-xs sm:text-sm leading-tight text-forest truncate max-w-[120px] md:max-w-[180px]">
+                      {profName}
+                    </span>
+                  </div>
+
+                  {/* Ícone de Engrenagem no lugar da palavra 'configuração' */}
+                  <Settings className="w-3.5 h-3.5 text-forest/60 group-hover:text-forest group-hover:rotate-45 transition-all shrink-0" />
+                </button>
+              );
+            })()}
+
+            <button
+              onClick={() => signOut(auth)}
+              className="p-1.5 sm:p-2 text-forest/70 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors shrink-0 cursor-pointer"
+              title="Sair do painel"
+            >
+              <LogOut className="w-4 h-4 sm:w-5 sm:h-5" />
+            </button>
           </div>
         </div>
 
-        {(currentRole === "master" || currentRole === "triagem") && (
-          <div className="flex order-last w-full lg:w-auto lg:order-none items-center gap-1 sm:gap-2 bg-warm rounded-full p-1 border border-soft overflow-x-auto no-scrollbar">
-            <button
-              onClick={() => setActiveTab("tarefas")}
-              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "tarefas" ? "bg-white shadow-sm text-forest" : "text-forest/70 hover:text-forest"}`}
-            >
-              Alertas e Pendências
-              {untreatedGestaoCount > 0 && (
-                <span className="bg-red-500 text-white text-[10px] min-w-[18px] h-4.5 px-1 flex items-center justify-center rounded-full font-bold">
-                  {untreatedGestaoCount}
-                </span>
-              )}
-            </button>
-            <button
-              onClick={() => setActiveTab("estatisticas")}
-              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "estatisticas" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70 hover:text-forest"}`}
-            >
-              <BarChart2 className="w-3.5 h-3.5 text-forest/70" />
-              <span>Controle</span>
-            </button>
-            <button
-              onClick={() => setActiveTab("kanban")}
-              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "kanban" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
-            >
-              Triagem
-              {pendingTriagemCount > 0 && (
-                <span className="bg-red-500 text-white text-[10px] w-4 h-4 flex items-center justify-center rounded-full font-bold ml-1">
-                  {pendingTriagemCount}
-                </span>
-              )}
-            </button>
-            <button
-              onClick={() => setActiveTab("pacientesAcolhidos")}
-              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "pacientesAcolhidos" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
-            >
-              Pacientes
-              {pendingPacientesCount > 0 && (
-                <span className="bg-red-500 text-white text-[10px] w-4 h-4 flex items-center justify-center rounded-full font-bold ml-1">
-                  {pendingPacientesCount}
-                </span>
-              )}
-            </button>
-            <button
-              onClick={() => setActiveTab("triagemCorporativa")}
-              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "triagemCorporativa" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70 hover:text-forest"}`}
-            >
-              <Building2 className="w-3.5 h-3.5 text-emerald-700" />
-              <span>Triagem Corporativa</span>
-              {solicitacoesCorpCount > 0 && (
-                <span className="bg-emerald-600 text-white text-[10px] min-w-4 h-4 px-1 flex items-center justify-center rounded-full font-bold ml-1">
-                  {solicitacoesCorpCount}
-                </span>
-              )}
-            </button>
-            {currentRole === "master" && (
+        {/* Linha 2: Barra Dedicada de Abas de Navegação (Scroll Horizontal Suave) */}
+        <div className="px-3 sm:px-6 py-1.5 sm:py-2 border-t border-soft/60 bg-warm/25 flex items-center overflow-x-auto no-scrollbar">
+          {(currentRole === "master" || currentRole === "triagem") && (
+            <div className="flex items-center gap-1 sm:gap-2 bg-warm rounded-full p-1 border border-soft shrink-0">
               <button
-                onClick={() => setActiveTab("doacoes")}
-                className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "doacoes" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
+                onClick={() => setActiveTab("tarefas")}
+                className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "tarefas" ? "bg-white shadow-sm text-forest" : "text-forest/70 hover:text-forest"}`}
               >
-                Apoio Acessível
-                {pendingApoioSolidarioCount > 0 && (
-                  <span className="bg-red-500 text-white text-[10px] w-4 h-4 flex items-center justify-center rounded-full font-bold ml-1">
-                    {pendingApoioSolidarioCount}
+                Alertas e Pendências
+                {untreatedGestaoCount > 0 && (
+                  <span className="bg-red-500 text-white text-[10px] min-w-[18px] h-4.5 px-1 flex items-center justify-center rounded-full font-bold">
+                    {untreatedGestaoCount}
                   </span>
                 )}
               </button>
-            )}
-            <button
-              onClick={() => setActiveTab("profissionais")}
-              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "profissionais" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
-            >
-              Profissionais
-              {(pendingProfissionaisCount > 0 ||
-                profissionaisAtCapacity.length > 0) && (
-                <div className="flex items-center gap-1 ml-1">
-                  {pendingProfissionaisCount > 0 && (
-                    <span className="bg-red-500 text-white text-[10px] w-4 h-4 flex items-center justify-center rounded-full font-bold">
-                      {pendingProfissionaisCount}
-                    </span>
-                  )}
-                  {profissionaisAtCapacity.length > 0 && (
-                    <span
-                      title={`${profissionaisAtCapacity.length} profissional(is) no limite de horas`}
-                    >
-                      <ShieldAlert className="w-4 h-4 text-red-500" />
-                    </span>
-                  )}
-                </div>
-              )}
-            </button>
-            {currentRole === "master" && (
-              <>
-                <button
-                  onClick={() => setActiveTab("empresas")}
-                  className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "empresas" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
-                >
-                  Empresas
-                  {pendingEmpresasCount > 0 && (
-                    <span className="bg-red-500 text-white text-[10px] w-4 h-4 flex items-center justify-center rounded-full font-bold ml-1">
-                      {pendingEmpresasCount}
-                    </span>
-                  )}
-                </button>
-                <button
-                  onClick={() => setActiveTab("compliance")}
-                  className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "compliance" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
-                >
-                  Compliance
-                  {complianceMessages.filter((m) => m.status === "Pendente")
-                    .length > 0 && (
-                    <span className="bg-red-500 text-white text-[10px] w-4 h-4 flex items-center justify-center rounded-full font-bold ml-1">
-                      {
-                        complianceMessages.filter(
-                          (m) => m.status === "Pendente",
-                        ).length
-                      }
-                    </span>
-                  )}
-                </button>
-                <button
-                  onClick={() => setActiveTab("acessos")}
-                  className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap ${activeTab === "acessos" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
-                >
-                  Acessos
-                </button>
-                <button
-                  onClick={() => setActiveTab("backup")}
-                  className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "backup" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
-                >
-                  <Database className="w-3.5 h-3.5 text-forest/70" />
-                  <span>Backup & Dados</span>
-                </button>
-                <button
-                  onClick={() => setActiveTab("notificacoes")}
-                  className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "notificacoes" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70/70 hover:text-forest/70"}`}
-                >
-                  <Bell className="w-3.5 h-3.5 text-forest/70" />
-                  <span>Régua & Mensagens</span>
-                </button>
-              </>
-            )}
-            <button
-              onClick={() => setActiveTab("eventos")}
-              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "eventos" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
-            >
-              Eventos da Plataforma
-            </button>
-            <button
-              onClick={() => setActiveTab("servicos")}
-              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "servicos" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
-            >
-              Serviços da Rede
-            </button>
-            <button
-              onClick={() => setActiveTab("gestaoArtigos")}
-              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "gestaoArtigos" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
-            >
-              <BookOpen className="w-3.5 h-3.5 text-forest/70" />
-              <span>Artigos & Blog</span>
-              {pendingArtigosCount > 0 && (
-                <span className="bg-amber-500 text-white text-[10px] w-4.5 h-4.5 flex items-center justify-center rounded-full font-bold ml-1">
-                  {pendingArtigosCount}
-                </span>
-              )}
-            </button>
-            <button
-              onClick={() => setActiveTab("redeProfissional")}
-              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "redeProfissional" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70/70 hover:text-forest/70"}`}
-            >
-              <Users className="w-3.5 h-3.5 text-emerald-700" />
-              <span>Rede de Conexão</span>
-            </button>
-          </div>
-        )}
-
-        {currentRole === "profissional" && (
-          <div className="flex order-last w-full lg:w-auto lg:order-none items-center gap-1 sm:gap-2 bg-warm rounded-full p-1 border border-soft overflow-x-auto no-scrollbar">
-            <button
-              onClick={() => setActiveTab("estatisticas")}
-              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "estatisticas" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
-            >
-              Controle
-            </button>
-            <button
-              onClick={() => setActiveTab("pacientes")}
-              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap ${activeTab === "pacientes" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
-            >
-              Meus Pacientes
-            </button>
-            <button
-              onClick={() => setActiveTab("triagemCorporativa")}
-              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "triagemCorporativa" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70 hover:text-forest"}`}
-            >
-              <Building2 className="w-3.5 h-3.5 text-emerald-700" />
-              <span>Acolhimento Corporativo</span>
-              {solicitacoesCorpCount > 0 && (
-                <span className="bg-emerald-600 text-white text-[10px] min-w-4 h-4 px-1 flex items-center justify-center rounded-full font-bold ml-1">
-                  {solicitacoesCorpCount}
-                </span>
-              )}
-            </button>
-            <button
-              onClick={() => setActiveTab("redeProfissional")}
-              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "redeProfissional" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70/70 hover:text-forest/70"}`}
-            >
-              <Users className="w-3.5 h-3.5 text-emerald-700" />
-              <span>Rede de Conexão</span>
-            </button>
-            <button
-              onClick={() => setActiveTab("eventos")}
-              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "eventos" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
-            >
-              Eventos
-            </button>
-            <button
-              onClick={() => setActiveTab("servicos")}
-              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "servicos" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
-            >
-              Serviços da Rede
-            </button>
-            <button
-              onClick={() => setActiveTab("artigosProfissional")}
-              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "artigosProfissional" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
-            >
-              <BookOpen className="w-3.5 h-3.5 text-forest/70" />
-              <span>Meus Artigos</span>
-            </button>
-            <button
-              onClick={() => setActiveTab("tarefasProfissional")}
-              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "tarefasProfissional" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
-            >
-              Alertas e Pendências
-              {pendingProfNotificationsCount > 0 && (
-                <span className="bg-red-500 text-white text-[10px] w-4.5 h-4.5 flex items-center justify-center rounded-full font-bold">
-                  {pendingProfNotificationsCount}
-                </span>
-              )}
-            </button>
-            <button
-              onClick={() => setActiveTab("pagamentosProfissional")}
-              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "pagamentosProfissional" ? "bg-white shadow-sm text-forest" : "text-forest/70 hover:text-forest"}`}
-            >
-              <CreditCard className="w-3.5 h-3.5 text-forest" />
-              <span>{profile?.isCortesia ? "Status / Convidado" : "Gerenciar Pagamentos"}</span>
-              {profile?.isCortesia && (
-                <span className="px-2 py-0.5 bg-purple-100 text-purple-900 text-[10px] font-black rounded-full border border-purple-200">
-                  Convidado
-                </span>
-              )}
-            </button>
-            <button
-              onClick={() => setActiveTab("perfil")}
-              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap ${activeTab === "perfil" ? "bg-white shadow-sm text-forest" : "text-forest/70 hover:text-forest"}`}
-            >
-              Meu Perfil
-            </button>
-          </div>
-        )}
-
-        {activeTab !== "estatisticas" && (
-          <div className={`flex-1 w-full lg:w-auto relative order-last lg:order-none mt-3 sm:mt-0 transition-all ${
-            activeTab === "redeProfissional" ? "lg:max-w-md" : "lg:max-w-xs"
-          }`}>
-            <Search className="w-4 h-4 text-forest/70 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              id="global-search-input"
-              type="text"
-              placeholder={
-                activeTab === "redeProfissional"
-                  ? "Buscar profissionais por palavras-chave, especialidade ou abordagem..."
-                  : "Buscar..."
-              }
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-8 py-1.5 sm:py-2 text-xs sm:text-sm bg-warm/50 border border-soft rounded-full focus:outline-none focus:border-sun-dark focus:bg-white text-forest placeholder:text-forest/60 transition-all"
-            />
-            {searchQuery && (
               <button
-                type="button"
-                onClick={() => setSearchQuery("")}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-forest/50 hover:text-forest transition-colors cursor-pointer"
-                title="Limpar busca"
+                onClick={() => setActiveTab("estatisticas")}
+                className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "estatisticas" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70 hover:text-forest"}`}
               >
-                <X className="w-3.5 h-3.5" />
+                <BarChart2 className="w-3.5 h-3.5 text-forest/70" />
+                <span>Controle</span>
               </button>
-            )}
-          </div>
-        )}
-
-        <div className="flex items-center gap-2 sm:gap-4">
-          {profile?.roles && profile.roles.length > 1 && (
-            <div className="flex items-center gap-1 bg-warm border border-soft rounded-full p-0.5 shadow-sm shrink-0">
-              {profile.roles.map((r: Role) => (
-                <button
-                  key={r}
-                  onClick={() => {
-                    setActiveRoleView(r);
-                    if (r === "profissional") {
-                      setActiveTab("pacientes");
-                    } else if (r === "master" || r === "triagem") {
-                      setActiveTab("kanban");
-                    }
-                  }}
-                  className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase transition-all whitespace-nowrap ${
-                    currentRole === r
-                      ? "bg-forest text-white shadow-xs"
-                      : "text-forest/60 hover:text-forest"
-                  }`}
-                >
-                  {r === "master"
-                    ? "Gestão"
-                    : r === "triagem"
-                      ? "Triagem"
-                      : "Psicólogo"}
-                </button>
-              ))}
               <button
-                type="button"
-                onClick={() => setShowRoleSelectionModal(true)}
-                className="p-1 text-forest/60 hover:text-forest hover:bg-forest/10 rounded-full transition-colors"
-                title="Mudar painel ou ver opções de acesso"
+                onClick={() => setActiveTab("kanban")}
+                className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "kanban" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
               >
-                <ChevronDown className="w-3.5 h-3.5" />
+                Triagem
+                {pendingTriagemCount > 0 && (
+                  <span className="bg-red-500 text-white text-[10px] w-4 h-4 flex items-center justify-center rounded-full font-bold ml-1">
+                    {pendingTriagemCount}
+                  </span>
+                )}
+              </button>
+              <button
+                onClick={() => setActiveTab("pacientesAcolhidos")}
+                className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "pacientesAcolhidos" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
+              >
+                Pacientes
+                {pendingPacientesCount > 0 && (
+                  <span className="bg-red-500 text-white text-[10px] w-4 h-4 flex items-center justify-center rounded-full font-bold ml-1">
+                    {pendingPacientesCount}
+                  </span>
+                )}
+              </button>
+              <button
+                onClick={() => setActiveTab("triagemCorporativa")}
+                className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "triagemCorporativa" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70 hover:text-forest"}`}
+              >
+                <Building2 className="w-3.5 h-3.5 text-emerald-700" />
+                <span>Triagem Corporativa</span>
+                {solicitacoesCorpCount > 0 && (
+                  <span className="bg-emerald-600 text-white text-[10px] min-w-4 h-4 px-1 flex items-center justify-center rounded-full font-bold ml-1">
+                    {solicitacoesCorpCount}
+                  </span>
+                )}
+              </button>
+              {currentRole === "master" && (
+                <button
+                  onClick={() => setActiveTab("doacoes")}
+                  className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "doacoes" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
+                >
+                  Apoio Acessível
+                  {pendingApoioSolidarioCount > 0 && (
+                    <span className="bg-red-500 text-white text-[10px] w-4 h-4 flex items-center justify-center rounded-full font-bold ml-1">
+                      {pendingApoioSolidarioCount}
+                    </span>
+                  )}
+                </button>
+              )}
+              <button
+                onClick={() => setActiveTab("profissionais")}
+                className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "profissionais" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
+              >
+                Profissionais
+                {(pendingProfissionaisCount > 0 ||
+                  profissionaisAtCapacity.length > 0) && (
+                  <div className="flex items-center gap-1 ml-1">
+                    {pendingProfissionaisCount > 0 && (
+                      <span className="bg-red-500 text-white text-[10px] w-4 h-4 flex items-center justify-center rounded-full font-bold">
+                        {pendingProfissionaisCount}
+                      </span>
+                    )}
+                    {profissionaisAtCapacity.length > 0 && (
+                      <span
+                        title={`${profissionaisAtCapacity.length} profissional(is) no limite de horas`}
+                      >
+                        <ShieldAlert className="w-4 h-4 text-red-500" />
+                      </span>
+                    )}
+                  </div>
+                )}
+              </button>
+              {currentRole === "master" && (
+                <>
+                  <button
+                    onClick={() => setActiveTab("empresas")}
+                    className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "empresas" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
+                  >
+                    Empresas
+                    {pendingEmpresasCount > 0 && (
+                      <span className="bg-red-500 text-white text-[10px] w-4 h-4 flex items-center justify-center rounded-full font-bold ml-1">
+                        {pendingEmpresasCount}
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => setActiveTab("compliance")}
+                    className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "compliance" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
+                  >
+                    Compliance
+                    {complianceMessages.filter((m) => m.status === "Pendente")
+                      .length > 0 && (
+                      <span className="bg-red-500 text-white text-[10px] w-4 h-4 flex items-center justify-center rounded-full font-bold ml-1">
+                        {
+                          complianceMessages.filter(
+                            (m) => m.status === "Pendente",
+                          ).length
+                        }
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => setActiveTab("acessos")}
+                    className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap ${activeTab === "acessos" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
+                  >
+                    Acessos
+                  </button>
+                  <button
+                    onClick={() => setActiveTab("backup")}
+                    className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "backup" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
+                  >
+                    <Database className="w-3.5 h-3.5 text-forest/70" />
+                    <span>Backup & Custódia</span>
+                  </button>
+                  <button
+                    onClick={() => setActiveTab("notificacoes")}
+                    className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "notificacoes" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70/70 hover:text-forest/70"}`}
+                  >
+                    <Bell className="w-3.5 h-3.5 text-forest/70" />
+                    <span>Régua & Mensagens</span>
+                  </button>
+                </>
+              )}
+              <button
+                onClick={() => setActiveTab("eventos")}
+                className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "eventos" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
+              >
+                Eventos da Plataforma
+              </button>
+              <button
+                onClick={() => setActiveTab("servicos")}
+                className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "servicos" ? "bg-white shadow-sm text-forest" : "text-forest/70/70 hover:text-forest/70"}`}
+              >
+                Serviços da Rede
+              </button>
+              <button
+                onClick={() => setActiveTab("gestaoArtigos")}
+                className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "gestaoArtigos" ? "bg-white shadow-sm text-forest" : "text-forest/70 hover:text-forest"}`}
+              >
+                <BookOpen className="w-3.5 h-3.5 text-forest/70" />
+                <span>Artigos & Blog</span>
+                {pendingArtigosCount > 0 && (
+                  <span className="bg-amber-500 text-white text-[10px] w-4.5 h-4.5 flex items-center justify-center rounded-full font-bold ml-1">
+                    {pendingArtigosCount}
+                  </span>
+                )}
+              </button>
+              <button
+                onClick={() => setActiveTab("redeProfissional")}
+                className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "redeProfissional" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70/70 hover:text-forest/70"}`}
+              >
+                <Users className="w-3.5 h-3.5 text-emerald-700" />
+                <span>Rede Profissional</span>
               </button>
             </div>
           )}
-          <button
-            onClick={() => onNavigate("blog")}
-            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-warm hover:bg-warm/80 text-forest text-xs font-semibold rounded-full border border-soft transition-all cursor-pointer"
-            title="Acessar Blog & Artigos"
-          >
-            <BookOpen className="w-3.5 h-3.5 text-forest/70" />
-            <span>Blog Público</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowAccountDetailsModal(true)}
-            className="flex items-center gap-2 text-xs sm:text-sm text-forest font-medium bg-warm hover:bg-forest/10 px-3 py-1.5 rounded-full border border-soft max-w-[130px] sm:max-w-none truncate transition-all cursor-pointer shadow-2xs"
-            title="Minha Conta, E-mail de Acesso e Credenciais"
-          >
-            <User className="w-4 h-4 text-forest/70 shrink-0" />
-            <span className="truncate">{profile.name}</span>
-          </button>
-          <button
-            onClick={() => signOut(auth)}
-            className="p-2 text-forest/70/70 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors shrink-0"
-          >
-            <LogOut className="w-5 h-5" />
-          </button>
+
+          {currentRole === "profissional" && (
+            <div className="flex items-center gap-1 sm:gap-2 bg-warm rounded-full p-1 border border-soft shrink-0">
+              {/* 1. Dashboard */}
+              <button
+                onClick={() => setActiveTab("estatisticas")}
+                className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 cursor-pointer ${activeTab === "estatisticas" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70 hover:text-forest"}`}
+              >
+                <BarChart2 className="w-3.5 h-3.5 text-forest/70" />
+                <span>Dashboard</span>
+              </button>
+
+              {/* 2. Meu Perfil */}
+              <button
+                onClick={() => setActiveTab("perfil")}
+                className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 cursor-pointer ${activeTab === "perfil" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70 hover:text-forest"}`}
+              >
+                <User className="w-3.5 h-3.5 text-forest/70" />
+                <span>Meu Perfil</span>
+              </button>
+
+              {/* 3. Alertas e Pendências */}
+              <button
+                onClick={() => setActiveTab("tarefasProfissional")}
+                className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 cursor-pointer ${activeTab === "tarefasProfissional" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70 hover:text-forest"}`}
+              >
+                <Bell className="w-3.5 h-3.5 text-forest/70" />
+                <span>Alertas e Pendências</span>
+                {pendingProfNotificationsCount > 0 && (
+                  <span className="bg-red-500 text-white text-[10px] w-4.5 h-4.5 flex items-center justify-center rounded-full font-bold ml-1">
+                    {pendingProfNotificationsCount}
+                  </span>
+                )}
+              </button>
+
+              {/* 4. Meus Pacientes */}
+              <button
+                onClick={() => setActiveTab("pacientes")}
+                className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 cursor-pointer ${activeTab === "pacientes" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70 hover:text-forest"}`}
+              >
+                <Users className="w-3.5 h-3.5 text-forest/70" />
+                <span>Meus Pacientes</span>
+                {solicitacoesCorpCount > 0 && (
+                  <span className="bg-emerald-600 text-white text-[10px] min-w-4 h-4 px-1 flex items-center justify-center rounded-full font-bold ml-1 animate-pulse">
+                    {solicitacoesCorpCount}
+                  </span>
+                )}
+              </button>
+
+              {/* 5. Rede Profissional */}
+              <button
+                onClick={() => setActiveTab("redeProfissional")}
+                className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 cursor-pointer ${activeTab === "redeProfissional" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70 hover:text-forest"}`}
+              >
+                <Users className="w-3.5 h-3.5 text-emerald-700" />
+                <span>Rede Profissional</span>
+              </button>
+
+              {/* 6. Meus Artigos */}
+              <button
+                onClick={() => setActiveTab("artigosProfissional")}
+                className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 cursor-pointer ${activeTab === "artigosProfissional" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70 hover:text-forest"}`}
+              >
+                <BookOpen className="w-3.5 h-3.5 text-forest/70" />
+                <span>Meus Artigos</span>
+              </button>
+
+              {/* 7. Status / Plano */}
+              <button
+                onClick={() => setActiveTab("pagamentosProfissional")}
+                className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 cursor-pointer ${activeTab === "pagamentosProfissional" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70 hover:text-forest"}`}
+              >
+                <CreditCard className="w-3.5 h-3.5 text-forest" />
+                <span>Status / Plano</span>
+                {profile?.isCortesia && (
+                  <span className="px-2 py-0.5 bg-purple-100 text-purple-900 text-[10px] font-black rounded-full border border-purple-200">
+                    Convidado
+                  </span>
+                )}
+              </button>
+
+              {/* 8. Eventos e Parcerias */}
+              <button
+                onClick={() => setActiveTab("eventos")}
+                className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 cursor-pointer ${activeTab === "eventos" || activeTab === "servicos" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70 hover:text-forest"}`}
+              >
+                <Calendar className="w-3.5 h-3.5 text-forest/70" />
+                <span>Eventos e Parcerias</span>
+              </button>
+
+              {/* 9. Backup & Custódia */}
+              <button
+                onClick={() => setActiveTab("backup")}
+                className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 cursor-pointer ${activeTab === "backup" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70 hover:text-forest"}`}
+              >
+                <Database className="w-3.5 h-3.5 text-forest/70" />
+                <span>Backup & Custódia</span>
+              </button>
+            </div>
+          )}
         </div>
       </nav>
 
@@ -7119,18 +7188,18 @@ export function DashboardView({
                     </div>
                   </div>
 
-                  {/* Taxa Associativa dos Profissionais */}
+                  {/* Taxa de Uso e Intermediação da Plataforma */}
                   <div className="bg-warm/30 p-6 rounded-2xl border border-soft space-y-4">
                     <div className="flex justify-between items-center border-b border-soft pb-2">
                       <h4 className="text-sm font-bold uppercase tracking-wider text-forest/70">
-                        Taxa Associativa dos Profissionais
+                        Taxa de Uso e Intermediação da Plataforma
                       </h4>
                       <span className="px-2.5 py-0.5 bg-sun-light text-forest text-[10px] font-bold rounded-full border border-sun-dark/30 uppercase">
                         Plano Profissional
                       </span>
                     </div>
                     <p className="text-xs text-forest/70 leading-relaxed">
-                      Defina o valor mensal cobrado dos profissionais para manutenção do ecossistema, consultorias e triagem dos casos. O valor alterado se refletirá imediatamente na landing page e nos formulários.
+                      Defina o valor mensal cobrado dos profissionais referente ao uso e intermediação da plataforma, manutenção do ecossistema, consultorias e triagem dos casos. O valor alterado se refletirá imediatamente na landing page e nos formulários.
                     </p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
                       <div className="flex flex-col gap-1">
@@ -7185,7 +7254,7 @@ export function DashboardView({
                       </label>
                     </div>
                     <p className="text-xs text-forest/70 leading-relaxed">
-                      Configure suas chaves públicas e links de pagamento do Stripe para processar cobranças da taxa associativa via cartão de crédito, Pix e boleto.
+                      Configure suas chaves públicas e links de pagamento do Stripe para processar cobranças da Taxa de Uso e Intermediação da Plataforma via cartão de crédito, Pix e boleto.
                     </p>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -8398,32 +8467,83 @@ export function DashboardView({
       ) : currentRole === "profissional" && activeTab === "estatisticas" ? (
         <div className="flex-1 overflow-auto p-6 md:p-8 flex flex-col gap-8 slide-up">
           <div className="max-w-6xl w-full mx-auto space-y-8">
-            {/* Cabeçalho */}
-            <div className="bg-white px-8 py-6 rounded-[2rem] shadow-sm border border-soft flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-2xl bg-forest/5 flex items-center justify-center text-forest shrink-0">
-                  <BarChart2 className="w-7 h-7 text-forest" />
+            {/* Cabeçalho em 2 Linhas: Linha 1 (Título & Subtítulo), Linha 2 (Botões & Sub-abas) */}
+            <div className="bg-white px-5 py-3 sm:py-3.5 rounded-2xl shadow-xs border border-soft flex flex-col gap-3">
+              {/* Linha 1: Ícone + Título e Subtítulo */}
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-xl bg-forest/5 flex items-center justify-center text-forest shrink-0">
+                  <BarChart2 className="w-4 h-4 text-forest" />
                 </div>
-                <div>
-                  <h2 className="font-serif text-2xl sm:text-3xl font-bold text-forest">
+                <div className="min-w-0">
+                  <h2 className="font-serif text-sm sm:text-base font-bold text-forest truncate leading-snug">
                     Meu Desempenho & Controle Clínico
                   </h2>
-                  <p className="text-xs text-forest/60 mt-0.5">
+                  <p className="text-[11px] sm:text-xs text-forest/60 mt-0.5 truncate">
                     Acompanhamento integrado de atendimentos particulares, fluxo corporativo e cotas
                   </p>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={handleOpenGerenciarCotaModal}
-                className="py-2.5 px-4 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer self-start sm:self-auto shrink-0"
-              >
-                <Sliders className="w-4 h-4 text-emerald-200" />
-                Gerenciar Cota & Faixas
-              </button>
+
+              {/* Linha 2: Sub-abas de Navegação e Botão de Gerenciar Cota */}
+              <div className="flex items-center justify-between gap-3 pt-3 border-t border-soft/60 flex-wrap">
+                {/* Sub-abas de Navegação */}
+                <div className="inline-flex items-center gap-1.5 p-1 bg-warm/60 rounded-2xl border border-soft shadow-2xs">
+                  <button
+                    type="button"
+                    onClick={() => setSubAbaEstatisticas("faturamento")}
+                    className={`px-3.5 sm:px-4 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                      subAbaEstatisticas === "faturamento"
+                        ? "bg-white text-emerald-900 shadow-xs border border-emerald-300"
+                        : "text-forest/70 hover:text-forest hover:bg-white/40"
+                    }`}
+                  >
+                    <DollarSign className="w-3.5 h-3.5 text-emerald-700" />
+                    <span>Faturamento Consolidado</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setSubAbaEstatisticas("cotas")}
+                    className={`px-3.5 sm:px-4 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                      subAbaEstatisticas === "cotas"
+                        ? "bg-white text-forest shadow-xs border border-soft"
+                        : "text-forest/70 hover:text-forest hover:bg-white/40"
+                    }`}
+                  >
+                    <Clock className="w-3.5 h-3.5 text-forest/70" />
+                    <span>Cotas & Grade</span>
+                  </button>
+                </div>
+
+                {/* Botão de Ação */}
+                <button
+                  type="button"
+                  onClick={handleOpenGerenciarCotaModal}
+                  className="py-2 px-4 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
+                >
+                  <Sliders className="w-3.5 h-3.5 text-emerald-200" />
+                  <span>Gerenciar Cota & Faixas</span>
+                </button>
+              </div>
             </div>
 
-            {(() => {
+            {subAbaEstatisticas === "faturamento" ? (
+              <ProfissionalFaturamentoDashboard
+                pacientesParticulares={meusPacientes || []}
+                fichasCorporativas={minhasFichasCorporativas || []}
+                dadosPJ={profile?.dadosPJ || (profile as any)?.perfilPJ}
+                profissionalNome={profile?.nome || profile?.name}
+                chavePix={profile?.chavePix}
+                onSelecionarPacienteParticular={(paciente) => {
+                  setSelectedCard(paciente);
+                  setActiveTab("pacientes");
+                }}
+                onSelecionarFichaCorporativa={(_ficha) => {
+                  setActiveTab("triagemCorporativa");
+                }}
+                showToast={showToast}
+              />
+            ) : (() => {
               // --- Fluxo Particular do Profissional ---
               const pacsPartAtivos = meusPacientes.filter(
                 (a) =>
@@ -8994,42 +9114,105 @@ export function DashboardView({
           </div>
         </div>
       ) : currentRole === "profissional" && activeTab === "pacientes" ? (
-        <div className="flex-1 overflow-auto p-4 sm:p-6 md:p-8 flex flex-col gap-6 slide-up">
-          <div className="max-w-5xl w-full mx-auto flex flex-col gap-4">
-            {/* Barra de Topo Enxuta com Contagem, Busca e Botão Expandir/Recolher Todos */}
-            <div className="flex flex-wrap items-center justify-between gap-3 bg-white px-4 sm:px-6 py-3.5 rounded-2xl shadow-xs border border-soft">
+        <div className="flex-1 overflow-auto p-3 sm:p-6 md:p-8 flex flex-col gap-5 slide-up bg-warm">
+          <div className="max-w-7xl w-full mx-auto flex flex-col gap-4">
+            {/* SUB-ABAS DE MEUS PACIENTES: VALORES ACESSÍVEIS & CORPORATIVO */}
+            <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3 sm:p-4 rounded-2xl shadow-xs border border-soft">
+              <div className="flex items-center gap-2">
+                <div className="flex items-center p-1 bg-warm rounded-xl border border-soft text-xs font-semibold">
+                  <button
+                    type="button"
+                    onClick={() => setSubTabPacientes("acessiveis")}
+                    className={`px-3.5 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                      subTabPacientes === "acessiveis"
+                        ? "bg-white text-forest shadow-xs font-bold"
+                        : "text-forest/70 hover:text-forest"
+                    }`}
+                  >
+                    <User className="w-3.5 h-3.5 text-forest" />
+                    <span>Valores Acessíveis</span>
+                    <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-forest/10 text-forest">
+                      {filteredMeusPacientes.length}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setSubTabPacientes("corporativo")}
+                    className={`px-3.5 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                      subTabPacientes === "corporativo"
+                        ? "bg-white text-forest shadow-xs font-bold"
+                        : "text-forest/70 hover:text-forest"
+                    }`}
+                  >
+                    <Building2 className="w-3.5 h-3.5 text-emerald-700" />
+                    <span>Corporativo</span>
+                    {solicitacoesCorpCount > 0 ? (
+                      <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-600 text-white animate-pulse">
+                        {solicitacoesCorpCount}
+                      </span>
+                    ) : null}
+                  </button>
+                </div>
+              </div>
+
+              <p className="text-xs text-forest/60 hidden sm:block">
+                {subTabPacientes === "acessiveis"
+                  ? "Atendimentos clínicos do modelo de valores acessíveis da plataforma"
+                  : "Encaminhamentos e fichas de bordo de convênios corporativos"}
+              </p>
+            </div>
+
+            {subTabPacientes === "corporativo" ? (
+              <TriagemCorporativaKanban
+                currentRole={currentRole}
+                currentUserProfile={profile}
+                onOpenWhatsApp={(phone, text) => {
+                  const raw = phone.replace(/\D/g, "");
+                  const full = raw.startsWith("55") ? raw : `55${raw}`;
+                  const url = `https://wa.me/${full}${text ? `?text=${encodeURIComponent(text)}` : ""}`;
+                  window.open(url, "_blank");
+                }}
+              />
+            ) : (
+              <div className="max-w-5xl w-full mx-auto flex flex-col gap-4">
+                {/* Barra de Topo Enxuta com Contagem, Busca e Botão Expandir/Recolher Todos */}
+                <div className="flex flex-wrap items-center justify-between gap-3 bg-white px-4 sm:px-6 py-3.5 rounded-2xl shadow-xs border border-soft">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-xl bg-forest/5 flex items-center justify-center text-forest shrink-0">
                   <User className="w-4 h-4 text-forest" />
                 </div>
                 <div>
-                  <h2 className="font-serif text-lg sm:text-xl font-bold text-forest">
+                  <h2 className="font-serif text-sm sm:text-base font-bold text-forest">
                     Meus Pacientes Encaminhados
                   </h2>
                   <p className="text-[11px] text-forest/60">
-                    {filteredMeusPacientes.length} paciente(s) vinculado(s) ao seu acompanhamento
+                    {pacienteSearchTerm.trim()
+                      ? "Filtrando resultados da busca"
+                      : `${filteredMeusPacientes.length} paciente(s) vinculado(s) ao seu acompanhamento`}
                   </p>
                 </div>
               </div>
 
               <div className="flex items-center gap-2 flex-wrap">
-                {/* Campo de Busca Rápida */}
+                {/* Campo de Busca Rápida Contextual */}
                 <div className="relative">
-                  <Search className="w-3.5 h-3.5 text-forest/40 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                  <Search className="w-3.5 h-3.5 text-forest/50 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                   <input
                     type="text"
-                    placeholder="Buscar paciente..."
+                    placeholder="Buscar por nome, telefone ou queixa..."
                     value={pacienteSearchTerm}
                     onChange={(e) => setPacienteSearchTerm(e.target.value)}
-                    className="pl-8 pr-3 py-1.5 bg-warm/40 border border-soft rounded-xl text-xs text-forest focus:outline-none focus:border-forest/40 w-40 sm:w-52"
+                    className="pl-8 pr-7 py-1.5 bg-warm/60 border border-soft rounded-xl text-xs text-forest placeholder:text-forest/50 focus:outline-none focus:border-forest/50 focus:bg-white w-48 sm:w-64 transition-all"
                   />
                   {pacienteSearchTerm && (
                     <button
                       type="button"
                       onClick={() => setPacienteSearchTerm("")}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-forest/40 hover:text-forest text-xs cursor-pointer"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-forest/40 hover:text-forest p-0.5 cursor-pointer transition-colors"
+                      title="Limpar busca"
                     >
-                      ×
+                      <X className="w-3 h-3" />
                     </button>
                   )}
                 </div>
@@ -9265,6 +9448,8 @@ export function DashboardView({
                 </div>
               );
             })()}
+              </div>
+            )}
           </div>
         </div>
       ) : currentRole === "profissional" &&
@@ -9298,21 +9483,28 @@ export function DashboardView({
       ) : currentRole === "profissional" && activeTab === "perfil" ? (
         <div className="flex-1 overflow-auto p-6 md:p-8 flex flex-col gap-8 slide-up font-sans">
           <div className="max-w-4xl w-full mx-auto">
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8 bg-white px-8 py-6 rounded-[2rem] shadow-sm border border-soft">
-              <div className="flex items-center gap-4">
-                <User className="w-8 h-8 text-forest/70 shrink-0" />
-                <h2 className="font-serif text-2xl sm:text-3xl text-forest font-medium">
-                  Ficha Cadastral de Profissional & Perfil de Apresentação
-                </h2>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6 bg-white px-5 py-3 sm:py-3.5 rounded-2xl shadow-xs border border-soft">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-xl bg-forest/5 flex items-center justify-center text-forest shrink-0">
+                  <User className="w-4 h-4 text-forest" />
+                </div>
+                <div className="min-w-0">
+                  <h2 className="font-serif text-sm sm:text-base text-forest font-bold leading-snug">
+                    Ficha Cadastral de Profissional & Perfil de Apresentação
+                  </h2>
+                  <p className="text-[11px] sm:text-xs text-forest/65">
+                    Mantenha seus dados, abordagens clínicas e biografia profissional sempre atualizados
+                  </p>
+                </div>
               </div>
               <a
                 href={`?prof=${profile.uid || profile.id || ""}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center justify-center gap-2 px-5 py-3 bg-sun-dark text-forest rounded-2xl text-xs sm:text-sm font-bold uppercase tracking-wider transition-all hover:bg-forest hover:text-white shadow-xs hover:shadow active:scale-95 shrink-0"
+                className="inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 bg-sun-dark text-forest rounded-xl text-xs font-bold transition-all hover:bg-forest hover:text-white shadow-2xs hover:shadow active:scale-95 shrink-0"
               >
-                <Eye className="w-4.5 h-4.5" />
-                Ver minha página pessoal
+                <Eye className="w-3.5 h-3.5" />
+                <span>Ver página pessoal</span>
               </a>
             </div>
 
@@ -10175,16 +10367,16 @@ export function DashboardView({
         <div className="flex-1 overflow-auto p-6 md:p-8 flex flex-col gap-8 slide-up font-sans">
           <div className="max-w-4xl w-full mx-auto space-y-8">
             {/* Header Banner */}
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 bg-white px-8 py-6 rounded-[2rem] shadow-sm border border-soft">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-2xl bg-sun-light flex items-center justify-center text-forest border border-sun-dark/30 shrink-0">
-                  <CreditCard className="w-6 h-6 text-forest" />
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white px-5 py-3 sm:py-3.5 rounded-2xl shadow-xs border border-soft">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-xl bg-forest/5 flex items-center justify-center text-forest shrink-0">
+                  <CreditCard className="w-4 h-4 text-forest" />
                 </div>
-                <div>
-                  <h2 className="font-serif text-2xl sm:text-3xl text-forest font-bold">
-                    {profile?.isCortesia ? "Status de Convidado & Isenção de Taxa" : "Gerenciar Meus Pagamentos & Taxa Associativa"}
+                <div className="min-w-0">
+                  <h2 className="font-serif text-sm sm:text-base text-forest font-bold leading-snug">
+                    {profile?.isCortesia ? "Status de Convidado & Isenção de Taxa" : "Gerenciar Pagamentos & Status da Assinatura"}
                   </h2>
-                  <p className="text-xs text-forest/70 mt-1">
+                  <p className="text-[11px] sm:text-xs text-forest/65 mt-0.5">
                     {profile?.isCortesia
                       ? "Você está cadastrado(a) na plataforma como Profissional Convidado, com isenção total de mensalidades."
                       : "Acompanhe seu status financeiro, prazos de vencimento e gerencie suas contribuições."}
@@ -10261,7 +10453,7 @@ export function DashboardView({
                           : isCancelRequested
                             ? "Sua solicitação de saída está em análise"
                             : isPago
-                              ? "Sua taxa associativa está quitada"
+                              ? "Sua Taxa de Uso e Intermediação da Plataforma está quitada"
                               : isTrialActive
                                 ? `Seu 1º pagamento vence em ${diffDays} dia(s) (${formatDateSafely(vencDate)})`
                                 : "O prazo para o primeiro pagamento expirou"}
@@ -10273,21 +10465,21 @@ export function DashboardView({
                         }`}
                       >
                         {isCortesia
-                          ? "A Gestão habilitou a sua conta na modalidade Profissional Convidado. Você possui isenção completa de cobranças e taxas associativas. Não há nenhum aviso ou cobrança de pagamento pendente, e você pode utilizar a plataforma e atender pacientes normalmente."
+                          ? "A Gestão habilitou a sua conta na modalidade Profissional Convidado. Você possui isenção completa de cobranças e taxas da plataforma. Não há nenhum aviso ou cobrança de pagamento pendente, e você pode utilizar a plataforma e atender pacientes normalmente."
                           : isCancelRequested
                             ? `Sua solicitação enviada em ${formatDateSafely(profile?.dataSolicitacaoCancelamento, "breve")} está sendo processada pela Gestão. Uma entrevista de desligamento será agendada.`
                             : isPago
                               ? `Agradecemos sua parceria! Sua contribuição mensal de R$ ${taxaVal} mantém os servidores, equipe de suporte e atrai novos pacientes para o seu perfil.`
                               : isTrialActive
-                                ? `O vencimento da sua primeira taxa associativa será em ${formatDateSafely(vencDate)} (${diffDays} dia(s) restante(s)).`
-                                : `Para continuar atendendo pacientes e mantendo seu perfil visível no catálogo oficial, efetue o pagamento da sua taxa associativa de R$ ${taxaVal}/mês.`}
+                                ? `O vencimento da sua primeira Taxa de Uso e Intermediação da Plataforma será em ${formatDateSafely(vencDate)} (${diffDays} dia(s) restante(s)).`
+                                : `Para continuar atendendo pacientes e mantendo seu perfil visível no catálogo oficial, efetue o pagamento da sua Taxa de Uso e Intermediação da Plataforma de R$ ${taxaVal}/mês.`}
                       </p>
                     </div>
 
                     {/* Action Side Box */}
                     <div className="w-full md:w-auto bg-white/10 backdrop-blur-md p-6 rounded-2xl border border-white/20 flex flex-col items-center justify-center text-center shrink-0 min-w-[240px] z-10">
                       <span className="text-[10px] font-bold uppercase tracking-wider text-sun-light">
-                        Taxa Associativa
+                        Taxa de Uso e Intermediação da Plataforma
                       </span>
                       <div className="flex items-baseline gap-1 my-1">
                         <span className="text-sm font-bold text-sun">R$</span>
@@ -10570,6 +10762,28 @@ export function DashboardView({
                   <span className="sm:hidden">Recentes</span>
                 </button>
               </div>
+
+              {/* Campo de Busca Rápida no Kanban */}
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-forest/40 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="text"
+                  placeholder="Buscar paciente..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-8 pr-7 py-1 bg-white border border-soft rounded-lg text-[11px] text-forest placeholder:text-forest/50 focus:outline-none focus:border-forest/50 w-36 sm:w-48 shadow-2xs transition-all"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery("")}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 text-forest/40 hover:text-forest p-0.5 cursor-pointer"
+                    title="Limpar busca"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
@@ -10620,7 +10834,28 @@ export function DashboardView({
                         if (col.id === "Aprovado") {
                           return (
                             !isInactiveOrAlta &&
-                            (cardStatus === "Aprovado" || cardStatus === "Aguardando atribuição")
+                            (cardStatus === "Aprovado" ||
+                              cardStatus === "Aguardando atribuição" ||
+                              (a.propostaStatus === "Proposta aceita pelo paciente" && !a.profissionalId && cardStatus !== "Em Atendimento"))
+                          );
+                        }
+
+                        if (col.id === "Em Triagem") {
+                          // Aguardando aceite de proposta
+                          return (
+                            !isInactiveOrAlta &&
+                            (cardStatus === "Em Triagem" ||
+                              (cardStatus === "Aguardando Avaliação" && (a.propostaEnviada === true || !!a.propostaEnviadaEm) && a.propostaStatus !== "Proposta aceita pelo paciente"))
+                          );
+                        }
+
+                        if (col.id === "Aguardando Avaliação") {
+                          // Novo acolhimento para análise
+                          return (
+                            !isInactiveOrAlta &&
+                            cardStatus === "Aguardando Avaliação" &&
+                            !a.propostaEnviada &&
+                            !a.propostaEnviadaEm
                           );
                         }
 
@@ -11140,8 +11375,8 @@ export function DashboardView({
       ) : activeTab === "doacoes" ? (
         <div className="flex-1 overflow-auto p-6 md:p-8 flex items-start flex-col lg:flex-row gap-8 slide-up">
           <div className="w-full lg:w-1/2 flex flex-col gap-4">
-            <h2 className="font-serif text-2xl text-forest bg-white px-6 py-4 rounded-2xl shadow-sm border border-soft flex items-center gap-3">
-              <HandHeart className="w-6 h-6 text-forest/70" />
+            <h2 className="font-serif text-sm sm:text-base font-bold text-forest bg-white px-5 py-3 sm:py-3.5 rounded-2xl shadow-xs border border-soft flex items-center gap-2.5">
+              <HandHeart className="w-4 h-4 text-forest/70" />
               Doações Recebidas
             </h2>
             <div className="flex flex-col gap-3">
@@ -11187,8 +11422,8 @@ export function DashboardView({
           </div>
 
           <div className="w-full lg:w-1/2 flex flex-col gap-4">
-            <h2 className="font-serif text-2xl text-forest bg-white px-6 py-4 rounded-2xl shadow-sm border border-soft flex items-center gap-3">
-              <HeartHandshake className="w-6 h-6 text-forest/70" />
+            <h2 className="font-serif text-sm sm:text-base font-bold text-forest bg-white px-5 py-3 sm:py-3.5 rounded-2xl shadow-xs border border-soft flex items-center gap-2.5">
+              <HeartHandshake className="w-4 h-4 text-forest/70" />
               Aguardando Sessão
             </h2>
             <div className="flex flex-col gap-3">
@@ -11232,9 +11467,9 @@ export function DashboardView({
       ) : activeTab === "profissionais" ? (
         <div className="flex-1 overflow-auto p-6 md:p-8 flex items-start flex-col gap-8 slide-up">
           <div className="w-full flex flex-col gap-4">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white px-6 py-4 rounded-2xl shadow-sm border border-soft">
-              <h2 className="font-serif text-2xl text-forest flex items-center gap-3">
-                <User className="w-6 h-6 text-forest/70" />
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-white px-5 py-3 sm:py-3.5 rounded-2xl shadow-xs border border-soft">
+              <h2 className="font-serif text-sm sm:text-base font-bold text-forest flex items-center gap-2.5">
+                <User className="w-4 h-4 text-forest/70" />
                 Novos Cadastros (Leads)
               </h2>
               <button
@@ -11803,13 +12038,13 @@ export function DashboardView({
 
             return (
               <div className="w-full flex flex-col gap-4 mt-8">
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-amber-50/70 px-6 py-4 rounded-2xl shadow-xs border border-amber-200">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-amber-50/70 px-5 py-3 sm:py-3.5 rounded-2xl shadow-xs border border-amber-200">
                   <div>
-                    <h2 className="font-serif text-2xl text-amber-950 flex items-center gap-3 font-bold">
-                      <LogOut className="w-6 h-6 text-amber-700" />
+                    <h2 className="font-serif text-sm sm:text-base text-amber-950 flex items-center gap-2.5 font-bold">
+                      <LogOut className="w-4 h-4 text-amber-700" />
                       Solicitações de Desligamento (Entrevista Pendente)
                     </h2>
-                    <p className="text-xs text-amber-900/80 mt-1">
+                    <p className="text-[11px] sm:text-xs text-amber-900/80 mt-0.5">
                       Profissionais que solicitaram saída do projeto e aguardam entrevista de desligamento com a Gestão.
                     </p>
                   </div>
@@ -11970,9 +12205,9 @@ export function DashboardView({
           })()}
 
           <div className="w-full flex flex-col gap-4 mt-8">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white px-6 py-4 rounded-2xl shadow-sm border border-soft">
-              <h2 className="font-serif text-2xl text-forest flex items-center gap-3">
-                <CheckCircle2 className="w-6 h-6 text-forest/70" />
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-white px-5 py-3 sm:py-3.5 rounded-2xl shadow-xs border border-soft">
+              <h2 className="font-serif text-sm sm:text-base font-bold text-forest flex items-center gap-2.5">
+                <CheckCircle2 className="w-4 h-4 text-forest/70" />
                 Profissionais Ativos na Plataforma
               </h2>
               <div className="flex flex-wrap items-center gap-2">
@@ -12867,9 +13102,9 @@ export function DashboardView({
         </div>
       ) : activeTab === "compliance" ? (
         <div className="flex-1 overflow-auto p-6 md:p-8 flex items-start flex-col gap-8 slide-up">
-          <div className="w-full flex items-center justify-between bg-white px-6 py-4 rounded-2xl shadow-sm border border-soft">
-            <h2 className="font-serif text-2xl text-forest flex items-center gap-3">
-              <ShieldAlert className="w-6 h-6 text-forest/70" />
+          <div className="w-full flex items-center justify-between bg-white px-5 py-3 sm:py-3.5 rounded-2xl shadow-xs border border-soft">
+            <h2 className="font-serif text-sm sm:text-base font-bold text-forest flex items-center gap-2.5">
+              <ShieldAlert className="w-4 h-4 text-forest/70" />
               Ouvidoria e Compliance
             </h2>
           </div>
@@ -12973,14 +13208,36 @@ export function DashboardView({
         </div>
       ) : activeTab === "acessos" ? (
         <div className="flex-1 overflow-auto p-6 md:p-8 flex items-start flex-col gap-8 slide-up">
-          <div className="w-full flex items-center justify-between bg-white px-6 py-4 rounded-2xl shadow-sm border border-soft">
-            <h2 className="font-serif text-2xl text-forest flex items-center gap-3">
-              <Users className="w-6 h-6 text-forest/70" />
+          <div className="w-full flex flex-wrap items-center justify-between gap-3 bg-white px-5 py-3 sm:py-3.5 rounded-2xl shadow-xs border border-soft">
+            <h2 className="font-serif text-sm sm:text-base font-bold text-forest flex items-center gap-2.5">
+              <Users className="w-4 h-4 text-forest/70" />
               Níveis de Acesso
             </h2>
-            <span className="text-xs font-semibold text-forest/50 bg-warm px-3 py-1 rounded-full uppercase tracking-wider">
-              Gestão
-            </span>
+            <div className="flex items-center gap-3">
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-forest/40 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="text"
+                  placeholder="Buscar usuário..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-8 pr-7 py-1.5 bg-warm/50 border border-soft rounded-xl text-xs text-forest placeholder:text-forest/50 focus:outline-none focus:border-forest/50 w-40 sm:w-56 transition-all"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery("")}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-forest/40 hover:text-forest p-0.5 cursor-pointer"
+                    title="Limpar busca"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+              <span className="text-xs font-semibold text-forest/50 bg-warm px-3 py-1 rounded-full uppercase tracking-wider">
+                Gestão
+              </span>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 w-full">
@@ -13092,10 +13349,11 @@ export function DashboardView({
           </div>
         </div>
       ) : activeTab === "backup" ? (
-        <div className="flex-1 overflow-auto p-6 md:p-8 flex items-start flex-col gap-8 slide-up">
+        <div className="flex-1 overflow-auto p-4 sm:p-6 md:p-8 flex items-start flex-col gap-6 slide-up w-full max-w-7xl mx-auto">
           <BackupManager
             userEmail={profile?.email || auth.currentUser?.email || undefined}
             userRole={currentRole}
+            profile={profile}
           />
         </div>
       ) : activeTab === "notificacoes" ? (
@@ -13149,7 +13407,7 @@ export function DashboardView({
           </div>
         </div>
       ) : activeTab === "eventos" || activeTab === "servicos" ? (
-        <EventosServicosView activeSection={activeTab} profile={profile} />
+        <EventosServicosView activeSection={activeTab === "eventos" && currentRole === "profissional" ? "eventos_e_parcerias" : activeTab} profile={profile!} />
       ) : null}
 
       {/* Card Details Modal - Ficha de Bordo do Paciente */}
@@ -13207,15 +13465,28 @@ export function DashboardView({
                         #{selectedCard.id?.slice(0, 6)}
                       </span>
                       {selectedCard.status && !isCardInStandby(selectedCard) && !getPatientFlowDetails(selectedCard).isAtribuicaoDevolvida && (
-                        <span className="text-[9px] sm:text-[10px] font-bold uppercase px-1.5 py-0.2 rounded-md bg-sun/30 text-forest border border-sun/50 truncate max-w-[110px] sm:max-w-none">
-                          {selectedCard.status === "Aprovado" ? "Aguardando atribuição" : selectedCard.status}
+                        <span className="text-[9px] sm:text-[10px] font-bold uppercase px-1.5 py-0.2 rounded-md bg-sun/30 text-forest border border-sun/50 truncate max-w-[150px] sm:max-w-none">
+                          {selectedCard.status === "Aprovado"
+                            ? "Aguardando atribuição"
+                            : selectedCard.status === "Aguardando Avaliação"
+                              ? "Novo acolhimento para análise"
+                              : selectedCard.status === "Em Triagem"
+                                ? "Aguardando aceite de proposta"
+                                : selectedCard.status}
                         </span>
                       )}
                       {selectedCard.empresaNome && (
-                        <span className="text-[9px] sm:text-[10px] font-bold px-1.5 py-0.2 rounded-md bg-blue-50 text-blue-800 border border-blue-200 flex items-center gap-1 truncate max-w-[110px] sm:max-w-none">
-                          <Building2 className="w-2.5 h-2.5 text-blue-600 shrink-0" />
-                          <span className="truncate">{selectedCard.empresaNome}</span>
-                        </span>
+                        currentRole === "profissional" ? (
+                          <span className="text-[9px] sm:text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200/80 flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 shrink-0" />
+                            <span>Corporativo</span>
+                          </span>
+                        ) : (
+                          <span className="text-[9px] sm:text-[10px] font-bold px-1.5 py-0.2 rounded-md bg-blue-50 text-blue-800 border border-blue-200 flex items-center gap-1 truncate max-w-[110px] sm:max-w-none">
+                            <Building2 className="w-2.5 h-2.5 text-blue-600 shrink-0" />
+                            <span className="truncate">{selectedCard.empresaNome}</span>
+                          </span>
+                        )
                       )}
                       {selectedCard.createdAt && (
                         <span className="hidden sm:flex items-center gap-1">
@@ -13380,23 +13651,38 @@ export function DashboardView({
                   <span className="sm:hidden">Notificar</span>
                 </button>
 
-                <button
-                  onClick={() => {
-                    const link = `${window.location.origin}/?proposta=${selectedCard.id}`;
-                    navigator.clipboard.writeText(link);
-                    showToast("Link da Proposta copiado para a área de transferência!", "success");
-                    handleUpdateAcolhimentoProperty(selectedCard.id, "propostaEnviada", true);
-                  }}
-                  className="flex items-center gap-1 bg-white hover:bg-warm text-forest font-semibold text-[10px] sm:text-xs px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg sm:rounded-xl border border-soft transition-colors shadow-2xs whitespace-nowrap"
-                  title="Copiar link da proposta"
-                >
-                  <Copy className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-forest/60" />
-                  <span className="hidden sm:inline">Link Proposta</span>
-                  <span className="sm:hidden">Proposta</span>
-                </button>
+                {currentRole !== "profissional" && (
+                  <button
+                    onClick={async () => {
+                      const link = `${window.location.origin}/?proposta=${selectedCard.id}`;
+                      navigator.clipboard.writeText(link);
+                      showToast("Link da Proposta copiado para a área de transferência! Paciente movido para 'Aguardando aceite de proposta'.", "success");
+                      await handleUpdateAcolhimentoProperty(selectedCard.id, "propostaEnviada", true);
+                      await handleUpdateAcolhimentoProperty(selectedCard.id, "propostaEnviadaEm", new Date().toISOString());
+                      if (!selectedCard.propostaStatus) {
+                        await handleUpdateAcolhimentoProperty(selectedCard.id, "propostaStatus", "Proposta enviada");
+                      }
+                      // Passagem automática para a 2ª coluna da Triagem
+                      if (!selectedCard.status || selectedCard.status === "Aguardando Avaliação") {
+                        await handleUpdateAcolhimentoProperty(selectedCard.id, "status", "Em Triagem");
+                      }
+                    }}
+                    className="flex items-center gap-1 bg-white hover:bg-warm text-forest font-semibold text-[10px] sm:text-xs px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg sm:rounded-xl border border-soft transition-colors shadow-2xs whitespace-nowrap"
+                    title="Copiar link da proposta e mover para Aguardando aceite de proposta"
+                  >
+                    <Copy className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-forest/60" />
+                    <span className="hidden sm:inline">Link Proposta</span>
+                    <span className="sm:hidden">Proposta</span>
+                  </button>
+                )}
 
                 <button
                   onClick={() => {
+                    const hasContrato = Boolean(selectedCard.contratoGerado || selectedCard.contratoConteudo || selectedCard.contratoAssinado || selectedCard.statusContrato === "gerado" || selectedCard.statusContrato === "assinado");
+                    if (!hasContrato) {
+                      showToast("Por favor, clique em 'Gerar Contrato' antes de copiar ou enviar o link do contrato para o paciente.", "info");
+                      return;
+                    }
                     const link = `${window.location.origin}/?contrato=${selectedCard.id}`;
                     navigator.clipboard.writeText(link);
                     showToast("Link do contrato copiado para a área de transferência!", "success");
@@ -13635,10 +13921,14 @@ export function DashboardView({
                 <button type="button" onClick={() => document.getElementById('sec-1-pessoais')?.scrollIntoView({ behavior: 'smooth' })} className="px-2.5 py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-warm/60 hover:bg-warm rounded-lg shrink-0 transition-colors whitespace-nowrap">1. Pessoais</button>
                 <button type="button" onClick={() => document.getElementById('sec-2-responsavel')?.scrollIntoView({ behavior: 'smooth' })} className="px-2.5 py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-warm/60 hover:bg-warm rounded-lg shrink-0 transition-colors whitespace-nowrap">2. Responsável</button>
                 <button type="button" onClick={() => document.getElementById('sec-3-contato')?.scrollIntoView({ behavior: 'smooth' })} className="px-2.5 py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-warm/60 hover:bg-warm rounded-lg shrink-0 transition-colors whitespace-nowrap">3. Contato</button>
-                <button type="button" onClick={() => document.getElementById('sec-4-socio')?.scrollIntoView({ behavior: 'smooth' })} className="px-2.5 py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-warm/60 hover:bg-warm rounded-lg shrink-0 transition-colors whitespace-nowrap">4. Socioeconômico</button>
+                {currentRole !== "profissional" && (
+                  <button type="button" onClick={() => document.getElementById('sec-4-socio')?.scrollIntoView({ behavior: 'smooth' })} className="px-2.5 py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-warm/60 hover:bg-warm rounded-lg shrink-0 transition-colors whitespace-nowrap">4. Socioeconômico</button>
+                )}
                 <button type="button" onClick={() => document.getElementById('sec-5-clinico')?.scrollIntoView({ behavior: 'smooth' })} className="px-2.5 py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-warm/60 hover:bg-warm rounded-lg shrink-0 transition-colors whitespace-nowrap">5. Histórico</button>
                 <button type="button" onClick={() => document.getElementById('sec-6-proposta')?.scrollIntoView({ behavior: 'smooth' })} className="px-2.5 py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-warm/60 hover:bg-warm rounded-lg shrink-0 transition-colors whitespace-nowrap">6. Proposta & Atribuição</button>
-                <button type="button" onClick={() => document.getElementById('sec-7-resumo')?.scrollIntoView({ behavior: 'smooth' })} className="px-2.5 py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-warm/60 hover:bg-warm rounded-lg shrink-0 transition-colors whitespace-nowrap">7. Resumo do Caso</button>
+                {currentRole !== "profissional" && (
+                  <button type="button" onClick={() => document.getElementById('sec-7-resumo')?.scrollIntoView({ behavior: 'smooth' })} className="px-2.5 py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-warm/60 hover:bg-warm rounded-lg shrink-0 transition-colors whitespace-nowrap">7. Resumo do Caso</button>
+                )}
                 <button type="button" onClick={() => document.getElementById('sec-8-registros')?.scrollIntoView({ behavior: 'smooth' })} className="px-2.5 py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-warm/60 hover:bg-warm rounded-lg shrink-0 transition-colors whitespace-nowrap">8. Registros</button>
                 <button type="button" onClick={() => document.getElementById('sec-9-alertas')?.scrollIntoView({ behavior: 'smooth' })} className="px-2.5 py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-warm/60 hover:bg-warm rounded-lg shrink-0 transition-colors whitespace-nowrap">9. Alertas</button>
                 <button type="button" onClick={() => document.getElementById('sec-10-notificacoes')?.scrollIntoView({ behavior: 'smooth' })} className="px-2.5 py-1 text-[10px] sm:text-[11px] font-bold text-emerald-800 hover:text-emerald-950 bg-emerald-100/90 hover:bg-emerald-200 rounded-lg shrink-0 transition-colors whitespace-nowrap">10. Notificações</button>
@@ -13878,113 +14168,115 @@ export function DashboardView({
                 )}
               </div>
 
-              {/* 4. FONTE DE ACESSO (COMO CONHECEU O PROJETO) */}
-              <div id="sec-4-socio" className="bg-white p-4 sm:p-6 rounded-2xl border border-soft shadow-2xs space-y-4">
-                <div className="flex items-center justify-between border-b border-soft pb-3">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-forest/80 flex items-center gap-2">
-                    <Building2 className="w-4 h-4 text-forest" /> 4. Fonte de Acesso & Perfil Socioeconômico
-                  </h4>
-                  <span className="text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
-                    {selectedCard.viaAcesso || "Acesso Direto"}
-                  </span>
-                </div>
+              {/* 4. FONTE DE ACESSO E PERFIL SOCIOECONÔMICO (Visível apenas para Triagem e Gestão) */}
+              {currentRole !== "profissional" && (
+                <div id="sec-4-socio" className="bg-white p-4 sm:p-6 rounded-2xl border border-soft shadow-2xs space-y-4">
+                  <div className="flex items-center justify-between border-b border-soft pb-3">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-forest/80 flex items-center gap-2">
+                      <Building2 className="w-4 h-4 text-forest" /> 4. Fonte de Acesso & Perfil Socioeconômico
+                    </h4>
+                    <span className="text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
+                      {selectedCard.viaAcesso || "Acesso Direto"}
+                    </span>
+                  </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                  <EditableField
-                    label="Via de Acesso (Canal)"
-                    value={selectedCard.viaAcesso}
-                    field="viaAcesso"
-                    onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
-                    isEditing={isEditingCard}
-                  />
-                  <EditableField
-                    label="Como Nos Conheceu"
-                    value={selectedCard.comoConheceu}
-                    field="comoConheceu"
-                    onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
-                    isEditing={isEditingCard}
-                  />
-                  <EditableField
-                    label="Empresa Vinculada"
-                    value={selectedCard.empresa || (selectedCard as any).empresaVinculada}
-                    field="empresa"
-                    onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
-                    isEditing={isEditingCard}
-                  />
-                  <EditableField
-                    label="Escolaridade"
-                    value={selectedCard.escolaridade}
-                    field="escolaridade"
-                    onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
-                    isEditing={isEditingCard}
-                  />
-                </div>
-
-                {/* Bloco Socioeconômico (Particular / Acessível) */}
-                <div className="mt-4 pt-4 border-t border-soft space-y-3">
-                  <span className="block text-[11px] font-bold uppercase tracking-wider text-forest/70">
-                    Detalhes Socioeconômicos & Habitacionais
-                  </span>
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                     <EditableField
-                      label="Renda Bruta / Faixa Salarial"
-                      value={selectedCard.faixaSalarial}
-                      field="faixaSalarial"
+                      label="Via de Acesso (Canal)"
+                      value={selectedCard.viaAcesso}
+                      field="viaAcesso"
                       onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
                       isEditing={isEditingCard}
                     />
                     <EditableField
-                      label="Fonte de Renda"
-                      value={selectedCard.fonteRenda}
-                      field="fonteRenda"
+                      label="Como Nos Conheceu"
+                      value={selectedCard.comoConheceu}
+                      field="comoConheceu"
                       onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
                       isEditing={isEditingCard}
                     />
                     <EditableField
-                      label="Residentes / Dependentes"
-                      value={selectedCard.dependentes}
-                      field="dependentes"
+                      label="Empresa Vinculada"
+                      value={selectedCard.empresa || (selectedCard as any).empresaVinculada}
+                      field="empresa"
                       onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
                       isEditing={isEditingCard}
                     />
                     <EditableField
-                      label="Plano de Saúde"
-                      value={selectedCard.planoSaude}
-                      field="planoSaude"
-                      onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
-                      isEditing={isEditingCard}
-                    />
-                    <EditableField
-                      label="Tipo de Moradia"
-                      value={selectedCard.moradia}
-                      field="moradia"
-                      onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
-                      isEditing={isEditingCard}
-                    />
-                    <EditableField
-                      label="Cômodos da Residência"
-                      value={selectedCard.comodos}
-                      field="comodos"
-                      onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
-                      isEditing={isEditingCard}
-                    />
-                    <EditableField
-                      label="Dispositivo / Aparelho"
-                      value={selectedCard.dispositivo}
-                      field="dispositivo"
-                      onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
-                      isEditing={isEditingCard}
-                    />
-                    <EditableField
-                      label="Acesso à Internet"
-                      value={selectedCard.internet}
-                      field="internet"
+                      label="Escolaridade"
+                      value={selectedCard.escolaridade}
+                      field="escolaridade"
                       onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
                       isEditing={isEditingCard}
                     />
                   </div>
+
+                  {/* Bloco Socioeconômico (Particular / Acessível) */}
+                  <div className="mt-4 pt-4 border-t border-soft space-y-3">
+                    <span className="block text-[11px] font-bold uppercase tracking-wider text-forest/70">
+                      Detalhes Socioeconômicos & Habitacionais
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                      <EditableField
+                        label="Renda Bruta / Faixa Salarial"
+                        value={selectedCard.faixaSalarial}
+                        field="faixaSalarial"
+                        onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
+                        isEditing={isEditingCard}
+                      />
+                      <EditableField
+                        label="Fonte de Renda"
+                        value={selectedCard.fonteRenda}
+                        field="fonteRenda"
+                        onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
+                        isEditing={isEditingCard}
+                      />
+                      <EditableField
+                        label="Residentes / Dependentes"
+                        value={selectedCard.dependentes}
+                        field="dependentes"
+                        onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
+                        isEditing={isEditingCard}
+                      />
+                      <EditableField
+                        label="Plano de Saúde"
+                        value={selectedCard.planoSaude}
+                        field="planoSaude"
+                        onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
+                        isEditing={isEditingCard}
+                      />
+                      <EditableField
+                        label="Tipo de Moradia"
+                        value={selectedCard.moradia}
+                        field="moradia"
+                        onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
+                        isEditing={isEditingCard}
+                      />
+                      <EditableField
+                        label="Cômodos da Residência"
+                        value={selectedCard.comodos}
+                        field="comodos"
+                        onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
+                        isEditing={isEditingCard}
+                      />
+                      <EditableField
+                        label="Dispositivo / Aparelho"
+                        value={selectedCard.dispositivo}
+                        field="dispositivo"
+                        onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
+                        isEditing={isEditingCard}
+                      />
+                      <EditableField
+                        label="Acesso à Internet"
+                        value={selectedCard.internet}
+                        field="internet"
+                        onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
+                        isEditing={isEditingCard}
+                      />
+                    </div>
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* 5. HISTÓRICO CLÍNICO E MOTIVAÇÃO */}
               <div id="sec-5-clinico" className="bg-white p-4 sm:p-6 rounded-2xl border border-soft shadow-2xs space-y-4">
@@ -14057,6 +14349,11 @@ export function DashboardView({
                           await handleUpdateAcolhimentoProperty(selectedCard.id, "propostaEnviada", true);
                           await handleUpdateAcolhimentoProperty(selectedCard.id, "propostaEnviadaEm", new Date().toISOString());
 
+                          // Passagem automática para a 2ª coluna da Triagem ("Aguardando aceite de proposta")
+                          if (!selectedCard.status || selectedCard.status === "Aguardando Avaliação") {
+                            await handleUpdateAcolhimentoProperty(selectedCard.id, "status", "Em Triagem");
+                          }
+
                           const link = `${window.location.origin}/?proposta=${selectedCard.id}`;
                           if (selectedCard.email) {
                             sendWebhookNotification({
@@ -14072,7 +14369,7 @@ export function DashboardView({
                               }
                             }).catch((e) => console.error("Erro no envio da notificação de proposta:", e));
                           }
-                          showToast(isRevision ? "Nova proposta notificada! Status alterado para 'Revisão concluída'." : "Proposta notificada com sucesso ao paciente!", "success");
+                          showToast(isRevision ? "Nova proposta notificada! Movido para 'Aguardando aceite de proposta'." : "Proposta notificada com sucesso! Paciente movido para 'Aguardando aceite de proposta'.", "success");
                         }}
                         className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg transition-all shadow-2xs flex items-center gap-1.5"
                         title="Notificar proposta ao paciente via e-mail e atualizar status"
@@ -14483,63 +14780,94 @@ export function DashboardView({
                     </div>
                   </div>
                 ) : (
-                  <div className="p-4 bg-warm/30 border border-soft rounded-2xl space-y-3">
-                    <h5 className="text-xs font-bold uppercase tracking-wider text-forest/80 flex items-center gap-2">
-                      <UserCheck className="w-4 h-4 text-forest" /> Controle de Vínculo Clínico
-                    </h5>
-                    <p className="text-xs text-forest/60">
-                      Confirme o vínculo clínico abaixo. Caso necessite devolver este paciente para a Triagem, utilize o botão de devolução.
-                    </p>
-                    <div className="flex flex-wrap gap-3 pt-1">
-                      <button
-                        disabled={selectedCard.atribuicaoStatus === "Aceito"}
-                        onClick={async () => {
-                          const notifAnterior = selectedCard.notificacao ? selectedCard.notificacao + "\n\n" : "";
-                          const nowStr = new Date().toLocaleString("pt-BR");
-                          const authName = profile?.name || "Parceiro";
-                          const updates: any = {
-                            atribuicaoStatus: "Aceito",
-                            status: "Em Atendimento",
-                            notificacao: `${notifAnterior}[${nowStr}] Encaminhamento ACEITO pelo profissional ${authName}. Paciente saiu de Aguardando atribuição e passou para a aba Pacientes (Em Atendimento).`,
-                          };
-                          await updateDoc(doc(db, "acolhimentos", selectedCard.id), updates);
-                          setSelectedCard({ ...selectedCard, ...updates });
-                          showToast("Paciente aceito no vínculo com sucesso!", "success");
-                        }}
-                        className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
-                          selectedCard.atribuicaoStatus === "Aceito"
-                            ? "bg-[#34A853] text-white shadow-2xs disabled:opacity-100"
-                            : "bg-white text-forest border border-soft hover:bg-[#34A853]/10 hover:text-[#34A853]"
-                        }`}
-                      >
-                        <CheckCircle2 className="w-4 h-4" />
-                        {selectedCard.atribuicaoStatus === "Aceito" ? "Paciente Aceito no Vínculo" : "Aceitar Paciente"}
-                      </button>
+                  <div className="p-4 sm:p-5 bg-warm/40 border border-soft rounded-2xl space-y-4">
+                    <div className="flex items-center justify-between border-b border-soft pb-2.5">
+                      <h5 className="text-xs font-bold uppercase tracking-wider text-forest flex items-center gap-2">
+                        <UserCheck className="w-4 h-4 text-emerald-700" /> Controle de Vínculo Clínico & Aceite do Caso
+                      </h5>
+                      <span className={`text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full border ${
+                        selectedCard.atribuicaoStatus === "Aceito"
+                          ? "bg-emerald-100 text-emerald-900 border-emerald-300"
+                          : "bg-amber-100 text-amber-900 border-amber-300 animate-pulse"
+                      }`}>
+                        {selectedCard.atribuicaoStatus === "Aceito" ? "Caso Aceito" : "Aguardando Seu Aceite"}
+                      </span>
+                    </div>
 
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowContratoModal(true);
-                        }}
-                        className="px-5 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold transition-all shadow-2xs flex items-center justify-center gap-2 cursor-pointer"
-                        title="Gerar ou editar o contrato terapêutico com aceite digital para este paciente"
-                      >
-                        <FileSignature className="w-4 h-4 text-sun" />
-                        {selectedCard.contratoAssinado ? "Ver Contrato Assinado" : "Gerar / Enviar Contrato"}
-                      </button>
+                    {/* Resumo do Caso Integrado para Revisão do Profissional */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-forest/70 flex items-center gap-1.5">
+                          <FileText className="w-3.5 h-3.5 text-forest/60" /> Resumo do Caso para Revisão:
+                        </span>
+                        <span className="text-[10px] text-forest/60">
+                          Revise os dados clínicos antes de confirmar o aceite
+                        </span>
+                      </div>
+                      <div className="p-3.5 sm:p-4 bg-white border border-soft rounded-xl font-sans text-xs text-forest leading-relaxed whitespace-pre-wrap select-all max-h-60 overflow-y-auto custom-scrollbar shadow-2xs">
+                        {buildCaseSummaryText(selectedCard)}
+                      </div>
+                    </div>
 
-                      <button
-                        onClick={() => {
-                          setDevolverModalConfig({
-                            isOpen: true,
-                            pacienteId: selectedCard.id,
-                            pacienteName: (selectedCard as any).nomeCompleto || "Paciente",
-                          });
-                        }}
-                        className="px-5 py-2.5 bg-white text-red-600 border border-red-200 rounded-xl text-xs font-semibold hover:bg-red-50 transition-colors"
-                      >
-                        {selectedCard.atribuicaoStatus === "Aceito" ? "Devolver / Desatribuir" : "Devolver Paciente"}
-                      </button>
+                    <div className="pt-2 border-t border-soft/80 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                      <p className="text-xs text-forest/70">
+                        {selectedCard.atribuicaoStatus === "Aceito"
+                          ? "Você já confirmou o aceite deste paciente. O caso está ativo em Meus Pacientes."
+                          : "Após revisar o resumo, confirme o aceite para liberar o contato e iniciar os atendimentos."}
+                      </p>
+
+                      <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+                        <button
+                          disabled={selectedCard.atribuicaoStatus === "Aceito"}
+                          onClick={async () => {
+                            const notifAnterior = selectedCard.notificacao ? selectedCard.notificacao + "\n\n" : "";
+                            const nowStr = new Date().toLocaleString("pt-BR");
+                            const authName = profile?.name || "Parceiro";
+                            const updates: any = {
+                              atribuicaoStatus: "Aceito",
+                              status: "Em Atendimento",
+                              notificacao: `${notifAnterior}[${nowStr}] Encaminhamento ACEITO pelo profissional ${authName}. Paciente saiu de Aguardando atribuição e passou para a aba Pacientes (Em Atendimento).`,
+                            };
+                            await updateDoc(doc(db, "acolhimentos", selectedCard.id), updates);
+                            setSelectedCard({ ...selectedCard, ...updates });
+                            showToast("Paciente aceito no vínculo com sucesso!", "success");
+                          }}
+                          className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                            selectedCard.atribuicaoStatus === "Aceito"
+                              ? "bg-[#34A853] text-white shadow-2xs opacity-90 cursor-default"
+                              : "bg-[#34A853] hover:bg-[#2e9348] text-white shadow-sm hover:shadow"
+                          }`}
+                        >
+                          <CheckCircle2 className="w-4 h-4" />
+                          {selectedCard.atribuicaoStatus === "Aceito" ? "Paciente Aceito no Vínculo" : "Confirmar Aceite do Caso"}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowContratoModal(true);
+                          }}
+                          className="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold transition-all shadow-2xs flex items-center justify-center gap-2 cursor-pointer"
+                          title="Gerar ou editar o contrato terapêutico com aceite digital para este paciente"
+                        >
+                          <FileSignature className="w-4 h-4 text-sun" />
+                          {selectedCard.contratoAssinado ? "Ver Contrato Assinado" : "Gerar / Enviar Contrato"}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDevolverModalConfig({
+                              isOpen: true,
+                              pacienteId: selectedCard.id,
+                              pacienteName: (selectedCard as any).nomeCompleto || selectedCard.nome || "Paciente",
+                            });
+                          }}
+                          className="px-4 py-2.5 bg-white text-rose-600 border border-rose-200 hover:bg-rose-50 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+                        >
+                          {selectedCard.atribuicaoStatus === "Aceito" ? "Devolver / Desatribuir" : "Devolver Paciente"}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -14593,8 +14921,96 @@ export function DashboardView({
                   })()}
               </div>
 
-              {/* 7. NOTIFICAÇÃO E RESUMO DO CASO */}
-              <div id="sec-7-resumo" className="bg-white p-4 sm:p-6 rounded-2xl border border-emerald-200/90 shadow-2xs space-y-4">
+              {/* ÁREA DE FATURAMENTO, SESSÕES & RECIBOS DO PACIENTE */}
+              <div id="sec-faturamento-paciente" className="pt-2">
+                <PacienteFaturamentoSpreadsheet
+                  pacienteId={selectedCard.id}
+                  pacienteNome={selectedCard.nome || (selectedCard as any).nomeCompleto || "Paciente"}
+                  pacienteCpf={selectedCard.cpf || (selectedCard as any).pacienteCpf || ""}
+                  pacienteTelefone={selectedCard.telefone || (selectedCard as any).whatsapp || ""}
+                  pacienteEmail={selectedCard.email || ""}
+                  valorSessaoPadrao={selectedCard.valorSessao || "100"}
+                  frequenciaPadrao={selectedCard.frequenciaSessoes || "Semanal"}
+                  sessoes={Array.isArray(selectedCard.historicoSessoes) ? selectedCard.historicoSessoes : []}
+                  onSaveSessoes={async (novasSessoes) => {
+                    selectedCard.historicoSessoes = novasSessoes;
+                    await handleUpdateAcolhimentoProperty(selectedCard.id, "historicoSessoes", novasSessoes);
+                  }}
+                  perfilFaturamento={(selectedCard as any).perfilFaturamento || "PF"}
+                  onUpdatePerfilFaturamento={async (novoPerfil) => {
+                    (selectedCard as any).perfilFaturamento = novoPerfil;
+                    await handleUpdateAcolhimentoProperty(selectedCard.id, "perfilFaturamento", novoPerfil);
+                  }}
+                  onSaveDadosPJ={async (novosDadosPJ) => {
+                    const targetUid = currentRole === "profissional" ? user?.uid : (selectedCard.profissionalId || user?.uid);
+                    if (!targetUid) return;
+                    await updateDoc(doc(db, "users", targetUid), {
+                      dadosPJ: novosDadosPJ,
+                      updatedAt: serverTimestamp(),
+                    });
+                    if (currentRole === "profissional") {
+                      setProfile((prev: any) => ({ ...prev, dadosPJ: novosDadosPJ }));
+                    }
+                    setAllUsers((prev) =>
+                      prev.map((u) => (u.uid === targetUid || u.id === targetUid ? { ...u, dadosPJ: novosDadosPJ } : u))
+                    );
+                  }}
+                  profissionalLogado={
+                    (() => {
+                      if (currentRole === "profissional") {
+                        return {
+                          uid: user?.uid,
+                          name: profile?.name || profile?.nome,
+                          nome: profile?.nome || profile?.name,
+                          crp: profile?.crp,
+                          cpf: profile?.cpf,
+                          especialidade: profile?.especialidade,
+                          chavePix: profile?.chavePix,
+                          email: profile?.email || user?.email,
+                          telefone: profile?.telefone,
+                          dadosPJ: profile?.dadosPJ || (profile as any)?.perfilPJ,
+                          faturamentoPadrao: profile?.faturamentoPadrao || "PF",
+                        };
+                      }
+                      if (selectedCard.profissionalId) {
+                        const matchedProf = allUsers.find(
+                          (u) => u.uid === selectedCard.profissionalId || u.id === selectedCard.profissionalId
+                        );
+                        if (matchedProf) {
+                          return {
+                            uid: matchedProf.uid || matchedProf.id,
+                            name: matchedProf.name || matchedProf.nome,
+                            nome: matchedProf.nome || matchedProf.name,
+                            crp: matchedProf.crp,
+                            cpf: matchedProf.cpf,
+                            especialidade: matchedProf.especialidade,
+                            chavePix: matchedProf.chavePix,
+                            email: matchedProf.email,
+                            telefone: matchedProf.telefone,
+                            dadosPJ: (matchedProf as any).dadosPJ || (matchedProf as any).perfilPJ,
+                            faturamentoPadrao: (matchedProf as any).faturamentoPadrao || "PF",
+                          };
+                        }
+                      }
+                      return {
+                        name: profile?.name || "Profissional Responsável",
+                        crp: profile?.crp,
+                        cpf: profile?.cpf,
+                        especialidade: profile?.especialidade,
+                        chavePix: profile?.chavePix,
+                        dadosPJ: profile?.dadosPJ || (profile as any)?.perfilPJ,
+                      };
+                    })()
+                  }
+                  showToast={showToast}
+                  isCorporativo={Boolean(selectedCard.empresaNome)}
+                  empresaNome={selectedCard.empresaNome || ""}
+                />
+              </div>
+
+              {/* 7. NOTIFICAÇÃO E RESUMO DO CASO (Visível apenas para Gestão Master e Triagem) */}
+              {currentRole !== "profissional" && (
+                <div id="sec-7-resumo" className="bg-white p-4 sm:p-6 rounded-2xl border border-emerald-200/90 shadow-2xs space-y-4">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-soft pb-3">
                   <div className="flex items-center gap-2.5">
                     <div className="p-2.5 bg-emerald-700 text-white rounded-xl shadow-2xs">
@@ -14736,6 +15152,7 @@ export function DashboardView({
                   })()
                 )}
               </div>
+            )}
 
               {/* 8. EVOLUÇÃO E REGISTROS CLÍNICOS COMPARTILHADOS */}
               <div id="sec-8-registros" className="bg-white p-4 sm:p-6 rounded-2xl border border-soft shadow-2xs space-y-3">
@@ -14979,46 +15396,141 @@ export function DashboardView({
                     <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-900/70 mr-1">
                       Atalhos rápidos:
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setNotificarInitialMode("templates");
-                        setNotificarInitialTemplateId("proposta");
-                        setShowNotificarModal(true);
-                      }}
-                      className="px-2.5 py-1 bg-white hover:bg-emerald-100 text-emerald-900 rounded-lg text-[11px] font-semibold border border-emerald-200/80 transition-colors flex items-center gap-1"
-                    >
-                      📋 Proposta
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setNotificarInitialMode("templates");
-                        setNotificarInitialTemplateId("boas_vindas");
-                        setShowNotificarModal(true);
-                      }}
-                      className="px-2.5 py-1 bg-white hover:bg-emerald-100 text-emerald-900 rounded-lg text-[11px] font-semibold border border-emerald-200/80 transition-colors flex items-center gap-1"
-                    >
-                      🤝 Boas-Vindas
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setNotificarInitialMode("templates");
-                        setNotificarInitialTemplateId("lembrete_sessao");
-                        setShowNotificarModal(true);
-                      }}
-                      className="px-2.5 py-1 bg-white hover:bg-emerald-100 text-emerald-900 rounded-lg text-[11px] font-semibold border border-emerald-200/80 transition-colors flex items-center gap-1"
-                    >
-                      ⏰ Lembrete
-                    </button>
+                    {currentRole === "profissional" ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNotificarInitialMode("templates");
+                            setNotificarInitialTemplateId("primeiro_contato");
+                            setShowNotificarModal(true);
+                          }}
+                          className="px-2.5 py-1 bg-white hover:bg-emerald-100 text-emerald-900 rounded-lg text-[11px] font-semibold border border-emerald-200/80 transition-colors flex items-center gap-1 cursor-pointer"
+                        >
+                          👋 1º Contato
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNotificarInitialMode("templates");
+                            setNotificarInitialTemplateId("dicas_primeira_sessao");
+                            setShowNotificarModal(true);
+                          }}
+                          className="px-2.5 py-1 bg-white hover:bg-emerald-100 text-emerald-900 rounded-lg text-[11px] font-semibold border border-emerald-200/80 transition-colors flex items-center gap-1 cursor-pointer"
+                        >
+                          🌿 Dicas 1ª Sessão
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNotificarInitialMode("templates");
+                            setNotificarInitialTemplateId("lembrete_sessao");
+                            setShowNotificarModal(true);
+                          }}
+                          className="px-2.5 py-1 bg-white hover:bg-emerald-100 text-emerald-900 rounded-lg text-[11px] font-semibold border border-emerald-200/80 transition-colors flex items-center gap-1 cursor-pointer"
+                        >
+                          ⏰ Lembrete
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNotificarInitialMode("templates");
+                            setNotificarInitialTemplateId("contrato");
+                            setShowNotificarModal(true);
+                          }}
+                          className="px-2.5 py-1 bg-white hover:bg-emerald-100 text-emerald-900 rounded-lg text-[11px] font-semibold border border-emerald-200/80 transition-colors flex items-center gap-1 cursor-pointer"
+                        >
+                          ✍️ Contrato
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNotificarInitialMode("templates");
+                            setNotificarInitialTemplateId("alta_clinica");
+                            setShowNotificarModal(true);
+                          }}
+                          className="px-2.5 py-1 bg-white hover:bg-emerald-100 text-emerald-900 rounded-lg text-[11px] font-semibold border border-emerald-200/80 transition-colors flex items-center gap-1 cursor-pointer"
+                        >
+                          🎓 Alta Clínica
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNotificarInitialMode("templates");
+                            setNotificarInitialTemplateId("pagamento");
+                            setShowNotificarModal(true);
+                          }}
+                          className="px-2.5 py-1 bg-white hover:bg-emerald-100 text-emerald-900 rounded-lg text-[11px] font-semibold border border-emerald-200/80 transition-colors flex items-center gap-1 cursor-pointer"
+                        >
+                          💳 Pagamento
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNotificarInitialMode("templates");
+                            setNotificarInitialTemplateId("proposta");
+                            setShowNotificarModal(true);
+                          }}
+                          className="px-2.5 py-1 bg-white hover:bg-emerald-100 text-emerald-900 rounded-lg text-[11px] font-semibold border border-emerald-200/80 transition-colors flex items-center gap-1 cursor-pointer"
+                        >
+                          📋 Proposta
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNotificarInitialMode("templates");
+                            setNotificarInitialTemplateId("boas_vindas");
+                            setShowNotificarModal(true);
+                          }}
+                          className="px-2.5 py-1 bg-white hover:bg-emerald-100 text-emerald-900 rounded-lg text-[11px] font-semibold border border-emerald-200/80 transition-colors flex items-center gap-1 cursor-pointer"
+                        >
+                          🤝 Boas-Vindas
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNotificarInitialMode("templates");
+                            setNotificarInitialTemplateId("lembrete_sessao");
+                            setShowNotificarModal(true);
+                          }}
+                          className="px-2.5 py-1 bg-white hover:bg-emerald-100 text-emerald-900 rounded-lg text-[11px] font-semibold border border-emerald-200/80 transition-colors flex items-center gap-1 cursor-pointer"
+                        >
+                          ⏰ Lembrete
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNotificarInitialMode("templates");
+                            setNotificarInitialTemplateId("contrato");
+                            setShowNotificarModal(true);
+                          }}
+                          className="px-2.5 py-1 bg-white hover:bg-emerald-100 text-emerald-900 rounded-lg text-[11px] font-semibold border border-emerald-200/80 transition-colors flex items-center gap-1 cursor-pointer"
+                        >
+                          ✍️ Contrato
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNotificarInitialMode("templates");
+                            setNotificarInitialTemplateId("alta_clinica");
+                            setShowNotificarModal(true);
+                          }}
+                          className="px-2.5 py-1 bg-white hover:bg-emerald-100 text-emerald-900 rounded-lg text-[11px] font-semibold border border-emerald-200/80 transition-colors flex items-center gap-1 cursor-pointer"
+                        >
+                          🎓 Alta Clínica
+                        </button>
+                      </>
+                    )}
                     <button
                       type="button"
                       onClick={() => {
                         setNotificarInitialMode("custom");
                         setShowNotificarModal(true);
                       }}
-                      className="px-2.5 py-1 bg-sun-dark/20 hover:bg-sun-dark/40 text-forest rounded-lg text-[11px] font-bold border border-sun-dark/30 transition-colors flex items-center gap-1"
+                      className="px-2.5 py-1 bg-sun-dark/20 hover:bg-sun-dark/40 text-forest rounded-lg text-[11px] font-bold border border-sun-dark/30 transition-colors flex items-center gap-1 cursor-pointer"
                     >
                       ✨ Redigir Avulsa
                     </button>
@@ -15077,6 +15589,12 @@ export function DashboardView({
           isOpen={showNotificarModal}
           onClose={() => setShowNotificarModal(false)}
           target={notificarTarget}
+          currentRole={currentRole}
+          currentUserProfile={profile}
+          onOpenContrato={() => {
+            setShowNotificarModal(false);
+            setShowContratoModal(true);
+          }}
           profissionaisAtivos={profissionaisAtivos}
           whatsappConnected={whatsappState === "open"}
           globalConfigs={globalConfigs}

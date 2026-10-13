@@ -1,17 +1,16 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, setPersistence, browserLocalPersistence } from 'firebase/auth';
-import { initializeFirestore, getFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import { initializeFirestore, getFirestore, doc, getDoc } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
+const dbId = (firebaseConfig as any).firestoreDatabaseId || "ai-studio-f37c289b-aa59-4c44-bb8c-93208cbac09b";
 let firestoreDb;
 try {
-  firestoreDb = initializeFirestore(app, {
-    experimentalAutoDetectLongPolling: true,
-  }, firebaseConfig.firestoreDatabaseId);
+  firestoreDb = initializeFirestore(app, { experimentalAutoDetectLongPolling: true }, dbId);
 } catch {
-  firestoreDb = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+  firestoreDb = getFirestore(app, dbId);
 }
 
 export const db = firestoreDb;
@@ -21,15 +20,12 @@ export const auth = getAuth(app);
 // Using localStorage (browserLocalPersistence) improves session stability.
 setPersistence(auth, browserLocalPersistence).catch(console.error);
 
-// Validate connection to Firestore as per Firebase skill guidelines
+// Validate connection to Firestore gently without throwing blocking errors
 async function testConnection() {
   try {
-    await getDocFromServer(doc(db, 'configuracoes', 'master'));
+    await getDoc(doc(db, 'configuracoes', 'master'));
   } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      // The client will automatically retry and connect once network/channel is ready
-      console.info("Firestore client connecting in background...");
-    }
+    console.info("Firestore client connection status:", error instanceof Error ? error.message : String(error));
   }
 }
 testConnection();

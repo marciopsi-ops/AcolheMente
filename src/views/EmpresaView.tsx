@@ -220,7 +220,7 @@ export function EmpresaView({ onNavigate }: { onNavigate: (view: 'landing' | 'ac
                 <div className="flex flex-col gap-3">
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-forest/70 bg-warm px-3 py-1 rounded-full border border-soft">
-                      Nicho 1 • Compliance
+                      Nicho 1 - foco no Ambiente de trabalho
                     </span>
                     <div className="w-10 h-10 rounded-2xl bg-sun/20 flex items-center justify-center text-forest group-hover:bg-sun transition-colors">
                       <ShieldCheck className="w-5 h-5 text-forest" />
@@ -240,7 +240,7 @@ export function EmpresaView({ onNavigate }: { onNavigate: (view: 'landing' | 'ac
                 <div className="flex flex-col gap-3">
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-forest/70 bg-warm px-3 py-1 rounded-full border border-soft">
-                      Nicho 2 • Bem-Estar
+                      Nicho 2 - foco no bem estar do colaborador
                     </span>
                     <div className="w-10 h-10 rounded-2xl bg-emerald-100 flex items-center justify-center text-emerald-800 group-hover:bg-emerald-200 transition-colors">
                       <HeartHandshake className="w-5 h-5 text-emerald-700" />

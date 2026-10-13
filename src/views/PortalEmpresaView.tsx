@@ -95,6 +95,8 @@ import {
   SolicitacaoOrcamentoCorporativo,
   TEMAS_QUEIXAS_CORPORATIVAS,
   TemaQueixaItem,
+  DEMANDAS_PESSOAIS_OPCOES,
+  DEMANDAS_TRABALHO_NR1_OPCOES,
 } from "../types/corporativo";
 import logoImage from "../assets/images/logo_acolhe.jpeg";
 
@@ -275,6 +277,7 @@ export function PortalEmpresaView({
   const [orcamentoSucesso, setOrcamentoSucesso] = useState(false);
   const [filtroCategoriaCatalogo, setFiltroCategoriaCatalogo] = useState<string>("todas");
   const [acessosCorporativos, setAcessosCorporativos] = useState<any[]>([]);
+  const [abaTermometro, setAbaTermometro] = useState<"trabalho" | "pessoal" | "todos">("trabalho");
 
   // Helper de Toast com auto-dismiss garantido via useEffect
   const showToast = (text: string, type: "success" | "error" | "info" = "success") => {
@@ -686,14 +689,31 @@ export function PortalEmpresaView({
     });
 
     let totalDemandasRegistradas = 0;
+    let totalPessoais = 0;
+    let totalTrabalho = 0;
+    let totalPrefiroNaoComentar = 0;
 
     baseParaAnalise.forEach((item) => {
+      const isTrabalhoExplicito = item.tipoOrigemDemanda === "trabalho";
+      const isPessoalExplicito = item.tipoOrigemDemanda === "pessoais";
+
+      if (item.prefiroNaoComentar) {
+        totalPrefiroNaoComentar++;
+      }
+
       // 1. Array de temasIds
       if (Array.isArray(item.temasIds) && item.temasIds.length > 0) {
         item.temasIds.forEach((tId: string) => {
           if (contagemPorTema[tId] !== undefined) {
             contagemPorTema[tId]++;
             totalDemandasRegistradas++;
+
+            const isTrabalhoTema = DEMANDAS_TRABALHO_NR1_OPCOES.some((t) => t.id === tId);
+            if (isTrabalhoExplicito || isTrabalhoTema) {
+              totalTrabalho++;
+            } else {
+              totalPessoais++;
+            }
           }
         });
       } else if (Array.isArray(item.temas) && item.temas.length > 0) {
@@ -704,6 +724,13 @@ export function PortalEmpresaView({
           if (found) {
             contagemPorTema[found.id]++;
             totalDemandasRegistradas++;
+
+            const isTrabalhoTema = DEMANDAS_TRABALHO_NR1_OPCOES.some((t) => t.id === found.id);
+            if (isTrabalhoExplicito || isTrabalhoTema) {
+              totalTrabalho++;
+            } else {
+              totalPessoais++;
+            }
           }
         });
       } else if (item.queixa || item.temaPrincipal) {
@@ -714,44 +741,71 @@ export function PortalEmpresaView({
             contagemPorTema[t.id]++;
             matched = true;
             totalDemandasRegistradas++;
+
+            const isTrabalhoTema = DEMANDAS_TRABALHO_NR1_OPCOES.some((t) => t.id === t.id);
+            if (isTrabalhoExplicito || isTrabalhoTema) {
+              totalTrabalho++;
+            } else {
+              totalPessoais++;
+            }
           }
         });
         if (!matched) {
           contagemPorTema["ansiedade_estresse"] = (contagemPorTema["ansiedade_estresse"] || 0) + 1;
           totalDemandasRegistradas++;
+          totalPessoais++;
         }
       }
     });
 
     const catalogoItens = getCatalogoEmpresa(empresaAtiva);
 
-    const rankingTemas = TEMAS_QUEIXAS_CORPORATIVAS.map((tema) => {
-      const qtd = contagemPorTema[tema.id] || 0;
-      const percentual =
-        totalDemandasRegistradas > 0
-          ? Math.round((qtd / totalDemandasRegistradas) * 100)
-          : 0;
+    // Mapeador auxiliar para calcular percentuais e vincular soluções do catálogo
+    const processarRanking = (lista: TemaQueixaItem[], totalBase: number) => {
+      return lista.map((tema) => {
+        const qtd = contagemPorTema[tema.id] || 0;
+        const percentual = totalBase > 0 ? Math.round((qtd / totalBase) * 100) : 0;
+        const servicoSugerido =
+          catalogoItens.find((cat) => cat.id === tema.servicoCatalogoSugeridoId) ||
+          catalogoItens.find((cat) => cat.categoria === "nr1_gro_pgr") ||
+          catalogoItens[0];
 
-      // Localiza serviço sugerido correspondente no catálogo
-      const servicoSugerido =
-        catalogoItens.find((cat) => cat.id === tema.servicoCatalogoSugeridoId) ||
-        catalogoItens.find((cat) => cat.categoria === "nr1_gro_pgr") ||
-        catalogoItens[0];
+        return {
+          ...tema,
+          quantidade: qtd,
+          percentual,
+          servicoSugerido,
+        };
+      }).sort((a, b) => b.quantidade - a.quantidade || b.percentual - a.percentual);
+    };
 
-      return {
-        ...tema,
-        quantidade: qtd,
-        percentual,
-        servicoSugerido,
-      };
-    }).sort((a, b) => b.quantidade - a.quantidade || b.percentual - a.percentual);
+    const rankingTemas = processarRanking(TEMAS_QUEIXAS_CORPORATIVAS, totalDemandasRegistradas);
+    const rankingRiscosTrabalho = processarRanking(
+      DEMANDAS_TRABALHO_NR1_OPCOES,
+      totalTrabalho > 0 ? totalTrabalho : totalDemandasRegistradas
+    );
+    const rankingDemandasPessoais = processarRanking(
+      DEMANDAS_PESSOAIS_OPCOES,
+      totalPessoais > 0 ? totalPessoais : totalDemandasRegistradas
+    );
 
     const topTemasCriticos = rankingTemas.filter((t) => t.quantidade > 0).slice(0, 3);
+    const topRiscosTrabalhoCriticos = rankingRiscosTrabalho.filter((t) => t.quantidade > 0).slice(0, 3);
+
+    const percentualTrabalho = totalDemandasRegistradas > 0 ? Math.round((totalTrabalho / totalDemandasRegistradas) * 100) : 0;
+    const percentualPessoais = totalDemandasRegistradas > 0 ? Math.round((totalPessoais / totalDemandasRegistradas) * 100) : 0;
 
     return {
       totalDemandasRegistradas,
+      totalPessoais,
+      totalTrabalho,
+      percentualPessoais,
+      percentualTrabalho,
+      totalPrefiroNaoComentar,
       rankingTemas,
-      topTemasCriticos,
+      rankingRiscosTrabalho,
+      rankingDemandasPessoais,
+      topTemasCriticos: topRiscosTrabalhoCriticos.length > 0 ? topRiscosTrabalhoCriticos : topTemasCriticos,
       isHistoricoGeral,
       totalRegistrosAnalisados: baseParaAnalise.length,
     };
@@ -2466,7 +2520,7 @@ export function PortalEmpresaView({
                       </span>
                     </div>
                     <p className="text-[11px] text-forest/70 mt-1 max-w-3xl leading-relaxed">
-                      Mapeamento epidemiológico das queixas e motivos de busca selecionados obrigatoriamente pelos colaboradores antes do primeiro contato. Utilize esses dados para fundamentar o <strong>Inventário de Riscos Psicossociais da NR-1</strong> e selecionar as intervenções preventivas recomendadas no catálogo corporativo.
+                      Mapeamento epidemiológico das queixas e motivos de busca triados na entrada do benefício. Utilize esses dados para fundamentar o <strong>Inventário de Riscos Psicossociais da NR-1</strong> e selecionar as intervenções preventivas recomendadas no catálogo corporativo.
                     </p>
                   </div>
                 </div>
@@ -2484,84 +2538,244 @@ export function PortalEmpresaView({
                 </div>
               </div>
 
+              {/* AVISO IMPORTANTE: DADOS PARCIAIS & CONSULTORIA ESPECIALIZADA NR-1 */}
+              <div className="p-4 sm:p-5 bg-gradient-to-r from-amber-50 via-orange-50/60 to-amber-50/40 border border-amber-300/80 rounded-2xl space-y-3 shadow-2xs">
+                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                  <div className="flex items-start gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-900 border border-amber-300 flex items-center justify-center shrink-0 mt-0.5">
+                      <AlertTriangle className="w-4 h-4 text-amber-700" />
+                    </div>
+                    <div>
+                      <h4 className="font-serif text-xs sm:text-sm font-bold text-amber-950 flex items-center gap-1.5">
+                        <span>Nota Metodológica & Consultoria Especializada NR-1</span>
+                        <span className="px-2 py-0.2 rounded-full text-[9px] font-extrabold uppercase bg-amber-200 text-amber-900">
+                          Amostra Parcial
+                        </span>
+                      </h4>
+                      <p className="text-[11px] sm:text-xs text-amber-900/90 mt-1 leading-relaxed">
+                        Estes indicadores refletem <strong>exclusivamente dados parciais</strong> obtidos a partir da busca espontânea dos colaboradores que acessaram o benefício na plataforma. <strong>Para um diagnóstico geral e institucional aprofundado dos riscos psicossociais da sua organização (conforme exigido para o inventário do GRO/PGR e conformidade legal da NR-1), um levantamento estruturado precisa ser planejado com um consultor especializado.</strong>
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const catalogoItens = getCatalogoEmpresa(empresaAtiva);
+                      const servNr1 =
+                        catalogoItens.find((cat) => cat.id === "nr1_gestao_riscos_psicossociais") ||
+                        catalogoItens.find((cat) => cat.categoria === "nr1_gro_pgr") ||
+                        catalogoItens[0];
+                      handleAbrirOrcamentoComContexto(servNr1, {
+                        label: "Diagnóstico Institucional Global NR-1",
+                        percentual: 100,
+                      });
+                    }}
+                    className="px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition-all shadow-2xs shrink-0 flex items-center gap-1.5 cursor-pointer self-start sm:self-auto"
+                  >
+                    <Compass className="w-3.5 h-3.5" />
+                    <span>Planejar Diagnóstico com Consultor</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* CARD DE DIVISÃO: DEMANDAS PESSOAIS vs DEMANDAS DE TRABALHO (NR-1) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                {/* Demandas Pessoais */}
+                <div className="p-4 rounded-xl bg-emerald-50/60 border border-emerald-200 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-emerald-900 flex items-center gap-1.5">
+                      <span>🌿</span>
+                      <span>Demandas Pessoais & Familiares</span>
+                    </span>
+                    <span className="text-xs font-extrabold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-md">
+                      {indicadoresDemandas.percentualPessoais}%
+                    </span>
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-xl font-serif font-bold text-emerald-950">
+                      {indicadoresDemandas.totalPessoais}
+                    </span>
+                    <span className="text-[11px] text-emerald-800/80">
+                      {indicadoresDemandas.totalPessoais === 1 ? "demanda registrada" : "demandas registradas"}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-emerald-900/70 leading-snug">
+                    Desafios da vida pessoal, família, relacionamentos, luto, perdas, tristeza ou autoconhecimento.
+                  </p>
+                  <div className="w-full h-1.5 bg-emerald-200/50 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-emerald-600 rounded-full transition-all duration-500"
+                      style={{ width: `${Math.max(indicadoresDemandas.percentualPessoais, 4)}%` }}
+                    />
+                  </div>
+                </div>
+
+                {/* Demandas Relacionadas ao Trabalho (NR-1) */}
+                <div className="p-4 rounded-xl bg-amber-50/70 border border-amber-300 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-amber-950 flex items-center gap-1.5">
+                      <span>🏢</span>
+                      <span>Riscos Psicossociais & Trabalho (NR-1)</span>
+                    </span>
+                    <span className="text-xs font-extrabold text-amber-900 bg-amber-100 px-2 py-0.5 rounded-md">
+                      {indicadoresDemandas.percentualTrabalho}%
+                    </span>
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-xl font-serif font-bold text-amber-950">
+                      {indicadoresDemandas.totalTrabalho}
+                    </span>
+                    <span className="text-[11px] text-amber-900/80">
+                      {indicadoresDemandas.totalTrabalho === 1 ? "demanda registrada" : "demandas registradas"}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-amber-900/70 leading-snug">
+                    Sobrecarga, estresse com metas, conflitos de clima, carreira, conciliação ou riscos ocupacionais da NR-1.
+                  </p>
+                  <div className="w-full h-1.5 bg-amber-200 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-amber-600 rounded-full transition-all duration-500"
+                      style={{ width: `${Math.max(indicadoresDemandas.percentualTrabalho, 4)}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+
               {/* Grid: 2 Colunas (Ranking de Queixas & Soluções Recomendadas) */}
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                 {/* Coluna Esquerda (7 cols): Barras de Progresso e Percentual dos Temas */}
                 <div className="lg:col-span-7 space-y-4">
-                  <div className="flex items-center justify-between pb-2 border-b border-soft/60">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-soft/60">
                     <h4 className="text-xs font-bold text-forest flex items-center gap-1.5 uppercase tracking-wider">
                       <PieChart className="w-4 h-4 text-forest/60" />
-                      Distribuição Percentual das Queixas na Equipe
+                      Estratificação das Demandas
                     </h4>
-                    <span className="text-[10px] text-forest/60">
-                      {indicadoresDemandas.totalDemandasRegistradas > 0 ? "Ordenado por relevância" : "Matriz de Temas Padrão"}
-                    </span>
+
+                    {/* SELETOR DE ABAS NO TERMÔMETRO */}
+                    <div className="flex items-center gap-1 bg-warm/60 p-1 rounded-xl border border-soft text-[10px] font-bold">
+                      <button
+                        type="button"
+                        onClick={() => setAbaTermometro("trabalho")}
+                        className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                          abaTermometro === "trabalho"
+                            ? "bg-amber-600 text-white shadow-2xs"
+                            : "text-forest/70 hover:text-forest"
+                        }`}
+                      >
+                        Trabalho (NR-1)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAbaTermometro("pessoal")}
+                        className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                          abaTermometro === "pessoal"
+                            ? "bg-emerald-700 text-white shadow-2xs"
+                            : "text-forest/70 hover:text-forest"
+                        }`}
+                      >
+                        Pessoais
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAbaTermometro("todos")}
+                        className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                          abaTermometro === "todos"
+                            ? "bg-forest text-white shadow-2xs"
+                            : "text-forest/70 hover:text-forest"
+                        }`}
+                      >
+                        Todas
+                      </button>
+                    </div>
                   </div>
 
+                  {/* Lista de Barras conforme a Aba Ativa */}
                   <div className="space-y-2.5">
-                    {indicadoresDemandas.rankingTemas.map((tema, idx) => {
-                      const isTop1 = idx === 0 && tema.quantidade > 0;
-                      const isTop3 = idx < 3 && tema.quantidade > 0;
+                    {(() => {
+                      const listaAtual =
+                        abaTermometro === "trabalho"
+                          ? indicadoresDemandas.rankingRiscosTrabalho
+                          : abaTermometro === "pessoal"
+                          ? indicadoresDemandas.rankingDemandasPessoais
+                          : indicadoresDemandas.rankingTemas;
 
-                      return (
-                        <div
-                          key={tema.id}
-                          className={`p-3 rounded-xl border transition-all ${
-                            isTop1
-                              ? "bg-amber-50/50 border-amber-200 shadow-2xs"
-                              : isTop3
-                              ? "bg-warm/30 border-soft hover:border-sun/60"
-                              : "bg-white border-soft/70 hover:bg-warm/20"
-                          }`}
-                        >
-                          <div className="flex items-center justify-between gap-2 mb-1.5">
-                            <div className="flex items-center gap-2 min-w-0">
-                              <span className="text-base shrink-0">{tema.iconeEmoji}</span>
-                              <span className="text-xs font-bold text-forest truncate">
-                                {tema.label}
-                              </span>
-                              <span className="hidden sm:inline-block px-2 py-0.2 rounded-full text-[9px] font-bold bg-forest/5 text-forest/70 border border-forest/10 shrink-0">
-                                {tema.categoria}
-                              </span>
-                            </div>
+                      return listaAtual.map((tema, idx) => {
+                        const isTop1 = idx === 0 && tema.quantidade > 0;
+                        const isTop3 = idx < 3 && tema.quantidade > 0;
+                        const isPrefiro = tema.id === "prefiro_nao_comentar";
 
-                            <div className="flex items-center gap-2 shrink-0">
-                              {isTop1 && (
-                                <span className="px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase bg-rose-100 text-rose-900 border border-rose-200">
-                                  Risco Prioritário
+                        return (
+                          <div
+                            key={tema.id}
+                            className={`p-3 rounded-xl border transition-all ${
+                              isPrefiro
+                                ? "bg-warm/30 border-soft/80"
+                                : isTop1
+                                ? "bg-amber-50/60 border-amber-300 shadow-2xs"
+                                : isTop3
+                                ? "bg-warm/30 border-soft hover:border-sun/60"
+                                : "bg-white border-soft/70 hover:bg-warm/20"
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-2 mb-1.5">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="text-base shrink-0">{tema.iconeEmoji}</span>
+                                <span className="text-xs font-bold text-forest truncate">
+                                  {tema.label}
                                 </span>
-                              )}
-                              <span className="text-xs font-bold text-forest">
-                                {tema.percentual}%
-                              </span>
-                              <span className="text-[10px] text-forest/50 font-medium">
-                                ({tema.quantidade})
-                              </span>
+                                {tema.tagNormativa && (
+                                  <span className="hidden sm:inline-block px-1.5 py-0.2 rounded text-[9px] font-bold bg-forest/5 text-forest/70 border border-forest/10 shrink-0">
+                                    {tema.tagNormativa}
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="flex items-center gap-2 shrink-0">
+                                {isTop1 && !isPrefiro && (
+                                  <span className="px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase bg-rose-100 text-rose-900 border border-rose-200">
+                                    Risco Prioritário
+                                  </span>
+                                )}
+                                {isPrefiro && (
+                                  <span className="px-2 py-0.5 rounded-full text-[9px] font-semibold bg-forest/10 text-forest/80">
+                                    Sigilo Preservado
+                                  </span>
+                                )}
+                                <span className="text-xs font-bold text-forest">
+                                  {tema.percentual}%
+                                </span>
+                                <span className="text-[10px] text-forest/50 font-medium">
+                                  ({tema.quantidade})
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Barra de Progresso Visual */}
+                            <div className="w-full h-2 bg-warm rounded-full overflow-hidden border border-soft/50">
+                              <div
+                                className={`h-full rounded-full transition-all duration-700 ${
+                                  isPrefiro
+                                    ? "bg-forest/40"
+                                    : isTop1
+                                    ? "bg-gradient-to-r from-amber-500 to-rose-500"
+                                    : isTop3
+                                    ? "bg-gradient-to-r from-sun-dark to-forest"
+                                    : "bg-forest/40"
+                                }`}
+                                style={{ width: `${Math.max(tema.percentual, tema.quantidade > 0 ? 6 : 2)}%` }}
+                              />
                             </div>
                           </div>
-
-                          {/* Barra de Progresso Visual */}
-                          <div className="w-full h-2 bg-warm rounded-full overflow-hidden border border-soft/50">
-                            <div
-                              className={`h-full rounded-full transition-all duration-700 ${
-                                isTop1
-                                  ? "bg-gradient-to-r from-amber-500 to-rose-500"
-                                  : isTop3
-                                  ? "bg-gradient-to-r from-sun-dark to-forest"
-                                  : "bg-forest/40"
-                              }`}
-                              style={{ width: `${Math.max(tema.percentual, tema.quantidade > 0 ? 6 : 2)}%` }}
-                            />
-                          </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      });
+                    })()}
                   </div>
 
                   <div className="p-3 bg-warm/40 rounded-xl border border-soft text-[11px] text-forest/70 flex items-start gap-2">
                     <ShieldCheck className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
                     <span>
-                      <strong>Sigilo Ético Assegurado:</strong> As queixas são agrupadas exclusivamente em categorias epidemiológicas agregadas sem identificação individual, preservando integralmente o sigilo profissional (Resolução CFP 010/05).
+                      <strong>Sigilo Ético Assegurado:</strong> As queixas são agrupadas exclusivamente em categorias epidemiológicas agregadas sem identificação individual, preservando integralmente o sigilo profissional (Resolução CFP 010/05) e a LGPD.
                     </span>
                   </div>
                 </div>
@@ -4559,10 +4773,33 @@ export function PortalEmpresaView({
               </div>
 
               {/* 3. Mapeamento Epidemiológico de Queixas & Riscos Psicossociais (NR-1) */}
-              <div>
-                <h4 className="font-serif text-sm font-bold text-forest mb-2">
-                  3. Mapeamento Epidemiológico de Temas & Queixas (NR-1 / GRO)
-                </h4>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-serif text-sm font-bold text-forest">
+                    3. Mapeamento Epidemiológico de Temas & Queixas (NR-1 / GRO)
+                  </h4>
+                  <span className="text-[10px] font-bold text-amber-900 bg-amber-100 px-2 py-0.5 rounded border border-amber-200">
+                    Amostra Parcial • Busca Espontânea
+                  </span>
+                </div>
+
+                {/* Nota Metodológica Impressa */}
+                <div className="p-2.5 bg-amber-50/70 border border-amber-200 rounded-xl text-[10px] text-amber-950 leading-relaxed">
+                  <strong>Nota Metodológica & Consultoria Especializada:</strong> Os indicadores apresentados neste relatório refletem exclusivamente uma amostra parcial das buscas voluntárias na plataforma. Para um diagnóstico institucional completo dos riscos psicossociais da organização (inventário oficial GRO/PGR), recomenda-se o planejamento de um levantamento estruturado junto a um consultor técnico da AcolheMente.
+                </div>
+
+                {/* Divisão Pessoal vs Trabalho */}
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="p-2 bg-emerald-50 border border-emerald-200 rounded-xl">
+                    <span className="font-bold text-emerald-900 block text-[11px]">🌿 Demandas Pessoais</span>
+                    <span className="text-sm font-bold text-emerald-950">{indicadoresDemandas.percentualPessoais}% ({indicadoresDemandas.totalPessoais})</span>
+                  </div>
+                  <div className="p-2 bg-amber-50 border border-amber-200 rounded-xl">
+                    <span className="font-bold text-amber-950 block text-[11px]">🏢 Riscos Trabalho (NR-1)</span>
+                    <span className="text-sm font-bold text-amber-950">{indicadoresDemandas.percentualTrabalho}% ({indicadoresDemandas.totalTrabalho})</span>
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                   {indicadoresDemandas.rankingTemas.slice(0, 6).map((tema) => (
                     <div

@@ -45,6 +45,9 @@ export interface PatientNotificationModalProps {
   onTargetUpdated?: (updatedFields: Record<string, any>) => void;
   initialMode?: "templates" | "custom";
   initialTemplateId?: string;
+  currentRole?: "master" | "triagem" | "profissional";
+  currentUserProfile?: UserProfileSummary | null;
+  onOpenContrato?: () => void;
 }
 
 interface QuickTemplate {
@@ -66,27 +69,53 @@ export const PatientNotificationModal: React.FC<PatientNotificationModalProps> =
   onTargetUpdated,
   initialMode = "templates",
   initialTemplateId = "proposta",
+  currentRole = "triagem",
+  currentUserProfile = null,
+  onOpenContrato,
 }) => {
+  const isProfissional = currentRole === "profissional";
+  const isEmpresa = Boolean(target?.nomeEmpresa || target?.razaoSocial || target?.cnpj);
+
   // Channel Toggles
   const [sendWhatsApp, setSendWhatsApp] = useState<boolean>(true);
   const [sendEmail, setSendEmail] = useState<boolean>(true);
 
   // Message Source Mode: 'templates' | 'custom'
   const [mode, setMode] = useState<"templates" | "custom">(initialMode);
-  const [selectedTemplateId, setSelectedTemplateId] = useState<string>(initialTemplateId);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>(
+    isProfissional && (initialTemplateId === "proposta" || initialTemplateId === "boas_vindas")
+      ? "primeiro_contato"
+      : initialTemplateId
+  );
+
+  // Check if contract has been generated for target
+  const isContratoGerado = useMemo(() => {
+    return Boolean(
+      target?.contratoGerado ||
+      target?.contratoConteudo ||
+      target?.statusContrato === "assinado" ||
+      target?.statusContrato === "aguardando_assinatura" ||
+      target?.contratoAssinado ||
+      target?.contratoPersonalizado
+    );
+  }, [target]);
+
+  const isContratoBloqueado = selectedTemplateId === "contrato" && !isContratoGerado;
 
   // Update mode or template if props change when opening
   useEffect(() => {
     if (isOpen) {
       if (initialMode) setMode(initialMode);
       const isEmpresa = Boolean(target?.nomeEmpresa || target?.razaoSocial || target?.cnpj);
-      if (isEmpresa && (!initialTemplateId || initialTemplateId === "proposta")) {
+      if (isEmpresa && (!initialTemplateId || initialTemplateId === "proposta" || initialTemplateId === "primeiro_contato")) {
         setSelectedTemplateId("ficha_empresa");
+      } else if (isProfissional && (!initialTemplateId || initialTemplateId === "proposta" || initialTemplateId === "boas_vindas")) {
+        setSelectedTemplateId("primeiro_contato");
       } else if (initialTemplateId) {
         setSelectedTemplateId(initialTemplateId);
       }
     }
-  }, [isOpen, initialMode, initialTemplateId, target]);
+  }, [isOpen, initialMode, initialTemplateId, target, isProfissional]);
 
   // Form Content
   const [subject, setSubject] = useState<string>("");
@@ -184,18 +213,19 @@ export const PatientNotificationModal: React.FC<PatientNotificationModalProps> =
     const empresaNome = target?.razaoSocial || target?.nomeEmpresa || target?.empresa || "Empresa Conveniada";
     const patientName = isEmpresa
       ? (target?.nomeResponsavel || target?.contatoNome || target?.nome || target?.name || "Responsável")
-      : (target?.nome || target?.name || target?.nomeContato || "Paciente");
+      : (target?.nomeDesejado || target?.nomeCivil || target?.nome || target?.name || target?.nomeContato || "Paciente");
     const firstName = patientName.trim().split(" ")[0];
-    const profName = assignedProfessional?.name || target?.profissionalNome || "Profissional AcolheMente";
-    const profCrp = assignedProfessional?.crp || target?.profissionalCrp || "Sob Supervisão";
-    const valorSessao = target?.valorSessao || "A combinar";
+    const profName = assignedProfessional?.name || currentUserProfile?.name || currentUserProfile?.nome || target?.profissionalNome || "Profissional AcolheMente";
+    const profCrp = assignedProfessional?.crp || currentUserProfile?.crp || target?.profissionalCrp || "Sob Supervisão";
+    const valorSessao = target?.valorSessao ? (String(target.valorSessao).startsWith("R$") ? target.valorSessao : `R$ ${target.valorSessao}`) : "A combinar";
     const frequencia = target?.frequenciaSessoes || "Semanal";
     const origin = typeof window !== "undefined" ? window.location.origin : "https://acolhemente.com.br";
     const linkProposta = target?.id ? `${origin}/?proposta=${target.id}` : `${origin}/?proposta=demo`;
     const linkContrato = target?.id ? `${origin}/?contrato=${target.id}` : `${origin}/?contrato=demo`;
     const linkFichaEmpresa = target?.id ? `${origin}/?ficha_empresa=${target.id}` : `${origin}/?ficha_empresa=demo`;
-    const linkPerfilProf = assignedProfessional?.uid
-      ? `${origin}/?view=profissionais#${assignedProfessional.uid}`
+    const profUid = assignedProfessional?.uid || currentUserProfile?.uid || target?.profissionalId || target?.profissionalUid || "";
+    const linkPerfilProf = profUid
+      ? `${origin}/?prof=${profUid}`
       : `${origin}/?view=profissionais`;
 
     const replacements: Record<string, string> = {
@@ -258,7 +288,6 @@ export const PatientNotificationModal: React.FC<PatientNotificationModalProps> =
 
   // Base Built-in Quick Templates
   const builtInTemplates: QuickTemplate[] = useMemo(() => {
-    const isEmpresa = Boolean(target?.nomeEmpresa || target?.razaoSocial || target?.cnpj);
     if (isEmpresa) {
       return [
         {
@@ -291,6 +320,54 @@ export const PatientNotificationModal: React.FC<PatientNotificationModalProps> =
         },
       ];
     }
+
+    if (isProfissional) {
+      return [
+        {
+          id: "primeiro_contato",
+          name: "👋 Primeiro Contato & Agendamento",
+          category: "operacional",
+          subject: "AcolheMente - Olá! Seu Atendimento Psicológico com {profissional}",
+          body: `Olá, *{primeiro_nome}*! 👋 Tudo bem? 🌿\n\nSou o(a) psicólogo(a) *{profissional}* (CRP: *{profissional_crp}*), responsável pelo seu acolhimento e acompanhamento no *Projeto AcolheMente Saúde*.\n\nEstou entrando em contato para combinarmos o melhor dia e horário da semana para a realização da nossa primeira sessão.\n\nVocê também pode conhecer mais sobre minha trajetória, abordagens e formação visitando a minha página profissional na plataforma:\n{link_perfil_profissional}\n\nQual dia e período da semana fica mais confortável para você? Fico no aguardo!`,
+        },
+        {
+          id: "dicas_primeira_sessao",
+          name: "🌿 Recomendações para a 1ª Sessão Online",
+          category: "operacional",
+          subject: "AcolheMente - Recomendações e Dicas para a sua Primeira Sessão",
+          body: `Olá, *{primeiro_nome}*! 🌿\n\nPara que você tenha uma excelente experiência e se sinta totalmente acolhido(a) na nossa primeira sessão de terapia online, separei algumas recomendações importantes:\n\n🎧 *Ambiente e Privacidade:* Escolha um local calmo, privativo e sem interrupções, onde você possa se expressar com total liberdade e acolhimento.\n📶 *Conexão e Fones de Ouvido:* O uso de fones de ouvido garante maior sigilo e nitidez do áudio. Uma conexão Wi-Fi estável também proporciona melhor fluidez.\n☕ *Conforto e Pausa:* Tenha um copo de água por perto e acomode-se alguns minutinhos antes do horário combinado para desacelerar da rotina.\n\nQualquer dúvida estou à total disposição. Até breve!`,
+        },
+        {
+          id: "lembrete_sessao",
+          name: "⏰ Lembrete de Sessão de Terapia",
+          category: "operacional",
+          subject: "AcolheMente - Lembrete da sua Sessão",
+          body: `Olá, *{primeiro_nome}*! 👋\n\nEste é um lembrete do nosso atendimento psicológico agendado com o(a) psicólogo(a) *{profissional}*.\n\nLembre-se de reservar um ambiente tranquilo, privativo e com boa conexão.\n\nCaso necessite de reagendamento por algum imprevisto, peço a gentileza de avisar com no mínimo 24h de antecedência para reorganizarmos os horários.\n\nAté a nossa sessão! 🌿`,
+        },
+        {
+          id: "contrato",
+          name: "✍️ Termos Terapêuticos / Contrato CFP",
+          category: "operacional",
+          subject: "AcolheMente - Termos do Contrato Terapêutico",
+          body: `Olá, *{primeiro_nome}*! 👋\n\nPara formalizarmos nosso início de acompanhamento psicológico e garantir total conformidade com as diretrizes do Conselho de Psicologia (CFP), por favor confira e assine os termos terapêuticos acessando o link seguro abaixo:\n\n🔗 {link_contrato}\n\nVocê poderá ler com calma todas as cláusulas (sigilo profissional, faltas, horários e agendamento) e assinar digitalmente pelo celular.\n\nQualquer dúvida estou à total disposição!`,
+        },
+        {
+          id: "alta_clinica",
+          name: "🎓 Alta Clínica & Encerramento do Ciclo",
+          category: "operacional",
+          subject: "AcolheMente - Parabéns pela sua Alta Clínica!",
+          body: `Olá, *{primeiro_nome}*! 🌿✨\n\nGostaria de parabenizar você pela dedicação e linda trajetória de autoconhecimento percorrida ao longo do nosso processo psicoterapêutico no *Projeto AcolheMente Saúde*.\n\nChegamos ao momento da sua alta clínica — um marco muito especial de fortalecimento, autonomia e consolidação dos seus recursos emocionais.\n\nLembre-se de que todo o repertório e ferramentas desenvolvidos continuam com você em cada passo da sua vida. As portas do projeto e do meu consultório estarão sempre abertas caso sinta necessidade de um novo ciclo no futuro.\n\nDesejo muito sucesso, saúde e bem-estar na sua caminhada!`,
+        },
+        {
+          id: "pagamento",
+          name: "💳 Lembrete de Regularização de Sessão",
+          category: "operacional",
+          subject: "AcolheMente - Lembrete de Sessão",
+          body: `Olá, *{primeiro_nome}*! Tudo bem?\n\nPassando para lembrar sobre a regularização referente à nossa última sessão de acompanhamento clínico ({valor_sessao}).\n\nCaso já tenha efetuado a transferência/Pix, favor desconsiderar ou enviar o comprovante.\n\nUm abraço e até o nosso próximo encontro!`,
+        },
+      ];
+    }
+
     return [
       {
         id: "proposta",
@@ -314,6 +391,20 @@ export const PatientNotificationModal: React.FC<PatientNotificationModalProps> =
         body: `Olá *{primeiro_nome}*! 👋\n\nEste é um lembrete carinhoso sobre a sua sessão de terapia agendada com o(a) psicólogo(a) *{profissional}*.\n\nLembre-se de estar em um local tranquilo, privativo e com boa conexão à internet.\n\nCaso necessite de reagendamento, por favor avise com no mínimo 24h de antecedência. Uma excelente sessão! 🌿`,
       },
       {
+        id: "contrato",
+        name: "✍️ Link para Assinatura do Contrato",
+        category: "operacional",
+        subject: "AcolheMente - Contrato de Prestação de Serviços",
+        body: `Olá *{primeiro_nome}*!\n\nSegue o link seguro para a leitura e assinatura digital do Contrato de Prestação de Serviços Psicológicos do Projeto AcolheMente:\n\n{link_contrato}\n\nA assinatura leva menos de 2 minutos e garante a formalização do valor acessível de *{valor_sessao}* e a frequência acordada.\n\nFicamos à disposição!`,
+      },
+      {
+        id: "alta_clinica",
+        name: "🎓 Alta Clínica & Encerramento do Ciclo",
+        category: "operacional",
+        subject: "AcolheMente - Parabéns pela sua Alta Clínica!",
+        body: `Olá *{primeiro_nome}*! 🌿✨\n\nGostaria de parabenizar você pela dedicação e linda trajetória de autoconhecimento percorrida ao longo do seu processo psicoterapêutico no *Projeto AcolheMente Saúde*.\n\nA alta clínica é um marco muito especial de fortalecimento, autonomia e consolidação dos seus recursos emocionais.\n\nAs portas do projeto continuam abertas sempre que você sentir necessidade de um novo ciclo no futuro.\n\nDesejamos muito sucesso e saúde na sua caminhada!`,
+      },
+      {
         id: "pagamento",
         name: "💳 Lembrete de Pagamento de Sessão",
         category: "operacional",
@@ -327,35 +418,30 @@ export const PatientNotificationModal: React.FC<PatientNotificationModalProps> =
         subject: "AcolheMente - Documentos Pendentes na sua Ficha",
         body: `Olá *{primeiro_nome}*!\n\nConstatamos que há dados complementares ou documentos pendentes no seu cadastro junto à Ficha de Bordo do Projeto AcolheMente.\n\nPara mantermos a conformidade do seu prontuário clínico e a segurança dos seus atendimentos, solicitamos que nos envie as informações solicitadas assim que possível.\n\nMuito obrigado pela colaboração!`,
       },
-      {
-        id: "contrato",
-        name: "✍️ Link para Assinatura do Contrato",
-        category: "operacional",
-        subject: "AcolheMente - Contrato de Prestação de Serviços",
-        body: `Olá *{primeiro_nome}*!\n\nSegue o link seguro para a leitura e assinatura digital do Contrato de Prestação de Serviços Psicológicos do Projeto AcolheMente:\n\n{link_contrato}\n\nA assinatura leva menos de 2 minutos e garante a formalização do valor acessível de *{valor_sessao}* e a frequência acordada.\n\nFicamos à disposição!`,
-      },
     ];
-  }, []);
+  }, [isEmpresa, isProfissional]);
 
   // Combined Template List (Built-ins + Régua Triggers)
   const allTemplates = useMemo(() => {
     const list: QuickTemplate[] = [...builtInTemplates];
 
-    reguaTriggers.forEach((trg) => {
-      // Avoid duplicate keys with built-ins
-      if (!list.some((item) => item.id === trg.id)) {
-        list.push({
-          id: `regua_${trg.id}`,
-          name: `⚡ [Régua] ${trg.nome}`,
-          category: "regua",
-          subject: trg.email.subject || "Notificação Projeto AcolheMente",
-          body: trg.whatsapp.messageText || trg.email.bodyHtml.replace(/<[^>]*>/g, ""),
-        });
-      }
-    });
+    if (!isProfissional) {
+      reguaTriggers.forEach((trg) => {
+        // Avoid duplicate keys with built-ins
+        if (!list.some((item) => item.id === trg.id)) {
+          list.push({
+            id: `regua_${trg.id}`,
+            name: `⚡ [Régua] ${trg.nome}`,
+            category: "regua",
+            subject: trg.email.subject || "Notificação Projeto AcolheMente",
+            body: trg.whatsapp.messageText || trg.email.bodyHtml.replace(/<[^>]*>/g, ""),
+          });
+        }
+      });
+    }
 
     return list;
-  }, [builtInTemplates, reguaTriggers]);
+  }, [builtInTemplates, reguaTriggers, isProfissional]);
 
   // Load template content when selected
   useEffect(() => {
@@ -407,6 +493,11 @@ export const PatientNotificationModal: React.FC<PatientNotificationModalProps> =
   const handleDispatchNotification = async () => {
     if (!sendWhatsApp && !sendEmail) {
       onShowToast("Selecione pelo menos um canal de envio (WhatsApp ou E-mail).", "info");
+      return;
+    }
+
+    if (selectedTemplateId === "contrato" && !isContratoGerado) {
+      onShowToast("Atenção: Por favor, gere o contrato do paciente na ficha de bordo antes de disparar o link de assinatura.", "error");
       return;
     }
 
@@ -510,7 +601,7 @@ export const PatientNotificationModal: React.FC<PatientNotificationModalProps> =
       updates.propostaEnviada = true;
       updates.propostaEnviadaEm = new Date().toISOString();
       if (!target.status || target.status === "Aguardando Avaliação") {
-        updates.status = "Aprovado";
+        updates.status = "Em Triagem"; // 2ª etapa: "Aguardando aceite de proposta"
       }
       if (!target.propostaStatus) {
         updates.propostaStatus = "Proposta enviada";
@@ -521,6 +612,15 @@ export const PatientNotificationModal: React.FC<PatientNotificationModalProps> =
       if (target.status === "Aprovado") {
         updates.status = "Em Atendimento";
       }
+    } else if (selectedTemplateId === "primeiro_contato") {
+      updates.primeiroContatoEnviado = true;
+      updates.primeiroContatoEnviadoEm = new Date().toISOString();
+      if (target.status === "Aprovado" || target.status === "Em Triagem") {
+        updates.status = "Em Atendimento";
+      }
+    } else if (selectedTemplateId === "alta_clinica") {
+      updates.altaClinicaComunicada = true;
+      updates.altaClinicaComunicadaEm = new Date().toISOString();
     }
 
     if (Object.keys(updates).length > 0 && target.id) {
@@ -557,6 +657,11 @@ export const PatientNotificationModal: React.FC<PatientNotificationModalProps> =
 
   // Open in WhatsApp Web fallback
   const handleOpenWhatsAppWeb = () => {
+    if (selectedTemplateId === "contrato" && !isContratoGerado) {
+      onShowToast("Atenção: Por favor, gere o contrato do paciente na ficha de bordo antes de abrir o WhatsApp com o link de assinatura.", "error");
+      return;
+    }
+
     const cleanPhone = recipientPhone.replace(/\D/g, "");
     const encoded = encodeURIComponent(message);
     const url = cleanPhone ? `https://wa.me/55${cleanPhone.replace(/^55/, "")}?text=${encoded}` : `https://wa.me/?text=${encoded}`;
@@ -837,14 +942,14 @@ export const PatientNotificationModal: React.FC<PatientNotificationModalProps> =
                       onChange={(e) => setSelectedTemplateId(e.target.value)}
                       className="w-full text-xs font-medium bg-white border border-soft px-3.5 py-2.5 rounded-xl focus:outline-none focus:border-sun-dark shadow-2xs"
                     >
-                      <optgroup label="Modelos Operacionais Rápidos">
+                      <optgroup label={isProfissional ? "Modelos Clínicos do Profissional" : "Modelos Operacionais Rápidos"}>
                         {builtInTemplates.map((tpl) => (
                           <option key={tpl.id} value={tpl.id}>
                             {tpl.name}
                           </option>
                         ))}
                       </optgroup>
-                      {reguaTriggers.length > 0 && (
+                      {!isProfissional && reguaTriggers.length > 0 && (
                         <optgroup label="Gatilhos Ativos da Régua / Central">
                           {reguaTriggers.map((trg) => (
                             <option key={`regua_${trg.id}`} value={`regua_${trg.id}`}>
@@ -854,6 +959,29 @@ export const PatientNotificationModal: React.FC<PatientNotificationModalProps> =
                         </optgroup>
                       )}
                     </select>
+
+                    {/* Alerta de Contrato Pendente */}
+                    {selectedTemplateId === "contrato" && !isContratoGerado && (
+                      <div className="mt-3 bg-amber-50 border border-amber-300 rounded-2xl p-3.5 text-xs text-amber-950 flex items-start gap-2.5 shadow-2xs animate-in fade-in">
+                        <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                        <div className="flex-1 space-y-1">
+                          <p className="font-bold text-amber-950">Aviso: Contrato ainda não gerado para este paciente!</p>
+                          <p className="text-[11px] text-amber-900/90 leading-relaxed">
+                            Para que o link de assinatura digital contenha os dados clínicos, frequência e honorários corretos, é obrigatório gerar o contrato antes de enviar esta mensagem.
+                          </p>
+                          {onOpenContrato && (
+                            <button
+                              type="button"
+                              onClick={onOpenContrato}
+                              className="mt-1 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold transition-all shadow-2xs inline-flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <FileText className="w-3.5 h-3.5" />
+                              Gerar Contrato Agora
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="bg-amber-50/60 border border-amber-200/80 p-3 rounded-xl text-xs text-amber-900 flex items-start gap-2">
@@ -897,19 +1025,28 @@ export const PatientNotificationModal: React.FC<PatientNotificationModalProps> =
                   <span className="text-[10px] text-forest/60 font-semibold mr-1">
                     Inserir tag:
                   </span>
-                  {[
-                    { label: "Nome", tag: "{nome}" },
-                    { label: "Profissional", tag: "{profissional}" },
-                    { label: "Valor", tag: "{valor_sessao}" },
-                    { label: "Frequência", tag: "{frequencia}" },
-                    { label: "Link Proposta", tag: "{link_proposta}" },
-                    { label: "Link Contrato", tag: "{link_contrato}" },
-                  ].map((t) => (
+                  {(isProfissional
+                    ? [
+                        { label: "Primeiro Nome", tag: "{primeiro_nome}" },
+                        { label: "Meu Nome", tag: "{profissional}" },
+                        { label: "Minha Página", tag: "{link_perfil_profissional}" },
+                        { label: "Link Contrato", tag: "{link_contrato}" },
+                        { label: "Valor", tag: "{valor_sessao}" },
+                      ]
+                    : [
+                        { label: "Nome", tag: "{nome}" },
+                        { label: "Profissional", tag: "{profissional}" },
+                        { label: "Valor", tag: "{valor_sessao}" },
+                        { label: "Frequência", tag: "{frequencia}" },
+                        { label: "Link Proposta", tag: "{link_proposta}" },
+                        { label: "Link Contrato", tag: "{link_contrato}" },
+                      ]
+                  ).map((t) => (
                     <button
                       key={t.tag}
                       type="button"
                       onClick={() => handleInsertTag(t.tag)}
-                      className="text-[10px] font-mono font-bold bg-warm/80 hover:bg-forest hover:text-white px-2 py-0.5 rounded-md border border-soft transition-colors text-forest"
+                      className="text-[10px] font-mono font-bold bg-warm/80 hover:bg-forest hover:text-white px-2 py-0.5 rounded-md border border-soft transition-colors text-forest cursor-pointer"
                     >
                       +{t.label}
                     </button>
@@ -975,8 +1112,13 @@ export const PatientNotificationModal: React.FC<PatientNotificationModalProps> =
             <button
               type="button"
               onClick={handleOpenWhatsAppWeb}
-              className="text-xs font-semibold text-emerald-800 hover:text-emerald-900 hover:underline flex items-center gap-1.5"
-              title="Abrir mensagem pré-carregada no WhatsApp Web"
+              disabled={isContratoBloqueado}
+              className={`text-xs font-semibold flex items-center gap-1.5 ${
+                isContratoBloqueado
+                  ? "text-slate-400 cursor-not-allowed opacity-60"
+                  : "text-emerald-800 hover:text-emerald-900 hover:underline cursor-pointer"
+              }`}
+              title={isContratoBloqueado ? "Gere o contrato do paciente na ficha de bordo antes de enviar o link de assinatura" : "Abrir mensagem pré-carregada no WhatsApp Web"}
             >
               <ExternalLink className="w-3.5 h-3.5 text-emerald-700" />
               <span>Abrir WhatsApp Web Manual</span>
@@ -988,16 +1130,17 @@ export const PatientNotificationModal: React.FC<PatientNotificationModalProps> =
               type="button"
               onClick={onClose}
               disabled={isSending}
-              className="px-4 py-2 text-xs font-bold text-forest/70 hover:text-forest transition-colors"
+              className="px-4 py-2 text-xs font-bold text-forest/70 hover:text-forest transition-colors cursor-pointer"
             >
               Cancelar
             </button>
 
             <button
               type="button"
-              disabled={isSending || (!sendWhatsApp && !sendEmail)}
+              disabled={isSending || (!sendWhatsApp && !sendEmail) || isContratoBloqueado}
               onClick={handleDispatchNotification}
-              className="px-5 py-2.5 bg-forest hover:bg-forest/90 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-5 py-2.5 bg-forest hover:bg-forest/90 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              title={isContratoBloqueado ? "Gere o contrato do paciente na ficha de bordo antes de disparar o link de assinatura" : undefined}
             >
               {isSending ? (
                 <>

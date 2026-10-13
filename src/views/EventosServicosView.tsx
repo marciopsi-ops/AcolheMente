@@ -14,57 +14,81 @@ interface UserProfile {
 
 interface EventosServicosViewProps {
   profile: UserProfile;
-  activeSection: "eventos" | "servicos";
+  activeSection?: "eventos" | "servicos" | "eventos_e_parcerias" | string;
 }
 
-export function EventosServicosView({ profile, activeSection }: EventosServicosViewProps) {
+export function EventosServicosView({ profile, activeSection = "eventos_e_parcerias" }: EventosServicosViewProps) {
+  const [currentSection, setCurrentSection] = useState<"todos" | "eventos" | "servicos">(() => {
+    if (activeSection === "eventos") return "eventos";
+    if (activeSection === "servicos") return "servicos";
+    return "todos";
+  });
+
+  useEffect(() => {
+    if (activeSection === "eventos") setCurrentSection("eventos");
+    else if (activeSection === "servicos") setCurrentSection("servicos");
+    else setCurrentSection("todos");
+  }, [activeSection]);
   const [eventos, setEventos] = useState<any[]>([]);
   const [servicos, setServicos] = useState<any[]>([]);
 
-  const [isEventModalOpen, setIsEventModalOpen] = useState(false);
-  const [isServiceModalOpen, setIsServiceModalOpen] = useState(false);
-
-  const [editingEventId, setEditingEventId] = useState<string | null>(null);
-  const [editingServiceId, setEditingServiceId] = useState<string | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalCategory, setModalCategory] = useState<"evento" | "servico">("evento");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingCategory, setEditingCategory] = useState<"evento" | "servico">("evento");
   const [subscribingItem, setSubscribingItem] = useState<any>(null);
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
   const [inscricoes, setInscricoes] = useState<any[]>([]);
 
-  // Formulário de Evento
-  const [eventoForm, setEventoForm] = useState({
+  // Formulário Padrão Unificado (O mais completo, abrangendo Eventos e Serviços)
+  const [unifiedForm, setUnifiedForm] = useState({
+    categoria: "evento" as "evento" | "servico",
     titulo: "",
-    tipo: "",
+    tipo: "", // Ex: Palestra, Workshop, Supervisão, Sublocação, Cursos...
     descricao: "",
     data: "",
     hora: "",
     vagas: "" as string | number,
+    isGratuito: false,
+    valor: "",
+    linkInscricao: "",
+    requisitos: "",
+    solicitarComprovante: false,
     contatoEmail: profile.email || "",
     contatoTelefone: profile.telefone || profile.whatsapp || profile.phone || "",
     contatoPreferencial: "email" as "email" | "whatsapp",
     modoInscricao: "plataforma" as "contato" | "plataforma",
-    requisitos: "",
-    solicitarComprovante: false,
   });
 
-  // Formulário de Serviço
-  const [servicoForm, setServicoForm] = useState({
-    titulo: "",
-    tipo: "", // Supervisão, Sublocação, etc
-    descricao: "",
-    contato: "",
-    data: "",
-    hora: "",
-    vagas: "" as string | number,
-    linkInscricao: "",
-    valor: "",
-    isGratuito: false,
-    contatoEmail: profile.email || "",
-    contatoTelefone: profile.telefone || profile.whatsapp || profile.phone || "",
-    contatoPreferencial: "email" as "email" | "whatsapp",
-    modoInscricao: "plataforma" as "contato" | "plataforma",
-    requisitos: "",
-    solicitarComprovante: false,
-  });
+  const resetUnifiedForm = (initialCat: "evento" | "servico" = "evento") => {
+    setUnifiedForm({
+      categoria: initialCat,
+      titulo: "",
+      tipo: "",
+      descricao: "",
+      data: "",
+      hora: "",
+      vagas: "",
+      isGratuito: false,
+      valor: "",
+      linkInscricao: "",
+      requisitos: "",
+      solicitarComprovante: false,
+      contatoEmail: profile.email || "",
+      contatoTelefone: profile.telefone || profile.whatsapp || profile.phone || "",
+      contatoPreferencial: "email",
+      modoInscricao: "plataforma",
+    });
+  };
+
+  const openCreateModal = (cat?: "evento" | "servico") => {
+    const selectedCat = cat || (currentSection === "servicos" ? "servico" : "evento");
+    setEditingId(null);
+    setEditingCategory(selectedCat);
+    setModalCategory(selectedCat);
+    resetUnifiedForm(selectedCat);
+    setIsModalOpen(true);
+  };
 
   const getContactLink = (item: any) => {
     const isWhatsapp = item.contatoPreferencial === "whatsapp";
@@ -72,28 +96,14 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
       const rawPhone = item.contatoTelefone || item.criadorContato || "";
       const cleanPhone = rawPhone.replace(/\D/g, "");
       const phoneWithCountry = cleanPhone.length === 11 || cleanPhone.length === 10 ? `55${cleanPhone}` : cleanPhone;
-      const text = encodeURIComponent(`Olá! Gostaria de me inscrever ou saber mais sobre o evento/serviço "${item.titulo}" que vi no AcolheMente.`);
+      const text = encodeURIComponent(`Olá! Gostaria de me inscrever ou saber mais sobre "${item.titulo}" que vi no AcolheMente.`);
       return `https://wa.me/${phoneWithCountry}?text=${text}`;
     } else {
       const email = item.contatoEmail || item.criadorContato || "";
       const subject = encodeURIComponent(`Inscrição: ${item.titulo}`);
-      const body = encodeURIComponent(`Olá, gostaria de realizar minha inscrição no evento/serviço "${item.titulo}" anunciado no AcolheMente.`);
+      const body = encodeURIComponent(`Olá, gostaria de realizar minha inscrição em "${item.titulo}" anunciado no AcolheMente.`);
       return `mailto:${email}?subject=${subject}&body=${body}`;
     }
-  };
-
-  const pullProfileInfo = () => {
-    const infos = [];
-    if (profile.whatsapp) infos.push(`WhatsApp: ${profile.whatsapp}`);
-    if (profile.phone && !profile.whatsapp) infos.push(`Telefone: ${profile.phone}`);
-    if (profile.email) infos.push(`Email: ${profile.email}`);
-    
-    setServicoForm(prev => ({
-      ...prev,
-      contato: infos.join("\n") || prev.contato,
-      contatoEmail: profile.email || prev.contatoEmail,
-      contatoTelefone: profile.telefone || profile.whatsapp || profile.phone || prev.contatoTelefone,
-    }));
   };
 
   useEffect(() => {
@@ -129,76 +139,105 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
     };
   }, [profile.uid, profile.id, profile.role]);
 
-  const handleCreateEvento = async (e: React.FormEvent) => {
+  const handleSaveUnifiedItem = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (profile.role !== "master" && profile.role !== "triagem") return;
-
     try {
-      const criadorContato = eventoForm.contatoPreferencial === "whatsapp" ? eventoForm.contatoTelefone : eventoForm.contatoEmail;
-      if (editingEventId) {
-        await updateDoc(doc(db, "eventos", editingEventId), {
-          ...eventoForm,
-          criadorNome: profile.name,
-          criadorFoto: profile.photoUrl || profile.photo || null,
-          criadorPixKey: profile.pixKey || null,
-          criadorContato: criadorContato || "",
-        });
+      const targetCollection = unifiedForm.categoria === "evento" ? "eventos" : "servicos";
+      const criadorContato = unifiedForm.contatoPreferencial === "whatsapp" 
+        ? unifiedForm.contatoTelefone 
+        : unifiedForm.contatoEmail;
+
+      const payload: any = {
+        categoria: unifiedForm.categoria,
+        titulo: unifiedForm.titulo.trim(),
+        tipo: unifiedForm.tipo.trim(),
+        descricao: unifiedForm.descricao.trim(),
+        data: unifiedForm.data || "",
+        hora: unifiedForm.hora || "",
+        vagas: unifiedForm.vagas || "",
+        isGratuito: unifiedForm.isGratuito,
+        valor: unifiedForm.isGratuito ? "" : (unifiedForm.valor || ""),
+        linkInscricao: unifiedForm.linkInscricao || "",
+        requisitos: unifiedForm.requisitos || "",
+        solicitarComprovante: unifiedForm.solicitarComprovante || false,
+        contatoEmail: unifiedForm.contatoEmail || "",
+        contatoTelefone: unifiedForm.contatoTelefone || "",
+        contatoPreferencial: unifiedForm.contatoPreferencial || "email",
+        modoInscricao: unifiedForm.modoInscricao || "plataforma",
+        criadorNome: profile.name || "Profissional",
+        criadorFoto: profile.photoUrl || profile.photo || null,
+        criadorPixKey: profile.pixKey || null,
+        criadorContato: criadorContato || "",
+      };
+
+      if (editingId) {
+        // Se a categoria mudou na edição (ex: de evento para serviço ou vice-versa),
+        // remove do antigo e insere no novo para manter integridade dos dados
+        if (editingCategory !== unifiedForm.categoria) {
+          const oldCollection = editingCategory === "evento" ? "eventos" : "servicos";
+          await deleteDoc(doc(db, oldCollection, editingId));
+          await addDoc(collection(db, targetCollection), {
+            ...payload,
+            criadorId: profile.uid || profile.id,
+            createdAt: serverTimestamp(),
+          });
+        } else {
+          await updateDoc(doc(db, targetCollection, editingId), {
+            ...payload,
+            updatedAt: serverTimestamp(),
+          });
+        }
       } else {
-        await addDoc(collection(db, "eventos"), {
-          ...eventoForm,
+        await addDoc(collection(db, targetCollection), {
+          ...payload,
           criadorId: profile.uid || profile.id,
-          criadorNome: profile.name,
-          criadorFoto: profile.photoUrl || profile.photo || null,
-          criadorPixKey: profile.pixKey || null,
-          criadorContato: criadorContato || "",
           createdAt: serverTimestamp(),
         });
       }
-      setIsEventModalOpen(false);
-      setEditingEventId(null);
-      setEventoForm({
-        titulo: "",
-        tipo: "",
-        descricao: "",
-        data: "",
-        hora: "",
-        vagas: "",
-        contatoEmail: profile.email || "",
-        contatoTelefone: profile.telefone || profile.whatsapp || profile.phone || "",
-        contatoPreferencial: "email",
-        modoInscricao: "plataforma",
-        requisitos: "",
-        solicitarComprovante: false,
-      });
+
+      setIsModalOpen(false);
+      setEditingId(null);
+      resetUnifiedForm(unifiedForm.categoria);
     } catch (error) {
-      console.error(error);
-      alert("Erro ao salvar evento.");
+      console.error("Erro ao salvar item:", error);
+      alert("Erro ao salvar item. Por favor, tente novamente.");
     }
   };
 
-  const handleEditEvento = (ev: any) => {
-    setEventoForm({
-      titulo: ev.titulo || "",
-      tipo: ev.tipo || "",
-      descricao: ev.descricao || "",
-      data: ev.data || "",
-      hora: ev.hora || "",
-      vagas: ev.vagas || "",
-      contatoEmail: ev.contatoEmail || profile.email || "",
-      contatoTelefone: ev.contatoTelefone || profile.telefone || profile.whatsapp || profile.phone || "",
-      contatoPreferencial: ev.contatoPreferencial || "email",
-      modoInscricao: ev.modoInscricao || "plataforma",
-      requisitos: ev.requisitos || "",
-      solicitarComprovante: ev.solicitarComprovante || false,
+  const handleEditUnifiedItem = (item: any, category: "evento" | "servico") => {
+    setEditingId(item.id);
+    setEditingCategory(category);
+    setModalCategory(category);
+    setUnifiedForm({
+      categoria: category,
+      titulo: item.titulo || "",
+      tipo: item.tipo || "",
+      descricao: item.descricao || "",
+      data: item.data || "",
+      hora: item.hora || "",
+      vagas: item.vagas || "",
+      isGratuito: !!item.isGratuito,
+      valor: item.valor || "",
+      linkInscricao: item.linkInscricao || "",
+      requisitos: item.requisitos || "",
+      solicitarComprovante: !!item.solicitarComprovante,
+      contatoEmail: item.contatoEmail || profile.email || "",
+      contatoTelefone: item.contatoTelefone || profile.telefone || profile.whatsapp || profile.phone || "",
+      contatoPreferencial: item.contatoPreferencial || "email",
+      modoInscricao: item.modoInscricao || "plataforma",
     });
-    setEditingEventId(ev.id);
-    setIsEventModalOpen(true);
+    setIsModalOpen(true);
   };
 
-  const handleRemoveEvento = async (id: string) => {
-    if (profile.role !== "master" && profile.role !== "triagem") return;
-    if (confirm("Deseja realmente remover este evento?")) {
-      await deleteDoc(doc(db, "eventos", id));
+  const handleRemoveUnifiedItem = async (id: string, category: "evento" | "servico", criadorId?: string) => {
+    const profileId = profile.uid || profile.id;
+    const canDelete = isGestor || (criadorId && criadorId === profileId);
+    if (!canDelete) return;
+
+    const label = category === "evento" ? "este evento" : "este serviço";
+    if (confirm(`Deseja realmente remover ${label}?`)) {
+      const coll = category === "evento" ? "eventos" : "servicos";
+      await deleteDoc(doc(db, coll, id));
     }
   };
 
@@ -220,95 +259,6 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
     });
   };
 
-  const handleCreateServico = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      const criadorContato = servicoForm.contatoPreferencial === "whatsapp" ? servicoForm.contatoTelefone : servicoForm.contatoEmail;
-      if (editingServiceId) {
-        await updateDoc(doc(db, "servicos", editingServiceId), {
-          ...servicoForm,
-          criadorNome: profile.name,
-          criadorFoto: profile.photoUrl || profile.photo || null,
-          criadorPixKey: profile.pixKey || null,
-          criadorContato: criadorContato || "",
-        });
-      } else {
-        await addDoc(collection(db, "servicos"), {
-          ...servicoForm,
-          criadorId: profile.uid || profile.id,
-          criadorNome: profile.name,
-          criadorFoto: profile.photoUrl || profile.photo || null,
-          criadorPixKey: profile.pixKey || null,
-          criadorContato: criadorContato || "",
-          createdAt: serverTimestamp(),
-        });
-      }
-      setIsServiceModalOpen(false);
-      setEditingServiceId(null);
-      setServicoForm({
-        titulo: "",
-        tipo: "",
-        descricao: "",
-        contato: "",
-        data: "",
-        hora: "",
-        vagas: "",
-        linkInscricao: "",
-        valor: "",
-        isGratuito: false,
-        contatoEmail: profile.email || "",
-        contatoTelefone: profile.telefone || profile.whatsapp || profile.phone || "",
-        contatoPreferencial: "email",
-        modoInscricao: "plataforma",
-        requisitos: "",
-        solicitarComprovante: false,
-      });
-    } catch (error) {
-      console.error(error);
-      alert("Erro ao salvar serviço.");
-    }
-  };
-
-  const getProfileContactStr = () => {
-    const infos = [];
-    if (profile.whatsapp) infos.push(`WhatsApp: ${profile.whatsapp}`);
-    if (profile.phone && !profile.whatsapp) infos.push(`Telefone: ${profile.phone}`);
-    if (profile.email) infos.push(`Email: ${profile.email}`);
-    return infos.join("\n");
-  };
-
-  const handleEditServico = (svc: any) => {
-    setServicoForm({
-      titulo: svc.titulo || "",
-      tipo: svc.tipo || "",
-      descricao: svc.descricao || "",
-      contato: svc.contato || getProfileContactStr(),
-      data: svc.data || "",
-      hora: svc.hora || "",
-      vagas: svc.vagas || "",
-      linkInscricao: svc.linkInscricao || "",
-      valor: svc.valor || "",
-      isGratuito: svc.isGratuito || false,
-      contatoEmail: svc.contatoEmail || profile.email || "",
-      contatoTelefone: svc.contatoTelefone || profile.telefone || profile.whatsapp || profile.phone || "",
-      contatoPreferencial: svc.contatoPreferencial || "email",
-      modoInscricao: svc.modoInscricao || "plataforma",
-      requisitos: svc.requisitos || "",
-      solicitarComprovante: svc.solicitarComprovante || false,
-    });
-    setEditingServiceId(svc.id);
-    setIsServiceModalOpen(true);
-  };
-
-  const handleRemoveServico = async (id: string, criadorId: string) => {
-    // Gestor ou o criador podem remover
-    if (profile.role === "master" || profile.role === "triagem" || (profile.uid || profile.id) === criadorId) {
-      if (confirm("Deseja realmente remover este serviço?")) {
-        await deleteDoc(doc(db, "servicos", id));
-      }
-    }
-  };
-
   const isGestor = profile.role === "master" || profile.role === "triagem";
 
   const handleSubscribeConfirm = () => {
@@ -325,41 +275,96 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
   };
 
   return (
-    <div className="flex-1 overflow-auto p-6 md:p-8 flex flex-col gap-8 slide-up bg-warm">
-      {activeSection === "eventos" && (
-        <>
-          <div className="w-full flex items-center justify-between bg-white px-6 py-4 rounded-2xl shadow-sm border border-soft">
-            <h2 className="font-serif text-2xl text-forest flex items-center gap-3">
-              <Calendar className="w-6 h-6 text-forest/70" />
-              Eventos da Plataforma
+    <div className="flex-1 overflow-auto p-4 sm:p-6 md:p-8 flex flex-col gap-6 slide-up bg-warm">
+      {/* HEADER UNIFICADO: EVENTOS E PARCERIAS */}
+      <div className="w-full flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white px-5 py-3 sm:py-3.5 rounded-2xl shadow-xs border border-soft">
+        <div className="space-y-0.5 min-w-0">
+          <div className="flex items-center gap-2.5">
+            <span className="w-7 h-7 rounded-xl bg-forest/5 text-forest flex items-center justify-center shrink-0">
+              <Calendar className="w-4 h-4 text-forest" />
+            </span>
+            <h2 className="font-serif text-sm sm:text-base text-forest font-bold leading-snug">
+              Eventos e Parcerias
             </h2>
-            {isGestor && (
-              <button 
-                onClick={() => {
-                  setEditingEventId(null);
-                  setEventoForm({
-                    titulo: "",
-                    tipo: "",
-                    descricao: "",
-                    data: "",
-                    hora: "",
-                    vagas: "",
-                    contatoEmail: profile.email || "",
-                    contatoTelefone: profile.telefone || profile.whatsapp || profile.phone || "",
-                    contatoPreferencial: "email",
-                    modoInscricao: "plataforma",
-                    requisitos: "",
-                    solicitarComprovante: false,
-                  });
-                  setIsEventModalOpen(true);
-                }}
-                className="flex items-center gap-2 bg-sun text-forest font-semibold text-sm px-4 py-2 rounded-xl hover:bg-sun-dark transition-colors"
-              >
-                <Plus className="w-4 h-4" /> Novo Evento
-              </button>
-            )}
+          </div>
+          <p className="text-[11px] sm:text-xs text-forest/65 max-w-xl">
+            Central de workshops, supervisões clínicas, sublocações e oportunidades de parceria profissional.
+          </p>
+        </div>
+
+        {/* CONTROLES / FILTROS E AÇÕES */}
+        <div className="flex flex-wrap items-center gap-2.5">
+          {/* Segmented Filter */}
+          <div className="flex items-center p-1 bg-warm rounded-xl border border-soft text-xs font-semibold">
+            <button
+              type="button"
+              onClick={() => setCurrentSection("todos")}
+              className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                currentSection === "todos"
+                  ? "bg-white text-forest shadow-xs font-bold"
+                  : "text-forest/70 hover:text-forest"
+              }`}
+            >
+              Todos ({eventos.length + servicos.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setCurrentSection("eventos")}
+              className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                currentSection === "eventos"
+                  ? "bg-white text-forest shadow-xs font-bold"
+                  : "text-forest/70 hover:text-forest"
+              }`}
+            >
+              <Calendar className="w-3.5 h-3.5" />
+              Eventos ({eventos.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setCurrentSection("servicos")}
+              className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                currentSection === "servicos"
+                  ? "bg-white text-forest shadow-xs font-bold"
+                  : "text-forest/70 hover:text-forest"
+              }`}
+            >
+              <Briefcase className="w-3.5 h-3.5" />
+              Serviços ({servicos.length})
+            </button>
           </div>
 
+          {/* Botões de Ação Unificados (Disponíveis para Todos os Profissionais) */}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => openCreateModal("evento")}
+              className="flex items-center gap-1.5 bg-forest text-white font-semibold text-xs px-3.5 py-2 rounded-xl hover:bg-forest/90 transition-colors shadow-xs cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5 text-sun" /> Novo Evento
+            </button>
+
+            <button
+              type="button"
+              onClick={() => openCreateModal("servico")}
+              className="flex items-center gap-1.5 bg-sun text-forest font-semibold text-xs px-3.5 py-2 rounded-xl hover:bg-sun-dark transition-colors shadow-xs cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" /> Ofertar Serviço
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* BLOCO DE EVENTOS DA PLATAFORMA */}
+      {(currentSection === "todos" || currentSection === "eventos") && (
+        <>
+          {currentSection === "todos" && (
+            <div className="flex items-center justify-between pt-1">
+              <h3 className="font-serif text-lg font-bold text-forest flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-forest/70" />
+                Eventos da Plataforma ({eventos.length})
+              </h3>
+            </div>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 w-full">
             {eventos.map((ev) => {
               const profileId = profile.uid || profile.id;
@@ -367,18 +372,18 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
 
               return (
               <div key={ev.id} className="bg-white p-6 rounded-[2rem] shadow-md border border-soft hover:shadow-lg transition-all duration-300 flex flex-col gap-5 relative">
-                {isGestor && (
+                {(isCreator || isGestor) && (
                   <div className="absolute top-4 right-4 flex items-center gap-2 z-10">
                     <button 
-                      onClick={() => handleEditEvento(ev)}
-                      className="bg-blue-50 text-blue-600 p-2 rounded-full hover:bg-blue-100 transition-colors"
+                      onClick={() => handleEditUnifiedItem(ev, "evento")}
+                      className="bg-blue-50 text-blue-600 p-2 rounded-full hover:bg-blue-100 transition-colors cursor-pointer"
                       title="Editar evento"
                     >
                       <Edit3 className="w-4 h-4" />
                     </button>
                     <button 
-                      onClick={() => handleRemoveEvento(ev.id)}
-                      className="bg-red-50 text-red-600 p-2 rounded-full hover:bg-red-100 transition-colors"
+                      onClick={() => handleRemoveUnifiedItem(ev.id, "evento", ev.criadorId)}
+                      className="bg-red-50 text-red-600 p-2 rounded-full hover:bg-red-100 transition-colors cursor-pointer"
                       title="Remover evento"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -531,41 +536,17 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
         </>
       )}
 
-      {activeSection === "servicos" && (
+      {/* BLOCO DE SERVIÇOS E PARCERIAS DA REDE */}
+      {(currentSection === "todos" || currentSection === "servicos") && (
         <>
-          <div className="w-full flex items-center justify-between bg-white px-6 py-4 rounded-2xl shadow-sm border border-soft">
-            <h2 className="font-serif text-2xl text-forest flex items-center gap-3">
-              <Briefcase className="w-6 h-6 text-forest/70" />
-              Serviços para Psicólogos
-            </h2>
-            <button 
-              onClick={() => {
-                setEditingServiceId(null);
-                setServicoForm({
-                  titulo: "",
-                  tipo: "",
-                  descricao: "",
-                  contato: getProfileContactStr(),
-                  data: "",
-                  hora: "",
-                  vagas: "",
-                  linkInscricao: "",
-                  valor: "",
-                  isGratuito: false,
-                  contatoEmail: profile.email || "",
-                  contatoTelefone: profile.telefone || profile.whatsapp || profile.phone || "",
-                  contatoPreferencial: "email",
-                  modoInscricao: "plataforma",
-                  requisitos: "",
-                  solicitarComprovante: false,
-                });
-                setIsServiceModalOpen(true);
-              }}
-              className="flex items-center gap-2 bg-sun text-forest font-semibold text-sm px-4 py-2 rounded-xl hover:bg-sun-dark transition-colors"
-            >
-              <Plus className="w-4 h-4" /> Ofertar Serviço
-            </button>
-          </div>
+          {currentSection === "todos" && (
+            <div className="flex items-center justify-between pt-4 border-t border-soft/80">
+              <h3 className="font-serif text-lg font-bold text-forest flex items-center gap-2">
+                <Briefcase className="w-4 h-4 text-forest/70" />
+                Serviços & Parcerias da Rede ({servicos.length})
+              </h3>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 w-full">
             {servicos.map((svc) => {
@@ -579,16 +560,16 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
                     <div className="absolute top-4 right-4 flex items-center gap-2 z-10">
                       {(isCreator || isGestor) && (
                         <button 
-                          onClick={() => handleEditServico(svc)}
-                          className="bg-blue-50 text-blue-600 p-2 rounded-full hover:bg-blue-100 transition-colors"
+                          onClick={() => handleEditUnifiedItem(svc, "servico")}
+                          className="bg-blue-50 text-blue-600 p-2 rounded-full hover:bg-blue-100 transition-colors cursor-pointer"
                           title="Editar Serviço"
                         >
                           <Edit3 className="w-4 h-4" />
                         </button>
                       )}
                       <button 
-                        onClick={() => handleRemoveServico(svc.id, svc.criadorId)}
-                        className="bg-red-50 text-red-600 p-2 rounded-full hover:bg-red-100 transition-colors"
+                        onClick={() => handleRemoveUnifiedItem(svc.id, "servico", svc.criadorId)}
+                        className="bg-red-50 text-red-600 p-2 rounded-full hover:bg-red-100 transition-colors cursor-pointer"
                         title="Remover Serviço"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -779,185 +760,288 @@ export function EventosServicosView({ profile, activeSection }: EventosServicosV
         </>
       )}
 
-      {/* Modais de Edição */}
-      {isEventModalOpen && (
+      {/* Modal Unificada Padrão: Evento ou Oferta de Serviço */}
+      {isModalOpen && (
         <div className="fixed inset-0 bg-forest/20 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white max-w-lg w-full rounded-[2rem] p-6 sm:p-8 shadow-xl flex flex-col items-start relative border border-soft max-h-[90vh] overflow-y-auto">
-             <button 
-              onClick={() => setIsEventModalOpen(false)}
-              className="absolute top-6 right-6 text-forest/40 hover:text-forest"
+            <button 
+              type="button"
+              onClick={() => setIsModalOpen(false)}
+              className="absolute top-6 right-6 text-forest/40 hover:text-forest p-1 rounded-full hover:bg-warm transition-colors cursor-pointer"
             >
               <X className="w-5 h-5"/>
             </button>
-            <h3 className="text-xl font-serif text-forest mb-6">{editingEventId ? "Editar Evento" : "Criar Novo Evento"}</h3>
-            <form onSubmit={handleCreateEvento} className="w-full flex flex-col gap-4">
-              <div>
-                <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Título do Evento</label>
-                <input required type="text" value={eventoForm.titulo} onChange={e => setEventoForm({...eventoForm, titulo: e.target.value})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest" />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                   <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Tipo</label>
-                   <input required type="text" placeholder="Ex: Palestra, Workshop..." value={eventoForm.tipo} onChange={e => setEventoForm({...eventoForm, tipo: e.target.value})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest" />
-                </div>
-                <div>
-                   <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Data</label>
-                   <input required type="date" value={eventoForm.data} onChange={e => setEventoForm({...eventoForm, data: e.target.value})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest" />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                   <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Hora</label>
-                   <input required type="time" value={eventoForm.hora} onChange={e => setEventoForm({...eventoForm, hora: e.target.value})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest" />
-                </div>
-                <div>
-                   <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Vagas (Opcional)</label>
-                   <input type="number" min="1" placeholder="Ex: 50" value={eventoForm.vagas} onChange={e => setEventoForm({...eventoForm, vagas: e.target.value})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest" />
-                </div>
-              </div>
-              <div>
-                <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Descrição</label>
-                <textarea required rows={3} value={eventoForm.descricao} onChange={e => setEventoForm({...eventoForm, descricao: e.target.value})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest" />
-              </div>
 
-              <div>
-                <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Requisitos Necessários para Participar (Opcional)</label>
-                <textarea rows={2} placeholder="Ex: Ser estudante de psicologia, levar caderno..." value={eventoForm.requisitos} onChange={e => setEventoForm({...eventoForm, requisitos: e.target.value})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest" />
-              </div>
+            <div className="w-full mb-5">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-forest/50 block mb-1">
+                {editingId ? "Atualizar Publicação" : "Nova Publicação"}
+              </span>
+              <h3 className="text-xl sm:text-2xl font-serif text-forest">
+                {editingId 
+                  ? (unifiedForm.categoria === "evento" ? "Editar Evento" : "Editar Serviço") 
+                  : (unifiedForm.categoria === "evento" ? "Criar Novo Evento" : "Ofertar um Serviço")}
+              </h3>
+            </div>
 
-              <div className="border-t border-soft pt-4 flex flex-col gap-4">
-                <h4 className="text-sm font-serif font-bold text-forest">Opções de Contato e Inscrição</h4>
-                
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">E-mail de Contato</label>
-                    <input type="email" value={eventoForm.contatoEmail} onChange={e => setEventoForm({...eventoForm, contatoEmail: e.target.value})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none text-forest" placeholder="email@exemplo.com" />
-                  </div>
-                  <div>
-                    <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Telefone / WhatsApp</label>
-                    <input type="text" value={eventoForm.contatoTelefone} onChange={e => setEventoForm({...eventoForm, contatoTelefone: e.target.value})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none text-forest" placeholder="(00) 00000-0000" />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Contato Preferencial para Dúvidas</label>
-                  <select value={eventoForm.contatoPreferencial} onChange={e => setEventoForm({...eventoForm, contatoPreferencial: e.target.value as any})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none text-forest">
-                    <option value="email">E-mail</option>
-                    <option value="whatsapp">Telefone / WhatsApp</option>
-                  </select>
-                </div>
-
-                <div className="flex items-center gap-2 p-3 bg-white border border-soft rounded-xl shadow-sm">
-                  <label className="flex items-center gap-2 text-xs font-semibold text-forest cursor-pointer">
-                    <input type="checkbox" checked={eventoForm.solicitarComprovante} onChange={e => setEventoForm({...eventoForm, solicitarComprovante: e.target.checked})} className="w-4 h-4 accent-forest" />
-                    Solicitar envio de documento / comprovante para confirmação de inscrição
-                  </label>
-                </div>
-              </div>
-
-              <button disabled={!eventoForm.titulo || !eventoForm.descricao || !eventoForm.data} type="submit" className="w-full mt-4 py-3 bg-sun text-forest font-bold rounded-xl hover:bg-sun-dark transition-colors disabled:opacity-50">
-                {editingEventId ? "Salvar Alterações" : "Publicar Evento"}
+            {/* Alternador de Categoria no topo da modal */}
+            <div className="w-full mb-5 p-1 bg-warm rounded-2xl border border-soft flex items-center">
+              <button
+                type="button"
+                onClick={() => setUnifiedForm(prev => ({ ...prev, categoria: "evento" }))}
+                className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  unifiedForm.categoria === "evento"
+                    ? "bg-forest text-white shadow-xs"
+                    : "text-forest/70 hover:text-forest"
+                }`}
+              >
+                <Calendar className="w-3.5 h-3.5" /> Evento / Workshop
               </button>
-            </form>
-          </div>
-        </div>
-      )}
+              <button
+                type="button"
+                onClick={() => setUnifiedForm(prev => ({ ...prev, categoria: "servico" }))}
+                className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  unifiedForm.categoria === "servico"
+                    ? "bg-sun text-forest shadow-xs font-bold"
+                    : "text-forest/70 hover:text-forest"
+                }`}
+              >
+                <Briefcase className="w-3.5 h-3.5" /> Serviço / Parceria
+              </button>
+            </div>
 
-      {isServiceModalOpen && (
-        <div className="fixed inset-0 bg-forest/20 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white max-w-lg w-full rounded-[2rem] p-6 sm:p-8 shadow-xl flex flex-col items-start relative border border-soft max-h-[90vh] overflow-y-auto">
-             <button 
-              onClick={() => setIsServiceModalOpen(false)}
-              className="absolute top-6 right-6 text-forest/40 hover:text-forest"
-            >
-              <X className="w-5 h-5"/>
-            </button>
-            <h3 className="text-xl font-serif text-forest mb-6">{editingServiceId ? "Editar Serviço" : "Ofertar um Serviço"}</h3>
-            <form onSubmit={handleCreateServico} className="w-full flex flex-col gap-4">
-               <div>
-                <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Título do Serviço</label>
-                <input required type="text" placeholder="Ex: Supervisão Clínica em TCC" value={servicoForm.titulo} onChange={e => setServicoForm({...servicoForm, titulo: e.target.value})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest" />
-              </div>
+            <form onSubmit={handleSaveUnifiedItem} className="w-full flex flex-col gap-4">
+              {/* Título */}
               <div>
-                <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Tipo de Serviço</label>
-                <input required type="text" placeholder="Ex: Supervisão, Sublocação, Cursos..." value={servicoForm.tipo} onChange={e => setServicoForm({...servicoForm, tipo: e.target.value})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest" />
+                <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">
+                  {unifiedForm.categoria === "evento" ? "Título do Evento *" : "Título do Serviço *"}
+                </label>
+                <input 
+                  required 
+                  type="text" 
+                  placeholder={unifiedForm.categoria === "evento" ? "Ex: Workshop de Regulação Emocional" : "Ex: Supervisão Clínica em TCC ou Sublocação"} 
+                  value={unifiedForm.titulo} 
+                  onChange={e => setUnifiedForm({...unifiedForm, titulo: e.target.value})} 
+                  className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest" 
+                />
               </div>
-               <div>
-                <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Descrição Detalhada</label>
-                <textarea required rows={4} value={servicoForm.descricao} onChange={e => setServicoForm({...servicoForm, descricao: e.target.value})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest custom-scrollbar" />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                 <div>
-                   <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Data (Opcional)</label>
-                   <input type="date" value={servicoForm.data} onChange={e => setServicoForm({...servicoForm, data: e.target.value})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest" />
+
+              {/* Tipo e Vagas */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">
+                    Tipo / Formato *
+                  </label>
+                  <input 
+                    required 
+                    type="text" 
+                    placeholder={unifiedForm.categoria === "evento" ? "Ex: Palestra, Workshop, Roda de Conversa..." : "Ex: Supervisão, Sublocação, Mentoria, Curso..."} 
+                    value={unifiedForm.tipo} 
+                    onChange={e => setUnifiedForm({...unifiedForm, tipo: e.target.value})} 
+                    className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest" 
+                  />
                 </div>
                 <div>
-                   <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Hora (Opcional)</label>
-                   <input type="time" value={servicoForm.hora} onChange={e => setServicoForm({...servicoForm, hora: e.target.value})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest" />
+                  <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">
+                    Vagas (Opcional)
+                  </label>
+                  <input 
+                    type="number" 
+                    min="1" 
+                    placeholder="Ex: 30 (deixe em branco se ilimitado)" 
+                    value={unifiedForm.vagas} 
+                    onChange={e => setUnifiedForm({...unifiedForm, vagas: e.target.value})} 
+                    className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest" 
+                  />
                 </div>
               </div>
-              <div>
-                <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Vagas (Opcional)</label>
-                <input type="number" min="1" placeholder="Ex: 50" value={servicoForm.vagas} onChange={e => setServicoForm({...servicoForm, vagas: e.target.value})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest" />
+
+              {/* Data e Hora */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">
+                    Data {unifiedForm.categoria === "evento" ? "*" : "(Opcional)"}
+                  </label>
+                  <input 
+                    required={unifiedForm.categoria === "evento"}
+                    type="date" 
+                    value={unifiedForm.data} 
+                    onChange={e => setUnifiedForm({...unifiedForm, data: e.target.value})} 
+                    className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest" 
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">
+                    Hora (Opcional)
+                  </label>
+                  <input 
+                    type="time" 
+                    value={unifiedForm.hora} 
+                    onChange={e => setUnifiedForm({...unifiedForm, hora: e.target.value})} 
+                    className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest" 
+                  />
+                </div>
               </div>
+
+              {/* Descrição */}
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">
+                  Descrição Completa *
+                </label>
+                <textarea 
+                  required 
+                  rows={4} 
+                  placeholder={unifiedForm.categoria === "evento" 
+                    ? "Descreva os tópicos do evento, objetivo, para quem se destina e metodologia..." 
+                    : "Descreva a proposta do serviço, horários disponíveis, diferenciais clínicos..."} 
+                  value={unifiedForm.descricao} 
+                  onChange={e => setUnifiedForm({...unifiedForm, descricao: e.target.value})} 
+                  className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest custom-scrollbar" 
+                />
+              </div>
+
+              {/* Investimento / Gratuito */}
               <div className="grid grid-cols-5 gap-4 items-end">
                 <div className="col-span-3">
-                  <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Valor (Opcional)</label>
-                  <input type="text" disabled={servicoForm.isGratuito} placeholder="Ex: R$ 150,00" value={servicoForm.valor} onChange={e => setServicoForm({...servicoForm, valor: e.target.value})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest disabled:opacity-50" />
+                  <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">
+                    Valor / Investimento (Opcional)
+                  </label>
+                  <input 
+                    type="text" 
+                    disabled={unifiedForm.isGratuito} 
+                    placeholder="Ex: R$ 120,00 ou sob consulta" 
+                    value={unifiedForm.valor} 
+                    onChange={e => setUnifiedForm({...unifiedForm, valor: e.target.value})} 
+                    className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest disabled:opacity-50" 
+                  />
                 </div>
-                <div className="col-span-2 flex items-center justify-center p-3 bg-white border border-soft rounded-xl shadow-sm h-[48px]">
+                <div className="col-span-2 flex items-center justify-center p-3 bg-white border border-soft rounded-xl shadow-xs h-[48px]">
                   <label className="flex items-center gap-2 text-sm font-semibold text-forest cursor-pointer w-full justify-center">
-                    <input type="checkbox" checked={servicoForm.isGratuito} onChange={e => {
+                    <input 
+                      type="checkbox" 
+                      checked={unifiedForm.isGratuito} 
+                      onChange={e => {
                         const checked = e.target.checked;
-                        setServicoForm({...servicoForm, isGratuito: checked, valor: checked ? "" : servicoForm.valor});
-                    }} className="w-4 h-4 accent-forest" />
+                        setUnifiedForm({...unifiedForm, isGratuito: checked, valor: checked ? "" : unifiedForm.valor});
+                      }} 
+                      className="w-4 h-4 accent-forest" 
+                    />
                     Gratuito
                   </label>
                 </div>
               </div>
+
+              {/* Requisitos */}
               <div>
-                <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Requisitos Necessários para Participar (Opcional)</label>
-                <textarea rows={2} placeholder="Ex: Ser estudante de psicologia, levar caderno..." value={servicoForm.requisitos} onChange={e => setServicoForm({...servicoForm, requisitos: e.target.value})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest" />
+                <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">
+                  Requisitos para Participação (Opcional)
+                </label>
+                <textarea 
+                  rows={2} 
+                  placeholder="Ex: CRP ativo, ser estudante de psicologia, levar notebook..." 
+                  value={unifiedForm.requisitos} 
+                  onChange={e => setUnifiedForm({...unifiedForm, requisitos: e.target.value})} 
+                  className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest" 
+                />
               </div>
 
+              {/* Link Externo de Inscrição */}
               <div>
-                <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Link de Inscrição / Mais Informações (Opcional)</label>
-                <input type="url" placeholder="https://" value={servicoForm.linkInscricao} onChange={e => setServicoForm({...servicoForm, linkInscricao: e.target.value})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest" />
+                <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">
+                  Link Externo de Inscrição / Sympla / Formulário (Opcional)
+                </label>
+                <input 
+                  type="url" 
+                  placeholder="https://..." 
+                  value={unifiedForm.linkInscricao} 
+                  onChange={e => setUnifiedForm({...unifiedForm, linkInscricao: e.target.value})} 
+                  className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest" 
+                />
               </div>
 
+              {/* Opções de Contato e Inscrição */}
               <div className="border-t border-soft pt-4 flex flex-col gap-4">
                 <h4 className="text-sm font-serif font-bold text-forest">Opções de Contato e Inscrição</h4>
                 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">E-mail de Contato</label>
-                    <input type="email" value={servicoForm.contatoEmail} onChange={e => setServicoForm({...servicoForm, contatoEmail: e.target.value})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none text-forest" placeholder="email@exemplo.com" />
+                    <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">
+                      E-mail de Contato
+                    </label>
+                    <input 
+                      type="email" 
+                      value={unifiedForm.contatoEmail} 
+                      onChange={e => setUnifiedForm({...unifiedForm, contatoEmail: e.target.value})} 
+                      className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none text-forest" 
+                      placeholder="email@exemplo.com" 
+                    />
                   </div>
                   <div>
-                    <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Telefone / WhatsApp</label>
-                    <input type="text" value={servicoForm.contatoTelefone} onChange={e => setServicoForm({...servicoForm, contatoTelefone: e.target.value})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none text-forest" placeholder="(00) 00000-0000" />
+                    <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">
+                      Telefone / WhatsApp
+                    </label>
+                    <input 
+                      type="text" 
+                      value={unifiedForm.contatoTelefone} 
+                      onChange={e => setUnifiedForm({...unifiedForm, contatoTelefone: e.target.value})} 
+                      className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none text-forest" 
+                      placeholder="(00) 00000-0000" 
+                    />
                   </div>
                 </div>
 
                 <div>
-                  <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">Contato Preferencial para Dúvidas</label>
-                  <select value={servicoForm.contatoPreferencial} onChange={e => setServicoForm({...servicoForm, contatoPreferencial: e.target.value as any})} className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none text-forest">
+                  <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">
+                    Canal Preferencial para Dúvidas
+                  </label>
+                  <select 
+                    value={unifiedForm.contatoPreferencial} 
+                    onChange={e => setUnifiedForm({...unifiedForm, contatoPreferencial: e.target.value as any})} 
+                    className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none text-forest cursor-pointer"
+                  >
                     <option value="email">E-mail</option>
                     <option value="whatsapp">Telefone / WhatsApp</option>
                   </select>
                 </div>
 
-                <div className="flex items-center gap-2 p-3 bg-white border border-soft rounded-xl shadow-sm">
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">
+                    Modo de Inscrição dos Interessados
+                  </label>
+                  <select 
+                    value={unifiedForm.modoInscricao} 
+                    onChange={e => setUnifiedForm({...unifiedForm, modoInscricao: e.target.value as any})} 
+                    className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none text-forest cursor-pointer"
+                  >
+                    <option value="plataforma">Pela plataforma (com lista de inscritos em tempo real)</option>
+                    <option value="contato">Direto com o organizador (botão WhatsApp / E-mail)</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-2 p-3 bg-white border border-soft rounded-xl shadow-xs">
                   <label className="flex items-center gap-2 text-xs font-semibold text-forest cursor-pointer">
-                    <input type="checkbox" checked={servicoForm.solicitarComprovante} onChange={e => setServicoForm({...servicoForm, solicitarComprovante: e.target.checked})} className="w-4 h-4 accent-forest" />
-                    Solicitar envio de documento / comprovante para confirmação de inscrição
+                    <input 
+                      type="checkbox" 
+                      checked={unifiedForm.solicitarComprovante} 
+                      onChange={e => setUnifiedForm({...unifiedForm, solicitarComprovante: e.target.checked})} 
+                      className="w-4 h-4 accent-forest" 
+                    />
+                    Solicitar comprovante ou credencial para confirmação de inscrição
                   </label>
                 </div>
               </div>
 
-
-               <button disabled={!servicoForm.titulo || !servicoForm.descricao || !servicoForm.tipo} type="submit" className="w-full mt-4 py-3 bg-sun text-forest font-bold rounded-xl hover:bg-sun-dark transition-colors disabled:opacity-50">
-                {editingServiceId ? "Salvar Alterações" : "Publicar Serviço"}
+              <button 
+                disabled={!unifiedForm.titulo || !unifiedForm.descricao || !unifiedForm.tipo} 
+                type="submit" 
+                className={`w-full mt-4 py-3.5 font-bold rounded-xl transition-all disabled:opacity-50 cursor-pointer shadow-xs ${
+                  unifiedForm.categoria === "evento"
+                    ? "bg-forest text-white hover:bg-forest/90"
+                    : "bg-sun text-forest hover:bg-sun-dark"
+                }`}
+              >
+                {editingId 
+                  ? "Salvar Alterações" 
+                  : (unifiedForm.categoria === "evento" ? "Publicar Evento" : "Publicar Serviço")}
               </button>
             </form>
           </div>

@@ -51,6 +51,7 @@ import { PropostaLandingView } from "./views/PropostaLandingView";
 import { FichaEmpresaLandingView } from "./views/FichaEmpresaLandingView";
 import { PortalEmpresaView } from "./views/PortalEmpresaView";
 import { BlogView } from "./views/BlogView";
+import { ColetaFaturamentoView } from "./views/ColetaFaturamentoView";
 
 import { Footer } from "./components/Footer";
 import { ProfissionaisCarousel } from "./components/ProfissionaisCarousel";
@@ -373,6 +374,10 @@ export default function App() {
   const [publicArtigoId, setPublicArtigoId] = useState<string | null>(() => {
     return new URLSearchParams(window.location.search).get("artigo");
   });
+  const [publicFaturamentoId, setPublicFaturamentoId] = useState<string | null>(() => {
+    const p = new URLSearchParams(window.location.search);
+    return p.get("dados_faturamento") || p.get("faturamento_dados") || p.get("cadastro_recibo") || p.get("recibo_dados");
+  });
 
   const [currentView, setCurrentView] = useState<
     | "landing"
@@ -590,6 +595,15 @@ export default function App() {
       <ContratoLandingView
         contratoId={publicContratoId}
         onBack={handleBackFromPublicProfile}
+        onGoHome={handleGoToLanding}
+      />
+    );
+  }
+
+  if (publicFaturamentoId) {
+    return (
+      <ColetaFaturamentoView
+        fichaId={publicFaturamentoId}
         onGoHome={handleGoToLanding}
       />
     );

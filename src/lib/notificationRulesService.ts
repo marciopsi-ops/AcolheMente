@@ -214,27 +214,27 @@ export const DEFAULT_NOTIFICATION_TRIGGERS: NotificationTrigger[] = [
   },
   {
     id: "vencimento_taxa_7dias",
-    nome: "Vencimento da Taxa Associativa (7 dias após admissão)",
-    descricao: "Disparado para o psicólogo para regularização da taxa associativa mensal na plataforma.",
+    nome: "Vencimento da Taxa de Uso e Intermediação da Plataforma (7 dias após admissão)",
+    descricao: "Disparado para o psicólogo para regularização da Taxa de Uso e Intermediação da Plataforma mensal na plataforma.",
     categoria: "profissional",
     isCustom: false,
     active: true,
     timing: { type: "immediate", delayMinutes: 0 },
     email: {
       enabled: true,
-      subject: "AcolheMente - Regularização da Taxa Associativa (Vencimento 1ª Taxa)",
+      subject: "AcolheMente - Regularização da Taxa de Uso e Intermediação da Plataforma (Vencimento 1ª Taxa)",
       bodyHtml: `
 <h3 style="font-family: 'Georgia', serif; font-size: 22px; color: #1e352f; margin-top: 0;">Olá, Dr(a). {nome}!</h3>
 <p>Esperamos que os seus primeiros dias no <strong>Projeto AcolheMente Saúde</strong> estejam sendo muito produtivos!</p>
-<p>Conforme o nosso alinhamento inicial, o prazo de 7 dias após a sua admissão para confirmação da taxa associativa chegou.</p>
+<p>Conforme o nosso alinhamento inicial, o prazo de 7 dias após a sua admissão para confirmação da Taxa de Uso e Intermediação da Plataforma chegou.</p>
 <div style="background-color: #faf9f6; border: 1px solid #ebdcb9; border-radius: 16px; padding: 20px; margin: 25px 0;">
   <h4 style="margin-top: 0; color: #1e352f; font-family: 'Georgia', serif; font-size: 16px;">Manutenção do Seu Perfil & Atendimentos:</h4>
   <p style="font-size: 14px; color: #2e443e; margin-bottom: 15px;">
-    Para manter a visibilidade do seu perfil no catálogo oficial, continuar recebendo novos pacientes e utilizar as ferramentas de gestão clínica, realize o pagamento da sua taxa associativa.
+    Para manter a visibilidade do seu perfil no catálogo oficial, continuar recebendo novos pacientes e utilizar as ferramentas de gestão clínica, realize o pagamento da sua Taxa de Uso e Intermediação da Plataforma.
   </p>
   <div style="text-align: center; margin: 25px 0;">
     <a href="{link_pagamento}" style="background-color: #1e352f; color: #ffffff; padding: 14px 28px; border-radius: 50px; text-decoration: none; font-weight: bold; font-size: 15px; display: inline-block;">
-      💳 Efetuar Pagamento da Taxa Associativa
+      💳 Efetuar Pagamento da Taxa de Uso e Intermediação da Plataforma
     </a>
   </div>
 </div>
@@ -242,7 +242,7 @@ export const DEFAULT_NOTIFICATION_TRIGGERS: NotificationTrigger[] = [
     },
     whatsapp: {
       enabled: true,
-      messageText: `Olá, Dr(a). *{nome}*! 👋\n\nConforme nosso alinhamento, completamos 7 dias desde a sua admissão no *AcolheMente*. Para manter seu perfil ativo e continuar recebendo pacientes triados, acesse o link seguro abaixo para efetuar a taxa associativa mensal:\n\n💳 *Link de Pagamento Seguro:*\n{link_pagamento}\n\nQualquer dúvida, fale conosco! 🌿`.trim(),
+      messageText: `Olá, Dr(a). *{nome}*! 👋\n\nConforme nosso alinhamento, completamos 7 dias desde a sua admissão no *AcolheMente*. Para manter seu perfil ativo e continuar recebendo pacientes triados, acesse o link seguro abaixo para efetuar a Taxa de Uso e Intermediação da Plataforma mensal:\n\n💳 *Link de Pagamento Seguro:*\n{link_pagamento}\n\nQualquer dúvida, fale conosco! 🌿`.trim(),
     },
   },
 ];

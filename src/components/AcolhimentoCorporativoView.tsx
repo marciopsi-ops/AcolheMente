@@ -55,7 +55,10 @@ import {
   ServicoCorporativoConfig, 
   DEFAULT_CARGOS_EMPRESA, 
   DEFAULT_SERVICOS_CORPORATIVOS,
-  TEMAS_QUEIXAS_CORPORATIVAS
+  TEMAS_QUEIXAS_CORPORATIVAS,
+  TipoOrigemDemanda,
+  DEMANDAS_PESSOAIS_OPCOES,
+  DEMANDAS_TRABALHO_NR1_OPCOES
 } from "../types/corporativo";
 
 interface EmpresaData {
@@ -322,8 +325,15 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
   const [empresaValidated, setEmpresaValidated] = useState<EmpresaData | null>(null);
   const [codeError, setCodeError] = useState("");
 
-  // 2. Fluxo: "etapa1" (Identificação, Cargo, Titular/Dependente e Tabela de Valores) ou "etapa2" (Vitrine com Filtros Fixos)
-  const [etapaAtual, setEtapaAtual] = useState<"identificacao" | "vitrine">("identificacao");
+  // 2. Fluxo: "identificacao", "triagem_motivo" (Questionário de Demanda e Riscos NR-1) e "vitrine"
+  const [etapaAtual, setEtapaAtual] = useState<"identificacao" | "triagem_motivo" | "vitrine">("identificacao");
+
+  // Estados da Triagem Inicial (Motivação & Riscos NR-1)
+  const [triagemOrigem, setTriagemOrigem] = useState<TipoOrigemDemanda | "">("");
+  const [triagemTemasSelecionados, setTriagemTemasSelecionados] = useState<string[]>([]);
+  const [triagemOutrasTexto, setTriagemOutrasTexto] = useState<string>("");
+  const [triagemErro, setTriagemErro] = useState<string>("");
+  const [isRegistrandoTriagem, setIsRegistrandoTriagem] = useState<boolean>(false);
 
   // 3. Dados do Colaborador
   const [colaboradorCpf, setColaboradorCpf] = useState("");
@@ -695,8 +705,8 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
     };
   };
 
-  // Quando o colaborador confirma os dados e avança para a vitrine
-  const handleAvancarParaVitrine = (servicoPreselecionado?: string) => {
+  // Quando o colaborador confirma os dados de identificação e avança para a Triagem de Motivação & Riscos
+  const handleAvancarParaTriagem = (servicoPreselecionado?: string) => {
     setFormError("");
     if (!colaboradorNome.trim()) {
       setFormError("Por favor, digite seu nome completo.");
@@ -730,8 +740,88 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
     }
 
     setConcordouValores(true);
-    setEtapaAtual("vitrine");
+    setEtapaAtual("triagem_motivo");
     window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  // Conclui a Triagem Inicial de Motivação & Riscos Psicossociais (NR-1) e avança para a Vitrine
+  const handleConcluirTriagemEAvancarParaVitrine = async () => {
+    setTriagemErro("");
+
+    if (!triagemOrigem) {
+      setTriagemErro("Por favor, selecione se a motivação principal da sua busca é por Questões Pessoais ou Questões Relacionadas ao Trabalho.");
+      return;
+    }
+
+    const isPrefiroNaoComentar = triagemTemasSelecionados.includes("prefiro_nao_comentar");
+    const temOutrasPreenchido = (triagemTemasSelecionados.includes("outras_demandas_trabalho") || triagemTemasSelecionados.includes("outras_demandas_pessoais")) && triagemOutrasTexto.trim().length > 0;
+
+    if (!isPrefiroNaoComentar && triagemTemasSelecionados.length === 0 && !temOutrasPreenchido) {
+      setTriagemErro(
+        triagemOrigem === "trabalho"
+          ? "Por favor, selecione ao menos uma opção dos fatores ocupacionais (ou marque 'Prefiro não comentar')."
+          : "Por favor, selecione ao menos uma demanda pessoal da lista."
+      );
+      return;
+    }
+
+    setIsRegistrandoTriagem(true);
+    try {
+      const cargoObj = cargosDisponiveis.find((c) => c.id === selectedCargoId);
+      const listaReferencia = triagemOrigem === "trabalho" ? DEMANDAS_TRABALHO_NR1_OPCOES : DEMANDAS_PESSOAIS_OPCOES;
+      
+      const temasObjetos = triagemTemasSelecionados
+        .map((tId) => listaReferencia.find((item) => item.id === tId) || TEMAS_QUEIXAS_CORPORATIVAS.find((item) => item.id === tId))
+        .filter(Boolean) as any[];
+
+      const temasLabels = temasObjetos.map((t) => t.label);
+      if (triagemOutrasTexto.trim() && !temasLabels.some((l: string) => l.toLowerCase().includes("outras"))) {
+        temasLabels.push(`Outras: ${triagemOutrasTexto.trim()}`);
+      }
+
+      const temaPrincipal = temasLabels[0] || (isPrefiroNaoComentar ? "Sigilo Preservado (Prefiro não comentar)" : "Saúde Emocional Corporativa");
+
+      // Gravação imediata nos logs de acesso para contabilização nos indicadores de RH da empresa
+      await addDoc(collection(db, "beneficio_acessos"), {
+        empresaId: empresaValidated?.id || "empresa-demo",
+        empresaNome: empresaValidated?.nomeEmpresa || "Empresa Parceira",
+        codigoAcesso: empresaValidated?.codigoAcesso || "",
+        colaboradorNome: colaboradorNome.trim(),
+        colaboradorWhatsapp: colaboradorWhatsapp.trim(),
+        cargoId: selectedCargoId,
+        cargoNome: cargoObj?.nome || "Colaborador",
+        tipoBeneficiario: beneficiarioTipo,
+        parentesco: beneficiarioTipo === "dependente" ? dependenteParentesco : "Titular",
+        dependenteInfo: beneficiarioTipo === "dependente" ? dependenteInfo.trim() : "",
+        tipoOrigemDemanda: triagemOrigem, // "pessoais" | "trabalho"
+        temasIds: triagemTemasSelecionados,
+        temas: temasLabels,
+        temaPrincipal: temaPrincipal,
+        outrasDemandasTexto: triagemOutrasTexto.trim(),
+        prefiroNaoComentar: isPrefiroNaoComentar,
+        servicoPreselecionado: filtroServico || "terapia_individual_adulto",
+        etapa: "triagem_inicial_concluida",
+        createdAt: serverTimestamp(),
+      });
+
+      // Sincroniza previamente o modal de contato com os dados da triagem realizada
+      setModalConfigurarContato((prev) => ({
+        ...prev,
+        temasSelecionados: triagemTemasSelecionados,
+        queixa: triagemOutrasTexto.trim(),
+      }));
+
+      // Avança para a vitrine
+      setEtapaAtual("vitrine");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch (err) {
+      console.warn("Erro ao registrar log de triagem de acesso corporativo:", err);
+      // Mesmo com erro pontual de Firestore, permite ao colaborador continuar para a vitrine
+      setEtapaAtual("vitrine");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } finally {
+      setIsRegistrandoTriagem(false);
+    }
   };
 
   // Algoritmo de Busca e Filtro em Tempo Real
@@ -917,6 +1007,9 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
         temas: temasLabels,
         temasIds: temasSelecionados || [],
         temaPrincipal: temaPrincipal,
+        tipoOrigemDemanda: triagemOrigem || "trabalho",
+        outrasDemandasTexto: triagemOutrasTexto.trim(),
+        prefiroNaoComentar: (temasSelecionados || []).includes("prefiro_nao_comentar"),
         valorSessao: precoInfo.valorSessao,
         frequenciaRecomendada: precoInfo.frequenciaRecomendada,
         profissionalId: prof.id,
@@ -1139,12 +1232,30 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
             {etapaAtual === "vitrine" && (
               <button
                 type="button"
-                onClick={() => setEtapaAtual("identificacao")}
+                onClick={() => {
+                  setEtapaAtual("triagem_motivo");
+                  window.scrollTo({ top: 0, behavior: "smooth" });
+                }}
                 className="px-2.5 sm:px-3 py-1.5 text-xs font-bold text-forest/80 hover:text-forest bg-warm/60 hover:bg-warm rounded-xl border border-soft transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
               >
                 <ArrowLeft className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Ajustar Cargo / Dados</span>
-                <span className="sm:hidden">Voltar</span>
+                <span className="hidden sm:inline">Refazer Triagem / Dados</span>
+                <span className="sm:hidden">Triagem</span>
+              </button>
+            )}
+
+            {etapaAtual === "triagem_motivo" && (
+              <button
+                type="button"
+                onClick={() => {
+                  setEtapaAtual("identificacao");
+                  window.scrollTo({ top: 0, behavior: "smooth" });
+                }}
+                className="px-2.5 sm:px-3 py-1.5 text-xs font-bold text-forest/80 hover:text-forest bg-warm/60 hover:bg-warm rounded-xl border border-soft transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Voltar para Identificação</span>
+                <span className="sm:hidden">Identificação</span>
               </button>
             )}
 
@@ -1596,7 +1707,7 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
 
                       <button
                         type="button"
-                        onClick={() => handleAvancarParaVitrine(serv.servicoId)}
+                        onClick={() => handleAvancarParaTriagem(serv.servicoId)}
                         className="w-full mt-2 py-2 bg-white hover:bg-forest hover:text-white text-forest border border-soft rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
                       >
                         <span>Escolher {serv.nome}</span>
@@ -1619,15 +1730,356 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
             <div className="pt-2">
               <button
                 type="button"
-                onClick={() => handleAvancarParaVitrine()}
+                onClick={() => handleAvancarParaTriagem()}
                 className="w-full py-4 bg-forest hover:bg-forest/90 text-white rounded-2xl text-sm font-bold uppercase tracking-wider transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2 cursor-pointer"
               >
-                <span>Concordo com as condições e quero escolher meu terapeuta</span>
+                <span>Concordo com as condições e avançar para triagem</span>
                 <ArrowRight className="w-4 h-4 text-sun" />
               </button>
               <p className="text-[11px] text-center text-forest/60 mt-2">
                 O pagamento é realizado diretamente ao profissional a cada sessão ou por pacote acordado.
               </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* ETAPA 2: TRIAGEM INICIAL DE MOTIVAÇÃO & RISCOS PSICOSSOCIAIS (NR-1)        */}
+      {/* ========================================================================= */}
+      {etapaAtual === "triagem_motivo" && (
+        <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 py-8 sm:py-10 space-y-6 animate-in fade-in duration-300 min-w-0 box-border">
+          
+          {/* BARRA DE PROGRESSO DO FLUXO */}
+          <div className="bg-white p-4 sm:p-5 rounded-2xl border border-soft shadow-xs flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <span className="w-6 h-6 rounded-full bg-emerald-600 text-white text-xs font-bold flex items-center justify-center">
+                ✓
+              </span>
+              <span className="text-xs font-bold text-forest hidden sm:inline">1. Identificação & Cargo</span>
+            </div>
+            <div className="h-0.5 flex-1 bg-forest/20 mx-2" />
+            <div className="flex items-center gap-2">
+              <span className="w-6 h-6 rounded-full bg-forest text-sun text-xs font-bold flex items-center justify-center shadow-xs">
+                2
+              </span>
+              <span className="text-xs font-bold text-forest">2. Triagem de Motivação & Riscos</span>
+            </div>
+            <div className="h-0.5 flex-1 bg-forest/10 mx-2" />
+            <div className="flex items-center gap-2 opacity-60">
+              <span className="w-6 h-6 rounded-full bg-warm text-forest text-xs font-bold flex items-center justify-center border border-soft">
+                3
+              </span>
+              <span className="text-xs font-medium text-forest hidden sm:inline">3. Escolha do Terapeuta</span>
+            </div>
+          </div>
+
+          {/* BANNER DE SIGILO ABSOLUTO & CONFORMIDADE ÉTICA / LGPD */}
+          <div className="p-5 sm:p-6 bg-gradient-to-r from-emerald-50 via-emerald-50/70 to-teal-50 border border-emerald-200 rounded-3xl space-y-2.5 shadow-2xs">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
+                <ShieldCheck className="w-5 h-5 text-emerald-100" />
+              </div>
+              <div>
+                <h3 className="font-serif text-sm sm:text-base font-bold text-emerald-950">
+                  Garantia de Sigilo Absoluto & Proteção de Dados (CFP & LGPD)
+                </h3>
+                <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-800">
+                  Resolução CFP nº 010/05 • Lei Federal 13.709/18 (LGPD)
+                </span>
+              </div>
+            </div>
+            <p className="text-xs sm:text-sm text-emerald-900/90 leading-relaxed">
+              Fique totalmente tranquilo(a): <strong>o seu sigilo é um direito inegociável protegido por lei e pelo Código de Ética Profissional do Psicólogo</strong>. Sua empresa ou lideranças <strong>NUNCA</strong> terão acesso às suas respostas individuais ou a quem assinalou cada opção. Apenas indicadores globais e anônimos são gerados para aprimorar os programas de saúde coletivos da organização.
+            </p>
+          </div>
+
+          {/* CARD PRINCIPAL DO QUESTIONÁRIO DE TRIAGEM */}
+          <div className="bg-white p-6 sm:p-8 rounded-3xl border border-soft shadow-xs space-y-8">
+            <div>
+              <span className="text-[11px] font-bold uppercase tracking-wider text-sun-dark">
+                Direcionamento Humanizado
+              </span>
+              <h2 className="font-serif text-xl sm:text-2xl font-bold text-forest mt-1">
+                Por que você está buscando atendimento terapêutico neste momento?
+              </h2>
+              <p className="text-xs sm:text-sm text-forest/70 mt-1 leading-relaxed">
+                Essa triagem nos ajuda a conectar você aos especialistas com maior afinidade clínica para a sua necessidade e apoia o diagnóstico preventivo de saúde da sua organização.
+              </p>
+            </div>
+
+            {/* PASSO 1: ESCOLHA DA ORIGEM (PESSOAL vs TRABALHO) */}
+            <div className="space-y-3">
+              <label className="text-xs font-bold uppercase tracking-wider text-forest block">
+                1. Selecione a principal motivação da sua procura: *
+              </label>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                {/* Opção Questões Pessoais */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTriagemOrigem("pessoais");
+                    setTriagemTemasSelecionados([]);
+                    setTriagemErro("");
+                  }}
+                  className={`p-5 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-3 ${
+                    triagemOrigem === "pessoais"
+                      ? "bg-emerald-50/80 border-emerald-600 ring-2 ring-emerald-600/30 shadow-xs"
+                      : "bg-warm/20 hover:bg-warm/50 border-soft text-forest/80"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="w-10 h-10 rounded-2xl bg-white border border-soft flex items-center justify-center text-xl shadow-2xs shrink-0">
+                      🌿
+                    </div>
+                    <div className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 mt-1 ${
+                      triagemOrigem === "pessoais" ? "border-emerald-700 bg-emerald-600 text-white" : "border-soft bg-white"
+                    }`}>
+                      {triagemOrigem === "pessoais" && <Check className="w-3 h-3 stroke-[3]" />}
+                    </div>
+                  </div>
+                  <div>
+                    <h4 className="font-serif font-bold text-sm sm:text-base text-forest">
+                      Questões Pessoais
+                    </h4>
+                    <p className="text-xs text-forest/70 mt-1 leading-relaxed">
+                      Desafios da vida particular, família, relacionamentos afetivos, luto, perdas, tristeza ou autoconhecimento.
+                    </p>
+                  </div>
+                  <span className="text-[10px] font-bold text-emerald-800 bg-white/80 px-2.5 py-1 rounded-lg border border-emerald-200 self-start">
+                    Demandas Clínicas & Emocionais Gerais
+                  </span>
+                </button>
+
+                {/* Opção Questões de Trabalho (NR-1) */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTriagemOrigem("trabalho");
+                    setTriagemTemasSelecionados([]);
+                    setTriagemErro("");
+                  }}
+                  className={`p-5 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-3 ${
+                    triagemOrigem === "trabalho"
+                      ? "bg-amber-50/80 border-amber-600 ring-2 ring-amber-600/30 shadow-xs"
+                      : "bg-warm/20 hover:bg-warm/50 border-soft text-forest/80"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="w-10 h-10 rounded-2xl bg-white border border-soft flex items-center justify-center text-xl shadow-2xs shrink-0">
+                      🏢
+                    </div>
+                    <div className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 mt-1 ${
+                      triagemOrigem === "trabalho" ? "border-amber-700 bg-amber-600 text-white" : "border-soft bg-white"
+                    }`}>
+                      {triagemOrigem === "trabalho" && <Check className="w-3 h-3 stroke-[3]" />}
+                    </div>
+                  </div>
+                  <div>
+                    <h4 className="font-serif font-bold text-sm sm:text-base text-forest">
+                      Questões Relacionadas ao Trabalho
+                    </h4>
+                    <p className="text-xs text-forest/70 mt-1 leading-relaxed">
+                      Sobrecarga de tarefas, estresse laboral, metas, clima na equipe, carreira ou riscos psicossociais da NR-1.
+                    </p>
+                  </div>
+                  <span className="text-[10px] font-bold text-amber-900 bg-white/80 px-2.5 py-1 rounded-lg border border-amber-300 self-start">
+                    Mapeamento de Riscos Ocupacionais (NR-1)
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            {/* PASSO 2: SELEÇÃO DAS DEMANDAS ESPECÍFICAS CONFORME A ESCOLHA */}
+            {triagemOrigem === "pessoais" && (
+              <div className="space-y-4 pt-4 border-t border-soft animate-in fade-in duration-300">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                  <label className="text-xs font-bold uppercase tracking-wider text-forest">
+                    2. Selecione as demandas pessoais presentes no seu momento: *
+                  </label>
+                  <span className="text-[11px] font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 self-start sm:self-auto">
+                    Selecione 1 ou mais opções
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-2.5">
+                  {DEMANDAS_PESSOAIS_OPCOES.map((item) => {
+                    const isSelected = triagemTemasSelecionados.includes(item.id);
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => {
+                          setTriagemTemasSelecionados((prev) =>
+                            prev.includes(item.id)
+                              ? prev.filter((id) => id !== item.id)
+                              : [...prev, item.id]
+                          );
+                          setTriagemErro("");
+                        }}
+                        className={`p-3 rounded-xl border text-left transition-all flex items-center justify-between gap-3 cursor-pointer text-xs ${
+                          isSelected
+                            ? "bg-emerald-600 text-white font-bold border-emerald-700 shadow-2xs"
+                            : "bg-white hover:bg-warm/60 text-forest/90 border-soft font-medium"
+                        }`}
+                      >
+                        <span className="flex items-center gap-2 min-w-0">
+                          <span className="text-base shrink-0">{item.iconeEmoji}</span>
+                          <span className="leading-snug">{item.label}</span>
+                        </span>
+                        <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
+                          isSelected ? "bg-white text-emerald-800 border-white" : "border-soft bg-warm/30"
+                        }`}>
+                          {isSelected && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Campo opcional de texto livre para demandas pessoais */}
+                {triagemTemasSelecionados.includes("outras_demandas_pessoais") && (
+                  <div className="p-4 bg-warm/30 rounded-2xl border border-soft space-y-2 animate-in fade-in">
+                    <label className="text-xs font-bold text-forest block">
+                      Descreva brevemente com suas palavras a demanda pessoal (opcional):
+                    </label>
+                    <textarea
+                      value={triagemOutrasTexto}
+                      onChange={(e) => setTriagemOutrasTexto(e.target.value)}
+                      placeholder="Fique à vontade para relatar brevemente se desejar..."
+                      rows={2}
+                      className="w-full p-3 bg-white rounded-xl text-xs text-forest border border-soft focus:border-forest outline-none transition-all resize-none"
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {triagemOrigem === "trabalho" && (
+              <div className="space-y-4 pt-4 border-t border-soft animate-in fade-in duration-300">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                  <label className="text-xs font-bold uppercase tracking-wider text-forest">
+                    2. Selecione os fatores ocupacionais do seu momento (NR-1): *
+                  </label>
+                  <span className="text-[11px] font-semibold text-amber-900 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-300 self-start sm:self-auto">
+                    Selecione 1 ou mais opções
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-2.5">
+                  {DEMANDAS_TRABALHO_NR1_OPCOES.map((item) => {
+                    const isPrefiro = item.id === "prefiro_nao_comentar";
+                    const isSelected = triagemTemasSelecionados.includes(item.id);
+
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => {
+                          if (isPrefiro) {
+                            // Se marcar prefiro não comentar, isola a opção para dar total liberdade
+                            setTriagemTemasSelecionados([item.id]);
+                            setTriagemOutrasTexto("");
+                          } else {
+                            setTriagemTemasSelecionados((prev) => {
+                              const semPrefiro = prev.filter((id) => id !== "prefiro_nao_comentar");
+                              return semPrefiro.includes(item.id)
+                                ? semPrefiro.filter((id) => id !== item.id)
+                                : [...semPrefiro, item.id];
+                            });
+                          }
+                          setTriagemErro("");
+                        }}
+                        className={`p-3 rounded-xl border text-left transition-all flex items-center justify-between gap-3 cursor-pointer text-xs ${
+                          isPrefiro
+                            ? isSelected
+                              ? "bg-forest text-white font-bold border-forest shadow-xs sm:col-span-2"
+                              : "bg-warm/50 hover:bg-warm border-soft text-forest/80 sm:col-span-2"
+                            : isSelected
+                            ? "bg-amber-600 text-white font-bold border-amber-700 shadow-2xs"
+                            : "bg-white hover:bg-warm/60 text-forest/90 border-soft font-medium"
+                        }`}
+                      >
+                        <span className="flex items-center gap-2 min-w-0">
+                          <span className="text-base shrink-0">{item.iconeEmoji}</span>
+                          <span className="leading-snug">{item.label}</span>
+                          {item.tagNormativa && !isPrefiro && (
+                            <span className={`hidden md:inline-block px-1.5 py-0.2 rounded text-[9px] font-bold shrink-0 ${
+                              isSelected ? "bg-white/20 text-white" : "bg-forest/5 text-forest/70"
+                            }`}>
+                              {item.tagNormativa}
+                            </span>
+                          )}
+                        </span>
+                        <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
+                          isSelected ? "bg-white text-forest border-white" : "border-soft bg-warm/30"
+                        }`}>
+                          {isSelected && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Campo livre de escrita se marcar 'Outras demandas relacionadas ao trabalho' */}
+                {triagemTemasSelecionados.includes("outras_demandas_trabalho") && (
+                  <div className="p-4 bg-warm/30 rounded-2xl border border-soft space-y-2 animate-in fade-in">
+                    <label className="text-xs font-bold text-forest block">
+                      Outras demandas relacionadas ao trabalho (campo livre opcional para escrita):
+                    </label>
+                    <textarea
+                      value={triagemOutrasTexto}
+                      onChange={(e) => setTriagemOutrasTexto(e.target.value)}
+                      placeholder="Descreva aqui se assim desejar outras especificidades da rotina ou trabalho..."
+                      rows={3}
+                      className="w-full p-3 bg-white rounded-xl text-xs text-forest border border-soft focus:border-forest outline-none transition-all resize-none"
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* MENSAGEM DE ERRO SE NÃO PREENCHEU */}
+            {triagemErro && (
+              <div className="p-3.5 bg-red-50 border border-red-200 rounded-xl text-red-900 text-xs font-medium flex items-center gap-2 animate-in fade-in">
+                <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+                <span>{triagemErro}</span>
+              </div>
+            )}
+
+            {/* BOTÕES DE NAVEGAÇÃO */}
+            <div className="pt-4 border-t border-soft flex flex-col sm:flex-row items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setEtapaAtual("identificacao");
+                  window.scrollTo({ top: 0, behavior: "smooth" });
+                }}
+                className="w-full sm:w-auto px-5 py-3 text-xs font-bold text-forest/70 hover:text-forest bg-warm/50 hover:bg-warm rounded-xl border border-soft transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>Voltar para Dados & Cargo</span>
+              </button>
+
+              <button
+                type="button"
+                disabled={isRegistrandoTriagem || !triagemOrigem}
+                onClick={handleConcluirTriagemEAvancarParaVitrine}
+                className="w-full sm:w-auto px-8 py-3.5 bg-forest hover:bg-forest/90 disabled:opacity-50 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2 cursor-pointer"
+              >
+                {isRegistrandoTriagem ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin text-sun" />
+                    <span>Processando Triagem...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Concluir Triagem & Escolher Profissional</span>
+                    <ArrowRight className="w-4 h-4 text-sun" />
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>

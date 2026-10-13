@@ -567,40 +567,40 @@ export function ProfissionalEsteiraTarefas({
       <div className="max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 flex flex-col gap-6">
         
         {/* Header section with contextual description & Quick Actions */}
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-soft shadow-xs">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="p-2 bg-forest/5 text-forest rounded-xl">
-                <Inbox className="w-6 h-6" />
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 bg-white px-5 py-3 sm:py-3.5 rounded-2xl border border-soft shadow-xs">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2.5">
+              <span className="w-8 h-8 bg-forest/5 text-forest rounded-xl flex items-center justify-center shrink-0">
+                <Inbox className="w-4 h-4 text-forest" />
               </span>
-              <div>
-                <h1 className="font-serif text-2xl sm:text-3xl font-medium text-forest">
+              <div className="min-w-0">
+                <h1 className="font-serif text-sm sm:text-base font-bold text-forest leading-snug">
                   Alertas, Pendências e Tarefas
                 </h1>
-                <p className="text-xs sm:text-sm text-forest/70 mt-0.5">
-                  Painel de esteira unificada por paciente. Acompanhe novos encaminhamentos, contratos e comunicações da coordenação.
+                <p className="text-[11px] sm:text-xs text-forest/65 mt-0.5">
+                  Painel de esteira unificada por paciente. Acompanhe encaminhamentos e comunicações.
                 </p>
               </div>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 self-stretch md:self-auto">
+          <div className="flex flex-wrap items-center gap-2 self-stretch md:self-auto shrink-0">
             {untreatedItemsCount > 0 && (
               <button
                 onClick={handleMarkAllFilteredTreated}
-                className="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-semibold rounded-xl border border-emerald-200 transition-colors flex items-center gap-1.5 shadow-xs"
+                className="px-3.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-semibold rounded-xl border border-emerald-200 transition-colors flex items-center gap-1.5 shadow-2xs"
                 title="Marcar todas as pendências visíveis como tratadas"
               >
                 <Check className="w-3.5 h-3.5" />
-                Tratar Visíveis ({filteredCards.reduce((acc, c) => acc + c.items.filter((i) => !i.treated).length, 0)})
+                <span>Tratar Visíveis ({filteredCards.reduce((acc, c) => acc + c.items.filter((i) => !i.treated).length, 0)})</span>
               </button>
             )}
             <button
               onClick={() => onNavigateToTab("pacientes")}
-              className="px-3.5 py-2 bg-forest hover:bg-forest/90 text-white text-xs font-semibold rounded-xl transition-colors flex items-center gap-1.5 shadow-xs"
+              className="px-3.5 py-1.5 bg-forest hover:bg-forest/90 text-white text-xs font-semibold rounded-xl transition-colors flex items-center gap-1.5 shadow-xs"
             >
               <User className="w-3.5 h-3.5" />
-              Ver Meus Pacientes
+              <span>Ver Meus Pacientes</span>
             </button>
           </div>
         </div>

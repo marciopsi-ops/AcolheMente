@@ -68,8 +68,8 @@ export function StripeCheckoutModal({
         event: 'pagamento_profissional',
         recipientEmail: professionalEmail,
         recipientName: professionalName,
-        title: 'Confirmação de Pagamento da Taxa Associativa - AcolheMente',
-        message: `O pagamento da taxa associativa mensal de R$ ${displayTaxa} foi confirmado com sucesso.`,
+        title: 'Confirmação de Pagamento da Taxa de Uso e Intermediação da Plataforma - AcolheMente',
+        message: `O pagamento da Taxa de Uso e Intermediação da Plataforma mensal de R$ ${displayTaxa} foi confirmado com sucesso.`,
         data: {
           valor: displayTaxa,
           profissionalNome: professionalName,
@@ -111,7 +111,7 @@ export function StripeCheckoutModal({
               <span className="px-2.5 py-0.5 bg-sun text-forest text-[10px] font-bold uppercase rounded-full tracking-wider">
                 Stripe Secured
               </span>
-              <span className="text-xs text-white/70">Taxa Associativa</span>
+              <span className="text-xs text-white/70">Taxa de Uso e Intermediação da Plataforma</span>
             </div>
             <h3 className="font-serif text-xl font-bold">Assinatura Profissional</h3>
           </div>
@@ -132,7 +132,7 @@ export function StripeCheckoutModal({
               </div>
               <h4 className="font-serif text-2xl font-bold text-forest mb-2">Pagamento Confirmado!</h4>
               <p className="text-sm text-forest/80 max-w-sm mb-6">
-                Sua taxa associativa mensal de <strong>R$ {displayTaxa}</strong> foi registrada com sucesso. Sua conta profissional está ativa.
+                Sua Taxa de Uso e Intermediação da Plataforma mensal de <strong>R$ {displayTaxa}</strong> foi registrada com sucesso. Sua conta profissional está ativa.
               </p>
               <button
                 onClick={onClose}

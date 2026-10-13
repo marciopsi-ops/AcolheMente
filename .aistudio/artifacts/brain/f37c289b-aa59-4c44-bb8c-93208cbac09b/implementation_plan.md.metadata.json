@@ -1,0 +1,6 @@
+{
+  "summary": "Plano de implementação para o sistema de Backup e Custódia de Dados para o Profissional e Gestão, incluindo exportação física em pacote duplo (JSON + Relatório CSV/Leitura) e sincronização com Google Drive pessoal com filtragem por período.",
+  "updatedAt": "2026-10-13T03:10:53.362867710Z",
+  "requestFeedback": true,
+  "userFacing": true
+}

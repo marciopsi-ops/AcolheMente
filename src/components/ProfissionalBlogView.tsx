@@ -124,30 +124,29 @@ export function ProfissionalBlogView({
   return (
     <div className="flex-1 overflow-auto p-4 sm:p-6 md:p-8 flex flex-col gap-6 slide-up bg-[#FCFBF7]">
       {/* Header Banner */}
-      <div className="bg-white p-6 sm:p-8 rounded-3xl border border-soft shadow-xs flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-        <div className="space-y-2">
+      <div className="bg-white px-5 py-3 sm:py-3.5 rounded-2xl border border-soft shadow-xs flex flex-col md:flex-row justify-between items-start md:items-center gap-3.5">
+        <div className="space-y-1 min-w-0">
           <div className="flex items-center gap-2 text-sun-dark">
-            <Sparkles className="w-5 h-5" />
-            <span className="text-xs font-bold uppercase tracking-wider">
-              Área do Associado • Blog & Publicações
+            <Sparkles className="w-3.5 h-3.5" />
+            <span className="text-[10px] font-bold uppercase tracking-wider">
+              Área do Profissional • Blog & Publicações
             </span>
           </div>
-          <h2 className="font-serif text-2xl sm:text-3xl text-forest font-bold">
+          <h2 className="font-serif text-sm sm:text-base text-forest font-bold leading-snug">
             Meus Artigos e Conteúdos
           </h2>
-          <p className="text-sm text-forest/70 max-w-2xl leading-relaxed">
-            Compartilhe seu conhecimento técnico e reflexões com o público geral.
-            Artigos aprovados pela Gestão são publicados no Blog Aberto e também em seu perfil público!
+          <p className="text-[11px] sm:text-xs text-forest/65 max-w-2xl">
+            Compartilhe seu conhecimento técnico e reflexões com o público. Artigos aprovados são publicados no Blog Aberto e em sua página pessoal.
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+        <div className="flex flex-wrap items-center gap-2 w-full md:w-auto shrink-0">
           {onNavigateToPublicBlog && (
             <button
               onClick={onNavigateToPublicBlog}
-              className="flex-1 md:flex-none px-4 py-2.5 bg-warm hover:bg-soft text-forest text-xs font-bold rounded-xl border border-soft transition-all flex items-center justify-center gap-2 cursor-pointer shadow-2xs"
+              className="px-3.5 py-1.5 bg-warm hover:bg-soft text-forest text-xs font-semibold rounded-xl border border-soft transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
             >
-              <ExternalLink className="w-4 h-4 text-forest/60" />
+              <ExternalLink className="w-3.5 h-3.5 text-forest/60" />
               <span>Ver Blog Público</span>
             </button>
           )}
@@ -156,9 +155,9 @@ export function ProfissionalBlogView({
               setEditingArtigo(null);
               setIsEditorOpen(true);
             }}
-            className="flex-1 md:flex-none px-5 py-2.5 bg-forest hover:bg-forest/90 text-white text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
+            className="px-3.5 py-1.5 bg-forest hover:bg-forest/90 text-white text-xs font-semibold rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-xs hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
           >
-            <Plus className="w-4 h-4 text-sun" />
+            <Plus className="w-3.5 h-3.5 text-sun" />
             <span>Escrever Novo Artigo</span>
           </button>
         </div>

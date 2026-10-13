@@ -269,6 +269,15 @@ export interface FichaBordoCorporativa {
   chavePix?: string;
   favorecidoPix?: string;
   cpf?: string;
+  // Dados Cadastrais & Faturamento contra o Paciente
+  pacienteNomeCompleto?: string;
+  pacienteCpf?: string;
+  pacienteDataNascimento?: string;
+  pacienteEmail?: string;
+  pacienteTelefone?: string;
+  colaboradorEmail?: string;
+  colaboradorDataNascimento?: string;
+  dadosFaturamentoPreenchidosEm?: string;
 }
 
 export interface ServicoAdicionalItem {
@@ -519,97 +528,202 @@ export function getEmpresaPin(empresa: any): string {
  * Interface dos Temas e Queixas de Busca dos Colaboradores
  * Mapeados diretamente às soluções recomendadas do Catálogo Corporativo / NR-1.
  */
+export type TipoOrigemDemanda = "pessoais" | "trabalho";
+
+/**
+ * Interface dos Temas e Queixas de Busca dos Colaboradores
+ * Mapeados diretamente às soluções recomendadas do Catálogo Corporativo / NR-1.
+ */
 export interface TemaQueixaItem {
   id: string;
   label: string;
   categoria: string;
+  tipoOrigem?: TipoOrigemDemanda;
   iconeEmoji: string;
+  tagNormativa?: string;
   servicoCatalogoSugeridoId: string;
   solucaoSugeridaTitulo: string;
   solucaoSugeridaDescricao: string;
 }
 
-export const TEMAS_QUEIXAS_CORPORATIVAS: TemaQueixaItem[] = [
+export const DEMANDAS_PESSOAIS_OPCOES: TemaQueixaItem[] = [
   {
     id: "ansiedade_estresse",
-    label: "Ansiedade, Estresse & Tensão",
-    categoria: "Saúde Emocional",
+    label: "Ansiedade, Estresse & Tensão Emocional",
+    categoria: "Saúde Pessoal",
+    tipoOrigem: "pessoais",
     iconeEmoji: "⚡",
     servicoCatalogoSugeridoId: "nr1_gestao_riscos_psicossociais",
     solucaoSugeridaTitulo: "Workshop de Manejo da Ansiedade & Gestão do Estresse",
-    solucaoSugeridaDescricao: "Sessões focais para redução de estresse agudo, regulação emocional e pausas restaurativas no trabalho.",
-  },
-  {
-    id: "burnout_sobrecarga",
-    label: "Burnout, Sobrecarga & Esgotamento (NR-1)",
-    categoria: "Saúde Ocupacional",
-    iconeEmoji: "🔥",
-    servicoCatalogoSugeridoId: "workshop_lideranca_acolhedora",
-    solucaoSugeridaTitulo: "Treinamento de Liderança Acolhedora & Prevenção ao Burnout",
-    solucaoSugeridaDescricao: "Mapeamento de sobrecarga e capacitação de gestores para detectar sinais precoces de exaustão e equilibrar metas.",
-  },
-  {
-    id: "conflitos_relacionamentos",
-    label: "Conflitos de Equipe & Relacionamento",
-    categoria: "Clima & Relações Humanas",
-    iconeEmoji: "🤝",
-    servicoCatalogoSugeridoId: "palestra_prevencao_assedio_cipa",
-    solucaoSugeridaTitulo: "Roda de Conversa & Comunicação Não-Violenta (CNV)",
-    solucaoSugeridaDescricao: "Mediação de clima, alinhamento interpessoal e dinâmicas de segurança psicológica e respeito mútuo.",
+    solucaoSugeridaDescricao: "Sessões focais para redução de estresse agudo, regulação emocional e autocuidado.",
   },
   {
     id: "tristeza_desanimo",
-    label: "Depressão, Desânimo & Desmotivação",
-    categoria: "Saúde Emocional",
+    label: "Depressão, Tristeza Profunda ou Desânimo",
+    categoria: "Saúde Pessoal",
+    tipoOrigem: "pessoais",
     iconeEmoji: "🌧️",
     servicoCatalogoSugeridoId: "nr1_gestao_riscos_psicossociais",
     solucaoSugeridaTitulo: "Acolhimento Terapêutico Contínuo & Avaliação de Riscos",
     solucaoSugeridaDescricao: "Apoio clínico individualizado integrado a indicadores de suporte à vida e acompanhamento contínuo.",
   },
   {
-    id: "sono_insonia",
-    label: "Insônia & Distúrbios do Sono",
-    categoria: "Qualidade de Vida",
-    iconeEmoji: "🌙",
-    servicoCatalogoSugeridoId: "nr1_gestao_riscos_psicossociais",
-    solucaoSugeridaTitulo: "Palestra de Higiene do Sono & Foco Mental",
-    solucaoSugeridaDescricao: "Orientação prática para melhorar a recuperação psicofísica, descanso e atenção no dia a dia.",
+    id: "conflitos_relacionamentos",
+    label: "Relacionamentos, Família & Casal",
+    categoria: "Saúde Pessoal",
+    tipoOrigem: "pessoais",
+    iconeEmoji: "🤝",
+    servicoCatalogoSugeridoId: "palestra_prevencao_assedio_cipa",
+    solucaoSugeridaTitulo: "Roda de Conversa & Comunicação Não-Violenta (CNV)",
+    solucaoSugeridaDescricao: "Mediação de clima, alinhamento interpessoal e dinâmicas de segurança psicológica e respeito mútuo.",
   },
   {
     id: "luto_crise",
-    label: "Luto, Perdas & Situações de Crise",
-    categoria: "Gestão de Crises",
+    label: "Luto, Perdas ou Situações de Crise",
+    categoria: "Saúde Pessoal",
+    tipoOrigem: "pessoais",
     iconeEmoji: "🕊️",
     servicoCatalogoSugeridoId: "plantao_escuta_gestao_crise",
     solucaoSugeridaTitulo: "Plantão Psicológico & Suporte em Situações Críticas",
     solucaoSugeridaDescricao: "Intervenção focal rápida e acolhimento estruturado para colaboradores em momentos de vulnerabilidade ou perdas.",
   },
   {
-    id: "carreira_desempenho",
-    label: "Desenvolvimento de Carreira, Foco & Transição",
-    categoria: "Performance & Carreira",
-    iconeEmoji: "🎯",
-    servicoCatalogoSugeridoId: "workshop_lideranca_acolhedora",
-    solucaoSugeridaTitulo: "Mentoria de Carreira & Inteligência Emocional Profissional",
-    solucaoSugeridaDescricao: "Fortalecimento de competências socioemocionais, clareza de metas e equilíbrio sob pressão.",
-  },
-  {
-    id: "familia_parentalidade",
-    label: "Desafios Familiares & Parentalidade",
-    categoria: "Vida Pessoal & Família",
-    iconeEmoji: "🏡",
-    servicoCatalogoSugeridoId: "palestra_prevencao_assedio_cipa",
-    solucaoSugeridaTitulo: "Ciclo de Apoio à Parentalidade & Conciliação Vida-Trabalho",
-    solucaoSugeridaDescricao: "Orientação e acolhimento para pais, mães e cuidadores equilibrarem responsabilidades familiares e corporativas.",
+    id: "sono_insonia",
+    label: "Insônia & Distúrbios do Sono",
+    categoria: "Saúde Pessoal",
+    tipoOrigem: "pessoais",
+    iconeEmoji: "🌙",
+    servicoCatalogoSugeridoId: "nr1_gestao_riscos_psicossociais",
+    solucaoSugeridaTitulo: "Palestra de Higiene do Sono & Foco Mental",
+    solucaoSugeridaDescricao: "Orientação prática para melhorar a recuperação psicofísica, descanso e atenção no dia a dia.",
   },
   {
     id: "autoconhecimento",
-    label: "Autoconhecimento & Resiliência",
-    categoria: "Desenvolvimento Pessoal",
+    label: "Autoconhecimento, Autoestima & Resiliência",
+    categoria: "Saúde Pessoal",
+    tipoOrigem: "pessoais",
     iconeEmoji: "🌱",
     servicoCatalogoSugeridoId: "workshop_lideranca_acolhedora",
     solucaoSugeridaTitulo: "Workshop de Autoliderança & Inteligência Emocional",
     solucaoSugeridaDescricao: "Práticas de autopercepção, gestão de limites e desenvolvimento sustentável da resiliência.",
   },
+  {
+    id: "outras_demandas_pessoais",
+    label: "Outras demandas pessoais",
+    categoria: "Saúde Pessoal",
+    tipoOrigem: "pessoais",
+    iconeEmoji: "🧩",
+    servicoCatalogoSugeridoId: "nr1_gestao_riscos_psicossociais",
+    solucaoSugeridaTitulo: "Acolhimento Clínico Integral e Escuta Qualificada",
+    solucaoSugeridaDescricao: "Sessões dedicadas ao acolhimento de demandas existenciais diversas trazidas pelo indivíduo.",
+  },
 ];
+
+export const DEMANDAS_TRABALHO_NR1_OPCOES: TemaQueixaItem[] = [
+  {
+    id: "burnout_sobrecarga",
+    label: "Burnout, Sobrecarga & Esgotamento Profissional",
+    categoria: "Trabalho (NR-1)",
+    tipoOrigem: "trabalho",
+    iconeEmoji: "🔥",
+    tagNormativa: "Obrigatório NR-1 / GRO",
+    servicoCatalogoSugeridoId: "workshop_lideranca_acolhedora",
+    solucaoSugeridaTitulo: "Treinamento de Liderança Acolhedora & Prevenção ao Burnout",
+    solucaoSugeridaDescricao: "Mapeamento de sobrecarga e capacitação de gestores para detectar sinais precoces de exaustão e equilibrar metas.",
+  },
+  {
+    id: "pressao_metas_estresse_nr1",
+    label: "Pressão Excessiva por Metas, Prazos & Estresse Laboral",
+    categoria: "Trabalho (NR-1)",
+    tipoOrigem: "trabalho",
+    iconeEmoji: "⚡",
+    tagNormativa: "NR-1 / Ergonomia Cognitiva",
+    servicoCatalogoSugeridoId: "nr1_gestao_riscos_psicossociais",
+    solucaoSugeridaTitulo: "Assessoria NR-1: Gestão de Riscos Psicossociais (GRO & PGR)",
+    solucaoSugeridaDescricao: "Estruturação técnica para mapeamento e prevenção de estressores ocupacionais e sobrecarga cognitiva.",
+  },
+  {
+    id: "conflitos_equipe_nr1",
+    label: "Conflitos de Equipe, Clima Organizacional ou Relação com Liderança",
+    categoria: "Trabalho (NR-1)",
+    tipoOrigem: "trabalho",
+    iconeEmoji: "🤝",
+    tagNormativa: "Clima & Relações",
+    servicoCatalogoSugeridoId: "palestra_prevencao_assedio_cipa",
+    solucaoSugeridaTitulo: "Roda de Conversa & Comunicação Não-Violenta no Trabalho",
+    solucaoSugeridaDescricao: "Mediação de clima, alinhamento interpessoal e dinâmicas de segurança psicológica e respeito mútuo.",
+  },
+  {
+    id: "assedio_desrespeito_nr1",
+    label: "Assédio Moral, Microagressões ou Desrespeito no Trabalho",
+    categoria: "Trabalho (NR-1)",
+    tipoOrigem: "trabalho",
+    iconeEmoji: "🛡️",
+    tagNormativa: "Lei 14.457/22 & CIPA",
+    servicoCatalogoSugeridoId: "palestra_prevencao_assedio_cipa",
+    solucaoSugeridaTitulo: "Treinamento & Palestra: Prevenção ao Assédio e Clima Seguro (Lei 14.457/22 & CIPA)",
+    solucaoSugeridaDescricao: "Capacitação sobre respeito interpessoal, limites éticos, conformidade legal e canais de apoio seguro.",
+  },
+  {
+    id: "carreira_desempenho",
+    label: "Desenvolvimento de Carreira, Insegurança ou Desmotivação",
+    categoria: "Trabalho (NR-1)",
+    tipoOrigem: "trabalho",
+    iconeEmoji: "🎯",
+    tagNormativa: "Desenvolvimento Profissional",
+    servicoCatalogoSugeridoId: "workshop_lideranca_acolhedora",
+    solucaoSugeridaTitulo: "Mentoria de Carreira & Inteligência Emocional Profissional",
+    solucaoSugeridaDescricao: "Fortalecimento de competências socioemocionais, clareza de metas e equilíbrio sob pressão.",
+  },
+  {
+    id: "equilibrio_vida_trabalho_nr1",
+    label: "Dificuldade de Conciliação entre Vida Pessoal e Trabalho",
+    categoria: "Trabalho (NR-1)",
+    tipoOrigem: "trabalho",
+    iconeEmoji: "⚖️",
+    tagNormativa: "Qualidade de Vida Ocupacional",
+    servicoCatalogoSugeridoId: "palestra_prevencao_assedio_cipa",
+    solucaoSugeridaTitulo: "Ciclo de Apoio à Parentalidade & Conciliação Vida-Trabalho",
+    solucaoSugeridaDescricao: "Orientação e acolhimento para conciliar responsabilidades da vida privada com metas corporativas.",
+  },
+  {
+    id: "evento_critico_nr1",
+    label: "Evento Crítico, Acidente de Trabalho ou Situação Traumática",
+    categoria: "Trabalho (NR-1)",
+    tipoOrigem: "trabalho",
+    iconeEmoji: "⚠️",
+    tagNormativa: "Gestão de Crise & Emergência",
+    servicoCatalogoSugeridoId: "plantao_escuta_gestao_crise",
+    solucaoSugeridaTitulo: "Plantão Psicológico de Emergência & Gestão de Crise Organizacional",
+    solucaoSugeridaDescricao: "Suporte intensivo para equipes que vivenciaram eventos críticos, acidentes ou perdas no ambiente de trabalho.",
+  },
+  {
+    id: "outras_demandas_trabalho",
+    label: "Outras demandas relacionadas ao trabalho",
+    categoria: "Trabalho (NR-1)",
+    tipoOrigem: "trabalho",
+    iconeEmoji: "📝",
+    tagNormativa: "Outras Demandas",
+    servicoCatalogoSugeridoId: "nr1_gestao_riscos_psicossociais",
+    solucaoSugeridaTitulo: "Assessoria Técnica NR-1 & Escuta Organizacional Focada",
+    solucaoSugeridaDescricao: "Acolhimento de particularidades ocupacionais e suporte especializado para necessidades singulares.",
+  },
+  {
+    id: "prefiro_nao_comentar",
+    label: "Prefiro não comentar",
+    categoria: "Trabalho (NR-1)",
+    tipoOrigem: "trabalho",
+    iconeEmoji: "🔒",
+    tagNormativa: "Sigilo Preservado",
+    servicoCatalogoSugeridoId: "nr1_gestao_riscos_psicossociais",
+    solucaoSugeridaTitulo: "Acolhimento Clínico Sigiloso & Escuta Individual",
+    solucaoSugeridaDescricao: "Atendimento terapêutico com liberdade total e preservação integral da privacidade do colaborador.",
+  },
+];
+
+export const TEMAS_QUEIXAS_CORPORATIVAS: TemaQueixaItem[] = [
+  ...DEMANDAS_TRABALHO_NR1_OPCOES,
+  ...DEMANDAS_PESSOAIS_OPCOES,
+];
+
 

@@ -291,7 +291,7 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
         return;
       }
       if (!cienciaTaxa) {
-        setErrorMsg(`Para prosseguir, você deve declarar estar ciente da taxa associativa de R$ ${taxaAssociativaMensal}/mês.`);
+        setErrorMsg(`Para prosseguir, você deve declarar estar ciente da Taxa de Uso e Intermediação da Plataforma de R$ ${taxaAssociativaMensal}/mês.`);
         return;
       }
       setIsSubmitting(true);
@@ -509,7 +509,7 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
 
                     <h3 className="font-serif text-2xl md:text-3xl font-bold text-white tracking-tight flex items-center gap-3">
                       <Wallet className="w-7 h-7 text-sun shrink-0" />
-                      Taxa Associativa Acessível
+                      Taxa de Uso e Intermediação da Plataforma Acessível
                     </h3>
 
                     <p className="text-white/90 text-sm md:text-base leading-relaxed max-w-2xl">
@@ -521,7 +521,7 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
                         <Sparkles className="w-4 h-4 text-sun" /> Como funciona o processo de adesão?
                       </p>
                       <p className="leading-relaxed">
-                        O preenchimento da inscrição é <strong className="text-white underline decoration-sun underline-offset-2">100% gratuito</strong>. A taxa associativa mensal <strong className="text-sun font-semibold">só passará a ser cobrada a partir da entrevista de alinhamento, aprovação pela gestão do projeto e assinatura formal do contrato de parceria</strong>.
+                        O preenchimento da inscrição é <strong className="text-white underline decoration-sun underline-offset-2">100% gratuito</strong>. A Taxa de Uso e Intermediação da Plataforma mensal <strong className="text-sun font-semibold">só passará a ser cobrada a partir da entrevista de alinhamento, aprovação pela gestão do projeto e assinatura formal do contrato de parceria</strong>.
                       </p>
                     </div>
                   </div>
@@ -605,7 +605,7 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
                     <li><strong>Aceite & Assinatura de Contrato:</strong> Formalização e liberação para atendimentos.</li>
                   </ol>
                   <p className="text-[11px] text-forest/80 italic border-t border-soft pt-2 mt-1">
-                    💡 <strong>Lembrete:</strong> Nenhuma cobrança é efetuada neste momento. A taxa associativa (R$ {taxaAssociativaMensal}/mês) só é devida após a aprovação e assinatura formal do contrato.
+                    💡 <strong>Lembrete:</strong> Nenhuma cobrança é efetuada neste momento. A Taxa de Uso e Intermediação da Plataforma (R$ {taxaAssociativaMensal}/mês) só é devida após a aprovação e assinatura formal do contrato.
                   </p>
                 </div>
 
@@ -622,14 +622,14 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
                       </span>
                     </div>
                     <p className="text-xs text-forest/80 leading-relaxed">
-                      Se você já foi aprovado na entrevista e concluiu o contrato, ative sua taxa associativa (R$ {taxaAssociativaMensal}/mês) com total segurança via Pix ou Cartão de Crédito.
+                      Se você já foi aprovado na entrevista e concluiu o contrato, ative sua Taxa de Uso e Intermediação da Plataforma (R$ {taxaAssociativaMensal}/mês) com total segurança via Pix ou Cartão de Crédito.
                     </p>
                     <button
                       onClick={() => setShowCheckoutModal(true)}
                       className="w-full py-3.5 px-6 bg-forest text-white rounded-xl font-bold hover:bg-forest/90 transition-all shadow-md flex items-center justify-center gap-2 text-sm mt-1"
                     >
                       <Sparkles className="w-4 h-4 text-sun" />
-                      Efetuar Pagamento da Taxa Associativa (R$ {taxaAssociativaMensal}/mês)
+                      Efetuar Pagamento da Taxa de Uso e Intermediação da Plataforma (R$ {taxaAssociativaMensal}/mês)
                     </button>
                   </div>
                 )}
@@ -1432,12 +1432,12 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
                             </label>
                           </div>
 
-                          {/* Taxa Associativa Awareness Box */}
+                          {/* Taxa de Uso e Intermediação da Plataforma Awareness Box */}
                           <div className="bg-amber-50/90 p-5 rounded-2xl border border-amber-200 flex flex-col gap-3.5 shadow-xs">
                             <div className="flex items-center justify-between gap-2">
                               <div className="flex items-center gap-2 text-forest font-bold text-sm">
                                 <Wallet className="w-5 h-5 text-amber-800 shrink-0" />
-                                <span>Taxa Associativa: R$ {taxaAssociativaMensal}/mês (Apenas Pós-Aprovação)</span>
+                                <span>Taxa de Uso e Intermediação da Plataforma: R$ {taxaAssociativaMensal}/mês (Apenas Pós-Aprovação)</span>
                               </div>
                               <span className="px-2.5 py-0.5 bg-amber-200/80 text-amber-900 text-[10px] font-bold rounded-full uppercase shrink-0">
                                 Inscrição Gratuita
@@ -1445,7 +1445,7 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
                             </div>
 
                             <div className="bg-amber-100/60 p-3 rounded-xl border border-amber-300/50 text-xs text-amber-950 leading-relaxed font-medium">
-                              📌 <strong>Regra de Cobrança Transparente:</strong> O preenchimento desta inscrição é <strong>100% gratuito</strong>. O valor da taxa associativa mensal (R$ {taxaAssociativaMensal}) <strong>NÃO</strong> é cobrado agora e <strong>só passará a ser devido após a realização da entrevista, aceite formal pela gestão e assinatura do contrato de parceria</strong>.
+                              📌 <strong>Regra de Cobrança Transparente:</strong> O preenchimento desta inscrição é <strong>100% gratuito</strong>. O valor da Taxa de Uso e Intermediação da Plataforma mensal (R$ {taxaAssociativaMensal}) <strong>NÃO</strong> é cobrado agora e <strong>só passará a ser devido após a realização da entrevista, aceite formal pela gestão e assinatura do contrato de parceria</strong>.
                             </div>
 
                             <div className="bg-white/90 p-3.5 rounded-xl border border-amber-200 text-xs text-forest/90 space-y-1.5">
@@ -1479,7 +1479,7 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
                                 className="mt-1 w-5 h-5 rounded border-amber-300 text-forest focus:ring-amber-500/20 accent-forest cursor-pointer shrink-0"
                               />
                               <span className="text-xs font-semibold text-forest leading-relaxed">
-                                Declaro estar ciente de que esta pré-inscrição é gratuita e que a taxa associativa mensal de R$ {taxaAssociativaMensal} só passará a ser cobrada após a realização da entrevista, o aceite formal da gestão para ingresso no projeto e a assinatura do contrato. *
+                                Declaro estar ciente de que esta pré-inscrição é gratuita e que a Taxa de Uso e Intermediação da Plataforma mensal de R$ {taxaAssociativaMensal} só passará a ser cobrada após a realização da entrevista, o aceite formal da gestão para ingresso no projeto e a assinatura do contrato. *
                               </span>
                             </label>
                           </div>
