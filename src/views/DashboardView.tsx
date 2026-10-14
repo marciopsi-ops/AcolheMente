@@ -191,6 +191,7 @@ import { RedeProfissionalView } from "../components/RedeProfissionalView";
 import { EmpresaColaboradoresSpreadsheet, ColaboradorItem } from "../components/EmpresaColaboradoresSpreadsheet";
 import { PacienteFaturamentoSpreadsheet, SessaoFaturamentoItem } from "../components/PacienteFaturamentoSpreadsheet";
 import { ProfissionalFaturamentoDashboard } from "../components/ProfissionalFaturamentoDashboard";
+import { PacienteProntuarioModal, ProntuarioRegistroItem } from "../components/PacienteProntuarioModal";
 
 const safeLocalStorage = {
   getItem: (key: string): string | null => {
@@ -548,6 +549,145 @@ export function buildCaseSummaryText(card: any) {
 Para mais informações e aceite, acesse a ficha de bordo do paciente na plataforma.`;
 }
 
+export interface PatientPendingItem {
+  id: string;
+  type: "contrato" | "atribuicao" | "cadastro" | "emergencia" | "inativacao" | "alerta";
+  title: string;
+  description: string;
+  shortLabel: string;
+  severity: "high" | "medium" | "low";
+  actionText?: string;
+  actionType?: "contrato" | "aceitar_atribuicao" | "completar_cadastro" | "notificar";
+}
+
+export function getPatientPendingItems(card: any, currentRole?: string): PatientPendingItem[] {
+  if (!card) return [];
+  const items: PatientPendingItem[] = [];
+
+  // 1. Aceite de Atribuição (apenas se atribuído para o profissional e pendente)
+  const isPendingAssignment = !card.atribuicaoStatus || card.atribuicaoStatus === "Pendente";
+  if (isPendingAssignment && (currentRole === "profissional" || card.profissionalId || card.profissionalUid)) {
+    items.push({
+      id: "pend-atribuicao",
+      type: "atribuicao",
+      title: "Encaminhamento Aguardando Aceite",
+      description: "O paciente foi direcionado pela coordenação/triagem e aguarda a confirmação de aceite na ficha.",
+      shortLabel: "Aceite Pendente",
+      severity: "high",
+      actionText: "Revisar & Aceitar",
+      actionType: "aceitar_atribuicao",
+    });
+  }
+
+  // 2. Contrato Terapêutico
+  if (!card.contratoAssinado) {
+    const hasContratoGerado = Boolean(
+      card.contratoGerado ||
+      card.contratoConteudo ||
+      card.statusContrato === "gerado" ||
+      card.statusContrato === "assinado"
+    );
+    if (!hasContratoGerado) {
+      items.push({
+        id: "pend-contrato-gerar",
+        type: "contrato",
+        title: "Contrato Não Gerado",
+        description: "O Contrato Terapêutico de Prestação de Serviços ainda não foi gerado para este paciente.",
+        shortLabel: "Contrato Pendente",
+        severity: "medium",
+        actionText: "Gerar Contrato",
+        actionType: "contrato",
+      });
+    } else {
+      items.push({
+        id: "pend-contrato-assinar",
+        type: "contrato",
+        title: "Contrato Aguardando Assinatura",
+        description: "O contrato terapêutico foi gerado, mas ainda aguarda a assinatura digital do paciente.",
+        shortLabel: "Assinatura Pendente",
+        severity: "medium",
+        actionText: "Ver / Copiar Link",
+        actionType: "contrato",
+      });
+    }
+  }
+
+  // 3. Documentação cadastral - CPF
+  if (!card.cpf && !card.pacienteCpf) {
+    items.push({
+      id: "pend-cpf",
+      type: "cadastro",
+      title: "CPF Não Informado",
+      description: "O CPF do paciente é necessário para conformidade contratual, emissão de recibos e faturamento.",
+      shortLabel: "Falta CPF",
+      severity: "medium",
+      actionText: "Preencher CPF",
+      actionType: "completar_cadastro",
+    });
+  }
+
+  // 4. Contato de Emergência
+  const hasEmergency = Boolean(
+    card.contatoEmergencia ||
+    card.contatoEmergenciaNome ||
+    card.contatoEmergenciaTelefone ||
+    card.telefoneEmergencia ||
+    card.responsavelTelefone
+  );
+  if (!hasEmergency) {
+    items.push({
+      id: "pend-emergencia",
+      type: "emergencia",
+      title: "Contato de Emergência Ausente",
+      description: "Recomenda-se cadastrar nome e telefone de contato de emergência para resguardo do atendimento.",
+      shortLabel: "Sem Contato Emergência",
+      severity: "low",
+      actionText: "Adicionar Contato",
+      actionType: "completar_cadastro",
+    });
+  }
+
+  // 5. Data de Nascimento / Idade
+  if (!card.idade && !card.dataNascimento) {
+    items.push({
+      id: "pend-nascimento",
+      type: "cadastro",
+      title: "Data de Nascimento Não Informada",
+      description: "A data de nascimento ou idade do paciente não foi preenchida.",
+      shortLabel: "Sem Data Nasc.",
+      severity: "low",
+      actionText: "Completar Dados",
+      actionType: "completar_cadastro",
+    });
+  }
+
+  // 6. Solicitação de Desligamento / Inativação em aberto
+  if (card.statusInativacao === "Solicitado" || card.statusInativacao === "Em Análise") {
+    items.push({
+      id: "pend-inativacao",
+      type: "inativacao",
+      title: "Processo de Desligamento em Andamento",
+      description: `Há uma solicitação de encerramento em análise: "${card.motivoInativacao || "Motivo informado na ficha"}".`,
+      shortLabel: "Desligamento em Aberto",
+      severity: "high",
+    });
+  }
+
+  // 7. Notificações / Alertas da Coordenação
+  if (card.notificacao && card.notificacao.trim()) {
+    items.push({
+      id: "pend-notificacao",
+      type: "alerta",
+      title: "Mensagem da Coordenação / Triagem",
+      description: card.notificacao.trim(),
+      shortLabel: "Mensagem da Coordenação",
+      severity: "medium",
+    });
+  }
+
+  return items;
+}
+
 interface Doacao {
   id: string;
   nome: string;
@@ -843,6 +983,7 @@ const EditableField = ({
   onChange,
   isEditing,
   type = "text",
+  placeholder,
 }: {
   label: string;
   value: any;
@@ -850,6 +991,7 @@ const EditableField = ({
   onChange: (f: string, v: any) => void;
   isEditing: boolean;
   type?: string;
+  placeholder?: string;
 }) => {
   let formattedDisplay = value || "-";
   if (
@@ -879,6 +1021,7 @@ const EditableField = ({
         <DebouncedInput
           type={type}
           value={strValue}
+          placeholder={placeholder}
           onChange={(val) => onChange(field, val)}
           className="text-xs sm:text-sm font-semibold text-forest border border-emerald-500/80 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/20 bg-emerald-50/50 rounded-lg px-2.5 py-1.5 w-full focus:outline-none transition-all shadow-2xs"
         />
@@ -1022,6 +1165,9 @@ export function DashboardView({
   const [notificarInitialMode, setNotificarInitialMode] = useState<"templates" | "custom">("templates");
   const [notificarInitialTemplateId, setNotificarInitialTemplateId] = useState<string>("proposta");
   const [showContratoModal, setShowContratoModal] = useState(false);
+  const [showFaturamentoModal, setShowFaturamentoModal] = useState(false);
+  const [showProntuarioModal, setShowProntuarioModal] = useState(false);
+  const [showPendenciasModal, setShowPendenciasModal] = useState(false);
   const [showDesligamentoModal, setShowDesligamentoModal] = useState(false);
   const [desligamentoMotivo, setDesligamentoMotivo] = useState("");
   const [desligamentoDetalhes, setDesligamentoDetalhes] = useState("");
@@ -13568,91 +13714,114 @@ export function DashboardView({
                 </div>
               )}
 
-              {/* Patient Journey Flow Progress - Otimizado e Compacto */}
+              {/* Processo Atual & Quadro de Alertas e Pendências */}
               {(() => {
-                const status = selectedCard.status || "Aguardando Avaliação";
-                if (
-                  status === "Alta" ||
-                  status === "Inativo" ||
-                  status === "Encaminhamento Externo" ||
-                  status === "Desistência"
-                )
-                  return null;
-
                 const flow = getPatientFlowDetails(selectedCard);
+                const pendingItems = getPatientPendingItems(selectedCard, currentRole);
+                const isPendingAssignment = !selectedCard.atribuicaoStatus || selectedCard.atribuicaoStatus === "Pendente";
+
+                // Determinação da Etapa/Processo do Paciente
+                let processoNome = selectedCard.status || "Em Triagem";
+                let processoCor = "bg-blue-50 text-blue-800 border-blue-200";
+                let processoDot = "bg-blue-500";
+
+                if (flow.isAtribuicaoDevolvida) {
+                  processoNome = "Devolvido para Triagem";
+                  processoCor = "bg-rose-50 text-rose-800 border-rose-300";
+                  processoDot = "bg-rose-500 animate-ping";
+                } else if (isPendingAssignment && currentRole === "profissional") {
+                  processoNome = "Aguardando Aceite do Profissional";
+                  processoCor = "bg-amber-50 text-amber-900 border-amber-300";
+                  processoDot = "bg-amber-500 animate-pulse";
+                } else if (selectedCard.status === "Em Atendimento" || flow.isAtendimentoIniciado) {
+                  processoNome = "Em Atendimento Clínico";
+                  processoCor = "bg-emerald-50 text-emerald-900 border-emerald-300";
+                  processoDot = "bg-emerald-500 animate-pulse";
+                } else if (isCardInStandby(selectedCard)) {
+                  processoNome = "Em Standby (Pausa)";
+                  processoCor = "bg-amber-50 text-amber-800 border-amber-200";
+                  processoDot = "bg-amber-400";
+                } else if (flow.propostaRevisao) {
+                  processoNome = "Revisão de Proposta Solicitada";
+                  processoCor = "bg-amber-50 text-amber-900 border-amber-300";
+                  processoDot = "bg-amber-500";
+                } else if (flow.isAtribuido) {
+                  processoNome = "Atribuído ao Profissional";
+                  processoCor = "bg-teal-50 text-teal-800 border-teal-200";
+                  processoDot = "bg-teal-500";
+                }
 
                 return (
-                  <div className="w-full bg-white/90 p-1.5 sm:p-2.5 rounded-xl border border-soft shadow-2xs space-y-1">
-                    {/* Mobile Summary Bar - Compacto & Discreto */}
-                    <div className="sm:hidden flex items-center justify-between text-[10px] font-bold">
-                      <div className="flex items-center gap-1.5 text-forest min-w-0 flex-1">
-                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${flow.isAtribuicaoDevolvida ? "bg-rose-500 animate-ping" : "bg-emerald-500 animate-pulse"}`}></span>
-                        <span className="truncate">
-                          Jornada ({flow.activeStep}/6): {flow.isAtribuicaoDevolvida ? "Devolvido" : flow.propostaRevisao ? "Revisão" : flow.propostaAceita ? "Aceita" : flow.isAtribuido ? "Atribuído" : "Triagem"}
-                        </span>
+                  <div className="w-full bg-white/95 p-1.5 sm:p-2 rounded-xl border border-soft shadow-xs flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-1.5 sm:gap-2">
+                    {/* Nome do Processo Atual */}
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="text-[9px] sm:text-[10px] font-bold text-forest/60 uppercase tracking-wider shrink-0">
+                        Processo Atual:
+                      </span>
+                      <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg text-[10px] sm:text-[11px] font-bold border transition-colors ${processoCor} shadow-2xs`}>
+                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${processoDot}`}></span>
+                        <span className="truncate">{processoNome}</span>
                       </div>
+                    </div>
+
+                    {/* Status de Alertas & Pendências com Acesso ao Popup */}
+                    <div className="flex items-center gap-1.5 justify-between sm:justify-end shrink-0">
                       <button
                         type="button"
-                        onClick={() => setShowJourneyMobileDetails(!showJourneyMobileDetails)}
-                        className="text-[9px] text-forest/70 hover:text-forest bg-warm/80 px-1.5 py-0.5 rounded-md border border-soft flex items-center gap-0.5 shrink-0 ml-1"
+                        onClick={() => setShowPendenciasModal(true)}
+                        className={`flex items-center gap-1.5 px-2.5 py-0.5 sm:py-1 rounded-lg border text-[10px] sm:text-[11px] font-bold transition-all shadow-2xs cursor-pointer ${
+                          pendingItems.length > 0
+                            ? "bg-amber-50/90 hover:bg-amber-100 text-amber-900 border-amber-300 hover:border-amber-400"
+                            : "bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-200 hover:border-emerald-300"
+                        }`}
+                        title="Abrir quadro de pendências e conferência cadastral deste paciente"
                       >
-                        {showJourneyMobileDetails ? "Ocultar" : "Etapas"}
-                        <ChevronDown className={`w-2.5 h-2.5 transition-transform ${showJourneyMobileDetails ? "rotate-180" : ""}`} />
+                        {pendingItems.length > 0 ? (
+                          <>
+                            <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0 animate-pulse" />
+                            <span>
+                              {pendingItems.length} {pendingItems.length === 1 ? "pendência cadastral" : "pendências / alertas"}
+                            </span>
+                            <span className="text-[9px] font-bold bg-amber-200/90 text-amber-950 px-1.5 py-0.2 rounded">
+                              Ver Quadro
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
+                            <span>Cadastro Completo • Sem Pendências</span>
+                            <span className="text-[9px] font-bold bg-emerald-200/90 text-emerald-950 px-1.5 py-0.2 rounded">
+                              Conferir
+                            </span>
+                          </>
+                        )}
                       </button>
-                    </div>
-
-                    <div className={`${showJourneyMobileDetails ? "grid" : "hidden sm:grid"} grid-cols-2 sm:grid-cols-6 gap-1 text-center text-[9px] sm:text-[10px] font-bold uppercase tracking-wider mb-0.5`}>
-                      <div className={`p-1 sm:p-1.5 rounded-lg border transition-colors ${flow.propostaRevisao ? "text-amber-800 bg-amber-50/90 border-amber-300 font-extrabold" : flow.activeStep >= 1 ? "text-emerald-800 bg-emerald-50/90 border-emerald-200" : "text-forest/40 bg-warm/30 border-transparent"}`}>
-                        1. Questionário {flow.propostaRevisao ? "(Revisão)" : ""}
-                      </div>
-                      <div className={`p-1 sm:p-1.5 rounded-lg border transition-colors ${flow.propostaRevisao ? "text-amber-800 bg-amber-50/90 border-amber-200" : (flow.isPropostaEnviada || flow.propostaAceita) ? "text-emerald-800 bg-emerald-50/90 border-emerald-200" : flow.activeStep === 2 ? "text-blue-800 bg-blue-50/90 border-blue-200" : "text-forest/40 bg-warm/30 border-transparent"}`}>
-                        2. Proposta
-                      </div>
-                      <div className={`p-1 sm:p-1.5 rounded-lg border transition-colors ${flow.propostaAceita ? "text-emerald-800 bg-emerald-50/90 border-emerald-200" : flow.propostaRevisao ? "text-amber-800 bg-amber-50/90 border-amber-300 font-extrabold" : flow.isPropostaEnviada ? "text-blue-800 bg-blue-50/90 border-blue-200" : "text-forest/40 bg-warm/30 border-transparent"}`}>
-                        3. {flow.propostaRevisao ? "Revisão Solicitada" : flow.propostaAceita ? "Aceite OK" : "Aceite / Revisão"}
-                      </div>
-                      <div className={`p-1 sm:p-1.5 rounded-lg border transition-colors ${flow.isAtribuido ? "text-emerald-800 bg-emerald-50/90 border-emerald-200" : flow.propostaAceita ? "text-amber-800 bg-amber-50/90 border-amber-300 font-bold" : "text-forest/40 bg-warm/30 border-transparent"}`}>
-                        4. Atribuir Prof. {!flow.isAtribuido && flow.propostaAceita ? "(Pendente)" : ""}
-                      </div>
-                      <div className={`p-1 sm:p-1.5 rounded-lg border transition-colors ${flow.isAtribuicaoDevolvida ? "text-rose-900 bg-rose-100 border-rose-300 font-extrabold" : flow.isAtribuicaoAceita ? "text-emerald-800 bg-emerald-50/90 border-emerald-200" : flow.isAtribuido ? "text-amber-800 bg-amber-50/90 border-amber-200" : "text-forest/40 bg-warm/30 border-transparent"}`}>
-                        5. {flow.isAtribuicaoDevolvida ? "Devolvido (Nova Atribuição)" : flow.isAtribuicaoAceita ? "Atribuição (Aceita)" : flow.isAtribuido ? "Atribuição (Pendente)" : "Atribuição"}
-                      </div>
-                      <div className={`p-1 sm:p-1.5 rounded-lg border transition-colors ${flow.isAtribuido && flow.isAtribuicaoAceita && (flow.isAtendimentoIniciado || selectedCard.status === "Em Atendimento") ? "text-emerald-800 bg-emerald-50/90 border-emerald-200" : "text-forest/40 bg-warm/30 border-transparent"}`}>
-                        6. Atendimento
-                      </div>
-                    </div>
-
-                    <div className="flex gap-1 h-1 sm:h-1.5 w-full">
-                      <div className={`flex-1 rounded-full transition-colors ${flow.propostaRevisao ? "bg-amber-500" : "bg-emerald-500"}`}></div>
-                      <div className={`flex-1 rounded-full transition-colors ${flow.propostaRevisao ? "bg-amber-300" : (flow.isPropostaEnviada || flow.propostaAceita) ? "bg-emerald-500" : "bg-warm-dark/30"}`}></div>
-                      <div className={`flex-1 rounded-full transition-colors ${flow.propostaAceita ? "bg-emerald-500" : flow.propostaRevisao ? "bg-amber-500" : flow.isPropostaEnviada ? "bg-blue-400" : "bg-warm-dark/30"}`}></div>
-                      <div className={`flex-1 rounded-full transition-colors ${flow.isAtribuido ? "bg-emerald-500" : flow.propostaAceita ? "bg-amber-400" : "bg-warm-dark/30"}`}></div>
-                      <div className={`flex-1 rounded-full transition-colors ${flow.isAtribuido && flow.isAtribuicaoDevolvida ? "bg-rose-500" : flow.isAtribuido && flow.isAtribuicaoAceita ? "bg-emerald-500" : flow.isAtribuido ? "bg-amber-400" : flow.isAtribuicaoDevolvida ? "bg-rose-500" : "bg-warm-dark/30"}`}></div>
-                      <div className={`flex-1 rounded-full transition-colors ${flow.isAtribuido && flow.isAtribuicaoAceita && (flow.isAtendimentoIniciado || selectedCard.status === "Em Atendimento") ? "bg-emerald-500" : "bg-warm-dark/30"}`}></div>
                     </div>
                   </div>
                 );
               })()}
             </div>
 
-            {/* Action Bar - Ultra Compacta em Telas Pequenas */}
+            {/* Action Bar - Agrupada e Otimizada */}
             <div className="flex items-center justify-between gap-1.5 sm:gap-2 px-2.5 sm:px-6 py-1.5 sm:py-2 bg-white border-b border-soft shrink-0 overflow-x-auto scrollbar-none">
               {/* Left Group */}
               <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+                {/* Botão Notificar Compacto */}
                 <button
+                  type="button"
                   onClick={() => {
                     setShowNotificarModal(true);
                   }}
-                  className="flex items-center gap-1 sm:gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] sm:text-xs px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg sm:rounded-xl border border-emerald-500/80 transition-all shadow-2xs whitespace-nowrap"
+                  className="flex items-center gap-1 sm:gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] sm:text-xs px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg sm:rounded-xl border border-emerald-500/80 transition-all shadow-2xs whitespace-nowrap cursor-pointer"
                   title="Disparar notificação via WhatsApp (Evolution) e E-mail Webhook (Brevo)"
                 >
-                  <Send className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-sun" />
-                  <span className="hidden sm:inline">Notificar Paciente (Whats/E-mail)</span>
-                  <span className="sm:hidden">Notificar</span>
+                  <Bell className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-amber-300 shrink-0" />
+                  <span className="hidden sm:inline">Notificar</span>
                 </button>
 
                 {currentRole !== "profissional" && (
                   <button
+                    type="button"
                     onClick={async () => {
                       const link = `${window.location.origin}/?proposta=${selectedCard.id}`;
                       navigator.clipboard.writeText(link);
@@ -13662,73 +13831,84 @@ export function DashboardView({
                       if (!selectedCard.propostaStatus) {
                         await handleUpdateAcolhimentoProperty(selectedCard.id, "propostaStatus", "Proposta enviada");
                       }
-                      // Passagem automática para a 2ª coluna da Triagem
                       if (!selectedCard.status || selectedCard.status === "Aguardando Avaliação") {
                         await handleUpdateAcolhimentoProperty(selectedCard.id, "status", "Em Triagem");
                       }
                     }}
-                    className="flex items-center gap-1 bg-white hover:bg-warm text-forest font-semibold text-[10px] sm:text-xs px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg sm:rounded-xl border border-soft transition-colors shadow-2xs whitespace-nowrap"
+                    className="flex items-center gap-1 bg-white hover:bg-warm text-forest font-semibold text-[10px] sm:text-xs px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg sm:rounded-xl border border-soft transition-colors shadow-2xs whitespace-nowrap cursor-pointer"
                     title="Copiar link da proposta e mover para Aguardando aceite de proposta"
                   >
                     <Copy className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-forest/60" />
-                    <span className="hidden sm:inline">Link Proposta</span>
-                    <span className="sm:hidden">Proposta</span>
+                    <span className="hidden sm:inline">Proposta</span>
                   </button>
                 )}
 
-                <button
-                  onClick={() => {
-                    const hasContrato = Boolean(selectedCard.contratoGerado || selectedCard.contratoConteudo || selectedCard.contratoAssinado || selectedCard.statusContrato === "gerado" || selectedCard.statusContrato === "assinado");
-                    if (!hasContrato) {
-                      showToast("Por favor, clique em 'Gerar Contrato' antes de copiar ou enviar o link do contrato para o paciente.", "info");
-                      return;
-                    }
-                    const link = `${window.location.origin}/?contrato=${selectedCard.id}`;
-                    navigator.clipboard.writeText(link);
-                    showToast("Link do contrato copiado para a área de transferência!", "success");
-                  }}
-                  className="flex items-center gap-1 bg-white hover:bg-warm text-forest font-semibold text-[10px] sm:text-xs px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg sm:rounded-xl border border-soft transition-colors shadow-2xs whitespace-nowrap"
-                  title="Copiar link do contrato"
-                >
-                  <FileText className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-forest/60" />
-                  <span className="hidden sm:inline">Link Contrato</span>
-                  <span className="sm:hidden">Contrato</span>
-                </button>
+                {/* Agrupamento de Contrato Terapêutico */}
+                <div className="flex items-center gap-0.5 bg-warm/50 p-0.5 rounded-lg sm:rounded-xl border border-soft shadow-2xs shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowContratoModal(true);
+                    }}
+                    className="flex items-center gap-1 sm:gap-1.5 text-[10px] sm:text-xs font-bold text-forest hover:bg-white px-2 sm:px-2.5 py-1 sm:py-1 rounded-md sm:rounded-lg transition-colors whitespace-nowrap cursor-pointer"
+                    title="Gerenciar e enviar contrato terapêutico com aceite digital"
+                  >
+                    <FileSignature className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-700 shrink-0" />
+                    <span>{selectedCard.contratoAssinado ? "Contrato Assinado" : "Contrato"}</span>
+                    <span className={`w-2 h-2 rounded-full shrink-0 ml-0.5 ${selectedCard.contratoAssinado ? "bg-emerald-500" : "bg-amber-500"}`}></span>
+                  </button>
 
-                <button
-                  onClick={() => {
-                    setShowContratoModal(true);
-                  }}
-                  className="flex items-center gap-1 sm:gap-1.5 text-[10px] sm:text-xs font-bold text-forest bg-warm/60 hover:bg-warm px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg sm:rounded-xl border border-soft transition-colors whitespace-nowrap shadow-2xs cursor-pointer"
-                  title="Gerenciar e enviar contrato terapêutico com aceite digital"
-                >
-                  <FileSignature className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-700" />
-                  <span className="hidden sm:inline">{selectedCard.contratoAssinado ? "Ver Contrato Assinado" : "Gerar Contrato"}</span>
-                  <span className="sm:hidden">{selectedCard.contratoAssinado ? "Assinado" : "Gerar"}</span>
-                </button>
-
-                {/* Contrato Pill */}
-                <div className="hidden xs:flex items-center gap-1 px-1.5 sm:px-2.5 py-0.5 sm:py-1 bg-warm/50 border border-soft rounded-lg sm:rounded-xl text-[10px] sm:text-xs font-bold whitespace-nowrap">
-                  <div className={`w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full ${selectedCard.contratoAssinado ? "bg-green-500 animate-pulse" : "bg-amber-500"}`}></div>
-                  <span className={selectedCard.contratoAssinado ? "text-green-700" : "text-amber-700"}>
-                    {selectedCard.contratoAssinado ? "Assinado" : "Pendente"}
-                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const hasContrato = Boolean(selectedCard.contratoGerado || selectedCard.contratoConteudo || selectedCard.contratoAssinado || selectedCard.statusContrato === "gerado" || selectedCard.statusContrato === "assinado");
+                      if (!hasContrato) {
+                        showToast("Por favor, clique em 'Contrato' antes de copiar ou enviar o link para o paciente.", "info");
+                        return;
+                      }
+                      const link = `${window.location.origin}/?contrato=${selectedCard.id}`;
+                      navigator.clipboard.writeText(link);
+                      showToast("Link do contrato copiado para a área de transferência!", "success");
+                    }}
+                    className="p-1 sm:p-1.5 text-forest/70 hover:text-forest hover:bg-white rounded-md sm:rounded-lg transition-colors cursor-pointer"
+                    title="Copiar link direto do contrato terapêutico"
+                  >
+                    <Link2 className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-forest/70" />
+                  </button>
                 </div>
+
+                {/* Novo Botão: Sessões & Faturamento com Popup Dedicado */}
+                <button
+                  type="button"
+                  onClick={() => setShowFaturamentoModal(true)}
+                  className="flex items-center gap-1 sm:gap-1.5 text-[10px] sm:text-xs font-bold text-forest bg-warm/60 hover:bg-emerald-50 hover:text-emerald-900 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg sm:rounded-xl border border-soft hover:border-emerald-300 transition-colors whitespace-nowrap shadow-2xs cursor-pointer"
+                  title="Abrir popup de sessões, faturamento e recibos deste paciente"
+                >
+                  <CreditCard className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-700 shrink-0" />
+                  <span className="hidden sm:inline">Sessões & Faturamento</span>
+                  <span className="sm:hidden">Sessões</span>
+                </button>
+
+                {/* Botão Prontuário Clínico & Evoluções */}
+                <button
+                  type="button"
+                  onClick={() => setShowProntuarioModal(true)}
+                  className="flex items-center gap-1 sm:gap-1.5 text-[10px] sm:text-xs font-bold text-forest bg-warm/60 hover:bg-emerald-50 hover:text-emerald-900 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg sm:rounded-xl border border-soft hover:border-emerald-300 transition-colors whitespace-nowrap shadow-2xs cursor-pointer"
+                  title="Abrir Prontuário Clínico e registro de relatórios de sessão deste paciente"
+                >
+                  <BookOpen className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-700 shrink-0" />
+                  <span className="hidden sm:inline">Prontuário</span>
+                  <span className="sm:hidden">Prontuário</span>
+                  {Array.isArray(selectedCard.prontuarioClinico) && selectedCard.prontuarioClinico.length > 0 && (
+                    <span className="ml-0.5 px-1.5 py-0.2 text-[9px] font-bold rounded-full bg-emerald-100 text-emerald-800">
+                      {selectedCard.prontuarioClinico.length}
+                    </span>
+                  )}
+                </button>
               </div>
 
-              {/* Right Edit & Status Toggles */}
+              {/* Right Status Toggles & Desligar */}
               <div className="flex items-center gap-1 sm:gap-2 shrink-0">
-                <button
-                  onClick={() => setIsEditingCard(!isEditingCard)}
-                  className={`hidden sm:flex items-center gap-1.5 font-bold text-xs px-3.5 py-1.5 rounded-xl border transition-all shadow-2xs whitespace-nowrap ${
-                    isEditingCard
-                      ? "bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700"
-                      : "bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100"
-                  }`}
-                >
-                  <Edit3 className="w-3.5 h-3.5" />
-                  {isEditingCard ? "Salvar Edição" : "Editar Ficha"}
-                </button>
 
                 {/* Botão de Desligamento de Paciente */}
                 {(currentRole === "profissional" || currentRole === "triagem" || currentRole === "master") && (
@@ -13795,6 +13975,27 @@ export function DashboardView({
                   </div>
                 )}
               </div>
+            </div>
+
+            {/* Barra de Seções - Conectada diretamente à barra de botões */}
+            <div className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-6 py-1.5 bg-warm/35 border-b border-soft shrink-0 overflow-x-auto scrollbar-none shadow-2xs">
+              <span className="text-[9px] font-bold uppercase text-forest/50 shrink-0 flex items-center gap-1 pr-1">
+                <Compass className="w-3 h-3 text-forest/60" /> Seções:
+              </span>
+              <button type="button" onClick={() => document.getElementById('sec-1-pessoais')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} className="px-2 py-0.5 sm:py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-white hover:bg-warm border border-soft rounded-md sm:rounded-lg shrink-0 transition-colors whitespace-nowrap shadow-2xs cursor-pointer">1. Pessoais</button>
+              <button type="button" onClick={() => document.getElementById('sec-2-responsavel')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} className="px-2 py-0.5 sm:py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-white hover:bg-warm border border-soft rounded-md sm:rounded-lg shrink-0 transition-colors whitespace-nowrap shadow-2xs cursor-pointer">2. Responsável</button>
+              <button type="button" onClick={() => document.getElementById('sec-3-contato')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} className="px-2 py-0.5 sm:py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-white hover:bg-warm border border-soft rounded-md sm:rounded-lg shrink-0 transition-colors whitespace-nowrap shadow-2xs cursor-pointer">3. Contato</button>
+              {currentRole !== "profissional" && (
+                <button type="button" onClick={() => document.getElementById('sec-4-socio')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} className="px-2 py-0.5 sm:py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-white hover:bg-warm border border-soft rounded-md sm:rounded-lg shrink-0 transition-colors whitespace-nowrap shadow-2xs cursor-pointer">4. Socioeconômico</button>
+              )}
+              <button type="button" onClick={() => document.getElementById('sec-5-clinico')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} className="px-2 py-0.5 sm:py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-white hover:bg-warm border border-soft rounded-md sm:rounded-lg shrink-0 transition-colors whitespace-nowrap shadow-2xs cursor-pointer">5. Histórico</button>
+              <button type="button" onClick={() => document.getElementById('sec-6-proposta')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} className="px-2 py-0.5 sm:py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-white hover:bg-warm border border-soft rounded-md sm:rounded-lg shrink-0 transition-colors whitespace-nowrap shadow-2xs cursor-pointer">6. Proposta & Atribuição</button>
+              {currentRole !== "profissional" && (
+                <button type="button" onClick={() => document.getElementById('sec-7-resumo')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} className="px-2 py-0.5 sm:py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-white hover:bg-warm border border-soft rounded-md sm:rounded-lg shrink-0 transition-colors whitespace-nowrap shadow-2xs cursor-pointer">7. Resumo do Caso</button>
+              )}
+              <button type="button" onClick={() => document.getElementById('sec-8-registros')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} className="px-2 py-0.5 sm:py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-white hover:bg-warm border border-soft rounded-md sm:rounded-lg shrink-0 transition-colors whitespace-nowrap shadow-2xs cursor-pointer">8. Prontuário</button>
+              <button type="button" onClick={() => document.getElementById('sec-9-alertas')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} className="px-2 py-0.5 sm:py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-white hover:bg-warm border border-soft rounded-md sm:rounded-lg shrink-0 transition-colors whitespace-nowrap shadow-2xs cursor-pointer">9. Alertas</button>
+              <button type="button" onClick={() => document.getElementById('sec-10-notificacoes')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} className="px-2 py-0.5 sm:py-1 text-[10px] sm:text-[11px] font-bold text-emerald-800 hover:text-emerald-950 bg-emerald-100/90 hover:bg-emerald-200 border border-emerald-300/80 rounded-md sm:rounded-lg shrink-0 transition-colors whitespace-nowrap shadow-2xs cursor-pointer">10. Notificações</button>
             </div>
 
             {/* Modal Scrollable Body - Organized in Distinct Sections */}
@@ -13913,26 +14114,7 @@ export function DashboardView({
                 </div>
               )}
 
-              {/* Sticky Quick Jump Bar */}
-              <div className="sticky top-0 z-20 -mx-3 sm:-mx-6 lg:-mx-8 -mt-3 sm:-mt-6 lg:-mt-8 px-3 sm:px-6 py-2 bg-white/95 backdrop-blur-md border-b border-soft flex items-center gap-1.5 overflow-x-auto custom-scrollbar shadow-2xs">
-                <span className="text-[10px] font-bold uppercase text-forest/50 shrink-0 flex items-center gap-1 pr-1">
-                  <Compass className="w-3.5 h-3.5 text-forest/60" /> Seções:
-                </span>
-                <button type="button" onClick={() => document.getElementById('sec-1-pessoais')?.scrollIntoView({ behavior: 'smooth' })} className="px-2.5 py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-warm/60 hover:bg-warm rounded-lg shrink-0 transition-colors whitespace-nowrap">1. Pessoais</button>
-                <button type="button" onClick={() => document.getElementById('sec-2-responsavel')?.scrollIntoView({ behavior: 'smooth' })} className="px-2.5 py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-warm/60 hover:bg-warm rounded-lg shrink-0 transition-colors whitespace-nowrap">2. Responsável</button>
-                <button type="button" onClick={() => document.getElementById('sec-3-contato')?.scrollIntoView({ behavior: 'smooth' })} className="px-2.5 py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-warm/60 hover:bg-warm rounded-lg shrink-0 transition-colors whitespace-nowrap">3. Contato</button>
-                {currentRole !== "profissional" && (
-                  <button type="button" onClick={() => document.getElementById('sec-4-socio')?.scrollIntoView({ behavior: 'smooth' })} className="px-2.5 py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-warm/60 hover:bg-warm rounded-lg shrink-0 transition-colors whitespace-nowrap">4. Socioeconômico</button>
-                )}
-                <button type="button" onClick={() => document.getElementById('sec-5-clinico')?.scrollIntoView({ behavior: 'smooth' })} className="px-2.5 py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-warm/60 hover:bg-warm rounded-lg shrink-0 transition-colors whitespace-nowrap">5. Histórico</button>
-                <button type="button" onClick={() => document.getElementById('sec-6-proposta')?.scrollIntoView({ behavior: 'smooth' })} className="px-2.5 py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-warm/60 hover:bg-warm rounded-lg shrink-0 transition-colors whitespace-nowrap">6. Proposta & Atribuição</button>
-                {currentRole !== "profissional" && (
-                  <button type="button" onClick={() => document.getElementById('sec-7-resumo')?.scrollIntoView({ behavior: 'smooth' })} className="px-2.5 py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-warm/60 hover:bg-warm rounded-lg shrink-0 transition-colors whitespace-nowrap">7. Resumo do Caso</button>
-                )}
-                <button type="button" onClick={() => document.getElementById('sec-8-registros')?.scrollIntoView({ behavior: 'smooth' })} className="px-2.5 py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-warm/60 hover:bg-warm rounded-lg shrink-0 transition-colors whitespace-nowrap">8. Registros</button>
-                <button type="button" onClick={() => document.getElementById('sec-9-alertas')?.scrollIntoView({ behavior: 'smooth' })} className="px-2.5 py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-warm/60 hover:bg-warm rounded-lg shrink-0 transition-colors whitespace-nowrap">9. Alertas</button>
-                <button type="button" onClick={() => document.getElementById('sec-10-notificacoes')?.scrollIntoView({ behavior: 'smooth' })} className="px-2.5 py-1 text-[10px] sm:text-[11px] font-bold text-emerald-800 hover:text-emerald-950 bg-emerald-100/90 hover:bg-emerald-200 rounded-lg shrink-0 transition-colors whitespace-nowrap">10. Notificações</button>
-              </div>
+
 
               {/* 1. DADOS PESSOAIS */}
               <div id="sec-1-pessoais" className="bg-white p-4 sm:p-6 rounded-2xl border border-soft shadow-2xs space-y-4">
@@ -14119,6 +14301,12 @@ export function DashboardView({
                           <Lock className="w-3.5 h-3.5 text-amber-600" /> ••••••••••••
                         </div>
                       </div>
+                      <div className="p-3 bg-warm/30 rounded-xl border border-soft space-y-1">
+                        <span className="text-[10px] uppercase font-bold text-forest/50 block">Contato de Emergência</span>
+                        <div className="flex items-center gap-1.5 text-xs text-forest/60 font-mono">
+                          <Lock className="w-3.5 h-3.5 text-amber-600" /> ••••••••••••
+                        </div>
+                      </div>
                       <EditableField
                         label="Cidade / Estado"
                         value={selectedCard.cidadeEstado || (selectedCard.cidade ? `${selectedCard.cidade}${selectedCard.estado ? ` - ${selectedCard.estado}` : ''}` : '')}
@@ -14135,7 +14323,7 @@ export function DashboardView({
                     </div>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3.5">
                     <EditableField
                       label="E-mail"
                       value={selectedCard.email}
@@ -14147,6 +14335,14 @@ export function DashboardView({
                       label="Telefone / WhatsApp"
                       value={selectedCard.telefone}
                       field="telefone"
+                      onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
+                      isEditing={isEditingCard}
+                    />
+                    <EditableField
+                      label="Telefone / WhatsApp de Emergência"
+                      value={selectedCard.contatoEmergencia || selectedCard.telefoneEmergencia || ""}
+                      field="contatoEmergencia"
+                      placeholder="Ex: (11) 98765-4321 (Mãe/Cônjuge)"
                       onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
                       isEditing={isEditingCard}
                     />
@@ -15005,6 +15201,8 @@ export function DashboardView({
                   showToast={showToast}
                   isCorporativo={Boolean(selectedCard.empresaNome)}
                   empresaNome={selectedCard.empresaNome || ""}
+                  registrosProntuario={Array.isArray(selectedCard.prontuarioClinico) ? selectedCard.prontuarioClinico : []}
+                  onAbrirProntuarioModal={() => setShowProntuarioModal(true)}
                 />
               </div>
 
@@ -15154,25 +15352,160 @@ export function DashboardView({
               </div>
             )}
 
-              {/* 8. EVOLUÇÃO E REGISTROS CLÍNICOS COMPARTILHADOS */}
-              <div id="sec-8-registros" className="bg-white p-4 sm:p-6 rounded-2xl border border-soft shadow-2xs space-y-3">
-                <div className="flex items-center justify-between border-b border-soft pb-3">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-forest/80 flex items-center gap-2">
-                    <Clock className="w-4 h-4 text-forest" /> 8. Evolução e Registros Clínicos Compartilhados
-                  </h4>
-                  <span className="text-[10px] font-semibold text-forest/60">
-                    Histórico Clínico
-                  </span>
+              {/* 8. PRONTUÁRIO & EVOLUÇÃO CLÍNICA (AMARRADO A FATURAMENTO) */}
+              <div id="sec-8-registros" className="bg-white p-4 sm:p-6 rounded-2xl border border-soft shadow-2xs space-y-4">
+                <div className="flex items-center justify-between border-b border-soft pb-3 flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold">
+                      <BookOpen className="w-4 h-4 text-emerald-700" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-forest/90">
+                        8. Prontuário & Relatórios Clínicos de Sessão
+                      </h4>
+                      <p className="text-[11px] text-forest/60">
+                        Evoluções vinculadas às sessões de faturamento com guarda e sigilo ético (CFP/LGPD).
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full flex items-center gap-1">
+                      <ShieldCheck className="w-3 h-3 text-emerald-600" /> Sigilo Ético
+                    </span>
+
+                    <button
+                      type="button"
+                      onClick={() => setShowProntuarioModal(true)}
+                      className="px-3 py-1.5 text-xs font-bold text-white bg-emerald-700 hover:bg-emerald-800 rounded-xl transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <BookOpen className="w-3.5 h-3.5" />
+                      <span>Abrir Prontuário Completo</span>
+                    </button>
+                  </div>
                 </div>
-                <p className="text-xs text-forest/60">
-                  Anotações sobre a evolução clínica, encaminhamentos e apontamentos compartilhados com a equipe.
-                </p>
-                <DebouncedTextArea
-                  className="w-full text-sm bg-warm/30 border border-soft px-4 py-3.5 rounded-xl focus:outline-none focus:border-sun-dark resize-none h-32 leading-relaxed"
-                  placeholder="Digite as notas de evolução, observações clínicas ou registros de reuniões..."
-                  value={selectedCard.registrosDeReunioes || ""}
-                  onChange={(val) => handleUpdateAcolhimentoProperty(selectedCard.id, "registrosDeReunioes", val)}
-                />
+
+                {/* Banner de Amarração com Sessões / Faturamento */}
+                {(() => {
+                  const regs = Array.isArray(selectedCard.prontuarioClinico) ? (selectedCard.prontuarioClinico as ProntuarioRegistroItem[]) : [];
+                  const sessoes = Array.isArray(selectedCard.historicoSessoes) ? (selectedCard.historicoSessoes as SessaoFaturamentoItem[]) : [];
+                  const sessoesRealizadas = sessoes.filter((s) => s.statusAtendimento === "realizada");
+                  const sessoesComEvolucaoIds = new Set(regs.filter((r) => r.sessaoFaturamentoId).map((r) => r.sessaoFaturamentoId!));
+                  const pendentes = sessoesRealizadas.filter((s) => !sessoesComEvolucaoIds.has(s.id));
+
+                  return (
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-warm/25 p-3 rounded-xl border border-soft text-xs">
+                        <div>
+                          <span className="text-[10px] text-forest/60 font-semibold block uppercase">Total no Prontuário</span>
+                          <span className="text-sm font-bold text-forest">{regs.length} registro(s)</span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-forest/60 font-semibold block uppercase">Sessões Faturadas</span>
+                          <span className="text-sm font-bold text-forest">{sessoes.length} sessão(ões)</span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-forest/60 font-semibold block uppercase">Realizadas c/ Evolução</span>
+                          <span className="text-sm font-bold text-emerald-700">
+                            {sessoesRealizadas.length - pendentes.length} de {sessoesRealizadas.length}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-forest/60 font-semibold block uppercase">Aguardando Anotação</span>
+                          <span className={`text-sm font-bold ${pendentes.length > 0 ? "text-amber-700" : "text-emerald-700"}`}>
+                            {pendentes.length > 0 ? `${pendentes.length} pendente(s)` : "Em dia ✅"}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Lista Prévia dos Registros Recentes */}
+                      {regs.length > 0 ? (
+                        <div className="space-y-2">
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-forest/70 block">
+                            Últimas Evoluções Registradas:
+                          </span>
+                          <div className="grid grid-cols-1 gap-2">
+                            {regs.slice(0, 3).map((r) => (
+                              <div
+                                key={r.id}
+                                className="bg-warm/15 hover:bg-warm/30 border border-soft rounded-xl p-3 text-xs transition-colors space-y-1.5"
+                              >
+                                <div className="flex items-center justify-between flex-wrap gap-1">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    {r.numeroSessao ? (
+                                      <span className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-emerald-100 text-emerald-900 border border-emerald-300">
+                                        Sessão #{r.numeroSessao}
+                                      </span>
+                                    ) : (
+                                      <span className="px-2 py-0.5 text-[10px] font-medium rounded-md bg-warm/60 text-forest/70 border border-soft">
+                                        Avulso
+                                      </span>
+                                    )}
+                                    <span className="font-bold text-forest">{r.titulo}</span>
+                                    <span className="text-forest/50 text-[11px]">
+                                      • {r.dataSessao || r.dataRegistro} {r.horario ? `às ${r.horario}` : ""}
+                                    </span>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => setShowProntuarioModal(true)}
+                                    className="text-[10px] font-bold text-emerald-800 hover:text-emerald-950 underline cursor-pointer"
+                                  >
+                                    Ver no Prontuário →
+                                  </button>
+                                </div>
+
+                                <p className="text-forest/80 line-clamp-2 leading-relaxed text-[11px] font-sans">
+                                  {r.conteudo}
+                                </p>
+
+                                {r.temasAbordados && r.temasAbordados.length > 0 && (
+                                  <div className="flex flex-wrap gap-1 pt-0.5">
+                                    {r.temasAbordados.slice(0, 4).map((t) => (
+                                      <span key={t} className="text-[9px] font-semibold text-emerald-900 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
+                                        #{t}
+                                      </span>
+                                    ))}
+                                    {r.temasAbordados.length > 4 && (
+                                      <span className="text-[9px] text-forest/50">+{r.temasAbordados.length - 4}</span>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="p-4 bg-warm/20 rounded-xl border border-soft/80 text-center space-y-2">
+                          <p className="text-xs text-forest/70">
+                            Nenhum relatório ou evolução clínica registrado para este paciente ainda.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => setShowProntuarioModal(true)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-emerald-800 bg-white hover:bg-emerald-50 border border-emerald-300 rounded-xl shadow-2xs transition-colors cursor-pointer"
+                          >
+                            <Plus className="w-3.5 h-3.5 text-emerald-700" />
+                            Registrar Primeira Evolução no Prontuário
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* Bloco de Anotações Rápidas de Alinhamento / Equipe (Compatibilidade Retroativa) */}
+                <div className="pt-2 border-t border-soft/70 space-y-1.5">
+                  <label className="text-[11px] font-bold uppercase tracking-wider text-forest/70 block">
+                    Notas Rápidas de Alinhamento / Equipe (Observações Gerais):
+                  </label>
+                  <DebouncedTextArea
+                    className="w-full text-xs sm:text-sm bg-warm/30 border border-soft px-3.5 py-2.5 rounded-xl focus:outline-none focus:border-sun-dark resize-none h-24 leading-relaxed"
+                    placeholder="Notas breves de reuniões, alinhamentos da triagem ou apontamentos rápidos..."
+                    value={selectedCard.registrosDeReunioes || ""}
+                    onChange={(val) => handleUpdateAcolhimentoProperty(selectedCard.id, "registrosDeReunioes", val)}
+                  />
+                </div>
               </div>
 
               {/* 9. ALERTAS ADM E MOVIMENTAÇÕES */}
@@ -15683,6 +16016,307 @@ export function DashboardView({
                 className="px-5 py-2 bg-emerald-700 text-white rounded-full text-sm font-semibold hover:bg-emerald-800 transition-colors flex items-center gap-2"
               >
                 <CheckCircle2 className="w-4 h-4 text-sun" /> Salvar Minuta Corporativa
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Faturamento & Sessões do Paciente */}
+      {showFaturamentoModal && selectedCard && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-2 sm:p-4 bg-forest/40 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white rounded-3xl w-full max-w-5xl max-h-[92vh] flex flex-col shadow-2xl border border-soft overflow-hidden animate-in zoom-in-95">
+            {/* Modal Header */}
+            <div className="px-5 sm:px-7 py-3.5 sm:py-4 flex items-center justify-between border-b border-soft bg-warm/40 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-100 border border-emerald-300 flex items-center justify-center text-emerald-800 shadow-2xs">
+                  <CreditCard className="w-5 h-5 text-emerald-700" />
+                </div>
+                <div>
+                  <h3 className="font-serif text-lg sm:text-xl text-forest font-bold leading-tight">
+                    Sessões, Faturamento & Recibos
+                  </h3>
+                  <p className="text-xs text-forest/70">
+                    Paciente: <strong className="text-forest">{selectedCard.nome || selectedCard.nomeCompleto || "Paciente"}</strong>
+                    {selectedCard.cpf && <span> • CPF: {selectedCard.cpf}</span>}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowFaturamentoModal(false)}
+                className="p-1.5 text-forest/50 hover:text-red-500 rounded-full hover:bg-red-50 transition-colors cursor-pointer"
+                title="Fechar"
+              >
+                <XCircle className="w-6 h-6" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-4 sm:p-6 overflow-y-auto flex-1 custom-scrollbar">
+              <PacienteFaturamentoSpreadsheet
+                pacienteId={selectedCard.id}
+                pacienteNome={selectedCard.nome || (selectedCard as any).nomeCompleto || "Paciente"}
+                pacienteCpf={selectedCard.cpf || (selectedCard as any).pacienteCpf || ""}
+                pacienteTelefone={selectedCard.telefone || (selectedCard as any).whatsapp || ""}
+                pacienteEmail={selectedCard.email || ""}
+                valorSessaoPadrao={selectedCard.valorSessao || "100"}
+                frequenciaPadrao={selectedCard.frequenciaSessoes || "Semanal"}
+                sessoes={Array.isArray(selectedCard.historicoSessoes) ? selectedCard.historicoSessoes : []}
+                onSaveSessoes={async (novasSessoes) => {
+                  selectedCard.historicoSessoes = novasSessoes;
+                  await handleUpdateAcolhimentoProperty(selectedCard.id, "historicoSessoes", novasSessoes);
+                }}
+                perfilFaturamento={(selectedCard as any).perfilFaturamento || "PF"}
+                onUpdatePerfilFaturamento={async (novoPerfil) => {
+                  (selectedCard as any).perfilFaturamento = novoPerfil;
+                  await handleUpdateAcolhimentoProperty(selectedCard.id, "perfilFaturamento", novoPerfil);
+                }}
+                onSaveDadosPJ={async (novosDadosPJ) => {
+                  const targetUid = currentRole === "profissional" ? user?.uid : (selectedCard.profissionalId || user?.uid);
+                  if (!targetUid) return;
+                  await updateDoc(doc(db, "users", targetUid), {
+                    dadosPJ: novosDadosPJ,
+                    updatedAt: serverTimestamp(),
+                  });
+                  if (currentRole === "profissional") {
+                    setProfile((prev: any) => ({ ...prev, dadosPJ: novosDadosPJ }));
+                  }
+                  setAllUsers((prev) =>
+                    prev.map((u) => (u.uid === targetUid || u.id === targetUid ? { ...u, dadosPJ: novosDadosPJ } : u))
+                  );
+                }}
+                profissionalLogado={
+                  (() => {
+                    if (currentRole === "profissional") {
+                      return {
+                        uid: user?.uid,
+                        name: profile?.name || profile?.nome,
+                        nome: profile?.nome || profile?.name,
+                        crp: profile?.crp,
+                        cpf: profile?.cpf,
+                        especialidade: profile?.especialidade,
+                        chavePix: profile?.chavePix,
+                        email: profile?.email || user?.email,
+                        telefone: profile?.telefone,
+                        dadosPJ: profile?.dadosPJ,
+                      };
+                    }
+                    const matchedProf = allUsers.find(
+                      (u) => u.uid === selectedCard.profissionalId || u.id === selectedCard.profissionalId
+                    );
+                    return {
+                      uid: matchedProf?.uid || matchedProf?.id || user?.uid,
+                      name: matchedProf?.name || matchedProf?.nome || profile?.name,
+                      nome: matchedProf?.nome || matchedProf?.name || profile?.nome,
+                      crp: matchedProf?.crp || profile?.crp,
+                      cpf: matchedProf?.cpf || profile?.cpf,
+                      especialidade: matchedProf?.especialidade || profile?.especialidade,
+                      chavePix: matchedProf?.chavePix || profile?.chavePix,
+                      email: matchedProf?.email || profile?.email,
+                      telefone: matchedProf?.telefone || profile?.telefone,
+                      dadosPJ: matchedProf?.dadosPJ,
+                    };
+                  })()
+                }
+                showToast={showToast}
+                registrosProntuario={Array.isArray(selectedCard.prontuarioClinico) ? selectedCard.prontuarioClinico : []}
+                onAbrirProntuarioModal={() => {
+                  setShowFaturamentoModal(false);
+                  setShowProntuarioModal(true);
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Prontuário Clínico & Evoluções de Sessão */}
+      {showProntuarioModal && selectedCard && (
+        <PacienteProntuarioModal
+          isOpen={showProntuarioModal}
+          onClose={() => setShowProntuarioModal(false)}
+          pacienteId={selectedCard.id}
+          pacienteNome={selectedCard.nome || (selectedCard as any).nomeCompleto || "Paciente"}
+          pacienteCpf={selectedCard.cpf || (selectedCard as any).pacienteCpf || ""}
+          pacienteDataNascimento={selectedCard.dataNascimento || (selectedCard as any).nascimento || ""}
+          pacienteTelefone={selectedCard.telefone || (selectedCard as any).whatsapp || ""}
+          sessoes={Array.isArray(selectedCard.historicoSessoes) ? selectedCard.historicoSessoes : []}
+          onSaveSessoes={async (novasSessoes) => {
+            selectedCard.historicoSessoes = novasSessoes;
+            await handleUpdateAcolhimentoProperty(selectedCard.id, "historicoSessoes", novasSessoes);
+          }}
+          registros={Array.isArray(selectedCard.prontuarioClinico) ? selectedCard.prontuarioClinico : []}
+          onSaveRegistros={async (novosRegistros) => {
+            selectedCard.prontuarioClinico = novosRegistros;
+            await handleUpdateAcolhimentoProperty(selectedCard.id, "prontuarioClinico", novosRegistros);
+          }}
+          onAbrirFaturamento={() => {
+            setShowProntuarioModal(false);
+            setShowFaturamentoModal(true);
+          }}
+          profissionalLogado={
+            (() => {
+              if (currentRole === "profissional") {
+                return {
+                  uid: user?.uid,
+                  nome: profile?.nome || profile?.name || user?.displayName || "Profissional",
+                  name: profile?.name || profile?.nome || user?.displayName || "Profissional",
+                  crp: profile?.crp || "",
+                };
+              }
+              const matchedProf = allUsers.find(
+                (u) => u.uid === selectedCard.profissionalId || u.id === selectedCard.profissionalId
+              );
+              return {
+                uid: matchedProf?.uid || matchedProf?.id || user?.uid,
+                nome: matchedProf?.nome || matchedProf?.name || profile?.nome || "Profissional",
+                name: matchedProf?.name || matchedProf?.nome || profile?.name || "Profissional",
+                crp: matchedProf?.crp || profile?.crp || "",
+              };
+            })()
+          }
+          showToast={showToast}
+        />
+      )}
+
+      {/* Modal de Quadro de Alertas e Pendências do Paciente */}
+      {showPendenciasModal && selectedCard && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-3 sm:p-4 bg-forest/40 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white rounded-3xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl border border-soft overflow-hidden animate-in zoom-in-95">
+            {/* Header */}
+            <div className="px-6 py-4 flex items-center justify-between border-b border-soft bg-warm/50 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-100 border border-amber-300 flex items-center justify-center text-amber-800 shadow-2xs">
+                  <AlertTriangle className="w-5 h-5 text-amber-700" />
+                </div>
+                <div>
+                  <h3 className="font-serif text-lg sm:text-xl text-forest font-bold">
+                    Quadro de Alertas e Pendências
+                  </h3>
+                  <p className="text-xs text-forest/70">
+                    Paciente: <strong>{selectedCard.nome || selectedCard.nomeCompleto || "Paciente"}</strong>
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPendenciasModal(false)}
+                className="p-1.5 text-forest/50 hover:text-red-500 rounded-full hover:bg-red-50 transition-colors cursor-pointer"
+                title="Fechar"
+              >
+                <XCircle className="w-6 h-6" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-6 overflow-y-auto flex-1 space-y-4 custom-scrollbar">
+              {(() => {
+                const pendencias = getPatientPendingItems(selectedCard, currentRole);
+                if (pendencias.length === 0) {
+                  return (
+                    <div className="p-8 text-center bg-emerald-50/60 rounded-2xl border border-emerald-200">
+                      <CheckCircle2 className="w-12 h-12 text-emerald-600 mx-auto mb-3" />
+                      <h4 className="font-serif text-lg font-bold text-emerald-950 mb-1">
+                        Cadastro 100% Completo!
+                      </h4>
+                      <p className="text-xs text-emerald-800 max-w-md mx-auto">
+                        Não há pendências cadastrais, contratuais ou alertas ativos para este paciente. Todos os dados essenciais estão preenchidos e validados.
+                      </p>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="space-y-3">
+                    <div className="text-xs text-forest/70 font-medium">
+                      Foram identificados <strong>{pendencias.length}</strong> {pendencias.length === 1 ? "item pendente" : "itens pendentes"} que requerem atenção:
+                    </div>
+
+                    {pendencias.map((item) => (
+                      <div
+                        key={item.id}
+                        className={`p-4 rounded-2xl border transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 ${
+                          item.severity === "high"
+                            ? "bg-rose-50/70 border-rose-200"
+                            : item.severity === "medium"
+                            ? "bg-amber-50/70 border-amber-200"
+                            : "bg-slate-50 border-slate-200"
+                        }`}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span
+                              className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md ${
+                                item.severity === "high"
+                                  ? "bg-rose-200 text-rose-900"
+                                  : item.severity === "medium"
+                                  ? "bg-amber-200 text-amber-900"
+                                  : "bg-slate-200 text-slate-800"
+                              }`}
+                            >
+                              {item.shortLabel}
+                            </span>
+                            <h5 className="font-bold text-sm text-forest">{item.title}</h5>
+                          </div>
+                          <p className="text-xs text-forest/80 leading-relaxed">{item.description}</p>
+                        </div>
+
+                        {item.actionType && (
+                          <div className="shrink-0">
+                            {item.actionType === "contrato" && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setShowPendenciasModal(false);
+                                  setShowContratoModal(true);
+                                }}
+                                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-2xs whitespace-nowrap cursor-pointer"
+                              >
+                                {item.actionText || "Gerenciar Contrato"}
+                              </button>
+                            )}
+                            {item.actionType === "completar_cadastro" && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setShowPendenciasModal(false);
+                                  setIsEditingCard(true);
+                                }}
+                                className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition-all shadow-2xs whitespace-nowrap cursor-pointer"
+                              >
+                                {item.actionText || "Completar na Ficha"}
+                              </button>
+                            )}
+                            {item.actionType === "aceitar_atribuicao" && (
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  await handleProfAcceptPaciente(selectedCard as any);
+                                  setShowPendenciasModal(false);
+                                }}
+                                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-2xs whitespace-nowrap cursor-pointer"
+                              >
+                                {item.actionText || "Aceitar Encaminhamento"}
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-3 border-t border-soft bg-warm/30 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowPendenciasModal(false)}
+                className="px-4 py-2 bg-forest text-white rounded-xl text-xs font-bold hover:bg-forest/90 transition-colors cursor-pointer"
+              >
+                Fechar
               </button>
             </div>
           </div>

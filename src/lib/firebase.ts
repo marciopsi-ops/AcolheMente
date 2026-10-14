@@ -6,11 +6,31 @@ import firebaseConfig from '../../firebase-applet-config.json';
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
 const dbId = (firebaseConfig as any).firestoreDatabaseId || "ai-studio-f37c289b-aa59-4c44-bb8c-93208cbac09b";
-let firestoreDb;
+let firestoreDb: any = null;
 try {
-  firestoreDb = initializeFirestore(app, { experimentalAutoDetectLongPolling: true }, dbId);
-} catch {
-  firestoreDb = getFirestore(app, dbId);
+  if (dbId && dbId !== '(default)') {
+    try {
+      firestoreDb = initializeFirestore(app, {
+        experimentalAutoDetectLongPolling: true,
+      }, dbId);
+    } catch {
+      try {
+        firestoreDb = getFirestore(app, dbId);
+      } catch {
+        firestoreDb = getFirestore(app);
+      }
+    }
+  } else {
+    firestoreDb = getFirestore(app);
+  }
+} catch (err) {
+  console.warn("Aviso ao inicializar Firestore:", err);
+  try {
+    firestoreDb = getFirestore(app);
+  } catch (finalErr) {
+    console.error("Firestore não disponível:", finalErr);
+    firestoreDb = null;
+  }
 }
 
 export const db = firestoreDb;
@@ -19,16 +39,6 @@ export const auth = getAuth(app);
 // In the AI Studio iframe environment, third-party cookies/IndexedDB might be restricted.
 // Using localStorage (browserLocalPersistence) improves session stability.
 setPersistence(auth, browserLocalPersistence).catch(console.error);
-
-// Validate connection to Firestore gently without throwing blocking errors
-async function testConnection() {
-  try {
-    await getDoc(doc(db, 'configuracoes', 'master'));
-  } catch (error) {
-    console.info("Firestore client connection status:", error instanceof Error ? error.message : String(error));
-  }
-}
-testConnection();
 
 export enum OperationType {
   CREATE = 'create',

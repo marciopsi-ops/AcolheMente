@@ -1219,6 +1219,12 @@ const ModalFichaBordoDetalhes: React.FC<ModalFichaBordoProps> = ({
     ficha.colaboradorWhatsapp ||
     ""
   );
+  const [formTelefoneEmergencia, setFormTelefoneEmergencia] = useState(
+    (ficha as any).contatoEmergencia ||
+    (ficha as any).telefoneEmergencia ||
+    (ficha as any).colaboradorContatoEmergencia ||
+    ""
+  );
 
   const handleSalvarDadosFaturamentoManualmente = async () => {
     setSalvandoDados(true);
@@ -1229,6 +1235,9 @@ const ModalFichaBordoDetalhes: React.FC<ModalFichaBordoProps> = ({
         pacienteDataNascimento: formDataNasc,
         pacienteEmail: formEmail.trim().toLowerCase(),
         pacienteTelefone: formTelefone.trim(),
+        contatoEmergencia: formTelefoneEmergencia.trim(),
+        telefoneEmergencia: formTelefoneEmergencia.trim(),
+        colaboradorContatoEmergencia: formTelefoneEmergencia.trim(),
         colaboradorEmail: formEmail.trim().toLowerCase(),
         colaboradorDataNascimento: formDataNasc,
         cpf: formCpf.trim(),
@@ -1531,7 +1540,7 @@ const ModalFichaBordoDetalhes: React.FC<ModalFichaBordoProps> = ({
 
             {/* MODO VISUALIZAÇÃO DOS DADOS */}
             {!editandoDados ? (
-              <div className="bg-white/95 p-3.5 sm:p-4 rounded-xl border border-emerald-200/90 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-3 text-xs shadow-2xs">
+              <div className="bg-white/95 p-3.5 sm:p-4 rounded-xl border border-emerald-200/90 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2.5 sm:gap-3 text-xs shadow-2xs">
                 <div>
                   <span className="text-[10px] text-forest/60 uppercase font-bold tracking-wider block">Nome do Tomador</span>
                   <span className="font-bold text-forest truncate block" title={formNome || "Não informado"}>
@@ -1554,9 +1563,27 @@ const ModalFichaBordoDetalhes: React.FC<ModalFichaBordoProps> = ({
                 </div>
 
                 <div>
-                  <span className="text-[10px] text-forest/60 uppercase font-bold tracking-wider block">E-mail para Recibo</span>
+                  <span className="text-[10px] text-forest/60 uppercase font-bold tracking-wider block">E-mail</span>
                   <span className="font-medium text-forest truncate block" title={formEmail || "Não informado"}>
                     {formEmail || <span className="text-forest/40 text-[11px]">Não informado</span>}
+                  </span>
+                </div>
+
+                <div>
+                  <span className="text-[10px] text-forest/60 uppercase font-bold tracking-wider block">Telefone / WhatsApp</span>
+                  <span className="font-medium text-forest truncate block" title={formTelefone || "Não informado"}>
+                    {formTelefone || <span className="text-forest/40 text-[11px]">Não informado</span>}
+                  </span>
+                </div>
+
+                <div>
+                  <span className="text-[10px] text-forest/60 uppercase font-bold tracking-wider block">Contato de Emergência</span>
+                  <span className="font-medium text-forest truncate block" title={formTelefoneEmergencia || "Não informado"}>
+                    {formTelefoneEmergencia ? (
+                      <span className="font-semibold text-rose-800">{formTelefoneEmergencia}</span>
+                    ) : (
+                      <span className="text-forest/40 text-[11px]">Não informado</span>
+                    )}
                   </span>
                 </div>
               </div>
@@ -1568,7 +1595,7 @@ const ModalFichaBordoDetalhes: React.FC<ModalFichaBordoProps> = ({
                   <span className="text-[10px] text-forest/60">Preencha diretamente se o paciente informar por mensagem</span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   <div>
                     <label className="text-[11px] font-bold text-forest/70 block mb-1">Nome Completo do Paciente *</label>
                     <input
@@ -1611,13 +1638,24 @@ const ModalFichaBordoDetalhes: React.FC<ModalFichaBordoProps> = ({
                     />
                   </div>
 
-                  <div className="sm:col-span-2">
+                  <div>
                     <label className="text-[11px] font-bold text-forest/70 block mb-1">Telefone / WhatsApp</label>
                     <input
                       type="text"
                       value={formTelefone}
                       onChange={(e) => setFormTelefone(e.target.value)}
                       placeholder="(11) 99999-9999"
+                      className="w-full px-3 py-1.5 rounded-lg border border-soft text-forest text-xs outline-none focus:border-emerald-600"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-bold text-forest/70 block mb-1">Telefone / WhatsApp de Emergência</label>
+                    <input
+                      type="text"
+                      value={formTelefoneEmergencia}
+                      onChange={(e) => setFormTelefoneEmergencia(e.target.value)}
+                      placeholder="Ex: (11) 98765-4321 (Mãe/Cônjuge)"
                       className="w-full px-3 py-1.5 rounded-lg border border-soft text-forest text-xs outline-none focus:border-emerald-600"
                     />
                   </div>

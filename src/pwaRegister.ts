@@ -2,6 +2,20 @@
 
 export function registerServiceWorker() {
   if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+    // Em ambientes de iframe/sandbox ou preview do AI Studio, o navegador bloqueia Service Workers
+    const isInsideIframe = (() => {
+      try {
+        return window.self !== window.top;
+      } catch {
+        return true;
+      }
+    })();
+
+    if (isInsideIframe) {
+      console.info('[PWA] Registro de Service Worker ignorado em ambiente iframe/sandbox.');
+      return;
+    }
+
     window.addEventListener('load', () => {
       navigator.serviceWorker
         .register('/sw.js')
@@ -9,7 +23,7 @@ export function registerServiceWorker() {
           console.log('[PWA] Service Worker registrado com sucesso:', registration.scope);
         })
         .catch((error) => {
-          console.error('[PWA] Falha ao registrar Service Worker:', error);
+          console.info('[PWA] Registro de Service Worker indisponível neste contexto:', error?.message || error);
         });
     });
   }

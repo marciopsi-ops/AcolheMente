@@ -24,6 +24,7 @@ import {
   Settings,
   Check,
   FileSpreadsheet,
+  BookOpen,
 } from "lucide-react";
 
 export interface SessaoFaturamentoItem {
@@ -82,6 +83,13 @@ export interface PacienteFaturamentoSpreadsheetProps {
   showToast: (msg: string, type?: "success" | "error" | "info" | "warning") => void;
   isCorporativo?: boolean;
   empresaNome?: string;
+  registrosProntuario?: {
+    id: string;
+    sessaoFaturamentoId?: string;
+    numeroSessao?: number;
+    titulo?: string;
+  }[];
+  onAbrirProntuarioModal?: (sessaoId?: string) => void;
 }
 
 export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreadsheetProps> = ({
@@ -101,6 +109,8 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
   showToast,
   isCorporativo = false,
   empresaNome = "",
+  registrosProntuario = [],
+  onAbrirProntuarioModal,
 }) => {
   // Parse numeric base session value
   const parseValorNumerico = (v: any): number => {
@@ -602,6 +612,19 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
             </div>
           )}
 
+          {onAbrirProntuarioModal && (
+            <button
+              type="button"
+              onClick={() => onAbrirProntuarioModal()}
+              className="px-2.5 py-1 sm:px-3 sm:py-1.5 bg-white hover:bg-emerald-50 text-emerald-900 border border-soft hover:border-emerald-300 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer whitespace-nowrap"
+              title="Abrir o Prontuário Clínico e anotações deste paciente"
+            >
+              <BookOpen className="w-3.5 h-3.5 text-emerald-700" />
+              <span className="hidden sm:inline">Prontuário Clínico</span>
+              <span className="sm:hidden">Prontuário</span>
+            </button>
+          )}
+
           <button
             type="button"
             onClick={handleAdicionarSessao}
@@ -845,6 +868,31 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
                   {/* Ações por Linha: Replicar, Recibo, Excluir */}
                   <td className="py-2 px-3 text-right">
                     <div className="flex items-center justify-end gap-1">
+                      {/* BOTÃO PRONTUÁRIO / EVOLUÇÃO CLÍNICA DA SESSÃO */}
+                      {onAbrirProntuarioModal && (() => {
+                        const hasEvolucao = registrosProntuario?.some(
+                          (r) => r.sessaoFaturamentoId === sessao.id || (r.numeroSessao !== undefined && r.numeroSessao === sessao.numeroSessao)
+                        );
+                        return (
+                          <button
+                            type="button"
+                            onClick={() => onAbrirProntuarioModal(sessao.id)}
+                            className={`p-1 rounded-lg transition-colors cursor-pointer ${
+                              hasEvolucao
+                                ? "hover:bg-emerald-100 text-emerald-800 bg-emerald-50"
+                                : "hover:bg-warm text-forest/40 hover:text-emerald-700"
+                            }`}
+                            title={
+                              hasEvolucao
+                                ? `Evolução clínica vinculada à Sessão #${sessao.numeroSessao} (Clique para ver/editar)`
+                                : `Registrar anotação/evolução para a Sessão #${sessao.numeroSessao} no Prontuário`
+                            }
+                          >
+                            <BookOpen className="w-3.5 h-3.5" />
+                          </button>
+                        );
+                      })()}
+
                       {/* BOTÃO REPLICAR / DUPLICAR SESSÃO */}
                       <button
                         type="button"

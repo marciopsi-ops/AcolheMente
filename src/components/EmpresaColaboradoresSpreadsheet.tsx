@@ -211,6 +211,7 @@ export const EmpresaColaboradoresSpreadsheet: React.FC<EmpresaColaboradoresSprea
   };
 
   // DOWNLOAD DA PLANILHA (.XLSX OU .CSV) COMPATÍVEL COM EXCEL
+  // DOWNLOAD DA PLANILHA (.XLSX OU .CSV) COMPATÍVEL COM EXCEL (PADRÃO LIMPO: NÚMEROS DIRETOS SEM PONTOS OU TRAÇOS)
   const handleDownloadPlanilha = (formato: "xlsx" | "csv" = "xlsx") => {
     try {
       if (colaboradores.length === 0) {
@@ -221,14 +222,14 @@ export const EmpresaColaboradoresSpreadsheet: React.FC<EmpresaColaboradoresSprea
       const dataToExport = colaboradores.map((c) => ({
         Tipo: c.tipo === "dependente" ? "Dependente" : "Titular",
         "Nome Completo": c.nomeCompleto || "",
-        CPF: c.cpf || "",
+        CPF: (c.cpf || "").replace(/\D/g, ""), // Padrão limpo: apenas os 11 números sem pontuação
         Cargo: c.cargo || "",
         "Faixa Salarial": c.faixaSalarial || "",
         "Data de Nascimento": c.dataNascimento || "",
         "Nome da Mãe": c.nomeMae || "",
         "Data de Admissão": c.dataAdmissao || "",
-        Email: c.email || "",
-        Telefone: c.telefone || "",
+        Email: (c.email || "").trim(),
+        Telefone: (c.telefone || "").replace(/\D/g, ""), // Padrão limpo: DDD + número sem parênteses nem traços
         "Titular Vinculado": c.titularVinculado || "",
         Parentesco: c.parentesco || "",
         Status: c.status === "desligado" || c.desligado ? "Desligado" : "Ativo",
@@ -242,28 +243,28 @@ export const EmpresaColaboradoresSpreadsheet: React.FC<EmpresaColaboradoresSprea
       const cleanName = (empresaNome || "Empresa").replace(/[^a-zA-Z0-9]/g, "_");
       const nomeArquivo = `Quadro_Colaboradores_${cleanName}_${new Date().toISOString().split("T")[0]}.${formato}`;
       XLSX.writeFile(workbook, nomeArquivo, { bookType: formato });
-      if (onShowToast) onShowToast(`Planilha ${formato.toUpperCase()} exportada com sucesso!`, "success");
+      if (onShowToast) onShowToast(`Planilha ${formato.toUpperCase()} exportada com sucesso (padrão numérico limpo)!`, "success");
     } catch (err) {
       console.error("Erro ao gerar planilha:", err);
       if (onShowToast) onShowToast("Erro ao exportar planilha.", "error");
     }
   };
 
-  // DOWNLOAD DE MODELO EM BRANCO (.XLSX)
+  // DOWNLOAD DE MODELO EM BRANCO (.XLSX) COM PADRÃO LIMPO E ABA DE INSTRUÇÕES
   const handleDownloadModeloPlanilha = () => {
     try {
       const modelo = [
         {
           Tipo: "Titular",
           "Nome Completo": "Exemplo da Silva",
-          CPF: "000.000.000-00",
+          CPF: "12345678901", // Padrão limpo: 11 dígitos, sem pontos nem traço
           Cargo: "Analista de Operações",
           "Faixa Salarial": "R$ 3.001 a R$ 5.000",
           "Data de Nascimento": "1990-05-15",
           "Nome da Mãe": "Maria da Silva",
           "Data de Admissão": "2023-01-10",
           Email: "exemplo@empresa.com",
-          Telefone: "(11) 99999-9999",
+          Telefone: "11999999999", // Padrão limpo: DDD + número, sem parênteses nem traço
           "Titular Vinculado": "",
           Parentesco: "",
           Status: "Ativo",
@@ -271,32 +272,75 @@ export const EmpresaColaboradoresSpreadsheet: React.FC<EmpresaColaboradoresSprea
         {
           Tipo: "Dependente",
           "Nome Completo": "Filho do Exemplo da Silva",
-          CPF: "111.111.111-11",
+          CPF: "98765432100", // Padrão limpo: 11 dígitos, sem pontos nem traço
           Cargo: "",
           "Faixa Salarial": "",
           "Data de Nascimento": "2015-08-20",
           "Nome da Mãe": "Esposa do Exemplo",
           "Data de Admissão": "",
           Email: "contato@familia.com",
-          Telefone: "(11) 99999-9999",
+          Telefone: "11999999999", // Padrão limpo: DDD + número
           "Titular Vinculado": "Exemplo da Silva",
           Parentesco: "Filho(a)",
           Status: "Ativo",
         },
       ];
 
-      const worksheet = XLSX.utils.json_to_sheet(modelo);
+      const instrucoes = [
+        {
+          Coluna: "Tipo",
+          Formato: "Texto",
+          "Regra de Preenchimento": "Preencha 'Titular' para o funcionário ou 'Dependente' para familiares vinculados.",
+          Exemplo: "Titular ou Dependente",
+        },
+        {
+          Coluna: "Nome Completo",
+          Formato: "Texto",
+          "Regra de Preenchimento": "Nome completo do colaborador ou dependente.",
+          Exemplo: "Maria Eduarda Santos",
+        },
+        {
+          Coluna: "CPF",
+          Formato: "Apenas Números (11 dígitos)",
+          "Regra de Preenchimento": "PADRÃO LIMPO: Apenas os 11 números, SEM PONTOS e SEM TRAÇO. (O sistema também aceita e sanitiza se contiver pontuação).",
+          Exemplo: "12345678901",
+        },
+        {
+          Coluna: "Telefone",
+          Formato: "Apenas Números (10 ou 11 dígitos)",
+          "Regra de Preenchimento": "PADRÃO LIMPO: Apenas números com DDD, sem parênteses nem traços.",
+          Exemplo: "11987654321",
+        },
+        {
+          Coluna: "Data de Nascimento e Admissão",
+          Formato: "Data (AAAA-MM-DD)",
+          "Regra de Preenchimento": "Formato AAAA-MM-DD ou DD/MM/AAAA.",
+          Exemplo: "1992-07-25",
+        },
+        {
+          Coluna: "Titular Vinculado",
+          Formato: "Texto (para dependentes)",
+          "Regra de Preenchimento": "Nome ou CPF do colaborador titular ao qual o dependente está associado.",
+          Exemplo: "Exemplo da Silva",
+        },
+      ];
+
+      const worksheetModelo = XLSX.utils.json_to_sheet(modelo);
+      const worksheetInstrucoes = XLSX.utils.json_to_sheet(instrucoes);
       const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, "Modelo de Importação");
+
+      XLSX.utils.book_append_sheet(workbook, worksheetModelo, "Modelo de Importação");
+      XLSX.utils.book_append_sheet(workbook, worksheetInstrucoes, "Instruções");
+
       XLSX.writeFile(workbook, "Modelo_Importacao_Colaboradores_AcolheMente.xlsx");
-      if (onShowToast) onShowToast("Modelo baixado! Preencha e faça o upload.", "info");
+      if (onShowToast) onShowToast("Modelo limpo baixado! Preencha apenas com números no CPF e Telefone.", "info");
     } catch (err) {
       console.error("Erro ao baixar modelo:", err);
       if (onShowToast) onShowToast("Erro ao gerar modelo de planilha.", "error");
     }
   };
 
-  // UPLOAD E LEITURA DA PLANILHA COM XLSX (COMPATÍVEL COM EXCEL .XLSX, .XLS, .CSV)
+  // UPLOAD E LEITURA DA PLANILHA COM XLSX (COMPATÍVEL COM EXCEL .XLSX, .XLS, .CSV E TOLERÂNCIA TOTAL A MÁSCARAS)
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -316,15 +360,48 @@ export const EmpresaColaboradoresSpreadsheet: React.FC<EmpresaColaboradoresSprea
           return;
         }
 
-        // Normalização dos campos com suporte a múltiplos sinônimos
+        // Helper para normalizar datas de múltiplos formatos (Excel serial, YYYY-MM-DD, DD/MM/AAAA ou DDMMAAAA)
+        const parseDateClean = (raw: any): string => {
+          if (!raw) return "";
+          if (typeof raw === "number") {
+            try {
+              const d = new Date(Math.round((raw - 25569) * 86400 * 1000));
+              return d.toISOString().split("T")[0];
+            } catch {
+              return String(raw);
+            }
+          }
+          const str = String(raw).trim();
+          const matchDdmmyyyy = str.match(/^(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{4})$/);
+          if (matchDdmmyyyy) {
+            return `${matchDdmmyyyy[3]}-${matchDdmmyyyy[2].padStart(2, "0")}-${matchDdmmyyyy[1].padStart(2, "0")}`;
+          }
+          if (/^\d{8}$/.test(str)) {
+            const dia = str.slice(0, 2);
+            const mes = str.slice(2, 4);
+            const ano = str.slice(4, 8);
+            if (parseInt(ano, 10) >= 1920 && parseInt(ano, 10) <= 2040) {
+              return `${ano}-${mes}-${dia}`;
+            }
+          }
+          return str;
+        };
+
+        // Normalização dos campos: tolerância máxima a pontuação (limpa automaticamente caso venham com máscara)
         const parsed: ColaboradorItem[] = rawJson
           .map((row: any, idx: number) => {
             const nome = row["Nome Completo"] || row["Nome"] || row["nome"] || row["NOME"] || "";
-            const rawCpf = String(row["CPF"] || row["cpf"] || row["Cpf"] || "").replace(/\D/g, "");
+            // Extrai apenas dígitos numéricos para o CPF
+            const cleanCpf = String(row["CPF"] || row["cpf"] || row["Cpf"] || "").replace(/\D/g, "");
             const formatCpf =
-              rawCpf.length === 11
-                ? rawCpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4")
-                : rawCpf;
+              cleanCpf.length === 11
+                ? cleanCpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4")
+                : cleanCpf;
+
+            // Extrai apenas dígitos numéricos para o Telefone
+            const cleanTel = String(row["Telefone"] || row["Celular"] || row["telefone"] || row["WhatsApp"] || "").replace(/\D/g, "");
+            const formatTel = formatPhone(cleanTel);
+
             const tipoRaw = String(row["Tipo"] || row["tipo"] || "Titular").toLowerCase();
             const tipo: "titular" | "dependente" = tipoRaw.includes("dep") ? "dependente" : "titular";
             const cargo =
@@ -348,14 +425,14 @@ export const EmpresaColaboradoresSpreadsheet: React.FC<EmpresaColaboradoresSprea
               id: `colab_up_${Date.now()}_${idx}`,
               tipo,
               nomeCompleto: String(nome).trim(),
-              cpf: formatCpf || `S/CPF_${idx + 1}`,
+              cpf: formatCpf || (cleanCpf ? cleanCpf : `S/CPF_${idx + 1}`),
               cargo,
               faixaSalarial,
-              dataNascimento: String(row["Data de Nascimento"] || row["Nascimento"] || row["dataNascimento"] || ""),
+              dataNascimento: parseDateClean(row["Data de Nascimento"] || row["Nascimento"] || row["dataNascimento"]),
               nomeMae: String(row["Nome da Mãe"] || row["Nome Mae"] || row["nomeMae"] || ""),
-              dataAdmissao: String(row["Data de Admissão"] || row["Admissão"] || row["dataAdmissao"] || ""),
-              email: String(row["Email"] || row["E-mail"] || row["email"] || ""),
-              telefone: String(row["Telefone"] || row["Celular"] || row["telefone"] || ""),
+              dataAdmissao: parseDateClean(row["Data de Admissão"] || row["Admissão"] || row["dataAdmissao"]),
+              email: String(row["Email"] || row["E-mail"] || row["email"] || "").trim().toLowerCase(),
+              telefone: formatTel || cleanTel,
               titularVinculado: String(row["Titular Vinculado"] || row["Titular"] || ""),
               parentesco: String(row["Parentesco"] || row["Grau"] || (tipo === "dependente" ? "Dependente" : "")),
               status: "ativo",
@@ -1184,11 +1261,10 @@ export const EmpresaColaboradoresSpreadsheet: React.FC<EmpresaColaboradoresSprea
                   diretamente no campo abaixo, ou carregar um arquivo <strong>.CSV</strong>.
                 </p>
                 <div className="bg-white/80 p-2.5 rounded-xl border border-blue-200/80 font-mono text-[10px] space-y-1">
-                  <span className="font-bold block text-blue-950">Ordem esperada das colunas:</span>
-                  <span>Nome Completo | CPF | Nascimento | Nome da Mãe | Admissão | E-mail | Telefone</span>
+                  <span className="font-bold block text-blue-950">Ordem esperada das colunas (Padrão Limpo sem pontuação):</span>
+                  <span>Nome Completo | CPF (11 dígitos) | Nascimento (AAAA-MM-DD) | Nome da Mãe | Admissão | E-mail | Telefone (DDD + dígitos)</span>
                   <span className="block text-blue-800/70 italic text-[9px]">
-                    * Se a primeira coluna for "Titular" ou "Dependente", o sistema identificará o tipo
-                    automaticamente!
+                    * Preencha CPF e Telefone apenas com números (sem pontos, traços ou parênteses). Se colar com máscara, o sistema sanitizará automaticamente.
                   </span>
                 </div>
               </div>
@@ -1199,7 +1275,7 @@ export const EmpresaColaboradoresSpreadsheet: React.FC<EmpresaColaboradoresSprea
                 </label>
                 <textarea
                   rows={7}
-                  placeholder={`João Silva\t123.456.789-00\t15/05/1988\tMaria Silva\t01/02/2022\tjoao@empresa.com\t(11) 99999-1111\nAna Souza\t987.654.321-99\t20/10/1992\tClara Souza\t10/05/2023\tana@empresa.com\t(11) 99999-2222`}
+                  placeholder={`João Silva\t12345678901\t1988-05-15\tMaria Silva\t2022-02-01\tjoao@empresa.com\t11999991111\nAna Souza\t98765432100\t1992-10-20\tClara Souza\t2023-05-10\tana@empresa.com\t11999992222`}
                   value={importText}
                   onChange={(e) => setImportText(e.target.value)}
                   className="w-full text-xs font-mono bg-warm/30 border border-soft p-3 rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white resize-none"

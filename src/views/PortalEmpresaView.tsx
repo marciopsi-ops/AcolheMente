@@ -1114,18 +1114,22 @@ export function PortalEmpresaView({
   // DOWNLOAD DA PLANILHA (.XLSX)
   const handleDownloadPlanilha = (formato: "xlsx" | "csv" = "xlsx") => {
     try {
+      if (colaboradoresList.length === 0) {
+        showToast("Nenhum colaborador cadastrado para exportar.", "info");
+        return;
+      }
       const dataToExport = colaboradoresList.map((c) => ({
         Tipo: c.tipo === "dependente" ? "Dependente" : "Titular",
-        "Nome Completo": c.nomeCompleto || "",
-        CPF: c.cpf || "",
+        "Nome Completo": (c.nomeCompleto || "").trim(),
+        CPF: (c.cpf || "").replace(/\D/g, ""), // Padrão limpo: apenas os 11 números sem pontuação
         Cargo: c.cargo || "",
         "Faixa Salarial": c.faixaSalarial || "",
         "Data de Nascimento": c.dataNascimento || "",
-        "Nome da Mãe": c.nomeMae || "",
+        "Nome da Mãe": (c.nomeMae || "").trim(),
         "Data de Admissão": c.dataAdmissao || "",
-        Email: c.email || "",
-        Telefone: c.telefone || "",
-        "Titular Vinculado": c.titularVinculado || "",
+        Email: (c.email || "").trim(),
+        Telefone: (c.telefone || "").replace(/\D/g, ""), // Padrão limpo: DDD + número sem parênteses nem traços
+        "Titular Vinculado": (c.titularVinculado || "").trim(),
         Parentesco: c.parentesco || "",
         Status: c.status === "desligado" ? "Desligado" : "Ativo",
         "Data Desligamento": c.dataDesligamento || "",
@@ -1137,28 +1141,28 @@ export function PortalEmpresaView({
 
       const nomeArquivo = `Quadro_Colaboradores_${(empresaAtiva?.nomeEmpresa || "Empresa").replace(/\s+/g, "_")}_${new Date().toISOString().split("T")[0]}.${formato}`;
       XLSX.writeFile(workbook, nomeArquivo, { bookType: formato });
-      showToast(`Planilha ${formato.toUpperCase()} exportada com sucesso!`, "success");
+      showToast(`Planilha ${formato.toUpperCase()} exportada com sucesso (padrão limpo sem pontuação)!`, "success");
     } catch (err) {
       console.error("Erro ao gerar planilha:", err);
       showToast("Erro ao exportar planilha.", "error");
     }
   };
 
-  // DOWNLOAD DE MODELO EM BRANCO (.XLSX)
+  // DOWNLOAD DE MODELO EM BRANCO (.XLSX) COM PADRÃO LIMPO E ABA DE INSTRUÇÕES
   const handleDownloadModeloPlanilha = () => {
     try {
       const modelo = [
         {
           Tipo: "Titular",
           "Nome Completo": "Exemplo da Silva",
-          CPF: "000.000.000-00",
+          CPF: "12345678901", // Padrão limpo: 11 dígitos, sem pontos nem traço
           Cargo: "Analista de Operações",
           "Faixa Salarial": "R$ 3.001 a R$ 5.000",
           "Data de Nascimento": "1990-05-15",
           "Nome da Mãe": "Maria da Silva",
           "Data de Admissão": "2023-01-10",
           Email: "exemplo@empresa.com",
-          Telefone: "(11) 99999-9999",
+          Telefone: "11999999999", // Padrão limpo: DDD + número, sem parênteses nem traço
           "Titular Vinculado": "",
           Parentesco: "",
           Status: "Ativo",
@@ -1166,32 +1170,75 @@ export function PortalEmpresaView({
         {
           Tipo: "Dependente",
           "Nome Completo": "Filho do Exemplo da Silva",
-          CPF: "111.111.111-11",
+          CPF: "98765432100", // Padrão limpo: 11 dígitos, sem pontos nem traço
           Cargo: "",
           "Faixa Salarial": "",
           "Data de Nascimento": "2015-08-20",
           "Nome da Mãe": "Esposa do Exemplo",
           "Data de Admissão": "",
           Email: "contato@familia.com",
-          Telefone: "(11) 99999-9999",
+          Telefone: "11999999999", // Padrão limpo: DDD + número
           "Titular Vinculado": "Exemplo da Silva",
           Parentesco: "Filho(a)",
           Status: "Ativo",
         },
       ];
 
-      const worksheet = XLSX.utils.json_to_sheet(modelo);
+      const instrucoes = [
+        {
+          Coluna: "Tipo",
+          Formato: "Texto",
+          "Regra de Preenchimento": "Preencha 'Titular' para o funcionário ou 'Dependente' para familiares vinculados.",
+          Exemplo: "Titular ou Dependente",
+        },
+        {
+          Coluna: "Nome Completo",
+          Formato: "Texto",
+          "Regra de Preenchimento": "Nome completo do colaborador ou dependente.",
+          Exemplo: "Maria Eduarda Santos",
+        },
+        {
+          Coluna: "CPF",
+          Formato: "Apenas Números (11 dígitos)",
+          "Regra de Preenchimento": "PADRÃO LIMPO: Apenas os 11 números, SEM PONTOS e SEM TRAÇO. (O sistema também aceita e sanitiza se contiver pontuação).",
+          Exemplo: "12345678901",
+        },
+        {
+          Coluna: "Telefone",
+          Formato: "Apenas Números (10 ou 11 dígitos)",
+          "Regra de Preenchimento": "PADRÃO LIMPO: Apenas números com DDD, sem parênteses nem traços.",
+          Exemplo: "11987654321",
+        },
+        {
+          Coluna: "Data de Nascimento e Admissão",
+          Formato: "Data (AAAA-MM-DD)",
+          "Regra de Preenchimento": "Formato AAAA-MM-DD ou DD/MM/AAAA.",
+          Exemplo: "1992-07-25",
+        },
+        {
+          Coluna: "Titular Vinculado",
+          Formato: "Texto (para dependentes)",
+          "Regra de Preenchimento": "Nome ou CPF do colaborador titular ao qual o dependente está associado.",
+          Exemplo: "Exemplo da Silva",
+        },
+      ];
+
+      const worksheetModelo = XLSX.utils.json_to_sheet(modelo);
+      const worksheetInstrucoes = XLSX.utils.json_to_sheet(instrucoes);
       const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, "Modelo de Importação");
+
+      XLSX.utils.book_append_sheet(workbook, worksheetModelo, "Modelo de Importação");
+      XLSX.utils.book_append_sheet(workbook, worksheetInstrucoes, "Instruções");
+
       XLSX.writeFile(workbook, "Modelo_Importacao_Colaboradores_AcolheMente.xlsx");
-      showToast("Modelo baixado! Preencha e faça o upload.", "info");
+      showToast("Modelo limpo baixado! Preencha apenas com números no CPF e Telefone.", "info");
     } catch (err) {
       console.error("Erro ao baixar modelo:", err);
       showToast("Erro ao gerar modelo de planilha.", "error");
     }
   };
 
-  // UPLOAD E LEITURA DA PLANILHA COM XLSX
+  // UPLOAD E LEITURA DA PLANILHA COM XLSX (PADRÃO LIMPO E TOLERÂNCIA AUTOMÁTICA)
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -1210,11 +1257,47 @@ export function PortalEmpresaView({
           return;
         }
 
-        // Normalização dos campos
+        // Helper para normalizar datas de múltiplos formatos (Excel serial, YYYY-MM-DD, DD/MM/AAAA ou DDMMAAAA)
+        const parseDateClean = (raw: any): string => {
+          if (!raw) return "";
+          if (typeof raw === "number") {
+            try {
+              const d = new Date(Math.round((raw - 25569) * 86400 * 1000));
+              return d.toISOString().split("T")[0];
+            } catch {
+              return String(raw);
+            }
+          }
+          const str = String(raw).trim();
+          const matchDdmmyyyy = str.match(/^(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{4})$/);
+          if (matchDdmmyyyy) {
+            return `${matchDdmmyyyy[3]}-${matchDdmmyyyy[2].padStart(2, "0")}-${matchDdmmyyyy[1].padStart(2, "0")}`;
+          }
+          if (/^\d{8}$/.test(str)) {
+            const dia = str.slice(0, 2);
+            const mes = str.slice(2, 4);
+            const ano = str.slice(4, 8);
+            if (parseInt(ano, 10) >= 1920 && parseInt(ano, 10) <= 2040) {
+              return `${ano}-${mes}-${dia}`;
+            }
+          }
+          return str;
+        };
+
+        // Normalização dos campos: sanitização automática de CPF e Telefone (remove pontos, traços e parênteses)
         const parsed: ColaboradorItem[] = rawJson.map((row: any, idx: number) => {
           const nome = row["Nome Completo"] || row["Nome"] || row["nome"] || row["NOME"] || "";
-          const rawCpf = String(row["CPF"] || row["cpf"] || row["Cpf"] || "").replace(/\D/g, "");
-          const formatCpf = rawCpf.length === 11 ? rawCpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4") : rawCpf;
+          const cleanCpf = String(row["CPF"] || row["cpf"] || row["Cpf"] || "").replace(/\D/g, "");
+          const formatCpf = cleanCpf.length === 11 ? cleanCpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4") : cleanCpf;
+
+          const cleanTel = String(row["Telefone"] || row["Celular"] || row["telefone"] || row["WhatsApp"] || "").replace(/\D/g, "");
+          const formatTel =
+            cleanTel.length === 11
+              ? `(${cleanTel.slice(0, 2)}) ${cleanTel.slice(2, 7)}-${cleanTel.slice(7)}`
+              : cleanTel.length === 10
+              ? `(${cleanTel.slice(0, 2)}) ${cleanTel.slice(2, 6)}-${cleanTel.slice(6)}`
+              : cleanTel;
+
           const tipoRaw = String(row["Tipo"] || row["tipo"] || "Titular").toLowerCase();
           const tipo: "titular" | "dependente" = tipoRaw.includes("dep") ? "dependente" : "titular";
           const cargo = tipo === "titular" ? String(row["Cargo"] || row["cargo"] || row["CARGO"] || row["Função"] || row["Funcao"] || "") : "";
@@ -1224,15 +1307,15 @@ export function PortalEmpresaView({
             id: `colab_up_${Date.now()}_${idx}`,
             tipo,
             nomeCompleto: String(nome).trim(),
-            cpf: formatCpf || `S/CPF_${idx + 1}`,
+            cpf: formatCpf || (cleanCpf ? cleanCpf : `S/CPF_${idx + 1}`),
             cargo,
             faixaSalarial,
-            dataNascimento: String(row["Data de Nascimento"] || row["Nascimento"] || row["dataNascimento"] || ""),
-            nomeMae: String(row["Nome da Mãe"] || row["Nome Mae"] || row["nomeMae"] || ""),
-            dataAdmissao: String(row["Data de Admissão"] || row["Admissão"] || row["dataAdmissao"] || ""),
-            email: String(row["Email"] || row["E-mail"] || row["email"] || ""),
-            telefone: String(row["Telefone"] || row["Celular"] || row["telefone"] || ""),
-            titularVinculado: String(row["Titular Vinculado"] || row["Titular"] || ""),
+            dataNascimento: parseDateClean(row["Data de Nascimento"] || row["Nascimento"] || row["dataNascimento"]),
+            nomeMae: String(row["Nome da Mãe"] || row["Nome Mae"] || row["nomeMae"] || "").trim(),
+            dataAdmissao: parseDateClean(row["Data de Admissão"] || row["Admissão"] || row["dataAdmissao"]),
+            email: String(row["Email"] || row["E-mail"] || row["email"] || "").trim().toLowerCase(),
+            telefone: formatTel || cleanTel,
+            titularVinculado: String(row["Titular Vinculado"] || row["Titular"] || "").trim(),
             parentesco: String(row["Parentesco"] || row["Grau"] || ""),
             status: "ativo" as const,
           };
