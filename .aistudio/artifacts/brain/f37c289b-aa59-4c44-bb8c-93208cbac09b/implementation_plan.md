@@ -1,138 +1,101 @@
-# Sistema de Backup & Custódia de Dados (Profissional e Gestão)
+# Plano de Implementação: Página de Profissionais, Recursos e Gestão de Planos
 
-Plataforma integrada de proteção e custódia documental com exportação física estruturada (JSON de restauração + relatório clínico/administrativo legível) e envio com 1 clique para o Google Drive do usuário, equipada com filtragem temporal por período e isolamento de sigilo profissional conforme resoluções do CFP e LGPD.
+Este plano estabelece as alterações solicitadas para a experiência de psicólogos, psicanalistas e terapeutas na plataforma AcolheMente, com foco na ocultação dos planos na área pública, novo programa de incentivo por isenção, apresentação clara de recursos e controle por chave seletora na gestão integrada.
 
-### User Review & Critical Decisions
+---
+
+### Decisões Críticas de Arquitetura e Produto
 
 > [!IMPORTANT]
-> As decisões essenciais de arquitetura e usabilidade foram definidas e alinhadas:
-> - **Nuvem Econômica e Direta**: Salvamento direto no **Google Drive pessoal** do profissional e da gestão via OAuth 2.0 com escopo restrito (`drive.file`), sem nenhum custo de servidor ou storage para a plataforma.
-> - **Pacote Físico Duplo**: O download gera tanto o arquivo estruturado completo (`.json` para restauração do sistema) quanto o relatório legível (`.csv` / `.html` legível para auditoria clínica e prontuário médico de 5 anos exigido pelo CFP).
-> - **Acesso Dedicado**: Uma nova aba **"Backup & Custódia"** no menu principal de navegação tanto para o Profissional quanto para a Gestão, com visual padronizado e compacto.
-
-- **Decisão Confirmada 1 (Nuvem)**: Google Drive direto do usuário (`drive.file`), transferindo o arquivo gerado do navegador para o Drive do psicólogo/gestor sem intermediários.
-- **Decisão Confirmada 2 (Formato Físico)**: Pacote duplo com JSON para restauração técnica integral e relatório em planilha/CSV legível para conferência de prontuários, evoluções e faturamentos.
-- **Decisão Confirmada 3 (Localização)**: Aba dedicada de navegação ("Backup & Custódia") padronizada no menu superior para todos os perfis com acesso contextualizado.
-
----
-
-### 1. Overview & Core Concept
-
-- **O que faz**: Oferece ao profissional de psicologia e à equipe de gestão o controle total sobre a segurança e custódia de seus dados. Permite filtrar por períodos específicos (ex.: *Todo o histórico*, *Últimos 30 dias*, *Últimos 3 meses*, *Ano atual*, ou *Período personalizado com data inicial e final*) e gerar cópias de segurança físicas (download instantâneo no computador) ou sincronizar na nuvem (Google Drive) com um clique.
-- **Público-Alvo**:
-  - **Psicólogo / Profissional**: Tem acesso restrito e seguro aos seus pacientes atribuídos, histórico de acolhimentos, notas de evolução/prontuários de atendimento, faturamentos e sessões registradas, esteira de tarefas e seus artigos autorais do blog.
-  - **Gestão (Master e Triagem)**: Tem acesso à visão institucional completa da plataforma (usuários, cadastros de empresas, doações, compliance, artigos, eventos, serviços e auditoria financeira).
-- **Valor Principal**: Conformidade rigorosa com a **LGPD** e com as **Resoluções CFP nº 001/2009 e 004/2020** (guarda de prontuários por no mínimo 5 anos), permitindo que o profissional tenha portabilidade de dados e segurança jurídica com custo zero de infraestrutura para a plataforma Elo.
+> **Síntese das Diretrizes Definidas pelo Usuário:**
+> 1. **Chave Seletora na Gestão:** Na área de gestão (`GestaoPlanosProfissionais`), dispor de uma chave master para habilitar ou não a exibição dos planos na página pública. A qualquer momento, novos planos ou recursos testados podem ser ativados sem retrabalho.
+> 2. **Ocultação dos Planos na Página Pública:** Enquanto a chave estiver desativada, a página pública não exibe a tabela ou valores de planos, nem obriga a escolha de plano no formulário.
+> 3. **Incentivo ao Engajamento (3 Meses de Isenção):** No lugar dos planos, apresentar com destaque o programa de incentivo: **isenção total de cobrança por 3 meses (90 dias) a partir do cadastro**.
+> 4. **Apresentação de Recursos em Destaque:** Citar os recursos oferecidos, incluindo explicitamente:
+>    - **Assistente de Emissão de Recibo e NF** (prático e em conformidade ética/fiscal).
+>    - **Controle Financeiro Integrado** (sessões, recebimentos, faturamento de consultas regulares, corporativas e sociais).
+>    - **Notificação Automática de Eventos** (lembretes automáticos de consulta, avisos de cobrança, confirmações via e-mail e mensagens).
+> 5. **Design Refinado com Imagem Fundida Atrás do Texto:** Reestruturar o bloco Hero da página de profissionais adotando a mesma linguagem visual da página de empresas (`EmpresaView`), onde a imagem da profissional (`psicologa_hero_parda`) surge fundida suavemente atrás do título e dos textos em camadas de gradiente (`warm/forest`), garantindo máxima legibilidade e humanização.
 
 ---
 
-### 2. User Experience & Visual Design
+## 1. Visão Geral e Estratégia de Dados
 
-#### Fluxos Principais do Usuário
+### 1.1 Persistência e Sincronização em Tempo Real (Firestore)
+- **Documento:** `configuracoes/master`
+- **Novo Campo:** `exibirPlanosProfissionais: boolean` (padrão: `false`).
+- **Comportamento Reativo:**
+  - `ProfissionalLandingView.tsx` escuta o snapshot de `configuracoes/master` em tempo real.
+  - Se `exibirPlanosProfissionais === true`: exibe a vitrine dos planos e a etapa de seleção.
+  - Se `exibirPlanosProfissionais === false`: exibe o módulo de **Incentivo ao Engajamento (3 meses de isenção)** e os **Recursos da Plataforma**, adaptando o formulário para cadastro 100% gratuito sem atrito.
 
-1. **Entrada na Aba de Backup**:
-   - O profissional clica na aba **"Backup & Custódia"** (ao lado de Tarefas, Pacientes e Faturamento).
-   - A tela apresenta um painel limpo com indicadores visuais do status de proteção: data do último backup realizado, volume de pacientes/registros sob sua responsabilidade e atalhos rápidos.
-
-2. **Configuração do Filtro de Período**:
-   - Seletor de período rápido:
-     - *Todo o histórico*
-     - *Últimos 30 dias*
-     - *Últimos 3 meses*
-     - *Ano corrente*
-     - *Intervalo personalizado*: Seleção de `Data Inicial` e `Data Final`.
-   - Seletor de módulos (checkboxes elegantes): Pacientes & Triagens, Evoluções & Prontuários, Faturamento & Sessões, Tarefas e Artigos do Blog.
-
-3. **Geração do Backup Físico**:
-   - Botão primário **"Baixar Backup no Computador"**:
-   - O sistema gera instantaneamente no navegador:
-     - `backup_profissional_[nome]_[data].json`: Arquivo técnico de integridade para restauração.
-     - `relatorio_prontuarios_[nome]_[data].csv`: Planilha legível detalhada com datas de sessão, nomes, diagnósticos e evoluções clínicas organizadas cronologicamente.
-
-4. **Sincronização com o Google Drive**:
-   - Card interativo **"Salvar no Google Drive"**:
-   - Se não conectado: Exibe botão elegante "Conectar ao Google Drive" com autenticação segura.
-   - Uma vez conectado: Mostra o e-mail Google vinculado, espaço na pasta do Drive do usuário e botão "Enviar Backup para o Google Drive".
-   - O arquivo é enviado diretamente para uma pasta organizada no Drive do usuário: `Instituto Elo - Backups/Ano/`.
-
-#### Identidade Visual & Design
-
-- **Estética**: Clínica, segura, profissional e minimalista, alinhada à paleta institucional do Instituto Elo (tons de verde floresta `#2D3B36`, creme suave, bordas delicadas e tipografia refinada).
-- **Consistência de Tamanhos**: Textos compactos padronizados com o novo padrão da plataforma (sem banners gigantescos, títulos precisos em `text-base` / `text-lg` e descrição em `text-xs text-forest/70`).
-- **Estados Interativos**:
-  - Barra de progresso animada durante a coleta dos registros no Firestore.
-  - Alertas de sucesso elegantes informando a quantidade de registros protegidos.
-  - Alerta de conformidade ética do CFP destacando a confidencialidade dos prontuários.
+### 1.2 Atualização no Formulário de Cadastro e Lead
+- Quando a chave estiver desativada (`false`), a etapa final do cadastro não exige seleção de plano financeiro.
+- O lead registrado em `profissionais_leads` registra:
+  - `planoEscolhidoId: "isencao_3_meses"`
+  - `planoEscolhidoNome: "Incentivo ao Engajamento - 3 Meses Grátis"`
+  - `planoEscolhidoValor: "0,00 (Isenção inicial de 90 dias)"`
+  - `beneficioIsencao: true`
+- Mantém a transparência ética: o profissional declara ciência de que o credenciamento é gratuito e aproveita o período de isenção total.
 
 ---
 
-### 3. Key Product Decisions & Trade-Offs
+## 2. Experiência do Usuário e Design Visual
 
-- **Decisão 1: Arquitetura de Nuvem via Google Drive Client-Side (`drive.file`)**
-  - *Abordagem*: Autenticação Google OAuth 2.0 solicitando apenas o escopo restrito `https://www.googleapis.com/auth/drive.file` (que só enxerga os arquivos criados pelo próprio Elo, respeitando o princípio de privilégio mínimo).
-  - *Por que*: **Custo zero de servidor**, sem necessidade de contratar buckets S3 ou discos externos caros, e garante que a custódia do arquivo fica nas mãos do próprio profissional em sua conta pessoal Google.
-  - *Alternativas Consideradas*: Buckets no Firebase Storage ou servidores dedicados (descartados devido a custos recorrentes de armazenamento e transferência).
+### 2.1 Hero Container com Imagem da Profissional Fundida Atrás do Texto
+- **Arquivo:** `src/views/ProfissionalLandingView.tsx`
+- **Técnica:** Seguindo rigorosamente a arquitetura da página corporativa (`EmpresaView.tsx`):
+  - Inserção de container com `relative rounded-3xl overflow-hidden p-6 sm:p-10 md:p-12 border border-soft/80 bg-warm shadow-md shadow-forest/5`.
+  - Imagem de fundo `psicologoHero` (`psicologa_hero_parda_1788390113480.jpg`) em `absolute inset-0 pointer-events-none select-none object-cover object-right md:object-[80%_25%] opacity-45 mix-blend-multiply filter contrast-115 saturate-105`.
+  - Camadas de gradientes suaves para fusão orgânica (`bg-gradient-to-r from-warm/95 via-warm/75 md:via-warm/50 to-transparent`, `bg-gradient-to-t from-warm/90 via-transparent to-warm/30`, e `bg-gradient-to-b from-warm/60 via-transparent to-warm/70`).
+  - Textos sobrepostos com contraste ideal e sem cortes.
 
-- **Decisão 2: Isolamento Contextual de Permissões (Profissional vs Gestão)**
-  - *Abordagem*: O serviço de backup detecta o perfil ativo:
-    - Se `role === 'psicologo'`, filtra estritamente por `responsavelId === uid` ou `responsavelUid === uid` e coleções autorizadas.
-    - Se `role === 'master' || role === 'triagem'`, permite exportação e restauração completa de todas as 12 coleções da instituição.
-  - *Por que*: Segurança de dados, proteção de sigilo médico-psicológico e conformidade estrita com a LGPD.
+### 2.2 Seção de Recursos Disponíveis da Plataforma
+Substituição da tabela de preços por um conjunto organizado e modular de cards de recursos práticos da plataforma para psicólogos, psicanalistas e terapeutas:
+1. **Assistente de Emissão de Recibo e NF:** Facilidade para emissão de recibos e notas fiscais de atendimentos, integrado aos dados de pacientes particulares e corporativos.
+2. **Controle Financeiro Integrado:** Gestão de honorários, controle de recebimentos, histórico por paciente e relatórios financeiros transparentes.
+3. **Notificação Automática de Eventos:** Lembretes automáticos aos pacientes antes das sessões, avisos de confirmação de agendamento e cobrança sem constrangimento para o profissional.
+4. **Canal de Acolhimento & Triagem Qualificada:** Encaminhamento seguro de pessoas em sofrimento psíquico e colaboradores de empresas parceiras.
+5. **Autonomia de Agenda e Disponibilidade:** Liberdade para definir sua grade de horários, quantidade de horas/mês e modalidades de atendimento.
+6. **Comunidade & Intercâmbio Clínico:** Supervisão clínica, workshops, cursos e publicação de artigos autorais no Blog oficial para fortalecimento de autoridade.
 
-- **Decisão 3: Formato Duplo de Exportação (JSON Estruturado + Planilha Legível)**
-  - *Abordagem*: Download de dois arquivos complementares com JSON de restauração e planilha formatada de prontuários/faturamento.
-  - *Por que*: O JSON permite restauração automatizada pelo sistema se necessário; o CSV permite que o psicólogo abra no Excel ou imprima para auditoria ética do Conselho Regional de Psicologia (CRP).
+### 2.3 Bloco de Incentivo ao Engajamento (3 Meses de Isenção)
+- Um card destacado na paleta `forest` e `sun`, comunicando:
+  - **Selo:** *Programa de Fomento & Parceria Clínica*
+  - **Título:** *3 Meses de Isenção Total a partir do Credenciamento*
+  - **Benefício:** Acesso a todos os recursos tecnológicos (triagem, notificações, controle financeiro, emissão de recibos/NF) com **custo zero** durante o primeiro trimestre.
+  - **Propósito:** Permitir que o profissional experimente os recursos da plataforma, forme sua base de pacientes e comprove o valor prático no dia a dia.
 
 ---
 
-### 4. Technical Architecture & Data Strategy *(Technical Reference)*
+## 3. Chave Seletora na Área de Gestão Integrada
 
-#### Diagrama de Arquitetura do Sistema
+### 3.1 Painel de Gestão (`GestaoPlanosProfissionais.tsx`)
+- Adição de uma barra de controle no topo do componente:
+  - **Chave Toggle Estilizada:** `Exibir Planos Financeiros na Página Pública`
+  - **Status Visual:**
+    - Ativado (Verde): *"Planos visíveis publicamente — Profissionais visualizam a tabela e valores de adesão."*
+    - Desativado (Amarelo/Creme): *"Planos ocultos na página pública — Exibindo apenas recursos e programa de 3 meses de isenção."*
+  - **Operação no Firestore:** Atualiza instantaneamente `exibirPlanosProfissionais` no documento `configuracoes/master`.
+  - **Persistência dos 3 Planos:** O painel continua permitindo editar os valores, títulos, horas inclusas e descrições dos 3 planos (Acolher, Integrar, Pleno). Assim, quando a gestão decidir reativar a chave com novos recursos testados, as configurações já estarão prontas.
 
-```
-┌────────────────────────────────────────────────────────────────────────┐
-│                   PAINEL ELO (PROFISSIONAL & GESTÃO)                   │
-├────────────────────────────────────────────────────────────────────────┤
-│  [Aba Backup & Custódia]                                              │
-│  ├── Filtro Temporal (30 dias / 90 dias / Ano / Personalizado)         │
-│  ├── Seleção de Módulos (Pacientes, Evoluções, Faturamento, Tarefas)   │
-│  └── Status do Último Backup & Indicador de Conformidade CFP           │
-└───────────────────┬────────────────────────────────┬───────────────────┘
-                    │                                │
-         ┌──────────▼──────────┐          ┌──────────▼──────────┐
-         │   BACKUP FÍSICO     │          │  GOOGLE DRIVE SYNC  │
-         │   (No Navegador)    │          │  (OAuth drive.file) │
-         ├─────────────────────┤          ├─────────────────────┤
-         │ • .JSON Estruturado │          │ • Token OAuth 2.0   │
-         │ • .CSV Prontuários  │          │ • Upload multipart  │
-         │ • Download Direto   │          │ • Pasta Automática  │
-         └──────────┬──────────┘          └──────────┬──────────┘
-                    │                                │
-                    └────────────────┬───────────────┘
-                                     │
-                        ┌────────────▼────────────┐
-                        │   FIRESTORE DATABASE    │
-                        ├─────────────────────────┤
-                        │ • acolhimentos          │
-                        │ • evolucoes             │
-                        │ • faturamentos / sessões│
-                        │ • esteira_tarefas       │
-                        │ • artigos_blog          │
-                        │ • coleções gestao       │
-                        └─────────────────────────┘
-```
+---
 
-#### Componentes & Arquivos Envolvidos
+## 4. Etapas de Execução
 
-1. **`src/lib/backupService.ts`**:
-   - Expansão do serviço de backup existente para incluir suporte a:
-     - `generateProfissionalBackup(profile, options)`: Coleta e filtragem por período e por `uid` do profissional.
-     - `generateCSVExport(dados)`: Conversão dos dados de prontuário e sessões em formato tabular legível.
-     - `uploadBackupToGoogleDrive(accessToken, fileData, filename)`: Envio direto via API v3 do Google Drive (`https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart`).
-2. **`src/lib/googleDriveService.ts`**:
-   - Módulo client-side de autenticação com Google Identity Services (GIS) para obter token temporário com o escopo `https://www.googleapis.com/auth/drive.file`.
-3. **`src/components/BackupManager.tsx`**:
-   - Atualização do componente para suportar tanto o modo **Gestão Global** quanto o modo **Profissional Individual**, com filtros de datas, alternadores de formato e integração com Google Drive.
-4. **`src/views/DashboardView.tsx`**:
-   - Inclusão do botão da aba **"Backup & Custódia"** na barra de abas do Profissional (além de manter na Gestão).
-   - Renderização contextualizada do `BackupManager` com perfil e permissões do usuário logado.
+1. **Gestão de Planos (`src/components/GestaoPlanosProfissionais.tsx`):**
+   - Integrar a chave seletora com feedback visual e sincronização com o Firestore (`exibirPlanosProfissionais`).
+2. **Página de Profissionais (`src/views/ProfissionalLandingView.tsx`):**
+   - Integrar a leitura reativa do campo `exibirPlanosProfissionais`.
+   - Implementar o novo Hero com a imagem da profissional fundida atrás do texto.
+   - Construir a vitrine de recursos (assistente de recibos/NF, controle financeiro, notificações automáticas, triagem, etc.).
+   - Construir o card de Incentivo ao Engajamento (3 meses de isenção).
+   - Condicionar a exibição dos planos e o fluxo do formulário à chave seletora.
+3. **Validação & Compilação:**
+   - Executar compilação com `compile_applet` para garantir zero erros de tipagem e integridade da aplicação.
+
+---
+
+### Verificação de Prontidão
+
+Após a sua aprovação, implementaremos essas mudanças em todos os componentes indicados.

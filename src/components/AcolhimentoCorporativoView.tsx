@@ -1098,9 +1098,11 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
             <button
               type="button"
               onClick={onBackToSelection}
-              className="text-xs font-bold text-forest/70 hover:text-forest flex items-center gap-1.5 transition-colors cursor-pointer"
+              className="p-1.5 -ml-1.5 rounded-full text-forest/70 hover:text-forest hover:bg-forest/5 transition-colors cursor-pointer"
+              aria-label="Voltar para a seleção"
+              title="Voltar para a seleção"
             >
-              <ArrowLeft className="w-4 h-4" /> Voltar
+              <ArrowLeft className="w-5 h-5" />
             </button>
             <span className="px-2.5 py-1 bg-sun-light/60 text-forest text-[11px] font-bold uppercase tracking-wider rounded-lg">
               Portal Corporativo

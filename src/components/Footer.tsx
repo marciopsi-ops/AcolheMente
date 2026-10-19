@@ -1,9 +1,10 @@
-import { Map, Mail, Phone, HeartHandshake, Leaf, User } from "lucide-react";
+import { Map, Mail, Phone, HeartHandshake, Leaf, User, LifeBuoy, PhoneCall, ExternalLink } from "lucide-react";
 import { useEffect, useState } from "react";
 import { doc, onSnapshot } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import logoImage from "../assets/images/logo_acolhe.jpeg";
 import { ComplianceModal } from "./ComplianceModal";
+import { ApoioImediatoModal } from "./ApoioImediatoModal";
 
 export function Footer({ onNavigate }: { onNavigate?: (view: any) => void }) {
   const [configs, setConfigs] = useState<any>({
@@ -12,12 +13,13 @@ export function Footer({ onNavigate }: { onNavigate?: (view: any) => void }) {
     footerTelefone: "(61) 9999-9999",
     footerInstagram: "",
     footerLinkedin: "",
-    footerDescricao: "Uma iniciativa focada em democratizar o acesso à saúde mental. Nossa história começa na vontade de criar uma ponte humanizada entre psicoterapeutas qualificados e quem busca acolhimento, ajudando pessoas através de valores acessíveis ou benefícios corporativos.",
+    footerDescricao: "Uma iniciativa focada em democratizar o acesso à saúde mental. Nossa história começa na vontade de criar uma ponte humanizada entre psicólogos, psicanalistas e terapeutas qualificados e quem busca acolhimento, ajudando pessoas através de valores acessíveis ou benefícios corporativos.",
     urlTermosUso: "",
     urlPoliticaPrivacidade: "",
     urlContratoPrestacao: "",
   });
   const [showComplianceModal, setShowComplianceModal] = useState(false);
+  const [showCvvModal, setShowCvvModal] = useState(false);
 
   useEffect(() => {
     let unsub: (() => void) | undefined;
@@ -56,7 +58,54 @@ export function Footer({ onNavigate }: { onNavigate?: (view: any) => void }) {
   };
 
   return (
-    <footer className="w-full bg-warm/50 border-t border-soft pt-16 pb-32 md:pb-16 px-6 md:px-12 flex flex-col items-center mt-auto" id="footer-section">
+    <footer className="w-full bg-warm/50 border-t border-soft pt-12 pb-32 md:pb-16 px-6 md:px-12 flex flex-col items-center mt-auto" id="footer-section">
+      {/* Bloco Fixo de Apoio Imediato 188 no Rodapé */}
+      <div className="w-full max-w-[1440px] mb-12 p-6 sm:p-8 rounded-3xl bg-amber-50/95 border border-amber-200/90 shadow-xs flex flex-col items-center text-center gap-3.5 text-amber-950">
+        {/* 1. Ícone */}
+        <div className="w-12 h-12 rounded-2xl bg-amber-200/90 flex items-center justify-center shrink-0 text-amber-950 shadow-2xs">
+          <LifeBuoy className="w-6 h-6" />
+        </div>
+
+        {/* 2. Selo de acolhimento suporte 24 horas */}
+        <div className="flex items-center justify-center">
+          <span className="text-[11px] font-bold uppercase tracking-wider bg-amber-200/90 text-amber-950 px-3.5 py-1 rounded-full shadow-2xs">
+            Acolhimento & Suporte 24 Horas
+          </span>
+        </div>
+
+        {/* 3. A pergunta */}
+        <h4 className="font-serif text-lg sm:text-2xl font-bold text-amber-950 max-w-2xl leading-snug">
+          Precisa de apoio emocional urgente? Ligue para o CVV 188
+        </h4>
+
+        {/* 4. A descrição */}
+        <p className="text-xs sm:text-sm text-amber-900/85 max-w-2xl leading-relaxed">
+          O Centro de Valorização da Vida realiza apoio emocional voluntário, gratuito, anônimo e sigiloso 24 horas por dia por telefone e chat. Você não precisa passar por isso sozinho.
+        </p>
+
+        {/* 5. Os botões abaixo */}
+        <div className="flex items-center flex-wrap sm:flex-nowrap gap-3 pt-2 justify-center w-full sm:w-auto">
+          <a
+            href="tel:188"
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 bg-[#14342B] hover:bg-[#1C4539] text-white font-bold text-xs rounded-full shadow-xs transition-all hover:scale-[1.02] whitespace-nowrap cursor-pointer"
+            title="Ligar grátis para o CVV no 188"
+            id="footer-call-188-btn"
+          >
+            <PhoneCall className="w-4 h-4 text-amber-300" />
+            <span>Ligar Grátis: 188</span>
+          </a>
+          <button
+            onClick={() => setShowCvvModal(true)}
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-5 py-3 bg-white hover:bg-amber-100/90 text-amber-950 border border-amber-300 font-bold text-xs rounded-full shadow-2xs transition-colors cursor-pointer whitespace-nowrap"
+            title="Ver canais de apoio imediato e emergência"
+            id="footer-open-cvv-btn"
+          >
+            <ExternalLink className="w-4 h-4 text-amber-800" />
+            <span>Canais de Apoio</span>
+          </button>
+        </div>
+      </div>
+
       <div className="w-full max-w-[1440px] grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-12 mb-12">
         
         {/* Brand & History */}
@@ -68,7 +117,7 @@ export function Footer({ onNavigate }: { onNavigate?: (view: any) => void }) {
             <span className="font-serif text-2xl font-semibold tracking-tight text-forest">AcolheMente</span>
           </div>
           <p className="text-forest/80 text-sm leading-relaxed" id="footer-brand-description">
-            {configs.footerDescricao || "Uma iniciativa focada em democratizar o acesso à saúde mental. Nossa história começa na vontade de criar uma ponte humanizada entre psicoterapeutas qualificados e quem busca acolhimento, ajudando pessoas através de valores acessíveis ou benefícios corporativos."}
+            {configs.footerDescricao || "Uma iniciativa focada em democratizar o acesso à saúde mental. Nossa história começa na vontade de criar uma ponte humanizada entre psicólogos, psicanalistas e terapeutas qualificados e quem busca acolhimento, ajudando pessoas através de valores acessíveis ou benefícios corporativos."}
           </p>
         </div>
 
@@ -235,6 +284,14 @@ export function Footer({ onNavigate }: { onNavigate?: (view: any) => void }) {
       {showComplianceModal && (
         <ComplianceModal onClose={() => setShowComplianceModal(false)} />
       )}
+
+      <ApoioImediatoModal
+        isOpen={showCvvModal}
+        onClose={() => setShowCvvModal(false)}
+        onNavigateAcolhimento={() => handleNav("acolhimento")}
+        campanhaNome="Apoio Emocional Imediato 24h"
+        lacoEmoji="🎗️"
+      />
     </footer>
   );
 }

@@ -32,8 +32,10 @@ import {
   BarChart3,
   ShieldCheck,
   CalendarCheck,
+  PhoneCall,
+  LifeBuoy,
 } from "lucide-react";
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { motion } from "motion/react";
 import { onAuthStateChanged } from "firebase/auth";
 import { doc, getDoc, collection, query, where, orderBy, onSnapshot } from "firebase/firestore";
@@ -57,6 +59,7 @@ import { Footer } from "./components/Footer";
 import { ProfissionaisCarousel } from "./components/ProfissionaisCarousel";
 import { PWAInstallBanner } from "./components/PWAInstallBanner";
 import { CampanhaPrevencaoBanner } from "./components/CampanhaPrevencaoBanner";
+import { ApoioImediatoModal } from "./components/ApoioImediatoModal";
 import { BlurImageBackground } from "./components/BlurImageBackground";
 
 import homeHero from "./assets/images/home_hero_photo_parda_1781024318036.png";
@@ -92,16 +95,16 @@ const JORNADAS_DATA = {
     id: "paciente" as const,
     badge: "Para quem busca acolhimento",
     tituloAba: "Paciente",
-    subtitulo: "Acolhimento Individual",
-    descricao: "Conexão direta ao psicólogo ideal com acolhimento humanizado, horários flexíveis e sessões com valor acessível ou subsídio corporativo.",
+    subtitulo: "Acolhimento Individual e Corporativo",
+    descricao: "Conectamos você ao profissional ideal com acolhimento humanizado, horários flexíveis e duas formas de acesso: triagem para valores sociais acessíveis ou ativação direta e confidencial através da sua empresa parceira.",
     linhaCor: "border-sun/60",
-    ctaText: "Iniciar Triagem como Paciente",
+    ctaText: "Iniciar meu Acolhimento",
     ctaView: "acolhimento" as const,
     passos: [
       {
         num: "01",
-        titulo: "Triagem ou Código da Empresa",
-        descricao: "Preencha a triagem inicial rápida para valor acessível ou insira o código fornecido pela sua empresa parceira.",
+        titulo: "Escolha sua Via de Acesso",
+        descricao: "Preencha nossa triagem rápida para atendimento particular acessível ou insira a credencial fornecida pela sua empresa para ativação imediata do benefício.",
         icon: ClipboardList,
         iconBg: "bg-sun text-forest border-sun",
         badgeBg: "bg-sun/30 text-amber-950 font-bold",
@@ -109,8 +112,8 @@ const JORNADAS_DATA = {
       },
       {
         num: "02",
-        titulo: "Pareamento Clínico e Proposta",
-        descricao: "A nossa equipe técnica analisa suas preferências e necessidades para direcioná-lo com assertividade ao psicólogo ideal.",
+        titulo: "Conexão Clínica & Sigilo Integral",
+        descricao: "Mapeamos suas demandas e preferências para conectá-lo ao terapeuta ideal. No corporativo, o processo conta com sigilo ético absoluto (seu RH não tem acesso às suas sessões), com o mesmo cuidado e dedicação do atendimento particular.",
         icon: SearchCheck,
         iconBg: "bg-forest/10 text-forest border-forest/20",
         badgeBg: "bg-forest/10 text-forest font-bold",
@@ -119,7 +122,7 @@ const JORNADAS_DATA = {
       {
         num: "03",
         titulo: "Início do Acolhimento",
-        descricao: "Conecte-se com o seu psicólogo e dê início à sua jornada terapêutica em um ambiente seguro, ético e sigiloso.",
+        descricao: "Dê início às sessões em um ambiente acolhedor e seguro, com confirmações e lembretes pré-sessão para sua comodidade.",
         icon: MessageCircleHeart,
         iconBg: "bg-sun text-forest border-sun",
         badgeBg: "bg-sun/30 text-amber-950 font-bold",
@@ -131,16 +134,16 @@ const JORNADAS_DATA = {
     id: "empresa" as const,
     badge: "Para organizações e RHs",
     tituloAba: "Empresa (NR-1)",
-    subtitulo: "Saúde Mental Corporativa",
-    descricao: "Programa de saúde mental para equipes em conformidade com as diretrizes psicossociais da NR-1, reduzindo absenteísmo e cuidando de pessoas.",
+    subtitulo: "Saúde Mental e Compliance NR-1",
+    descricao: "Dois nichos estratégicos que sua organização pode contratar de forma independente ou combinada: adequação aos riscos psicossociais da NR-1 e canal de acolhimento aos colaboradores.",
     linhaCor: "border-forest/40",
     ctaText: "Ver Soluções para Empresas",
     ctaView: "empresa" as const,
     passos: [
       {
         num: "01",
-        titulo: "Diagnóstico & Ativação do Plano",
-        descricao: "Mapeamos a estrutura e demandas da sua organização para ativar o benefício corporativo sob medida, sem complicações.",
+        titulo: "Diagnóstico & Contratação Modular",
+        descricao: "Mapeamos as necessidades da sua organização para ativar o cumprimento técnico da NR-1, o canal de acolhimento aos colaboradores, ou o ecossistema completo.",
         icon: Building2,
         iconBg: "bg-forest text-white border-forest",
         badgeBg: "bg-forest/10 text-forest font-bold",
@@ -148,8 +151,8 @@ const JORNADAS_DATA = {
       },
       {
         num: "02",
-        titulo: "Distribuição Segura aos Colaboradores",
-        descricao: "Sua equipe recebe códigos de acesso confidenciais para agendamento direto na plataforma, com total privacidade e sigilo ético (LGPD).",
+        titulo: "Acesso Confidencial aos Colaboradores",
+        descricao: "Sua equipe recebe acesso direto e seguro para agendamento com terapeutas credenciados, com total sigilo e proteção de dados (LGPD).",
         icon: Users,
         iconBg: "bg-sun text-forest border-sun",
         badgeBg: "bg-sun/30 text-amber-950 font-bold",
@@ -157,8 +160,8 @@ const JORNADAS_DATA = {
       },
       {
         num: "03",
-        titulo: "Relatórios de Clima e Conformidade NR-1",
-        descricao: "O RH acompanha indicadores anônimos de adesão, bem-estar coletivo e respaldo documental para conformidade legal.",
+        titulo: "Indicadores de Clima e Conformidade NR-1",
+        descricao: "O RH acompanha relatórios agregados e anônimos de engajamento, bem-estar coletivo e respaldo documental para auditorias e segurança jurídica.",
         icon: BarChart3,
         iconBg: "bg-forest text-white border-forest",
         badgeBg: "bg-forest/10 text-forest font-bold",
@@ -168,18 +171,18 @@ const JORNADAS_DATA = {
   },
   terapeuta: {
     id: "terapeuta" as const,
-    badge: "Para psicólogos e terapeutas",
-    tituloAba: "Psicólogo / Terapeuta",
-    subtitulo: "Rede Credenciada",
-    descricao: "Integre uma rede acolhedora com encaminhamentos alinhados à sua abordagem, ferramentas de prontuário e gestão financeira segura.",
+    badge: "Para psicólogos, psicanalistas e terapeutas",
+    tituloAba: "Psicólogo / Psicanalista / Terapeuta",
+    subtitulo: "Rede Credenciada Humanizada",
+    descricao: "Eliminamos o peso da gestão burocrática para que você foque no que faz de melhor: acolher e escutar. Conexão com pacientes particulares e empresas, com assistente de recibos/NF e finanças simplificadas.",
     linhaCor: "border-sun-dark/50",
     ctaText: "Quero me Credenciar",
     ctaView: "profissional" as const,
     passos: [
       {
         num: "01",
-        titulo: "Cadastro e Verificação de CRP",
-        descricao: "Envie suas informações profissionais, número de CRP ativo e linhas teóricas para validação técnica da nossa coordenação.",
+        titulo: "Cadastro Gratuito com 3 Meses de Isenção",
+        descricao: "Envie seus dados e CRP sem taxa de adesão. Tenha acesso a 90 dias de isenção total e, após esse período, opções acessíveis a partir de R$ 29,90/mês sem fidelidade.",
         icon: PsiIcon,
         iconBg: "bg-sun text-forest border-sun",
         badgeBg: "bg-sun/30 text-amber-950 font-bold",
@@ -187,8 +190,8 @@ const JORNADAS_DATA = {
       },
       {
         num: "02",
-        titulo: "Prontuário Digital & Rede Interprofissional",
-        descricao: "Acesse prontuário seguro e faça parte de uma rede ativa que conecta profissionais a profissionais — compartilhando encaminhamentos, discussões de casos éticas e troca de serviços em saúde mental.",
+        titulo: "Tecnologia Completa Sem Burocracia",
+        descricao: "Utilize nosso assistente para emissão de recibos e espelhos de NF, controle integrado de honorários e notificações automáticas de confirmação e lembretes aos pacientes.",
         icon: Users,
         iconBg: "bg-forest/10 text-forest border-forest/20",
         badgeBg: "bg-forest/10 text-forest font-bold",
@@ -196,8 +199,8 @@ const JORNADAS_DATA = {
       },
       {
         num: "03",
-        titulo: "Pacientes na sua Agenda",
-        descricao: "Receba pacientes compatíveis com seu perfil terapêutico e disponibilidade, com total autonomia sobre seus agendamentos e pagamentos.",
+        titulo: "Pacientes Particulares e Corporativos",
+        descricao: "Receba encaminhamentos qualificados por triagem para atendimentos particulares e atenda colaboradores de empresas parceiras, com total autonomia e remuneração digna.",
         icon: CalendarCheck,
         iconBg: "bg-sun-dark text-forest border-sun-dark",
         badgeBg: "bg-sun/30 text-amber-950 font-bold",
@@ -243,8 +246,8 @@ const FAQ_ITEMS = [
     answer: "As sessões de terapia têm duração média de 45 a 50 minutos, tempo ideal para garantir um atendimento de qualidade e profundidade."
   },
   {
-    question: "Os psicólogos e terapeutas são todos licenciados?",
-    answer: "Sim, todos os profissionais parceiros passam por um processo rigoroso de seleção, onde o critério básico é possuir o registro profissional (CRP) ativo e atualizado, além de comprovada experiência em atendimento clínico."
+    question: "Os psicólogos, psicanalistas e terapeutas são todos licenciados?",
+    answer: "Sim, todos os profissionais parceiros passam por um processo rigoroso de seleção, onde o critério básico é possuir a formação comprovada e registro profissional ativo (CRP ou conselho competente), além de comprovada experiência em atendimento clínico."
   },
   {
     question: "Atende crianças?",
@@ -785,9 +788,16 @@ function LandingPage({
   metricasAtivas?: boolean;
 }) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [showCvvModal, setShowCvvModal] = useState(false);
   const [jornadaPublico, setJornadaPublico] = useState<"paciente" | "empresa" | "terapeuta">("paciente");
   const [artigosPublicados, setArtigosPublicados] = useState<ArtigoBlog[]>([]);
   const [loadingArtigos, setLoadingArtigos] = useState(true);
+
+  useEffect(() => {
+    const handleOpenModal = () => setShowCvvModal(true);
+    window.addEventListener("open-cvv-modal", handleOpenModal);
+    return () => window.removeEventListener("open-cvv-modal", handleOpenModal);
+  }, []);
 
   useEffect(() => {
     const q = query(
@@ -834,16 +844,28 @@ function LandingPage({
           </span>
         </div>
 
-        {/* Minimalist 3-line classic menu dropdown */}
-        <div className="relative flex items-center">
+        {/* Right side controls: Permanent 188 Button + 3-line classic menu dropdown */}
+        <div className="flex items-center gap-2 sm:gap-3">
+          {/* Botão de Apoio Imediato 188 Fixo no Menu */}
           <button
-            onClick={() => setIsMenuOpen(!isMenuOpen)}
-            className="p-2.5 text-forest hover:bg-forest/5 rounded-full transition-all duration-200 focus:outline-none flex items-center justify-center border border-soft/80 cursor-pointer shadow-2xs"
-            aria-label={isMenuOpen ? "Fechar menu" : "Abrir menu"}
-            id="nav-menu-button"
+            onClick={() => setShowCvvModal(true)}
+            className="inline-flex items-center gap-1.5 px-3 sm:px-4 py-1.5 sm:py-2 bg-amber-400 hover:bg-amber-300 text-amber-950 text-xs font-bold rounded-full shadow-xs transition-all hover:scale-[1.02] cursor-pointer whitespace-nowrap"
+            title="Apoio Emocional Imediato 24h gratuito pelo CVV 188"
+            id="nav-cvv-188-btn"
           >
-            {isMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            <PhoneCall className="w-3.5 h-3.5 shrink-0 text-amber-950" />
+            <span>CVV 188</span>
           </button>
+
+          <div className="relative flex items-center">
+            <button
+              onClick={() => setIsMenuOpen(!isMenuOpen)}
+              className="p-2.5 text-forest hover:bg-forest/5 rounded-full transition-all duration-200 focus:outline-none flex items-center justify-center border border-soft/80 cursor-pointer shadow-2xs"
+              aria-label={isMenuOpen ? "Fechar menu" : "Abrir menu"}
+              id="nav-menu-button"
+            >
+              {isMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            </button>
 
           {isMenuOpen && (
             <>
@@ -935,17 +957,20 @@ function LandingPage({
                   <button
                     onClick={() => {
                       setIsMenuOpen(false);
-                      window.dispatchEvent(new CustomEvent("reopen-campanha-prevencao"));
+                      setShowCvvModal(true);
                     }}
-                    className="text-left font-sans text-sm text-amber-950 hover:bg-amber-100/80 bg-amber-50/70 border border-amber-200/80 px-3.5 py-2 rounded-xl transition-all font-semibold flex items-center justify-between cursor-pointer mt-0.5"
-                    title="Ver campanha e canais de apoio emocional"
+                    className="w-full text-left font-sans text-amber-950 hover:bg-amber-100 bg-amber-50/90 border border-amber-200/90 px-3.5 py-2.5 rounded-xl transition-all flex items-center justify-between gap-2.5 cursor-pointer mt-1 shadow-2xs group"
+                    title="Apoio emocional imediato 24h gratuito pelo CVV 188"
+                    id="menu-cvv-188-btn"
                   >
-                    <div className="flex items-center gap-2">
-                      <span className="text-base leading-none">🎗️</span>
-                      <span>Setembro Amarelo</span>
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <LifeBuoy className="w-4 h-4 text-amber-800 shrink-0 group-hover:rotate-12 transition-transform duration-300" />
+                      <span className="font-semibold text-xs sm:text-sm text-amber-950 leading-none truncate">
+                        CVV 188
+                      </span>
                     </div>
-                    <span className="text-[10px] bg-amber-200 text-amber-950 font-bold px-2 py-0.5 rounded-full">
-                      Apoio 188
+                    <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider bg-amber-300 text-amber-950 px-2.5 py-1 rounded-full border border-amber-400/40 shadow-2xs whitespace-nowrap leading-none flex items-center justify-center">
+                      Grátis 24h
                     </span>
                   </button>
                 </div>
@@ -962,6 +987,7 @@ function LandingPage({
               </motion.div>
             </>
           )}
+          </div>
         </div>
       </nav>
 
@@ -1008,7 +1034,7 @@ function LandingPage({
             </h1>
 
             <p className="text-lg md:text-xl text-forest/80 max-w-xl leading-relaxed mb-6">
-              Uma ponte humanizada entre psicoterapeutas e quem busca
+              Uma ponte humanizada entre psicólogos, psicanalistas, terapeutas e quem busca
               acolhimento. Do particular, com valores acessíveis, ao benefício
               para empresas.
             </p>
@@ -1155,7 +1181,7 @@ function LandingPage({
                     <PsiIcon className="w-6 h-6" />
                   </div>
                   <h3 className="text-base sm:text-lg font-bold text-forest tracking-tight leading-snug group-hover:text-forest">
-                    Sou Psicólogo(a) ou Terapeuta
+                    Sou Psicólogo, Psicanalista ou Terapeuta
                   </h3>
                   <p className="text-xs sm:text-sm text-forest/90 group-hover:text-forest font-medium mt-1.5 leading-relaxed transition-colors">
                     Faça parte da nossa rede credenciada.
@@ -1345,30 +1371,33 @@ function LandingPage({
                 <BlurImageBackground
                   src="https://images.unsplash.com/photo-1600880292203-757bb62b4baf?auto=format&fit=crop&w=1200&q=85"
                   alt="Equipe em ambiente corporativo saudável e acolhedor"
-                  targetOpacity="opacity-85"
+                  targetOpacity="opacity-90"
+                  objectPosition="object-[center_20%] sm:object-[center_25%]"
+                  scrimHeight="h-64 sm:h-72"
+                  scrimGradient="from-[#081710] via-[#081710]/80 to-transparent"
                 />
 
-                <div className="flex flex-col gap-4 relative z-10 flex-1">
+                <div className="flex flex-col relative z-10 flex-1">
                   {/* Badge */}
-                  <div className="w-fit px-4 py-1.5 rounded-full bg-black/50 backdrop-blur-md border border-white/25 text-sun group-hover:bg-sun group-hover:text-forest group-hover:border-sun font-bold text-xs uppercase tracking-wider shadow-md transition-all duration-300 flex items-center gap-2">
+                  <div className="w-fit px-3.5 py-1.5 rounded-full bg-black/60 backdrop-blur-md border border-white/25 text-sun group-hover:bg-sun group-hover:text-forest group-hover:border-sun font-bold text-xs uppercase tracking-wider shadow-md transition-all duration-300 flex items-center gap-2">
                     <Briefcase className="w-3.5 h-3.5 text-sun group-hover:text-forest transition-colors" />
                     <span>Programa Corporativo Modular</span>
                   </div>
 
-                  {/* Ícone Container */}
-                  <div className="w-16 h-16 bg-black/40 backdrop-blur-md border border-white/20 rounded-2xl flex items-center justify-center text-sun shadow-xl group-hover:bg-sun group-hover:text-forest group-hover:border-sun group-hover:scale-105 transition-all duration-300">
-                    <Briefcase className="w-8 h-8" />
+                  {/* Ícone Container Compacto no Topo */}
+                  <div className="mt-3 w-11 h-11 bg-black/50 backdrop-blur-md border border-white/20 rounded-xl flex items-center justify-center text-sun shadow-lg group-hover:bg-sun group-hover:text-forest group-hover:border-sun group-hover:scale-105 transition-all duration-300">
+                    <Briefcase className="w-5 h-5" />
                   </div>
 
-                  {/* Título com altura mínima harmonizada e sombra suave */}
-                  <div className="min-h-[72px] sm:min-h-[84px] flex items-center">
-                    <h3 className="font-serif text-3xl sm:text-4xl font-bold text-white tracking-tight leading-snug group-hover:text-amber-200 transition-colors duration-300 drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]">
+                  {/* Título com altura ajustada e mt-auto para liberar a face das pessoas na foto */}
+                  <div className="mt-auto pt-16 sm:pt-20 min-h-[48px] sm:min-h-[56px] flex items-center">
+                    <h3 className="font-serif text-2xl sm:text-3xl font-bold text-white tracking-tight leading-snug group-hover:text-amber-200 transition-colors duration-300 drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]">
                       Saúde Mental e Compliance (NR1)
                     </h3>
                   </div>
 
-                  {/* Parágrafo com Alto Contraste Natural */}
-                  <p className="text-base sm:text-[17px] text-white group-hover:text-white font-normal leading-relaxed max-w-xl transition-colors duration-300 drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)]">
+                  {/* Parágrafo com texto reduzido e harmonizado */}
+                  <p className="mt-2 text-xs sm:text-[14px] text-white/95 group-hover:text-white font-normal leading-relaxed max-w-lg transition-colors duration-300 drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)]">
                     Duas frentes complementares para sua organização: <strong>1. Adequação técnica à NR1</strong> (do diagnóstico ao plano de ação) e <strong>2. Canal de saúde e acolhimento</strong> para colaboradores e dependentes. Contrate apenas o que sua empresa precisa ou o ecossistema completo.
                   </p>
                 </div>
@@ -1402,41 +1431,41 @@ function LandingPage({
                 <BlurImageBackground
                   src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=1200&q=85"
                   alt="Psicóloga profissional em consultório acolhedor"
-                  targetOpacity="opacity-85"
+                  targetOpacity="opacity-90"
+                  objectPosition="object-[center_15%] sm:object-[center_20%]"
+                  scrimHeight="h-64 sm:h-72"
+                  scrimGradient="from-[#081710] via-[#081710]/80 to-transparent"
                 />
 
-                <div className="flex flex-col gap-4 relative z-10 flex-1">
+                <div className="flex flex-col relative z-10 flex-1">
                   {/* Badge */}
-                  <div className="w-fit px-4 py-1.5 rounded-full bg-black/50 backdrop-blur-md border border-white/25 text-sun group-hover:bg-sun group-hover:text-forest group-hover:border-sun font-bold text-xs uppercase tracking-wider shadow-md transition-all duration-300 flex items-center gap-2">
+                  <div className="w-fit px-3.5 py-1.5 rounded-full bg-black/60 backdrop-blur-md border border-white/25 text-sun group-hover:bg-sun group-hover:text-forest group-hover:border-sun font-bold text-xs uppercase tracking-wider shadow-md transition-all duration-300 flex items-center gap-2">
                     <HeartHandshake className="w-3.5 h-3.5 text-sun group-hover:text-forest transition-colors" />
                     <span>Rede Credenciada</span>
                   </div>
 
-                  {/* Ícone Container */}
-                  <div className="w-16 h-16 bg-black/40 backdrop-blur-md border border-white/20 rounded-2xl flex items-center justify-center text-sun shadow-xl group-hover:bg-sun group-hover:text-forest group-hover:border-sun group-hover:scale-105 transition-all duration-300">
-                    <HeartHandshake className="w-8 h-8" />
+                  {/* Ícone Container Compacto no Topo */}
+                  <div className="mt-3 w-11 h-11 bg-black/50 backdrop-blur-md border border-white/20 rounded-xl flex items-center justify-center text-sun shadow-lg group-hover:bg-sun group-hover:text-forest group-hover:border-sun group-hover:scale-105 transition-all duration-300">
+                    <HeartHandshake className="w-5 h-5" />
                   </div>
 
-                  {/* Título com altura mínima harmonizada e sombra suave */}
-                  <div className="min-h-[72px] sm:min-h-[84px] flex items-center">
-                    <h3 className="font-serif text-3xl sm:text-4xl font-bold text-white tracking-tight leading-snug group-hover:text-amber-200 transition-colors duration-300 drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]">
+                  {/* Título com altura ajustada e mt-auto para liberar a face das pessoas na foto */}
+                  <div className="mt-auto pt-16 sm:pt-20 min-h-[48px] sm:min-h-[56px] flex items-center">
+                    <h3 className="font-serif text-2xl sm:text-3xl font-bold text-white tracking-tight leading-snug group-hover:text-amber-200 transition-colors duration-300 drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]">
                       Faça parte da nossa rede
                     </h3>
                   </div>
 
-                  {/* Parágrafo com Alto Contraste Natural */}
-                  <p className="text-base sm:text-[17px] text-white group-hover:text-white font-normal leading-relaxed max-w-xl transition-colors duration-300 drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)]">
-                    Engaje-se em um projeto com um propósito acessível e humano.
-                    Se você compreende que terapia não é um privilégio, junte-se a
-                    nós para oferecer acolhimento acessível adaptando sua
-                    disponibilidade de horas.
+                  {/* Parágrafo com texto reduzido e harmonizado */}
+                  <p className="mt-2 text-xs sm:text-[14px] text-white/95 group-hover:text-white font-normal leading-relaxed max-w-lg transition-colors duration-300 drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)]">
+                    Engaje-se em um projeto com um propósito acessível e humano. Se você compreende que terapia não é um privilégio, junte-se a nós para oferecer acolhimento acessível adaptando sua disponibilidade de horas.
                   </p>
                 </div>
 
                 {/* Rodapé com Destaque Dourado */}
                 <div className="flex items-center justify-between pt-6 border-t border-white/20 group-hover:border-sun/40 relative z-10 transition-colors duration-300 mt-6">
                   <span className="text-sm sm:text-base font-bold uppercase tracking-wider text-sun group-hover:text-white transition-colors drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
-                    Sou Psicólogo / Terapeuta
+                    Sou Psicólogo, Psicanalista ou Terapeuta
                   </span>
                   <div className="w-12 h-12 rounded-full bg-black/50 backdrop-blur-md border border-white/25 flex items-center justify-center text-white group-hover:bg-sun group-hover:text-forest group-hover:scale-110 transition-all shadow-lg">
                     <ArrowRight className="w-5 h-5 group-hover:translate-x-0.5 transition-transform" />
@@ -1618,6 +1647,14 @@ function LandingPage({
           </button>
         )}
       </div>
+
+      <ApoioImediatoModal
+        isOpen={showCvvModal}
+        onClose={() => setShowCvvModal(false)}
+        onNavigateAcolhimento={() => onNavigate("acolhimento")}
+        campanhaNome="Apoio Emocional Imediato 24h"
+        lacoEmoji="🎗️"
+      />
     </div>
   );
 }

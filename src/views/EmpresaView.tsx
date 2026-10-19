@@ -158,15 +158,21 @@ export function EmpresaView({ onNavigate }: { onNavigate: (view: 'landing' | 'ac
               window.scrollTo({ top: 0, left: 0, behavior: "instant" });
               onNavigate('landing');
             }} 
-            className="text-forest/70 hover:text-forest transition-colors p-2 -ml-2 rounded-full hover:bg-forest/5 cursor-pointer"
+            className="text-forest/70 hover:text-forest transition-colors p-2 -ml-2 rounded-full hover:bg-forest/5 cursor-pointer shrink-0"
+            aria-label="Voltar para a página inicial"
           >
-            <ArrowLeft className="w-6 h-6" />
+            <ArrowLeft className="w-5 h-5 sm:w-6 sm:h-6" />
           </button>
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 bg-sun rounded-full flex items-center justify-center text-forest overflow-hidden shrink-0 shadow-sm">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+            <div className="w-10 h-10 sm:w-11 sm:h-11 bg-sun rounded-full flex items-center justify-center text-forest overflow-hidden shrink-0 shadow-sm">
                <img src={logoImage} alt="AcolheMente Logo" className="w-full h-full object-cover" />
             </div>
-            <span className="font-serif text-2xl font-semibold tracking-tight text-forest">AcolheMente <span className="text-forest/70 font-medium opacity-70">Para Empresas</span></span>
+            <span className="font-serif text-base sm:text-xl md:text-2xl font-semibold tracking-tight text-forest flex flex-col sm:flex-row sm:items-baseline sm:gap-2 min-w-0 leading-tight sm:leading-normal">
+              <span className="shrink-0">AcolheMente</span>
+              <span className="text-[10px] sm:text-xs md:text-sm font-sans font-medium text-forest/70 truncate block sm:inline">
+                Para Empresas
+              </span>
+            </span>
           </div>
         </div>
       </nav>

@@ -184,9 +184,11 @@ export function PublicServiceView({ serviceId, eventId, onBack, onGoHome }: Publ
       <header className="w-full max-w-4xl flex items-center justify-between mb-8 sm:mb-12 gap-3 flex-wrap">
         <button 
           onClick={handleGoHome}
-          className="flex items-center gap-2 text-forest/70 hover:text-forest font-medium text-xs sm:text-sm transition-colors py-2 px-3.5 hover:bg-forest/5 rounded-full border border-forest/10 cursor-pointer"
+          className="text-forest/70 hover:text-forest transition-colors p-2 -ml-2 rounded-full hover:bg-forest/5 cursor-pointer shrink-0"
+          aria-label="Voltar para a página inicial"
+          title="Voltar para a página inicial"
         >
-          <ArrowLeft className="w-4 h-4" /> Voltar para Home
+          <ArrowLeft className="w-5 h-5 sm:w-6 sm:h-6" />
         </button>
         <button 
           onClick={handleGoHome}

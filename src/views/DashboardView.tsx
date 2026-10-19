@@ -192,6 +192,9 @@ import { EmpresaColaboradoresSpreadsheet, ColaboradorItem } from "../components/
 import { PacienteFaturamentoSpreadsheet, SessaoFaturamentoItem } from "../components/PacienteFaturamentoSpreadsheet";
 import { ProfissionalFaturamentoDashboard } from "../components/ProfissionalFaturamentoDashboard";
 import { PacienteProntuarioModal, ProntuarioRegistroItem } from "../components/PacienteProntuarioModal";
+import { GestaoCampanhasBanner } from "../components/GestaoCampanhasBanner";
+import { GestaoPlanosProfissionais } from "../components/GestaoPlanosProfissionais";
+import { PLANOS_PROFISSIONAIS_PADRAO, PlanoProfissionalItem } from "../types/planosProfissionais";
 
 const safeLocalStorage = {
   getItem: (key: string): string | null => {
@@ -1114,6 +1117,7 @@ export function DashboardView({
     | "artigosProfissional"
     | "redeProfissional"
     | "triagemCorporativa"
+    | "campanhasBanner"
   >("kanban");
 
   // Search
@@ -1896,6 +1900,8 @@ export function DashboardView({
     carrosselEmpresasAtivo: true,
     metricasAtivas: true,
     taxaAssociativaMensal: "29,90",
+    planosProfissionais: PLANOS_PROFISSIONAIS_PADRAO as PlanoProfissionalItem[],
+    exibirPlanosProfissionais: false,
     stripeEnabled: true,
     stripePublicKey: "",
     stripeCheckoutUrl: "",
@@ -5094,9 +5100,11 @@ export function DashboardView({
       <div className="min-h-screen flex flex-col relative overflow-hidden bg-warm items-center justify-center p-6">
         <button
           onClick={() => onNavigate("landing")}
-          className="absolute top-8 left-8 flex items-center gap-2 text-forest/70 hover:text-forest/70-dark"
+          className="absolute top-8 left-8 p-2 rounded-full text-forest/70 hover:text-forest hover:bg-forest/5 transition-colors cursor-pointer"
+          aria-label="Voltar para a página inicial"
+          title="Voltar para a página inicial"
         >
-          <ArrowLeft className="w-5 h-5" /> Voltar
+          <ArrowLeft className="w-5 h-5" />
         </button>
         <div className="w-full max-w-md bg-white rounded-3xl p-8 shadow-xl border border-soft">
           <h2 className="font-serif text-3xl font-medium text-forest mb-2">
@@ -6287,6 +6295,13 @@ export function DashboardView({
                     <Bell className="w-3.5 h-3.5 text-forest/70" />
                     <span>Régua & Mensagens</span>
                   </button>
+                  <button
+                    onClick={() => setActiveTab("campanhasBanner")}
+                    className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "campanhasBanner" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70 hover:text-forest"}`}
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-sun-dark" />
+                    <span>Campanhas & Banner</span>
+                  </button>
                 </>
               )}
               <button
@@ -7334,47 +7349,21 @@ export function DashboardView({
                     </div>
                   </div>
 
-                  {/* Taxa de Uso e Intermediação da Plataforma */}
-                  <div className="bg-warm/30 p-6 rounded-2xl border border-soft space-y-4">
-                    <div className="flex justify-between items-center border-b border-soft pb-2">
-                      <h4 className="text-sm font-bold uppercase tracking-wider text-forest/70">
-                        Taxa de Uso e Intermediação da Plataforma
-                      </h4>
-                      <span className="px-2.5 py-0.5 bg-sun-light text-forest text-[10px] font-bold rounded-full border border-sun-dark/30 uppercase">
-                        Plano Profissional
-                      </span>
-                    </div>
-                    <p className="text-xs text-forest/70 leading-relaxed">
-                      Defina o valor mensal cobrado dos profissionais referente ao uso e intermediação da plataforma, manutenção do ecossistema, consultorias e triagem dos casos. O valor alterado se refletirá imediatamente na landing page e nos formulários.
-                    </p>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-                      <div className="flex flex-col gap-1">
-                        <label className="text-[10px] font-semibold uppercase text-forest/70 ml-2">
-                          Valor da Taxa Mensal (R$) *
-                        </label>
-                        <div className="relative flex items-center">
-                          <span className="absolute left-4 text-sm font-bold text-forest/60">R$</span>
-                          <DebouncedInput
-                            type="text"
-                            className="w-full text-sm font-bold bg-white border border-soft pl-12 pr-4 py-2.5 rounded-xl focus:outline-none focus:border-sun-dark transition-colors text-forest"
-                            placeholder="29,90"
-                            value={globalConfigs.taxaAssociativaMensal || "29,90"}
-                            onChange={(val) =>
-                              handleUpdateConfiguracoesProperty(
-                                "taxaAssociativaMensal",
-                                val,
-                              )
-                            }
-                          />
-                        </div>
-                      </div>
-                      <div className="flex flex-col justify-end">
-                        <p className="text-[11px] text-forest/60 italic bg-white/60 p-2.5 rounded-xl border border-soft/50">
-                          Exibido nos cards e no checkbox de ciência e concordância no final da inscrição do profissional.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
+                  {/* Quadro Integrado de Planos para Psicólogos, Psicanalistas e Terapeutas */}
+                  <GestaoPlanosProfissionais
+                    planos={globalConfigs.planosProfissionais || PLANOS_PROFISSIONAIS_PADRAO}
+                    exibirPlanos={Boolean((globalConfigs as any).exibirPlanosProfissionais)}
+                    onToggleExibirPlanos={async (novoValor) => {
+                      await handleUpdateConfiguracoesProperty("exibirPlanosProfissionais", novoValor, true);
+                    }}
+                    onSavePlanos={async (novosPlanos) => {
+                      await handleUpdateConfiguracoesProperty("planosProfissionais", novosPlanos, true);
+                      if (novosPlanos && novosPlanos[0]?.valorMensal) {
+                        await handleUpdateConfiguracoesProperty("taxaAssociativaMensal", novosPlanos[0].valorMensal, true);
+                      }
+                    }}
+                    showToast={showToast}
+                  />
 
                   {/* Configuração do Stripe Checkout */}
                   <div className="bg-warm/30 p-6 rounded-2xl border border-soft space-y-4">
@@ -13509,6 +13498,10 @@ export function DashboardView({
             whatsappInstanceName={globalConfigs.whatsappEvolutionInstance || "acolhemente"}
             whatsappConnected={whatsappState === "open"}
           />
+        </div>
+      ) : activeTab === "campanhasBanner" ? (
+        <div className="flex-1 overflow-auto p-4 sm:p-6 md:p-8 flex flex-col slide-up w-full">
+          <GestaoCampanhasBanner showToast={showToast} />
         </div>
       ) : activeTab === "gestaoArtigos" ? (
         <GestaoBlogView

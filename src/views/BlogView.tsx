@@ -347,10 +347,11 @@ export function BlogView({
         <div className="flex items-center gap-3">
           <button
             onClick={selectedArtigo ? handleBackToList : handleGoHome}
-            className="flex items-center gap-2 text-forest/70 hover:text-forest font-medium text-xs sm:text-sm py-2 px-3.5 hover:bg-forest/5 rounded-full border border-forest/10 transition-colors cursor-pointer"
+            className="text-forest/70 hover:text-forest transition-colors p-2 -ml-2 rounded-full hover:bg-forest/5 cursor-pointer shrink-0"
+            aria-label={selectedArtigo ? "Voltar para todos os artigos" : "Voltar para a página inicial"}
+            title={selectedArtigo ? "Voltar para todos os artigos" : "Voltar para a página inicial"}
           >
-            <ArrowLeft className="w-4 h-4" />
-            {selectedArtigo ? "Todos os Artigos" : "Voltar para Home"}
+            <ArrowLeft className="w-5 h-5 sm:w-6 sm:h-6" />
           </button>
         </div>
 

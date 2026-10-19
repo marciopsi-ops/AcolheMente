@@ -8,6 +8,7 @@ interface BlurImageBackgroundProps {
   className?: string;
   scrimGradient?: string;
   scrimHeight?: string;
+  objectPosition?: string;
 }
 
 export function BlurImageBackground({
@@ -18,6 +19,7 @@ export function BlurImageBackground({
   className = "",
   scrimGradient = "from-[#0d2218] via-[#0d2218]/60 to-transparent",
   scrimHeight = "h-28 sm:h-36",
+  objectPosition = "object-center",
 }: BlurImageBackgroundProps) {
   const [isLoaded, setIsLoaded] = useState(false);
   const imgRef = useRef<HTMLImageElement | null>(null);
@@ -42,7 +44,7 @@ export function BlurImageBackground({
         src={placeholderUrl}
         alt=""
         aria-hidden="true"
-        className={`absolute inset-0 w-full h-full object-cover object-center filter blur-md scale-110 transition-opacity duration-700 ease-out ${
+        className={`absolute inset-0 w-full h-full object-cover ${objectPosition} filter blur-md scale-110 transition-opacity duration-700 ease-out ${
           isLoaded ? "opacity-0" : "opacity-75"
         }`}
         referrerPolicy="no-referrer"
@@ -56,7 +58,7 @@ export function BlurImageBackground({
         loading="lazy"
         decoding="async"
         onLoad={() => setIsLoaded(true)}
-        className={`w-full h-full object-cover object-center transition-all duration-700 ease-out group-hover:scale-105 ${
+        className={`w-full h-full object-cover ${objectPosition} transition-all duration-700 ease-out group-hover:scale-105 ${
           isLoaded ? targetOpacity : "opacity-0"
         }`}
         referrerPolicy="no-referrer"

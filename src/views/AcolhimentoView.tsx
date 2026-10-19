@@ -1,4 +1,4 @@
-import { ArrowLeft, CheckCircle2, Leaf, Laptop, ShieldCheck, DollarSign, Building2, User } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Leaf, Laptop, ShieldCheck, DollarSign, Building2, User, LifeBuoy, PhoneCall, ExternalLink } from "lucide-react";
 import { Footer } from "../components/Footer";
 import { FormEvent, useState, useEffect } from "react";
 import { collection, addDoc, serverTimestamp, getDocs, query, where, updateDoc, doc } from "firebase/firestore";
@@ -7,6 +7,7 @@ import { sendPatientRegistrationEmail } from "../lib/emailService";
 import { Breadcrumbs } from "../components/Breadcrumbs";
 import { AcolhimentoCorporativoView } from "../components/AcolhimentoCorporativoView";
 import { ProcessoExistenteModal } from "../components/ProcessoExistenteModal";
+import { ApoioImediatoModal } from "../components/ApoioImediatoModal";
 
 import pacienteHero from '../assets/images/paciente_hero_laptop_therapist_1782433549769.jpg';
 import logoImage from '../assets/images/logo_acolhe.jpeg';
@@ -29,6 +30,7 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
   const [showExistingModal, setShowExistingModal] = useState(false);
   const [submissionType, setSubmissionType] = useState<"novo" | "atualizado" | "reiniciado">("novo");
   const [isProcessingRestart, setIsProcessingRestart] = useState(false);
+  const [showCvvModal, setShowCvvModal] = useState(false);
 
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: "instant" });
@@ -535,24 +537,29 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
 
   return (
     <div className="min-h-screen flex flex-col relative overflow-x-hidden bg-warm">
-      <nav className="w-full py-6 px-6 md:px-12 flex items-center border-b border-soft">
-        <button 
-          onClick={() => {
-            window.scrollTo({ top: 0, left: 0, behavior: "instant" });
-            onNavigate('landing');
-          }}
-          className="flex items-center gap-2 text-forest/70 hover:text-forest transition-colors mr-auto cursor-pointer"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span className="text-sm font-semibold uppercase tracking-wider">Voltar ao Início</span>
-        </button>
-        <div className="flex items-center gap-3 absolute left-1/2 -translate-x-1/2">
-          <div className="w-12 h-12 bg-sun rounded-full flex items-center justify-center text-forest overflow-hidden shadow-sm">
-            <img src={logoImage} alt="AcolheMente Logo" className="w-full h-full object-cover" />
+      <nav className="h-20 bg-white/50 backdrop-blur-md border-b border-soft px-6 md:px-12 flex justify-between items-center sticky top-0 z-50">
+        <div className="flex items-center gap-4">
+          <button 
+            onClick={() => {
+              window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+              onNavigate('landing');
+            }} 
+            className="text-forest/70 hover:text-forest transition-colors p-2 -ml-2 rounded-full hover:bg-forest/5 cursor-pointer shrink-0"
+            aria-label="Voltar para a página inicial"
+          >
+            <ArrowLeft className="w-5 h-5 sm:w-6 sm:h-6" />
+          </button>
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+            <div className="w-10 h-10 sm:w-11 sm:h-11 bg-sun rounded-full flex items-center justify-center text-forest overflow-hidden shrink-0 shadow-sm">
+              <img src={logoImage} alt="AcolheMente Logo" className="w-full h-full object-cover" />
+            </div>
+            <span className="font-serif text-base sm:text-xl md:text-2xl font-semibold tracking-tight text-forest flex flex-col sm:flex-row sm:items-baseline sm:gap-2 min-w-0 leading-tight sm:leading-normal">
+              <span className="shrink-0">AcolheMente</span>
+              <span className="text-[10px] sm:text-xs md:text-sm font-sans font-medium text-forest/70 truncate block sm:inline">
+                Acolhimento Acessível
+              </span>
+            </span>
           </div>
-          <span className="font-serif text-xl font-semibold tracking-tight text-forest hidden sm:block">
-            AcolheMente
-          </span>
         </div>
       </nav>
 
@@ -631,83 +638,105 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
         ) : (
           /* FLUXO PARTICULAR CLÁSSICO */
           <>
-            {/* Presentation Section */}
-            <section className="w-full px-6 md:px-12 py-12 md:py-16 flex justify-center bg-white border-b border-soft">
+            {/* Presentation Section com Imagem Fundida Atrás (mesmo padrão de terapeuta e empresa) */}
+            <section className="w-full px-6 md:px-12 py-8 md:py-12 flex justify-center bg-white border-b border-soft">
               <div className="max-w-[1440px] w-full flex flex-col items-center justify-between gap-8">
-                <div className="w-full flex flex-col lg:flex-row gap-8 items-center justify-between">
-                  <div className="w-full lg:w-1/2 flex flex-col gap-6 animate-in fade-in slide-in-from-left-4 duration-500">
-                    <div className="mb-2 px-3 py-1 bg-sun-light text-forest text-[10px] font-bold uppercase tracking-[0.2em] w-fit rounded">
-                      Acolhimento Acessível
+                
+                {/* Hero Container com Imagem da Paciente/Terapeuta Fundida Atrás do Título */}
+                <div className="w-full relative rounded-3xl overflow-hidden p-5 sm:p-10 md:p-12 border border-soft/80 bg-warm shadow-md shadow-forest/5 min-h-[460px] sm:min-h-[480px] flex items-center">
+                  {/* Imagem de acolhimento otimizada para telas pequenas e grandes com foco no rosto da profissional */}
+                  <div className="absolute right-0 top-0 bottom-0 w-full sm:w-[78%] md:w-[68%] lg:w-[60%] xl:w-[56%] pointer-events-none select-none overflow-hidden z-0">
+                    <img
+                      src={pacienteHero}
+                      alt="Terapeuta atendendo online via notebook em acolhimento humanizado"
+                      className="w-full h-full object-cover object-[70%_14%] sm:object-[78%_28%] md:object-[82%_40%] opacity-60 sm:opacity-65 md:opacity-85 lg:opacity-95 mix-blend-multiply filter contrast-120 saturate-110 transition-all duration-700"
+                      referrerPolicy="no-referrer"
+                    />
+                    {/* Esmaecimento suave e calibrado para que a profissional apareça nítida mesmo em telas pequenas */}
+                    <div className="absolute inset-0 bg-gradient-to-r from-warm/90 via-warm/55 sm:via-warm/40 md:via-warm/20 to-transparent" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-warm/85 sm:from-warm/90 via-transparent to-warm/15 sm:to-warm/30" />
+                    <div className="absolute inset-0 bg-gradient-to-b from-warm/30 sm:from-warm/50 via-transparent to-warm/30 sm:to-warm/50" />
+                  </div>
+
+                  {/* Conteúdo sobreposto à esquerda com largura calibrada para nunca cobrir a profissional */}
+                  <div className="relative z-10 w-full max-w-xl sm:max-w-2xl lg:max-w-[58%] xl:max-w-[60%] flex flex-col gap-3.5 sm:gap-5 pr-0 sm:pr-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="px-3 py-1 bg-sun-light text-forest text-[10px] font-bold uppercase tracking-[0.2em] rounded">
+                        Acolhimento Acessível
+                      </span>
+                      <span className="px-3 py-1 bg-white/90 border border-soft text-forest/75 text-[10px] font-semibold tracking-wider rounded backdrop-blur-xs">
+                        Vagas Humanizadas · Valores Sociais
+                      </span>
                     </div>
-                    <h1 className="font-serif text-5xl md:text-6xl leading-[1.1] font-medium text-forest">
-                      Profissionais experientes, vagas que acolhem!
+
+                    <h1 className="font-serif text-3xl sm:text-5xl md:text-6xl leading-[1.12] font-medium text-forest drop-shadow-xs">
+                      Profissionais experientes,{" "}
+                      <span className="italic font-normal block text-forest/85 text-xl sm:text-3xl md:text-4xl mt-1.5 sm:mt-2">
+                        vagas que acolhem!
+                      </span>
                     </h1>
-                    <p className="text-lg text-forest/80 leading-relaxed max-w-lg mt-4">
+
+                    <p className="text-sm sm:text-base md:text-lg text-forest/85 leading-relaxed max-w-xl">
                       Nossa rede é composta por psicólogos e terapeutas com carreiras consolidadas e consultórios ativos. Em um gesto de compromisso humanizado e acessível, esses profissionais dedicam parte de suas agendas para disponibilizar horários com valores acessíveis para quem não consegue arcar com o custo médio de uma consulta particular tradicional (geralmente acima de R$ 150).
                     </p>
-                    <p className="text-lg text-forest/80 leading-relaxed max-w-lg">
+
+                    <p className="text-xs sm:text-sm md:text-base text-forest/80 leading-relaxed max-w-xl">
                       Essas horas reservadas transformam-se em verdadeiras vagas de acolhimento, garantindo que você receba um atendimento ético, experiente e de altíssima qualidade, mas com um investimento coerente com sua realidade.
                     </p>
                   </div>
-                  <div className="w-full lg:w-1/2 flex flex-col gap-6 items-center lg:items-end animate-in fade-in slide-in-from-right-4 duration-500">
-                    <div className="relative overflow-hidden rounded-3xl max-w-lg w-full group">
-                      <img src={pacienteHero} alt="Ilustração de acolhimento" className="w-full max-w-lg object-contain rounded-3xl mix-blend-multiply transition-all duration-700 group-hover:scale-[1.03]" referrerPolicy="no-referrer" />
-                      {/* Esmaecimento no pé da imagem */}
-                      <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-warm/80 via-warm/25 to-transparent pointer-events-none z-1 group-hover:opacity-40 transition-opacity duration-500" />
+                </div>
+
+                {/* 4 Cards de Destaque e Benefícios - Grid Harmônica Horizontal */}
+                <div className="w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 -mt-3">
+                  <div className="p-4.5 bg-white/95 backdrop-blur-md border border-soft rounded-2xl flex items-start gap-3.5 shadow-sm hover:shadow-md hover:border-sun/40 hover:-translate-y-0.5 transition-all duration-300 group">
+                    <div className="w-10 h-10 rounded-xl bg-sun/15 border border-sun/30 flex items-center justify-center text-sun-dark group-hover:bg-sun group-hover:text-forest transition-colors duration-300 shrink-0">
+                      <Laptop className="w-5 h-5" />
                     </div>
-                    
-                    {/* Benefit Cards with Glassmorphism and Hover Auras */}
-                    <div className="w-full max-w-lg grid grid-cols-1 sm:grid-cols-2 gap-4 mt-2">
-                      <div className="p-4 bg-white/90 backdrop-blur-md border border-white/80 rounded-2xl flex items-start gap-3.5 shadow-sm hover:shadow-md hover:border-sun/40 hover:-translate-y-0.5 transition-all duration-300 group">
-                        <div className="w-9 h-9 rounded-xl bg-sun/15 border border-sun/30 flex items-center justify-center text-sun-dark group-hover:bg-sun group-hover:text-forest transition-colors duration-300 shrink-0">
-                          <Laptop className="w-4.5 h-4.5" />
-                        </div>
-                        <div>
-                          <h4 className="font-serif font-bold text-sm text-forest">Atendimento 100% Online</h4>
-                          <p className="text-[11px] text-forest/70 mt-1 leading-relaxed">
-                            Sessões por videochamada no conforto e privacidade do seu lar, sem deslocamentos.
-                          </p>
-                        </div>
-                      </div>
+                    <div>
+                      <h4 className="font-serif font-bold text-sm text-forest">Atendimento 100% Online</h4>
+                      <p className="text-xs text-forest/70 mt-1 leading-relaxed">
+                        Sessões por videochamada no conforto e privacidade do seu lar, sem deslocamentos.
+                      </p>
+                    </div>
+                  </div>
 
-                      <div className="p-4 bg-white/90 backdrop-blur-md border border-white/80 rounded-2xl flex items-start gap-3.5 shadow-sm hover:shadow-md hover:border-sun/40 hover:-translate-y-0.5 transition-all duration-300 group">
-                        <div className="w-9 h-9 rounded-xl bg-sun/15 border border-sun/30 flex items-center justify-center text-sun-dark group-hover:bg-sun group-hover:text-forest transition-colors duration-300 shrink-0">
-                          <ShieldCheck className="w-4.5 h-4.5" />
-                        </div>
-                        <div>
-                          <h4 className="font-serif font-bold text-sm text-forest">Profissionais Experientes</h4>
-                          <p className="text-[11px] text-forest/70 mt-1 leading-relaxed">
-                            Rede qualificada de psicólogos e terapeutas com carreiras consolidadas e registro ativo.
-                          </p>
-                        </div>
-                      </div>
+                  <div className="p-4.5 bg-white/95 backdrop-blur-md border border-soft rounded-2xl flex items-start gap-3.5 shadow-sm hover:shadow-md hover:border-sun/40 hover:-translate-y-0.5 transition-all duration-300 group">
+                    <div className="w-10 h-10 rounded-xl bg-sun/15 border border-sun/30 flex items-center justify-center text-sun-dark group-hover:bg-sun group-hover:text-forest transition-colors duration-300 shrink-0">
+                      <ShieldCheck className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="font-serif font-bold text-sm text-forest">Profissionais Experientes</h4>
+                      <p className="text-xs text-forest/70 mt-1 leading-relaxed">
+                        Rede qualificada de psicólogos e terapeutas com carreiras consolidadas e registro ativo.
+                      </p>
+                    </div>
+                  </div>
 
-                      <div className="p-4 bg-white/90 backdrop-blur-md border border-white/80 rounded-2xl flex items-start gap-3.5 shadow-sm hover:shadow-md hover:border-sun/40 hover:-translate-y-0.5 transition-all duration-300 group">
-                        <div className="w-9 h-9 rounded-xl bg-sun/15 border border-sun/30 flex items-center justify-center text-sun-dark group-hover:bg-sun group-hover:text-forest transition-colors duration-300 shrink-0">
-                          <DollarSign className="w-4.5 h-4.5" />
-                        </div>
-                        <div>
-                          <h4 className="font-serif font-bold text-sm text-forest">Investimento Coerente</h4>
-                          <p className="text-[11px] text-forest/70 mt-1 leading-relaxed">
-                            Valores a partir de R$ 50 por sessão (faixas regulares entre R$ 50 e R$ 110). O valor combinado com o profissional é mantido fixo, com reajuste anual pelo INPC.
-                          </p>
-                        </div>
-                      </div>
+                  <div className="p-4.5 bg-white/95 backdrop-blur-md border border-soft rounded-2xl flex items-start gap-3.5 shadow-sm hover:shadow-md hover:border-sun/40 hover:-translate-y-0.5 transition-all duration-300 group">
+                    <div className="w-10 h-10 rounded-xl bg-sun/15 border border-sun/30 flex items-center justify-center text-sun-dark group-hover:bg-sun group-hover:text-forest transition-colors duration-300 shrink-0">
+                      <DollarSign className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="font-serif font-bold text-sm text-forest">Investimento Coerente</h4>
+                      <p className="text-xs text-forest/70 mt-1 leading-relaxed">
+                        Valores a partir de R$ 50 por sessão (faixas regulares entre R$ 50 e R$ 110). Mantido fixo com reajuste anual pelo INPC.
+                      </p>
+                    </div>
+                  </div>
 
-                      <div className="p-4 bg-white/90 backdrop-blur-md border border-white/80 rounded-2xl flex items-start gap-3.5 shadow-sm hover:shadow-md hover:border-sun/40 hover:-translate-y-0.5 transition-all duration-300 group">
-                        <div className="w-9 h-9 rounded-xl bg-sun/15 border border-sun/30 flex items-center justify-center text-sun-dark group-hover:bg-sun group-hover:text-forest transition-colors duration-300 shrink-0">
-                          <CheckCircle2 className="w-4.5 h-4.5" />
-                        </div>
-                        <div>
-                          <h4 className="font-serif font-bold text-sm text-forest">Acolhimento de Qualidade</h4>
-                          <p className="text-[11px] text-forest/70 mt-1 leading-relaxed">
-                            Suas respostas nos ajudam a preparar e encaminhar o melhor direcionamento clínico.
-                          </p>
-                        </div>
-                      </div>
+                  <div className="p-4.5 bg-white/95 backdrop-blur-md border border-soft rounded-2xl flex items-start gap-3.5 shadow-sm hover:shadow-md hover:border-sun/40 hover:-translate-y-0.5 transition-all duration-300 group">
+                    <div className="w-10 h-10 rounded-xl bg-sun/15 border border-sun/30 flex items-center justify-center text-sun-dark group-hover:bg-sun group-hover:text-forest transition-colors duration-300 shrink-0">
+                      <CheckCircle2 className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="font-serif font-bold text-sm text-forest">Acolhimento de Qualidade</h4>
+                      <p className="text-xs text-forest/70 mt-1 leading-relaxed">
+                        Suas respostas nos ajudam a preparar e encaminhar o melhor direcionamento clínico em até 24h.
+                      </p>
                     </div>
                   </div>
                 </div>
+
               </div>
             </section>
 
@@ -748,6 +777,52 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
                   </div>
                 ) : (
                   <>
+                    {/* Bloco de Apoio Urgente e Gratuito 24h (CVV 188) com Nota sobre o Serviço */}
+                    <div className="mb-8 p-5 sm:p-6 rounded-3xl bg-amber-50/95 border border-amber-200/90 shadow-xs flex flex-col gap-3.5 text-amber-950">
+                      <div className="flex items-start gap-3.5">
+                        <div className="w-10 h-10 rounded-2xl bg-amber-200/90 flex items-center justify-center shrink-0 text-amber-950 shadow-2xs mt-0.5">
+                          <LifeBuoy className="w-5 h-5" />
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
+                            <span className="text-[10px] font-bold uppercase tracking-wider bg-amber-200 text-amber-950 px-2.5 py-0.5 rounded-full">
+                              Apoio Urgente & Gratuito 24 Horas
+                            </span>
+                            <span className="text-[11px] font-semibold text-amber-900">
+                              Linha de Apoio Emocional
+                            </span>
+                          </div>
+                          <h4 className="font-serif text-base sm:text-lg font-bold text-amber-950 leading-snug">
+                            Precisa de apoio emocional agora ou está em crise?
+                          </h4>
+                          <p className="text-xs text-amber-900/85 mt-1.5 leading-relaxed">
+                            <strong>Nota sobre o serviço:</strong> O acolhimento do <em>AcolheMente</em> destina-se a sessões continuadas de psicoterapia com valores acessíveis. Se você ou alguém próximo está vivenciando sofrimento agudo, crise emocional intensa ou ideação suicida, ligue gratuitamente para o <strong>CVV pelo 188</strong> ou acesse o atendimento gratuito e voluntário 24h por dia.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row items-center gap-2.5 pt-2 border-t border-amber-200/70">
+                        <a
+                          href="tel:188"
+                          className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-[#14342B] hover:bg-[#1C4539] text-white font-bold text-xs rounded-full shadow-xs transition-all hover:scale-[1.02]"
+                          title="Ligar grátis para o CVV 188"
+                          id="acolhimento-call-188-btn"
+                        >
+                          <PhoneCall className="w-4 h-4 text-amber-300 shrink-0" />
+                          <span>Ligar Grátis: 188 (CVV 24h)</span>
+                        </a>
+                        <button
+                          type="button"
+                          onClick={() => setShowCvvModal(true)}
+                          className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 py-2.5 bg-white hover:bg-amber-100/90 text-amber-950 border border-amber-300 font-bold text-xs rounded-full shadow-2xs transition-colors cursor-pointer"
+                          id="acolhimento-open-cvv-btn"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5 text-amber-800 shrink-0" />
+                          <span>Ver Informações & SAMU 192</span>
+                        </button>
+                      </div>
+                    </div>
+
                     <div className="mb-8">
                       <h2 className="font-serif text-3xl font-medium text-forest mb-2">
                         {step === 1 && "Inicie seu Acolhimento"}
@@ -1265,6 +1340,13 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
         onUpdateQuestionnaire={handleOptionUpdateQuestionnaire}
         onRestartProcess={handleRestartProcess}
         isProcessing={isProcessingRestart}
+      />
+
+      <ApoioImediatoModal
+        isOpen={showCvvModal}
+        onClose={() => setShowCvvModal(false)}
+        campanhaNome="Apoio Emocional Imediato 24h"
+        lacoEmoji="🎗️"
       />
 
       <Footer onNavigate={onNavigate} />

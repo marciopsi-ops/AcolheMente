@@ -1,5 +1,5 @@
 import { Footer } from '../components/Footer';
-import { ArrowLeft, CheckCircle2, HeartHandshake, UserPlus, Clock, PiggyBank, Network, Wallet, Check, CreditCard, Sparkles, BookOpen, MessageSquare, Mail, FileText, Copy, ShieldCheck, Coins } from "lucide-react";
+import { ArrowLeft, ArrowRight, CheckCircle2, HeartHandshake, UserPlus, Clock, PiggyBank, Network, Wallet, Check, CreditCard, Sparkles, BookOpen, MessageSquare, Mail, FileText, Copy, ShieldCheck, Coins, Star, Receipt, BellRing, FileSpreadsheet, Gift } from "lucide-react";
 import React, { FormEvent, useState, useEffect } from "react";
 import { collection, addDoc, serverTimestamp, getDocs, query, where, doc, onSnapshot } from "firebase/firestore";
 import { db, handleFirestoreError, OperationType } from "../lib/firebase";
@@ -7,6 +7,7 @@ import { sendProfessionalLeadEmail } from "../lib/emailService";
 import { sendWebhookNotification } from "../lib/webhookNotifier";
 import { Breadcrumbs } from "../components/Breadcrumbs";
 import { StripeCheckoutModal } from "../components/StripeCheckoutModal";
+import { PLANOS_PROFISSIONAIS_PADRAO, PlanoProfissionalItem } from "../types/planosProfissionais";
 
 import psicologoHero from '../assets/images/psicologa_hero_parda_1788390113480.jpg';
 import logoImage from '../assets/images/logo_acolhe.jpeg';
@@ -162,6 +163,9 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
   const [errorMsg, setErrorMsg] = useState('');
   
   const [taxaAssociativaMensal, setTaxaAssociativaMensal] = useState("29,90");
+  const [planosProfissionais, setPlanosProfissionais] = useState<PlanoProfissionalItem[]>(PLANOS_PROFISSIONAIS_PADRAO);
+  const [planoEscolhidoId, setPlanoEscolhidoId] = useState<string>("plano_2");
+  const [exibirPlanosProfissionais, setExibirPlanosProfissionais] = useState<boolean>(false);
   const [stripeConfig, setStripeConfig] = useState<any>(null);
   const [cienciaTaxa, setCienciaTaxa] = useState(false);
   const [copiedTermo, setCopiedTermo] = useState(false);
@@ -177,6 +181,16 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
     const unsub = onSnapshot(doc(db, "configuracoes", "master"), (snap) => {
       if (snap.exists()) {
         const data = snap.data();
+        if (data.planosProfissionais && Array.isArray(data.planosProfissionais) && data.planosProfissionais.length > 0) {
+          setPlanosProfissionais(data.planosProfissionais);
+          const featured = data.planosProfissionais.find((p: PlanoProfissionalItem) => p.destaque && p.ativo);
+          if (featured) {
+            setPlanoEscolhidoId(featured.id);
+          }
+        }
+        if (typeof data.exibirPlanosProfissionais === 'boolean') {
+          setExibirPlanosProfissionais(data.exibirPlanosProfissionais);
+        }
         if (data.taxaAssociativaMensal) {
           setTaxaAssociativaMensal(data.taxaAssociativaMensal);
         }
@@ -189,6 +203,9 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
     }, (err) => console.error("Error fetching config:", err));
     return () => unsub();
   }, []);
+
+  const planosAtivos = (planosProfissionais && planosProfissionais.length > 0 ? planosProfissionais : PLANOS_PROFISSIONAIS_PADRAO).filter(p => p.ativo !== false);
+  const planoSelecionado = planosAtivos.find(p => p.id === planoEscolhidoId) || planosAtivos[0] || PLANOS_PROFISSIONAIS_PADRAO[0];
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
@@ -290,9 +307,16 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
         setErrorMsg("Para prosseguir, você deve declarar ciência e compromisso com o tempo mínimo de 45 minutos por sessão.");
         return;
       }
-      if (!cienciaTaxa) {
-        setErrorMsg(`Para prosseguir, você deve declarar estar ciente da Taxa de Uso e Intermediação da Plataforma de R$ ${taxaAssociativaMensal}/mês.`);
-        return;
+      if (exibirPlanosProfissionais) {
+        if (!cienciaTaxa) {
+          setErrorMsg(`Para prosseguir, você deve declarar estar ciente da Taxa mensal do plano selecionado (${planoSelecionado.nome} - R$ ${planoSelecionado.valorMensal}/mês).`);
+          return;
+        }
+      } else {
+        if (!cienciaTaxa) {
+          setErrorMsg("Para prosseguir, você deve declarar estar ciente do benefício de 3 meses de isenção total.");
+          return;
+        }
       }
       setIsSubmitting(true);
       setErrorMsg('');
@@ -338,11 +362,15 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
           termoDuracaoAceito: true,
           termoDuracaoTexto,
           duracaoMinimaSessaoMinutos: 45,
-          taxaAssociativaMensal,
+          planoEscolhidoId: exibirPlanosProfissionais ? planoSelecionado.id : "isencao_3_meses",
+          planoEscolhidoNome: exibirPlanosProfissionais ? planoSelecionado.nome : "Incentivo ao Engajamento (3 Meses de Isenção)",
+          planoEscolhidoValor: exibirPlanosProfissionais ? planoSelecionado.valorMensal : "0,00",
+          taxaAssociativaMensal: exibirPlanosProfissionais ? planoSelecionado.valorMensal : "0,00",
+          beneficioIsencao3Meses: !exibirPlanosProfissionais,
           cienciaTaxaAceita: true,
           statusPagamento: 'pendente',
           status: 'Aguardando Entrevista',
-          notificacao: 'Novo cadastro de psicólogo associado/candidato.',
+          notificacao: 'Novo cadastro de profissional associado/candidato (Psicólogo/Psicanalista/Terapeuta).',
           createdAt: serverTimestamp()
         });
 
@@ -401,163 +429,481 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
               window.scrollTo({ top: 0, left: 0, behavior: "instant" });
               onNavigate('landing');
             }} 
-            className="text-forest/60 hover:text-forest transition-colors p-2 -ml-2 rounded-full hover:bg-forest/5 cursor-pointer"
+            className="text-forest/60 hover:text-forest transition-colors p-2 -ml-2 rounded-full hover:bg-forest/5 cursor-pointer shrink-0"
+            aria-label="Voltar para a página inicial"
           >
-            <ArrowLeft className="w-6 h-6" />
+            <ArrowLeft className="w-5 h-5 sm:w-6 sm:h-6" />
           </button>
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 bg-sun rounded-full flex items-center justify-center text-forest overflow-hidden shadow-sm">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+            <div className="w-10 h-10 sm:w-11 sm:h-11 bg-sun rounded-full flex items-center justify-center text-forest overflow-hidden shadow-sm shrink-0">
               <img src={logoImage} alt="AcolheMente Logo" className="w-full h-full object-cover" />
             </div>
-            <span className="font-serif text-2xl font-semibold tracking-tight text-forest">AcolheMente <span className="text-forest/70 font-medium">Para Psicólogos</span></span>
+            <span className="font-serif text-base sm:text-xl md:text-2xl font-semibold tracking-tight text-forest flex flex-col sm:flex-row sm:items-baseline sm:gap-2 min-w-0 leading-tight sm:leading-normal">
+              <span className="shrink-0">AcolheMente</span>
+              <span className="text-[10px] sm:text-xs md:text-sm font-sans font-medium text-forest/70 truncate block sm:inline">
+                Para Psicólogos, Psicanalistas e Terapeutas
+              </span>
+            </span>
           </div>
         </div>
       </nav>
 
       <main className="flex-1 flex flex-col items-center pb-16">
-        <Breadcrumbs items={[{ label: "Início", onClick: () => onNavigate("landing") }, { label: "Para Psicólogos", active: true }]} />
+        <Breadcrumbs items={[{ label: "Início", onClick: () => onNavigate("landing") }, { label: "Para Psicólogos, Psicanalistas e Terapeutas", active: true }]} />
         {/* Presentation Section */}
-        <section className="w-full px-6 md:px-12 py-12 md:py-16 flex justify-center bg-white border-b border-soft">
+        <section className="w-full px-6 md:px-12 py-12 md:py-16 flex justify-center bg-warm text-forest border-b border-soft">
           <div className="max-w-[1440px] w-full flex flex-col items-center justify-between gap-8">
-            <div className="w-full flex flex-col lg:flex-row gap-8 items-center justify-between">
-              <div className="w-full lg:w-1/2 flex flex-col gap-6">
-                <div className="mb-2 px-3 py-1 bg-sun-light text-forest text-[10px] font-bold uppercase tracking-[0.2em] w-fit rounded">
-                  Engajamento Acessível
-                </div>
-                <h1 className="font-serif text-5xl md:text-6xl leading-[1.1] font-medium text-forest">
-                  A terapia não deve ser um privilégio.
-                </h1>
-                <p className="text-lg text-forest/80 leading-relaxed max-w-lg mt-4">
-                  Entendemos que o cuidado com a saúde mental é uma necessidade de todos e não um privilégio. Estamos buscando profissionais motivados por esse propósito humanizado e acessível.
-                </p>
-                <p className="text-lg text-forest/80 leading-relaxed max-w-lg">
-                  Ao abrir sua agenda e disponibilizar horas, você possibilita o acesso a pessoas em vulnerabilidade ou através de benefício corporativo. Você continua sendo remunerado por isso, porém praticando valores compatíveis com nossa plataforma.
-                </p>
+            
+            {/* Hero Container com Imagem da Profissional Fundida Atrás do Título */}
+            <div className="w-full relative rounded-3xl overflow-hidden p-6 sm:p-10 md:p-12 border border-soft/80 bg-warm shadow-md shadow-forest/5 min-h-[440px] sm:min-h-[480px] flex items-center">
+              {/* Imagem da profissional deslocada à direita e com foco facial nítido em telas pequenas e grandes */}
+              <div className="absolute right-0 top-0 bottom-0 w-full sm:w-[68%] md:w-[56%] lg:w-[48%] pointer-events-none select-none overflow-hidden z-0">
+                <img
+                  src={psicologoHero}
+                  alt="Profissional Psicóloga, Psicanalista e Terapeuta"
+                  className="w-full h-full object-cover object-[53%_18%] sm:object-[53%_16%] opacity-35 sm:opacity-50 md:opacity-70 lg:opacity-85 mix-blend-multiply filter contrast-115 saturate-105"
+                  referrerPolicy="no-referrer"
+                />
+                {/* Esmaecimento suave nas bordas para fundir harmonicamente e resguardar o texto à esquerda */}
+                <div className="absolute inset-0 bg-gradient-to-r from-warm via-warm/70 sm:via-warm/40 md:via-warm/20 to-transparent" />
+                <div className="absolute inset-0 bg-gradient-to-t from-warm/90 via-transparent to-warm/30" />
+                <div className="absolute inset-0 bg-gradient-to-b from-warm/60 via-transparent to-warm/60" />
               </div>
-              <div className="w-full lg:w-1/2 flex justify-center lg:justify-end">
-                <div className="relative overflow-hidden rounded-3xl max-w-lg w-full group">
-                  <img src={psicologoHero} alt="Psicóloga e Terapeuta AcolheMente" className="w-full object-cover aspect-[4/3] rounded-3xl shadow-sm border border-soft transition-all duration-700 group-hover:scale-[1.02]" referrerPolicy="no-referrer" />
-                  {/* Esmaecimento no pé da imagem */}
-                  <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-warm/90 via-warm/30 to-transparent pointer-events-none z-1 group-hover:opacity-40 transition-opacity duration-500" />
+
+              {/* Conteúdo à esquerda com largura calibrada para nunca cobrir a profissional */}
+              <div className="relative z-10 max-w-2xl lg:max-w-[56%] xl:max-w-[58%] flex flex-col gap-5 pr-0 sm:pr-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="px-3 py-1 bg-sun-light text-forest text-[10px] font-bold uppercase tracking-[0.2em] rounded">
+                    Rede Humanizada
+                  </span>
+                  <span className="px-3 py-1 bg-white/90 border border-soft text-forest/75 text-[10px] font-semibold tracking-wider rounded backdrop-blur-xs">
+                    Psicólogos · Psicanalistas · Terapeutas
+                  </span>
+                </div>
+
+                <h1 className="font-serif text-4xl sm:text-5xl md:text-6xl leading-[1.1] font-medium text-forest drop-shadow-xs">
+                  Terapia não deve ser um privilégio.{" "}
+                  <span className="italic font-normal block text-forest/85 text-2xl sm:text-3xl md:text-4xl mt-2">
+                    Assim como o tempo do profissional não pode ser engolido por burocracias.
+                  </span>
+                </h1>
+
+                <p className="text-base md:text-lg text-forest/85 leading-relaxed max-w-2xl">
+                  O cuidado com a saúde mental é uma necessidade de todos e não um privilégio. Como uma ponte humanizada e tecnológica, conectamos profissionais a quem necessita: de um lado, pessoas que nunca se sentiriam capazes de investir num processo terapêutico; de outro, colaboradores de empresas parceiras com remuneração corporativa. Gestão e burocracias merecem atenção, mas não podem ser maiores do que aquilo que você faz de melhor: acolher e escutar.
+                </p>
+
+                {/* Linha de Ação & Destaques Perfeitamente Alinhados */}
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3.5 pt-2">
+                  <a
+                    href="#cadastro"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      const formEl = document.querySelector('form');
+                      if (formEl) formEl.scrollIntoView({ behavior: 'smooth' });
+                    }}
+                    className="px-6 py-3.5 bg-forest hover:bg-forest/90 text-white font-bold text-sm rounded-xl shadow-md shadow-forest/15 hover:shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0"
+                  >
+                    <span>Quero Fazer Parte da Rede</span>
+                    <CheckCircle2 className="w-4 h-4 text-sun" />
+                  </a>
+
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-forest/80 font-medium">
+                    <span className="inline-flex items-center gap-1.5 bg-white/80 backdrop-blur-xs px-3 py-1.5 rounded-lg border border-soft shadow-2xs">
+                      <span className="text-emerald-700 font-bold">✓</span> Credenciamento 100% gratuito
+                    </span>
+                    <span className="inline-flex items-center gap-1.5 bg-white/80 backdrop-blur-xs px-3 py-1.5 rounded-lg border border-soft shadow-2xs">
+                      <span className="text-emerald-700 font-bold">✓</span> 3 meses de isenção inicial
+                    </span>
+                    <span className="inline-flex items-center gap-1.5 bg-amber-50/90 backdrop-blur-xs px-3 py-1.5 rounded-lg border border-amber-300/80 font-bold text-amber-950 shadow-2xs">
+                      <Coins className="w-3.5 h-3.5 text-amber-800" />
+                      Mensalidades a partir de R$ 29,90
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
             
-            <div className="w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-8">
-              <div className="bg-white/90 backdrop-blur-md p-6 rounded-3xl border border-white/80 flex flex-col gap-3 shadow-lg shadow-forest/5 hover:shadow-xl hover:border-sun/40 hover:-translate-y-1 transition-all duration-300 group">
-                <div className="w-12 h-12 rounded-2xl bg-sun/15 border border-sun/30 flex items-center justify-center text-sun-dark group-hover:bg-sun group-hover:text-forest transition-colors duration-300 shadow-xs">
-                  <HeartHandshake className="w-6 h-6" />
+            {/* Recursos Disponíveis para Psicólogos, Psicanalistas e Terapeutas */}
+            <div className="w-full">
+              <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3 mb-6">
+                <div>
+                  <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-forest/70 bg-white/80 px-3 py-1 rounded-full border border-soft">
+                    Tecnologia & Gestão Clínica
+                  </span>
+                  <h3 className="font-serif text-2xl md:text-3xl font-bold text-forest mt-2">
+                    Recursos Disponíveis na Plataforma
+                  </h3>
+                  <p className="text-sm text-forest/75 max-w-2xl mt-1">
+                    Ferramentas práticas e intuitivas criadas sob medida para simplificar sua rotina e proteger seu tempo clínico.
+                  </p>
                 </div>
-                <h3 className="font-semibold text-lg text-forest">Apoio Real</h3>
-                <p className="text-sm text-forest/80 leading-relaxed">Faça a diferença na jornada de pessoas que relutam em buscar ajuda pelo obstáculo financeiro.</p>
               </div>
 
-              <div className="bg-white/90 backdrop-blur-md p-6 rounded-3xl border border-white/80 flex flex-col gap-3 shadow-lg shadow-forest/5 hover:shadow-xl hover:border-sun/40 hover:-translate-y-1 transition-all duration-300 group">
-                <div className="w-12 h-12 rounded-2xl bg-sun/15 border border-sun/30 flex items-center justify-center text-sun-dark group-hover:bg-sun group-hover:text-forest transition-colors duration-300 shadow-xs">
-                  <Clock className="w-6 h-6" />
-                </div>
-                <h3 className="font-semibold text-lg text-forest">Liberdade</h3>
-                <p className="text-sm text-forest/80 leading-relaxed">Escolha a quantidade de horas por mês para atender em nossa plataforma. Sua disponibilidade constrói o tamanho da nossa rede de apoio.</p>
-              </div>
-
-              <div className="bg-white/90 backdrop-blur-md p-6 rounded-3xl border border-white/80 flex flex-col gap-3 shadow-lg shadow-forest/5 hover:shadow-xl hover:border-sun/40 hover:-translate-y-1 transition-all duration-300 group">
-                <div className="w-12 h-12 rounded-2xl bg-sun/15 border border-sun/30 flex items-center justify-center text-sun-dark group-hover:bg-sun group-hover:text-forest transition-colors duration-300 shadow-xs">
-                  <PiggyBank className="w-6 h-6" />
-                </div>
-                <h3 className="font-semibold text-lg text-forest">Remuneração Justa</h3>
-                <p className="text-sm text-forest/80 leading-relaxed">Os atendimentos são remunerados. É um acordo mútuo para reduzir o valor de forma acessível, sem desvalorizar seu trabalho.</p>
-              </div>
-
-              <div className="bg-white/90 backdrop-blur-md p-6 rounded-3xl border border-white/80 flex flex-col gap-3 shadow-lg shadow-forest/5 hover:shadow-xl hover:border-sun/40 hover:-translate-y-1 transition-all duration-300 group">
-                <div className="w-12 h-12 rounded-2xl bg-sun/15 border border-sun/30 flex items-center justify-center text-sun-dark group-hover:bg-sun group-hover:text-forest transition-colors duration-300 shadow-xs">
-                  <UserPlus className="w-6 h-6" />
-                </div>
-                <h3 className="font-semibold text-lg text-forest">Ecossistema</h3>
-                <p className="text-sm text-forest/80 leading-relaxed">Os pacientes chegam através de empresas parceiras ou do nosso canal de acolhimento acessível, já engajados para tratamento.</p>
-              </div>
-
-              <div className="bg-white/90 backdrop-blur-md p-6 rounded-3xl border border-white/80 flex flex-col gap-3 shadow-lg shadow-forest/5 hover:shadow-xl hover:border-sun/40 hover:-translate-y-1 transition-all duration-300 group">
-                <div className="w-12 h-12 rounded-2xl bg-sun/15 border border-sun/30 flex items-center justify-center text-sun-dark group-hover:bg-sun group-hover:text-forest transition-colors duration-300 shadow-xs">
-                  <Network className="w-6 h-6" />
-                </div>
-                <h3 className="font-semibold text-lg text-forest">Conexão entre Profissionais</h3>
-                <p className="text-sm text-forest/80 leading-relaxed">Ofereça e usufrua de serviços exclusivos na plataforma: supervisão, cursos, workshops e consultorias.</p>
-              </div>
-
-              <div className="bg-white/90 backdrop-blur-md p-6 rounded-3xl border border-white/80 flex flex-col gap-3 shadow-lg shadow-forest/5 hover:shadow-xl hover:border-sun/40 hover:-translate-y-1 transition-all duration-300 group">
-                <div className="w-12 h-12 rounded-2xl bg-sun/15 border border-sun/30 flex items-center justify-center text-sun-dark group-hover:bg-sun group-hover:text-forest transition-colors duration-300 shadow-xs">
-                  <BookOpen className="w-6 h-6" />
-                </div>
-                <h3 className="font-semibold text-lg text-forest">Publicação de Artigos</h3>
-                <p className="text-sm text-forest/80 leading-relaxed">Publique conteúdos e artigos de sua autoria no Blog oficial do projeto, fortalecendo sua autoridade profissional e alcance.</p>
-              </div>
-              <div className="col-span-1 sm:col-span-2 lg:col-span-3 bg-gradient-to-br from-forest via-[#1d3c2b] to-[#12281c] text-white p-8 md:p-10 rounded-3xl border-2 border-sun-dark/40 shadow-xl relative overflow-hidden group hover:border-sun-dark transition-all duration-300 my-2">
-                {/* Background glow accent */}
-                <div className="absolute -right-12 -bottom-12 w-64 h-64 bg-sun/10 rounded-full blur-3xl pointer-events-none" />
-                <div className="absolute -left-12 -top-12 w-48 h-48 bg-emerald-500/10 rounded-full blur-2xl pointer-events-none" />
-
-                <div className="relative z-10 flex flex-col lg:flex-row gap-8 items-start lg:items-center justify-between">
-                  <div className="flex-1 space-y-3">
-                    <div className="flex flex-wrap items-center gap-2.5">
-                      <span className="px-3 py-1 bg-sun text-forest text-[11px] font-black uppercase tracking-wider rounded-full shadow-sm">
-                        ⭐ Destaque do Projeto
-                      </span>
-                      <span className="px-3 py-1 bg-white/10 text-sun-light text-[11px] font-semibold rounded-full border border-white/20">
-                        Cobrança Somente Após Aceite & Contrato
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {/* Recurso 1: Assistente de Emissão de Recibo e NF */}
+                <div className="bg-white/95 backdrop-blur-md p-6 rounded-3xl border border-soft hover:border-sun/60 shadow-md shadow-forest/5 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group flex flex-col justify-between gap-4">
+                  <div className="flex flex-col gap-3">
+                    <div className="flex items-center justify-between">
+                      <div className="w-12 h-12 rounded-2xl bg-amber-100 flex items-center justify-center text-amber-900 group-hover:bg-sun group-hover:text-forest transition-colors duration-300 shadow-xs">
+                        <Receipt className="w-6 h-6 text-amber-800 group-hover:text-forest" />
+                      </div>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-forest/60 bg-warm px-2.5 py-1 rounded-md border border-soft">
+                        Fiscal & Ético
                       </span>
                     </div>
-
-                    <h3 className="font-serif text-2xl md:text-3xl font-bold text-white tracking-tight flex items-center gap-3">
-                      <Wallet className="w-7 h-7 text-sun shrink-0" />
-                      Taxa de Uso e Intermediação da Plataforma Acessível
-                    </h3>
-
-                    <p className="text-white/90 text-sm md:text-base leading-relaxed max-w-2xl">
-                      Contribuição mensal única de <strong className="text-sun font-bold text-lg">R$ {taxaAssociativaMensal}</strong> para manutenção da plataforma, infraestrutura técnica e triagem de casos.
+                    <h4 className="font-bold text-lg text-forest leading-snug">
+                      Assistente de Emissão de Recibo e NF
+                    </h4>
+                    <p className="text-sm text-forest/80 leading-relaxed">
+                      Emita recibos clínicos em PDF e conte com um assistente inteligente para emissão de notas fiscais (espelho com dados consolidados para copiar e colar no emissor da sua prefeitura), com cálculo automático e total conformidade ética.
                     </p>
-
-                    <div className="bg-white/10 backdrop-blur-sm p-4 rounded-xl border border-white/15 text-xs text-white/90 space-y-1.5 max-w-2xl">
-                      <p className="font-bold text-sun text-xs uppercase tracking-wide flex items-center gap-1.5">
-                        <Sparkles className="w-4 h-4 text-sun" /> Como funciona o processo de adesão?
-                      </p>
-                      <p className="leading-relaxed">
-                        O preenchimento da inscrição é <strong className="text-white underline decoration-sun underline-offset-2">100% gratuito</strong>. A Taxa de Uso e Intermediação da Plataforma mensal <strong className="text-sun font-semibold">só passará a ser cobrada a partir da entrevista de alinhamento, aprovação pela gestão do projeto e assinatura formal do contrato de parceria</strong>.
-                      </p>
-                    </div>
                   </div>
-
-                  <div className="w-full lg:w-auto bg-white/10 backdrop-blur-md p-6 rounded-2xl border border-white/20 flex flex-col items-center justify-center text-center shrink-0 min-w-[240px]">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-sun-light">Valor Fixo Mensal</span>
-                    <div className="flex items-baseline gap-1 my-1">
-                      <span className="text-sm font-bold text-sun">R$</span>
-                      <span className="text-4xl font-extrabold text-white font-serif">{taxaAssociativaMensal}</span>
-                    </div>
-                    <span className="text-[11px] text-white/80 bg-white/15 px-3 py-1 rounded-full mt-1 border border-white/20">
-                      Cobrado apenas pós-contrato
-                    </span>
+                  <div className="pt-3 border-t border-soft/60 flex items-center gap-1.5 text-xs text-forest/70 font-semibold">
+                    <Check className="w-3.5 h-3.5 text-sun-dark" />
+                    <span>Recibo em PDF e espelho de NF com 1 clique</span>
                   </div>
                 </div>
 
-                <div className="mt-8 pt-6 border-t border-white/15 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs text-white/90 relative z-10">
-                  <div className="flex items-start gap-3 bg-white/5 p-3.5 rounded-xl border border-white/10 hover:bg-white/10 transition-colors">
-                    <Check className="w-4 h-4 text-sun shrink-0 mt-0.5" />
-                    <span>Conexão com profissionais para divulgação e troca de serviços a valores acessíveis</span>
+                {/* Recurso 2: Controle Financeiro Integrado */}
+                <div className="bg-white/95 backdrop-blur-md p-6 rounded-3xl border border-soft hover:border-sun/60 shadow-md shadow-forest/5 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group flex flex-col justify-between gap-4">
+                  <div className="flex flex-col gap-3">
+                    <div className="flex items-center justify-between">
+                      <div className="w-12 h-12 rounded-2xl bg-emerald-100 flex items-center justify-center text-emerald-900 group-hover:bg-emerald-200 transition-colors duration-300 shadow-xs">
+                        <FileSpreadsheet className="w-6 h-6 text-emerald-800" />
+                      </div>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-forest/60 bg-warm px-2.5 py-1 rounded-md border border-soft">
+                        Finanças em Dia
+                      </span>
+                    </div>
+                    <h4 className="font-bold text-lg text-forest leading-snug">
+                      Controle Financeiro Integrado
+                    </h4>
+                    <p className="text-sm text-forest/80 leading-relaxed">
+                      Acompanhe seus honorários em tempo real: faturamento de consultas regulares, atendimentos corporativos e ações de acolhimento. Extratos por período, controle de recebimentos e relatórios organizados.
+                    </p>
                   </div>
-                  <div className="flex items-start gap-3 bg-white/5 p-3.5 rounded-xl border border-white/10 hover:bg-white/10 transition-colors">
-                    <Check className="w-4 h-4 text-sun shrink-0 mt-0.5" />
-                    <span>Page profissional pessoal no catálogo público da plataforma</span>
+                  <div className="pt-3 border-t border-soft/60 flex items-center gap-1.5 text-xs text-forest/70 font-semibold">
+                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Visão clara de caixa e previsão mensal</span>
                   </div>
-                  <div className="flex items-start gap-3 bg-white/5 p-3.5 rounded-xl border border-white/10 hover:bg-white/10 transition-colors">
-                    <Check className="w-4 h-4 text-sun shrink-0 mt-0.5" />
-                    <span>Respaldo e consultoria sob demanda elaborada pelos gestores do projeto</span>
+                </div>
+
+                {/* Recurso 3: Notificação Automática de Eventos */}
+                <div className="bg-white/95 backdrop-blur-md p-6 rounded-3xl border border-soft hover:border-sun/60 shadow-md shadow-forest/5 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group flex flex-col justify-between gap-4">
+                  <div className="flex flex-col gap-3">
+                    <div className="flex items-center justify-between">
+                      <div className="w-12 h-12 rounded-2xl bg-blue-100 flex items-center justify-center text-blue-900 group-hover:bg-blue-200 transition-colors duration-300 shadow-xs">
+                        <BellRing className="w-6 h-6 text-blue-800" />
+                      </div>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-forest/60 bg-warm px-2.5 py-1 rounded-md border border-soft">
+                        Automação
+                      </span>
+                    </div>
+                    <h4 className="font-bold text-lg text-forest leading-snug">
+                      Notificação Automática de Eventos
+                    </h4>
+                    <p className="text-sm text-forest/80 leading-relaxed">
+                      Lembretes automáticos de sessão enviados diretamente aos pacientes, avisos gentis de cobrança e confirmações de horário por e-mail e mensageria, reduzindo faltas de última hora sem desgaste emocional.
+                    </p>
                   </div>
-                  <div className="flex items-start gap-3 bg-white/5 p-3.5 rounded-xl border border-white/10 hover:bg-white/10 transition-colors">
-                    <Check className="w-4 h-4 text-sun shrink-0 mt-0.5" />
-                    <span>Triagem e encaminhamento ativo dos casos para atendimento</span>
+                  <div className="pt-3 border-t border-soft/60 flex items-center gap-1.5 text-xs text-forest/70 font-semibold">
+                    <Check className="w-3.5 h-3.5 text-blue-600" />
+                    <span>Lembretes pré-sessão e confirmações</span>
+                  </div>
+                </div>
+
+                {/* Recurso 4: Acolhimento & Triagem Qualificada */}
+                <div className="bg-white/95 backdrop-blur-md p-6 rounded-3xl border border-soft hover:border-sun/60 shadow-md shadow-forest/5 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group flex flex-col justify-between gap-4">
+                  <div className="flex flex-col gap-3">
+                    <div className="flex items-center justify-between">
+                      <div className="w-12 h-12 rounded-2xl bg-rose-100 flex items-center justify-center text-rose-900 group-hover:bg-rose-200 transition-colors duration-300 shadow-xs">
+                        <HeartHandshake className="w-6 h-6 text-rose-800" />
+                      </div>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-forest/60 bg-warm px-2.5 py-1 rounded-md border border-soft">
+                        Particular & Empresas
+                      </span>
+                    </div>
+                    <h4 className="font-bold text-lg text-forest leading-snug">
+                      Conexão Ética: Particular e Corporativo
+                    </h4>
+                    <p className="text-sm text-forest/80 leading-relaxed">
+                      Respeitamos diferentes jornadas de cuidado: pacientes particulares contam com triagem especializada para alinhamento de perfil terapêutico, enquanto os colaboradores de empresas parceiras têm a autonomia de navegar pela rede e selecionar o profissional de sua preferência.
+                    </p>
+                  </div>
+                  <div className="pt-3 border-t border-soft/60 flex items-center gap-1.5 text-xs text-forest/70 font-semibold">
+                    <Check className="w-3.5 h-3.5 text-rose-600" />
+                    <span>Triagem estruturada e catálogo de perfis ativos</span>
+                  </div>
+                </div>
+
+                {/* Recurso 5: Autonomia & Liberdade de Agenda */}
+                <div className="bg-white/95 backdrop-blur-md p-6 rounded-3xl border border-soft hover:border-sun/60 shadow-md shadow-forest/5 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group flex flex-col justify-between gap-4">
+                  <div className="flex flex-col gap-3">
+                    <div className="flex items-center justify-between">
+                      <div className="w-12 h-12 rounded-2xl bg-sun/20 flex items-center justify-center text-forest group-hover:bg-sun transition-colors duration-300 shadow-xs">
+                        <Clock className="w-6 h-6 text-forest" />
+                      </div>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-forest/60 bg-warm px-2.5 py-1 rounded-md border border-soft">
+                        Sua Rotina
+                      </span>
+                    </div>
+                    <h4 className="font-bold text-lg text-forest leading-snug">
+                      Liberdade e Autonomia de Agenda
+                    </h4>
+                    <p className="text-sm text-forest/80 leading-relaxed">
+                      Você escolhe quantas horas por mês deseja disponibilizar e define seus próprios horários. Sua disponibilidade fortalece a rede de apoio no ritmo que se adapta à sua vida.
+                    </p>
+                  </div>
+                  <div className="pt-3 border-t border-soft/60 flex items-center gap-1.5 text-xs text-forest/70 font-semibold">
+                    <Check className="w-3.5 h-3.5 text-sun-dark" />
+                    <span>Grade flexível e controle independente</span>
+                  </div>
+                </div>
+
+                {/* Recurso 6: Comunidade, Supervisão & Artigos */}
+                <div className="bg-white/95 backdrop-blur-md p-6 rounded-3xl border border-soft hover:border-sun/60 shadow-md shadow-forest/5 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group flex flex-col justify-between gap-4">
+                  <div className="flex flex-col gap-3">
+                    <div className="flex items-center justify-between">
+                      <div className="w-12 h-12 rounded-2xl bg-purple-100 flex items-center justify-center text-purple-900 group-hover:bg-purple-200 transition-colors duration-300 shadow-xs">
+                        <BookOpen className="w-6 h-6 text-purple-800" />
+                      </div>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-forest/60 bg-warm px-2.5 py-1 rounded-md border border-soft">
+                        Intercâmbio
+                      </span>
+                    </div>
+                    <h4 className="font-bold text-lg text-forest leading-snug">
+                      Comunidade, Supervisão & Blog
+                    </h4>
+                    <p className="text-sm text-forest/80 leading-relaxed">
+                      Conexão com outros profissionais da psicologia, psicanálise e terapias: supervisão clínica, workshops e publicação de artigos autorais no Blog oficial para consolidação de autoridade.
+                    </p>
+                  </div>
+                  <div className="pt-3 border-t border-soft/60 flex items-center gap-1.5 text-xs text-forest/70 font-semibold">
+                    <Check className="w-3.5 h-3.5 text-purple-600" />
+                    <span>Autoridade e crescimento compartilhado</span>
                   </div>
                 </div>
               </div>
             </div>
+
+            {/* Alternância: Planos (se habilitados na gestão) OU Oportunidade de Incentivo ao Engajamento (3 Meses de Isenção) */}
+            {exibirPlanosProfissionais ? (
+              /* Quadro Integrado de 3 Planos da Rede para Psicólogos, Psicanalistas e Terapeutas */
+              <div className="w-full bg-gradient-to-br from-forest via-[#1a3828] to-[#102419] text-white p-6 sm:p-10 rounded-3xl border-2 border-sun-dark/40 shadow-xl relative overflow-hidden my-3">
+                {/* Glow Auras */}
+                <div className="absolute -right-12 -bottom-12 w-80 h-80 bg-sun/10 rounded-full blur-3xl pointer-events-none" />
+                <div className="absolute -left-12 -top-12 w-64 h-64 bg-emerald-500/10 rounded-full blur-2xl pointer-events-none" />
+
+                <div className="relative z-10 flex flex-col gap-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/15 pb-4">
+                    <div>
+                      <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                        <span className="px-3 py-1 bg-sun text-forest text-[11px] font-black uppercase tracking-wider rounded-full shadow-sm">
+                          ⭐ Planos de Adesão da Rede
+                        </span>
+                        <span className="px-3 py-1 bg-white/10 text-sun-light text-[11px] font-semibold rounded-full border border-white/20">
+                          Cobrança Somente Após Aceite & Contrato
+                        </span>
+                      </div>
+                      <h3 className="font-serif text-2xl sm:text-3xl font-bold text-white tracking-tight flex items-center gap-2.5">
+                        <Wallet className="w-7 h-7 text-sun shrink-0" />
+                        Planos para Psicólogos, Psicanalistas e Terapeutas
+                      </h3>
+                      <p className="text-white/80 text-xs sm:text-sm mt-1 max-w-2xl leading-relaxed">
+                        Valores transparentes configurados na gestão para manutenção técnica e triagem de casos. A pré-inscrição é 100% gratuita.
+                      </p>
+                    </div>
+
+                    <div className="bg-white/10 backdrop-blur-md px-4 py-2.5 rounded-2xl border border-white/15 text-left sm:text-right shrink-0">
+                      <span className="text-[10px] uppercase tracking-wider text-sun font-bold block">Inscrição Gratuita</span>
+                      <span className="text-xs text-white/90">Nenhuma taxa de cadastro</span>
+                    </div>
+                  </div>
+
+                  {/* Grid dos 3 Planos Oficiais */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                    {planosAtivos.map((plano, pIdx) => {
+                      return (
+                        <div
+                          key={plano.id || pIdx}
+                          className={`rounded-2xl p-5 sm:p-6 flex flex-col justify-between transition-all duration-300 relative border ${
+                            plano.destaque
+                              ? "bg-white/15 border-sun shadow-2xl ring-2 ring-sun/40 backdrop-blur-md md:-translate-y-1"
+                              : "bg-white/10 border-white/20 hover:bg-white/15 backdrop-blur-sm"
+                          }`}
+                        >
+                          {plano.destaque && (
+                            <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-sun text-forest text-[10px] font-extrabold px-3 py-0.5 rounded-full uppercase tracking-wider shadow-sm flex items-center gap-1">
+                              <Star className="w-3 h-3 fill-forest" />
+                              Mais Escolhido
+                            </div>
+                          )}
+
+                          <div>
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-[11px] font-bold text-sun-light uppercase tracking-wider">
+                                {plano.subtitulo || `Plano ${pIdx + 1}`}
+                              </span>
+                              <span className="text-[11px] text-white/70 bg-white/10 px-2 py-0.5 rounded-md">
+                                {plano.horasInclusas}
+                              </span>
+                            </div>
+
+                            <h4 className="font-serif text-xl font-bold text-white mt-1.5">
+                              {plano.nome}
+                            </h4>
+
+                            <div className="flex items-baseline gap-1 my-3">
+                              <span className="text-sm font-bold text-sun">R$</span>
+                              <span className="text-3xl sm:text-4xl font-extrabold text-white font-serif">{plano.valorMensal}</span>
+                              <span className="text-xs text-white/70">/mês</span>
+                            </div>
+
+                            <p className="text-xs text-white/85 leading-relaxed min-h-[36px]">
+                              {plano.descricao}
+                            </p>
+
+                            <div className="mt-4 pt-3 border-t border-white/15 space-y-2">
+                              {(plano.recursos || []).slice(0, 5).map((rec, rIdx) => (
+                                <div key={rIdx} className="flex items-start gap-2 text-xs text-white/90">
+                                  <Check className="w-3.5 h-3.5 text-sun shrink-0 mt-0.5" />
+                                  <span className="leading-tight">{rec}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div className="mt-6 pt-3 border-t border-white/15">
+                            <span className="text-[11px] text-sun-light/90 block text-center font-medium">
+                              ✓ Cobrado apenas após aceite e contrato
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Faixa de Garantias e Regra Transparente */}
+                  <div className="mt-2 pt-4 border-t border-white/15 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs text-white/90">
+                    <div className="flex items-start gap-2.5 bg-white/5 p-3 rounded-xl border border-white/10">
+                      <Check className="w-4 h-4 text-sun shrink-0 mt-0.5" />
+                      <span>Inscrição 100% gratuita e sem fidelidade inicial</span>
+                    </div>
+                    <div className="flex items-start gap-2.5 bg-white/5 p-3 rounded-xl border border-white/10">
+                      <Check className="w-4 h-4 text-sun shrink-0 mt-0.5" />
+                      <span>Página profissional individual no catálogo público</span>
+                    </div>
+                    <div className="flex items-start gap-2.5 bg-white/5 p-3 rounded-xl border border-white/10">
+                      <Check className="w-4 h-4 text-sun shrink-0 mt-0.5" />
+                      <span>Triagem ativa e encaminhamento seguro de casos</span>
+                    </div>
+                    <div className="flex items-start gap-2.5 bg-white/5 p-3 rounded-xl border border-white/10">
+                      <Check className="w-4 h-4 text-sun shrink-0 mt-0.5" />
+                      <span>Cobrança somente após entrevista e contrato formal</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              /* Bloco de Incentivo ao Engajamento com 3 Meses de Isenção Total */
+              <div className="w-full bg-gradient-to-br from-forest via-[#1c3829] to-[#0f2419] text-white p-6 sm:p-10 rounded-3xl border-2 border-sun-dark/40 shadow-xl relative overflow-hidden my-3">
+                {/* Glow Auras */}
+                <div className="absolute -right-12 -bottom-12 w-80 h-80 bg-sun/10 rounded-full blur-3xl pointer-events-none" />
+                <div className="absolute -left-12 -top-12 w-64 h-64 bg-emerald-500/10 rounded-full blur-2xl pointer-events-none" />
+
+                <div className="relative z-10 flex flex-col gap-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/15 pb-5">
+                    <div>
+                      <div className="flex items-center gap-2 mb-2 flex-wrap">
+                        <span className="px-3 py-1 bg-sun text-forest text-[11px] font-black uppercase tracking-wider rounded-full shadow-sm flex items-center gap-1.5">
+                          <Gift className="w-3.5 h-3.5 fill-forest" />
+                          Incentivo ao Engajamento Clínico & Social
+                        </span>
+                        <span className="px-3 py-1 bg-emerald-500/20 text-emerald-300 text-[11px] font-bold rounded-full border border-emerald-400/30">
+                          Inscrição 100% Gratuita
+                        </span>
+                      </div>
+                      <h3 className="font-serif text-2xl sm:text-3xl font-bold text-white tracking-tight flex items-center gap-2.5">
+                        <Sparkles className="w-7 h-7 text-sun shrink-0" />
+                        3 Meses de Isenção Total a partir do seu Cadastro
+                      </h3>
+                      <p className="text-white/80 text-xs sm:text-sm mt-1.5 max-w-2xl leading-relaxed">
+                        Como forma de incentivar sua chegada e colaboração na rede, oferecemos <strong>isenção integral de qualquer taxa ou mensalidade durante os primeiros 90 dias</strong> após a aprovação do seu credenciamento.
+                      </p>
+                    </div>
+
+                    <div className="bg-white/10 backdrop-blur-md px-5 py-3.5 rounded-2xl border border-white/15 text-left sm:text-right shrink-0">
+                      <span className="text-[10px] uppercase tracking-wider text-sun font-extrabold block">Período de Carência</span>
+                      <span className="text-2xl font-black text-white font-serif">90 Dias</span>
+                      <span className="text-[10px] text-white/70 block">Custo Zero de Plataforma</span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="bg-white/10 backdrop-blur-sm p-5 rounded-2xl border border-white/15 flex flex-col gap-2">
+                      <div className="flex items-center gap-2 text-sun font-bold text-xs uppercase tracking-wider">
+                        <CheckCircle2 className="w-4 h-4 text-sun" />
+                        <span>Sem Taxa de Adesão</span>
+                      </div>
+                      <h4 className="font-bold text-white text-base">Inscrição e Validação Grátis</h4>
+                      <p className="text-xs text-white/80 leading-relaxed">
+                        Envie seus dados, formação e CRP sem qualquer custo ou compromisso financeiro antecipado.
+                      </p>
+                    </div>
+
+                    <div className="bg-white/10 backdrop-blur-sm p-5 rounded-2xl border border-white/15 flex flex-col gap-2">
+                      <div className="flex items-center gap-2 text-sun font-bold text-xs uppercase tracking-wider">
+                        <CheckCircle2 className="w-4 h-4 text-sun" />
+                        <span>Todos os Recursos Inclusos</span>
+                      </div>
+                      <h4 className="font-bold text-white text-base">Tecnologia Completa</h4>
+                      <p className="text-xs text-white/80 leading-relaxed">
+                        Utilize o assistente de emissão de recibos e NF, controle de honorários, notificações automáticas e prontuário sem restrições.
+                      </p>
+                    </div>
+
+                    <div className="bg-white/10 backdrop-blur-sm p-5 rounded-2xl border border-white/15 flex flex-col gap-2">
+                      <div className="flex items-center gap-2 text-sun font-bold text-xs uppercase tracking-wider">
+                        <CheckCircle2 className="w-4 h-4 text-sun" />
+                        <span>Transparência Absoluta</span>
+                      </div>
+                      <h4 className="font-bold text-white text-base">Sem Fidelidade ou Letras Miúdas</h4>
+                      <p className="text-xs text-white/80 leading-relaxed">
+                        Apenas após os 3 meses e com novos recursos consolidados é que os planos da rede passam a vigorar. Oferecemos opções acessíveis com <strong>mensalidades a partir de R$ 29,90</strong>.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Alinhamento de Textos e Botão no Quadro de Incentivo */}
+                  <div className="mt-2 pt-5 border-t border-white/15 flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-xs text-white/90">
+                      <div className="flex items-center gap-2">
+                        <Check className="w-4 h-4 text-sun shrink-0" />
+                        <span>3 meses de isenção integral a partir da aprovação</span>
+                      </div>
+                      <div className="hidden sm:block text-white/30">•</div>
+                      <div className="flex items-center gap-1.5 bg-white/10 px-3 py-1 rounded-lg border border-white/15 text-sun-light font-bold">
+                        <Coins className="w-4 h-4 text-sun shrink-0" />
+                        <span>Mensalidades a partir de R$ 29,90</span>
+                      </div>
+                    </div>
+
+                    <a
+                      href="#cadastro"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        const formEl = document.querySelector('form');
+                        if (formEl) formEl.scrollIntoView({ behavior: 'smooth' });
+                      }}
+                      className="px-6 py-3 bg-sun hover:bg-sun-dark text-forest font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer w-full sm:w-auto shrink-0"
+                    >
+                      <span>Aproveitar Isenção de 3 Meses</span>
+                      <ArrowRight className="w-4 h-4 text-forest" />
+                    </a>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </section>
 
@@ -605,12 +951,16 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
                     <li><strong>Aceite & Assinatura de Contrato:</strong> Formalização e liberação para atendimentos.</li>
                   </ol>
                   <p className="text-[11px] text-forest/80 italic border-t border-soft pt-2 mt-1">
-                    💡 <strong>Lembrete:</strong> Nenhuma cobrança é efetuada neste momento. A Taxa de Uso e Intermediação da Plataforma (R$ {taxaAssociativaMensal}/mês) só é devida após a aprovação e assinatura formal do contrato.
+                    {exibirPlanosProfissionais ? (
+                      <>💡 <strong>Lembrete:</strong> Nenhuma cobrança é efetuada neste momento. A mensalidade do plano selecionado ({planoSelecionado.nome} - R$ {planoSelecionado.valorMensal}/mês) só é devida após a aprovação e assinatura formal do contrato.</>
+                    ) : (
+                      <>💡 <strong>Lembrete:</strong> Nenhuma cobrança é efetuada agora. Seu credenciamento é gratuito e você conta com <strong>3 meses de isenção total</strong> de qualquer taxa ou mensalidade a partir do cadastro.</>
+                    )}
                   </p>
                 </div>
 
-                {/* Stripe Checkout Call to Action for already-approved members */}
-                {stripeConfig?.stripeEnabled && (
+                {/* Stripe Checkout Call to Action for already-approved members (apenas se planos habilitados) */}
+                {exibirPlanosProfissionais && stripeConfig?.stripeEnabled && (
                   <div className="w-full max-w-lg bg-warm/60 p-5 rounded-2xl border border-soft mb-6 flex flex-col gap-3 text-left">
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
@@ -622,14 +972,14 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
                       </span>
                     </div>
                     <p className="text-xs text-forest/80 leading-relaxed">
-                      Se você já foi aprovado na entrevista e concluiu o contrato, ative sua Taxa de Uso e Intermediação da Plataforma (R$ {taxaAssociativaMensal}/mês) com total segurança via Pix ou Cartão de Crédito.
+                      Se você já foi aprovado na entrevista e concluiu o contrato, ative a mensalidade do plano {planoSelecionado.nome} (R$ {planoSelecionado.valorMensal}/mês) com total segurança via Pix ou Cartão de Crédito.
                     </p>
                     <button
                       onClick={() => setShowCheckoutModal(true)}
                       className="w-full py-3.5 px-6 bg-forest text-white rounded-xl font-bold hover:bg-forest/90 transition-all shadow-md flex items-center justify-center gap-2 text-sm mt-1"
                     >
                       <Sparkles className="w-4 h-4 text-sun" />
-                      Efetuar Pagamento da Taxa de Uso e Intermediação da Plataforma (R$ {taxaAssociativaMensal}/mês)
+                      Efetuar Pagamento da Mensalidade ({planoSelecionado.nome} - R$ {planoSelecionado.valorMensal}/mês)
                     </button>
                   </div>
                 )}
@@ -1432,57 +1782,168 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
                             </label>
                           </div>
 
-                          {/* Taxa de Uso e Intermediação da Plataforma Awareness Box */}
-                          <div className="bg-amber-50/90 p-5 rounded-2xl border border-amber-200 flex flex-col gap-3.5 shadow-xs">
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="flex items-center gap-2 text-forest font-bold text-sm">
-                                <Wallet className="w-5 h-5 text-amber-800 shrink-0" />
-                                <span>Taxa de Uso e Intermediação da Plataforma: R$ {taxaAssociativaMensal}/mês (Apenas Pós-Aprovação)</span>
+                          {/* Seleção Interativa de Planos OU Programa de 3 Meses de Isenção */}
+                          {exibirPlanosProfissionais ? (
+                            <div className="bg-gradient-to-br from-amber-50/90 to-warm/60 p-5 sm:p-6 rounded-2xl border-2 border-sun-dark/30 flex flex-col gap-4 shadow-sm">
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-soft pb-3">
+                                <div className="flex items-center gap-2 text-forest font-bold text-sm">
+                                  <Wallet className="w-5 h-5 text-forest shrink-0" />
+                                  <span>Selecione seu Plano de Adesão Inicial</span>
+                                </div>
+                                <span className="px-2.5 py-0.5 bg-emerald-100 text-emerald-900 border border-emerald-300 text-[10px] font-extrabold rounded-full uppercase tracking-wider self-start sm:self-auto">
+                                  Inscrição 100% Gratuita
+                                </span>
                               </div>
-                              <span className="px-2.5 py-0.5 bg-amber-200/80 text-amber-900 text-[10px] font-bold rounded-full uppercase shrink-0">
-                                Inscrição Gratuita
-                              </span>
-                            </div>
 
-                            <div className="bg-amber-100/60 p-3 rounded-xl border border-amber-300/50 text-xs text-amber-950 leading-relaxed font-medium">
-                              📌 <strong>Regra de Cobrança Transparente:</strong> O preenchimento desta inscrição é <strong>100% gratuito</strong>. O valor da Taxa de Uso e Intermediação da Plataforma mensal (R$ {taxaAssociativaMensal}) <strong>NÃO</strong> é cobrado agora e <strong>só passará a ser devido após a realização da entrevista, aceite formal pela gestão e assinatura do contrato de parceria</strong>.
-                            </div>
-
-                            <div className="bg-white/90 p-3.5 rounded-xl border border-amber-200 text-xs text-forest/90 space-y-1.5">
-                              <p className="font-bold text-[10px] uppercase tracking-wider text-amber-900 mb-1">
-                                Benefícios incluídos após o aceite e assinatura do contrato:
+                              <p className="text-xs text-forest/80 leading-relaxed font-medium">
+                                Escolha o plano da rede com o qual você mais se identifica. Você poderá ajustar ou migrar de plano posteriormente junto à coordenação:
                               </p>
-                              <div className="flex items-start gap-2">
-                                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                                <span>Triagem ativa e encaminhamento direto de pacientes para atendimento</span>
-                              </div>
-                              <div className="flex items-start gap-2">
-                                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                                <span>Página profissional personalizada no catálogo oficial do projeto</span>
-                              </div>
-                              <div className="flex items-start gap-2">
-                                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                                <span>Suporte técnico, consultorias e respaldo institucional contínuo</span>
-                              </div>
-                              <div className="flex items-start gap-2">
-                                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                                <span>Rede de troca de serviços, supervisão e eventos exclusivos</span>
-                              </div>
-                            </div>
 
-                            <label className="flex items-start gap-3 cursor-pointer mt-1 group">
-                              <input 
-                                type="checkbox" 
-                                required
-                                checked={cienciaTaxa}
-                                onChange={(e) => setCienciaTaxa(e.target.checked)}
-                                className="mt-1 w-5 h-5 rounded border-amber-300 text-forest focus:ring-amber-500/20 accent-forest cursor-pointer shrink-0"
-                              />
-                              <span className="text-xs font-semibold text-forest leading-relaxed">
-                                Declaro estar ciente de que esta pré-inscrição é gratuita e que a Taxa de Uso e Intermediação da Plataforma mensal de R$ {taxaAssociativaMensal} só passará a ser cobrada após a realização da entrevista, o aceite formal da gestão para ingresso no projeto e a assinatura do contrato. *
-                              </span>
-                            </label>
-                          </div>
+                              {/* Seletor dos 3 Planos Editáveis */}
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                {planosAtivos.map((plano) => {
+                                  const isSelected = planoEscolhidoId === plano.id;
+                                  return (
+                                    <button
+                                      key={plano.id}
+                                      type="button"
+                                      onClick={() => setPlanoEscolhidoId(plano.id)}
+                                      className={`p-4 rounded-xl border text-left flex flex-col justify-between gap-2 transition-all cursor-pointer relative ${
+                                        isSelected
+                                          ? "bg-white border-forest ring-2 ring-forest/30 shadow-md scale-[1.02]"
+                                          : "bg-white/70 border-soft hover:bg-white hover:border-forest/30"
+                                      }`}
+                                    >
+                                      {plano.destaque && (
+                                        <span className="inline-flex items-center gap-1 text-[9px] bg-sun text-forest font-extrabold px-2 py-0.5 rounded-full absolute -top-2.5 right-3 shadow-2xs">
+                                          <Star className="w-2.5 h-2.5 fill-forest" />
+                                          Mais Escolhido
+                                        </span>
+                                      )}
+
+                                      <div>
+                                        <span className="text-[10px] font-bold uppercase tracking-wider text-forest/60">
+                                          {plano.subtitulo}
+                                        </span>
+                                        <h5 className="font-serif text-sm font-bold text-forest leading-tight mt-0.5">
+                                          {plano.nome}
+                                        </h5>
+                                      </div>
+
+                                      <div className="pt-2 border-t border-soft/50 flex items-baseline justify-between w-full">
+                                        <div className="flex items-baseline gap-1">
+                                          <span className="text-xs text-forest/60 font-semibold">R$</span>
+                                          <span className="text-lg font-extrabold text-forest font-serif">{plano.valorMensal}</span>
+                                          <span className="text-[10px] text-forest/50">/mês</span>
+                                        </div>
+                                        <span className="text-[9px] font-semibold text-forest/60 bg-warm px-1.5 py-0.5 rounded">
+                                          {plano.horasInclusas}
+                                        </span>
+                                      </div>
+
+                                      {isSelected && (
+                                        <div className="flex items-center gap-1 text-emerald-700 text-[10px] font-bold mt-1">
+                                          <Check className="w-3.5 h-3.5" />
+                                          <span>Plano Selecionado</span>
+                                        </div>
+                                      )}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+
+                              {/* Detalhes do Plano Escolhido */}
+                              <div className="bg-white/95 p-4 rounded-xl border border-soft text-xs text-forest/90 space-y-2 shadow-2xs">
+                                <div className="flex items-center justify-between border-b border-soft/60 pb-2 flex-wrap gap-2">
+                                  <span className="font-bold text-forest text-xs flex items-center gap-1.5">
+                                    <Sparkles className="w-3.5 h-3.5 text-sun-dark" />
+                                    Benefícios do {planoSelecionado.nome}:
+                                  </span>
+                                  <span className="text-forest font-extrabold text-xs">
+                                    R$ {planoSelecionado.valorMensal}/mês ({planoSelecionado.horasInclusas})
+                                  </span>
+                                </div>
+                                <p className="text-forest/75 text-[11px] leading-relaxed">
+                                  {planoSelecionado.descricao}
+                                </p>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1">
+                                  {(planoSelecionado.recursos || []).slice(0, 4).map((rec, rIdx) => (
+                                    <div key={rIdx} className="flex items-start gap-1.5 text-[11px] text-forest/85">
+                                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                                      <span>{rec}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+
+                              {/* Banner de Cobrança Transparente */}
+                              <div className="bg-amber-100/70 p-3.5 rounded-xl border border-amber-300 text-xs text-amber-950 leading-relaxed font-medium">
+                                📌 <strong>Regra de Cobrança 100% Transparente:</strong> O preenchimento desta pré-inscrição é <strong>100% gratuito</strong>. A taxa do plano ({planoSelecionado.nome} - R$ {planoSelecionado.valorMensal}/mês) <strong>NÃO</strong> é cobrada no envio deste formulário. A mensalidade <strong>só passará a ser devida após a realização da entrevista com a coordenação, o aceite formal de ambas as partes e a assinatura do contrato de credenciamento</strong>.
+                              </div>
+
+                              <label className="flex items-start gap-3 cursor-pointer mt-1 group">
+                                <input 
+                                  type="checkbox" 
+                                  required
+                                  checked={cienciaTaxa}
+                                  onChange={(e) => setCienciaTaxa(e.target.checked)}
+                                  className="mt-1 w-5 h-5 rounded border-amber-300 text-forest focus:ring-amber-500/20 accent-forest cursor-pointer shrink-0"
+                                />
+                                <span className="text-xs font-semibold text-forest leading-relaxed">
+                                  Declaro estar ciente de que esta pré-inscrição é gratuita e que a mensalidade do plano selecionado ({planoSelecionado.nome} - R$ {planoSelecionado.valorMensal}/mês) só passará a ser cobrada após a realização da entrevista, aceite formal da gestão para ingresso no projeto e assinatura do contrato. *
+                                </span>
+                              </label>
+                            </div>
+                          ) : (
+                            /* Card de Incentivo ao Engajamento: 3 Meses de Isenção */
+                            <div className="bg-gradient-to-br from-emerald-50/90 to-warm/70 p-5 sm:p-6 rounded-2xl border-2 border-emerald-500/30 flex flex-col gap-4 shadow-sm">
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-soft pb-3">
+                                <div className="flex items-center gap-2 text-forest font-bold text-sm">
+                                  <Gift className="w-5 h-5 text-emerald-700 shrink-0" />
+                                  <span>Incentivo ao Engajamento: 3 Meses de Isenção Total</span>
+                                </div>
+                                <span className="px-2.5 py-0.5 bg-emerald-100 text-emerald-900 border border-emerald-300 text-[10px] font-extrabold rounded-full uppercase tracking-wider self-start sm:self-auto">
+                                  Benefício de Boas-Vindas
+                                </span>
+                              </div>
+
+                              <p className="text-xs text-forest/85 leading-relaxed font-medium">
+                                Parabéns! Pela sua inscrição neste momento, você está contemplado com <strong>3 meses de isenção total (90 dias)</strong> de qualquer taxa de plataforma a partir do seu credenciamento:
+                              </p>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
+                                <div className="bg-white/95 p-3 rounded-xl border border-emerald-200/80 text-forest shadow-2xs">
+                                  <span className="font-bold block text-emerald-800">✓ R$ 0,00 nos 90 dias</span>
+                                  <span className="text-[11px] text-forest/70">Acesso irrestrito a todos os recursos</span>
+                                </div>
+                                <div className="bg-white/95 p-3 rounded-xl border border-emerald-200/80 text-forest shadow-2xs">
+                                  <span className="font-bold block text-emerald-800">✓ Assistente de Recibos & NF</span>
+                                  <span className="text-[11px] text-forest/70">Controle financeiro integrado</span>
+                                </div>
+                                <div className="bg-white/95 p-3 rounded-xl border border-emerald-200/80 text-forest shadow-2xs">
+                                  <span className="font-bold block text-emerald-800">✓ Notificações Automáticas</span>
+                                  <span className="text-[11px] text-forest/70">Lembretes e avisos aos pacientes</span>
+                                </div>
+                              </div>
+
+                              <div className="bg-emerald-100/70 p-3.5 rounded-xl border border-emerald-300 text-xs text-emerald-950 leading-relaxed font-medium">
+                                🎁 <strong>Regra Clara de Boas-Vindas:</strong> O credenciamento é <strong>100% gratuito</strong>. Nenhuma cobrança é efetuada no envio deste formulário nem durante os seus primeiros 3 meses na plataforma. Após o período de isenção, você terá acesso a planos com <strong>mensalidades a partir de R$ 29,90</strong>, com total autonomia e sem qualquer fidelidade.
+                              </div>
+
+                              <label className="flex items-start gap-3 cursor-pointer mt-1 group">
+                                <input 
+                                  type="checkbox" 
+                                  required
+                                  checked={cienciaTaxa}
+                                  onChange={(e) => setCienciaTaxa(e.target.checked)}
+                                  className="mt-1 w-5 h-5 rounded border-emerald-400 text-forest focus:ring-emerald-500/20 accent-forest cursor-pointer shrink-0"
+                                />
+                                <span className="text-xs font-semibold text-forest leading-relaxed">
+                                  Declaro estar ciente de que o <strong>credenciamento é 100% gratuito</strong> e que tenho direito a <strong>3 meses de isenção total</strong> de qualquer taxa a partir da data de aprovação do cadastro. *
+                                </span>
+                              </label>
+                            </div>
+                          )}
 
                           <label className="flex items-start gap-3 cursor-pointer group">
                             <input 
@@ -1538,7 +1999,7 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
         <StripeCheckoutModal
           isOpen={showCheckoutModal}
           onClose={() => setShowCheckoutModal(false)}
-          amountFormatted={taxaAssociativaMensal}
+          amountFormatted={planoSelecionado.valorMensal}
           professionalName={formData.nome || "Profissional Associado"}
           professionalEmail={formData.email}
           leadId={registeredLeadId}

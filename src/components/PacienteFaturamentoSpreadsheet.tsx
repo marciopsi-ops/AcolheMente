@@ -701,10 +701,10 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
             disabled={sessoesFiltradas.length === 0}
             onClick={() => setModalNf(true)}
             className="px-3 py-1.5 bg-warm hover:bg-emerald-700 hover:text-white text-forest font-semibold rounded-xl border border-soft transition-all flex items-center gap-1.5 shadow-2xs disabled:opacity-50 cursor-pointer"
-            title="Copiar dados formatados para emissão de Nota Fiscal no portal da prefeitura"
+            title="Assistente de emissão: dados consolidados para emissão de Nota Fiscal no portal da sua prefeitura"
           >
             <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Espelho NFS-e</span>
+            <span>Assistente NFS-e</span>
           </button>
 
           {/* Botão: Receita Saúde / Carnê-Leão (e-CAC) */}
@@ -1072,7 +1072,7 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
               <div className="flex items-center gap-2">
                 <FileSpreadsheet className="w-5 h-5 text-emerald-700" />
                 <h3 className="font-serif font-bold text-base text-forest">
-                  Espelho para Emissão de Nota Fiscal (NFS-e)
+                  Assistente & Espelho para Emissão de Nota Fiscal (NFS-e)
                 </h3>
               </div>
               <button
@@ -1085,7 +1085,7 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
             </div>
 
             <p className="text-xs text-forest/70">
-              Copie os campos abaixo e cole diretamente no emissor de Nota Fiscal da sua Prefeitura ou sistema fiscal:
+              Este assistente organiza e formata todos os dados do paciente. Copie os campos abaixo e cole diretamente no emissor de Nota Fiscal da sua Prefeitura ou sistema contábil:
             </p>
 
             {perfilAtivo === "PF" && (

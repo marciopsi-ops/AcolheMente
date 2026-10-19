@@ -209,16 +209,11 @@ export function PublicProfProfileView({
         <div className="flex items-center gap-2">
           <button 
             onClick={handleGoHome}
-            className="flex items-center gap-2 text-forest/70 hover:text-forest font-medium text-xs sm:text-sm transition-colors py-2 px-3.5 hover:bg-forest/5 rounded-full border border-forest/10 hover:border-forest/20 cursor-pointer"
+            className="text-forest/70 hover:text-forest transition-colors p-2 -ml-2 rounded-full hover:bg-forest/5 cursor-pointer shrink-0"
+            aria-label="Voltar para a página inicial"
             title="Voltar para a página inicial"
           >
-            <ArrowLeft className="w-4 h-4" /> Voltar para Home
-          </button>
-          <button 
-            onClick={handleGoHome}
-            className="hidden sm:inline-flex text-xs text-forest/60 hover:text-forest font-medium py-2 px-3 rounded-full hover:bg-forest/5 transition-colors cursor-pointer"
-          >
-            Tela Inicial
+            <ArrowLeft className="w-5 h-5 sm:w-6 sm:h-6" />
           </button>
         </div>
 
