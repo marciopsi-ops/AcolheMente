@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { User, HeartHandshake, X, Quote } from "lucide-react";
 import { collection, doc, onSnapshot, query } from "firebase/firestore";
 import { db, handleFirestoreError, OperationType } from "../lib/firebase";
+import { formatProfessionalName } from "../utils/formatters";
 
 export interface ProfissionalCard {
   id: string;
@@ -15,7 +16,7 @@ export interface ProfissionalCard {
 const FALLBACK_PROFISSIONAIS: ProfissionalCard[] = [
   {
     id: "f1",
-    name: "Dra. Ana Carolina Silva",
+    name: formatProfessionalName("Dra. Ana Carolina Silva"),
     foto: "https://images.unsplash.com/photo-1594824813566-78a9c33fd908?w=400&auto=format&fit=crop&q=80",
     profissao: "Psicóloga Clínica - TCC",
     crp: "CRP 06/145892",
@@ -23,7 +24,7 @@ const FALLBACK_PROFISSIONAIS: ProfissionalCard[] = [
   },
   {
     id: "f2",
-    name: "Dr. Marcos Vinícius Santos",
+    name: formatProfessionalName("Dr. Marcos Vinícius Santos"),
     foto: "https://images.unsplash.com/photo-1622253692010-333f2da6031d?w=400&auto=format&fit=crop&q=80",
     profissao: "Psicanalista",
     crp: "CRP 05/887412",
@@ -31,7 +32,7 @@ const FALLBACK_PROFISSIONAIS: ProfissionalCard[] = [
   },
   {
     id: "f3",
-    name: "Dra. Juliana Mendes",
+    name: formatProfessionalName("Dra. Juliana Mendes"),
     foto: "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=400&auto=format&fit=crop&q=80",
     profissao: "Terapeuta Holística",
     crp: "",
@@ -39,7 +40,7 @@ const FALLBACK_PROFISSIONAIS: ProfissionalCard[] = [
   },
   {
     id: "f4",
-    name: "Dr. Eduardo Costa",
+    name: formatProfessionalName("Dr. Eduardo Costa"),
     foto: "https://images.unsplash.com/photo-1537368910025-700350fe46c7?w=400&auto=format&fit=crop&q=80",
     profissao: "Psicólogo Humanista",
     crp: "CRP 06/112390",
@@ -47,7 +48,7 @@ const FALLBACK_PROFISSIONAIS: ProfissionalCard[] = [
   },
   {
     id: "f5",
-    name: "Dra. Beatriz Lima",
+    name: formatProfessionalName("Dra. Beatriz Lima"),
     foto: "https://images.unsplash.com/photo-1580489944761-15a19d654956?w=400&auto=format&fit=crop&q=80",
     profissao: "Terapeuta Cognitiva",
     crp: "CRP 04/774812",
@@ -55,7 +56,7 @@ const FALLBACK_PROFISSIONAIS: ProfissionalCard[] = [
   },
   {
     id: "f6",
-    name: "Dr. Rafael Oliveira",
+    name: formatProfessionalName("Dr. Rafael Oliveira"),
     foto: "https://images.unsplash.com/photo-1560250097-0b93528c311a?w=400&auto=format&fit=crop&q=80",
     profissao: "Psicólogo Clínico",
     crp: "CRP 06/134990",
@@ -121,11 +122,13 @@ export function ProfissionaisCarousel() {
                 return;
               }
 
-              const name =
+              const rawName =
                 data.name ||
                 data.nome ||
                 data.displayName ||
                 "Profissional Parceiro(a)";
+
+              const name = formatProfessionalName(rawName);
 
               const profissao =
                 data.profissao ||
@@ -238,6 +241,8 @@ export function ProfissionaisCarousel() {
                         <img
                           src={prof.foto}
                           alt={prof.name}
+                          loading="lazy"
+                          decoding="async"
                           referrerPolicy="no-referrer"
                           onError={() =>
                             setImageErrors((prev) => ({ ...prev, [itemKey]: true }))

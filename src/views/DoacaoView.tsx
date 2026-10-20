@@ -6,7 +6,8 @@ import { db, handleFirestoreError, OperationType } from "../lib/firebase";
 import { Breadcrumbs } from "../components/Breadcrumbs";
 
 import doacaoHero from '../assets/images/doacao_hero_photo_1781024105563.png';
-import logoImage from '../assets/images/logo_acolhe.jpeg';
+import logoImage from '../assets/images/logo_acolhe.svg';
+import { BrandLogo } from '../components/BrandLogo';
 
 export function DoacaoView({ onNavigate }: { onNavigate: (view: 'landing' | 'acolhimento' | 'dashboard' | 'profile' | 'empresa' | 'doacao') => void }) {
   const [activeTab, setActiveTab] = useState<'intro' | 'doar' | 'preciso'>('intro');
@@ -90,12 +91,14 @@ export function DoacaoView({ onNavigate }: { onNavigate: (view: 'landing' | 'aco
           >
             <ArrowLeft className="w-6 h-6" />
           </button>
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 bg-sun rounded-full flex items-center justify-center text-forest overflow-hidden shrink-0 shadow-sm">
-               <img src={logoImage} alt="AcolheMente Logo" className="w-full h-full object-cover" />
-            </div>
-            <span className="font-serif text-2xl font-semibold tracking-tight text-forest">AcolheMente <span className="text-forest/70 font-medium opacity-70">Apoio Acessível</span></span>
-          </div>
+          <BrandLogo 
+            size="md"
+            badge="Apoio Acessível"
+            onClick={() => {
+              window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+              onNavigate('landing');
+            }}
+          />
         </div>
       </nav>
 

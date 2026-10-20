@@ -2,7 +2,8 @@ import { Map, Mail, Phone, HeartHandshake, Leaf, User, LifeBuoy, PhoneCall, Exte
 import { useEffect, useState } from "react";
 import { doc, onSnapshot } from "firebase/firestore";
 import { db } from "../lib/firebase";
-import logoImage from "../assets/images/logo_acolhe.jpeg";
+import logoImage from "../assets/images/logo_acolhe.svg";
+import { BrandLogo } from "./BrandLogo";
 import { ComplianceModal } from "./ComplianceModal";
 import { ApoioImediatoModal } from "./ApoioImediatoModal";
 
@@ -110,12 +111,7 @@ export function Footer({ onNavigate }: { onNavigate?: (view: any) => void }) {
         
         {/* Brand & History */}
         <div className="flex flex-col gap-4" id="footer-col-brand">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="w-14 h-14 bg-sun rounded-full flex items-center justify-center text-forest overflow-hidden shadow-sm">
-              <img src={logoImage} alt="AcolheMente Logo" className="w-full h-full object-cover" />
-            </div>
-            <span className="font-serif text-2xl font-semibold tracking-tight text-forest">AcolheMente</span>
-          </div>
+          <BrandLogo size="lg" onClick={() => handleNav('landing')} className="mb-2" />
           <p className="text-forest/80 text-sm leading-relaxed" id="footer-brand-description">
             {configs.footerDescricao || "Uma iniciativa focada em democratizar o acesso à saúde mental. Nossa história começa na vontade de criar uma ponte humanizada entre psicólogos, psicanalistas e terapeutas qualificados e quem busca acolhimento, ajudando pessoas através de valores acessíveis ou benefícios corporativos."}
           </p>

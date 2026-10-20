@@ -39,6 +39,7 @@ import {
   orderBy
 } from "firebase/firestore";
 import { db, handleFirestoreError, OperationType } from "../lib/firebase";
+import { formatProfessionalName } from "../utils/formatters";
 
 // Normalizador para busca insensível a acentos, maiúsculas e caracteres especiais
 export function normalizeText(str: string): string {
@@ -400,11 +401,12 @@ export function RedeProfissionalView({
                 return;
               }
 
-              const name =
+              const rawName =
                 data.name ||
                 data.nome ||
                 data.displayName ||
                 "Profissional Parceiro";
+              const name = formatProfessionalName(rawName);
 
               const cargo =
                 data.cargo ||
@@ -988,9 +990,9 @@ export function RedeProfissionalView({
           </div>
         )}
 
-        {/* Chips de Especialidades / Abordagens Rápidas */}
-        <div className="w-full max-w-full min-w-0 flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-0.5">
-          <span className="text-[10px] sm:text-[11px] font-bold text-forest/70 uppercase tracking-wider whitespace-nowrap mr-1 flex items-center gap-1">
+        {/* Chips de Especialidades / Abordagens Rápidas - Touch-friendly */}
+        <div className="w-full max-w-full min-w-0 flex items-center gap-1.5 overflow-x-auto no-scrollbar scroll-smooth snap-x snap-proximity overscroll-x-contain touch-pan-x pt-0.5 pb-1">
+          <span className="text-[10px] sm:text-[11px] font-bold text-forest/70 uppercase tracking-wider whitespace-nowrap mr-1 flex items-center gap-1 shrink-0">
             <Layers className="w-3 h-3 text-emerald-700" />
             Filtros Rápidos:
           </span>
@@ -1001,7 +1003,7 @@ export function RedeProfissionalView({
                 key={spec}
                 type="button"
                 onClick={() => setSelectedSpecialtyChip(spec)}
-                className={`px-2.5 sm:px-3 py-0.5 sm:py-1 rounded-full text-[10px] sm:text-[11px] font-semibold transition-all whitespace-nowrap cursor-pointer ${
+                className={`px-2.5 sm:px-3 py-1 rounded-full text-[10px] sm:text-[11px] font-semibold transition-all whitespace-nowrap cursor-pointer snap-start shrink-0 active:scale-95 ${
                   isSelected
                     ? "bg-forest text-white shadow-2xs font-bold"
                     : "bg-warm hover:bg-forest/10 text-forest/70 border border-soft/60"
@@ -1133,9 +1135,9 @@ export function RedeProfissionalView({
                       <div>
                         <h3
                           className="text-xs sm:text-sm font-bold text-forest line-clamp-1 leading-tight"
-                          title={prof.name}
+                          title={formatProfessionalName(prof.name)}
                         >
-                          {prof.name}
+                          {formatProfessionalName(prof.name)}
                         </h3>
 
                         {/* Nome do Cargo / Profissão (Alinhado em até duas linhas) */}
@@ -1738,7 +1740,7 @@ export function RedeProfissionalView({
               </div>
 
               <h3 className="text-lg font-bold font-serif mt-3 text-white">
-                {selectedProfissionalModal.name}
+                {formatProfessionalName(selectedProfissionalModal.name)}
               </h3>
               <p className="text-xs font-semibold text-sun mt-0.5">
                 {selectedProfissionalModal.profissao}

@@ -63,7 +63,8 @@ import { ApoioImediatoModal } from "./components/ApoioImediatoModal";
 import { BlurImageBackground } from "./components/BlurImageBackground";
 
 import homeHero from "./assets/images/home_hero_photo_parda_1781024318036.png";
-import logoImage from "./assets/images/logo_acolhe.jpeg";
+import logoImage from "./assets/images/logo_acolhe.svg";
+import { BrandLogo } from "./components/BrandLogo";
 
 /**
  * Ícone da letra grega Psi (Ψ) - Símbolo universal da Psicologia
@@ -830,31 +831,22 @@ function LandingPage({
       <CampanhaPrevencaoBanner onNavigateAcolhimento={() => onNavigate("acolhimento")} />
 
       {/* Navbar */}
-      <nav className="w-full py-4 sm:py-6 px-4 sm:px-6 md:px-12 flex justify-between items-center border-b border-soft gap-2 relative z-50 bg-warm/80 backdrop-blur-md">
-        <div className="flex items-center gap-3 sm:gap-4 shrink-0">
-          <div className="w-12 h-12 sm:w-16 sm:h-16 bg-sun rounded-full flex items-center justify-center text-forest overflow-hidden shrink-0 shadow-sm">
-            <img
-              src={logoImage}
-              alt="AcolheMente Logo"
-              className="w-full h-full object-cover"
-            />
-          </div>
-          <span className="font-serif text-[20px] sm:text-2xl font-semibold tracking-tight text-forest">
-            AcolheMente
-          </span>
-        </div>
+      <nav className="w-full py-3 sm:py-5 px-3.5 sm:px-6 md:px-12 flex justify-between items-center border-b border-soft gap-2 relative z-50 bg-warm/85 backdrop-blur-md">
+        <BrandLogo size="md" />
 
         {/* Right side controls: Permanent 188 Button + 3-line classic menu dropdown */}
-        <div className="flex items-center gap-2 sm:gap-3">
-          {/* Botão de Apoio Imediato 188 Fixo no Menu */}
+        <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
+          {/* Botão de Apoio Imediato 188 Fixo no Menu (Sem o número em telas pequenas) */}
           <button
             onClick={() => setShowCvvModal(true)}
-            className="inline-flex items-center gap-1.5 px-3 sm:px-4 py-1.5 sm:py-2 bg-amber-400 hover:bg-amber-300 text-amber-950 text-xs font-bold rounded-full shadow-xs transition-all hover:scale-[1.02] cursor-pointer whitespace-nowrap"
+            className="inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-4 py-1.5 sm:py-2 bg-amber-400 hover:bg-amber-300 text-amber-950 text-xs font-bold rounded-full shadow-xs transition-all hover:scale-[1.02] cursor-pointer whitespace-nowrap"
             title="Apoio Emocional Imediato 24h gratuito pelo CVV 188"
             id="nav-cvv-188-btn"
           >
             <PhoneCall className="w-3.5 h-3.5 shrink-0 text-amber-950" />
-            <span>CVV 188</span>
+            <span>
+              CVV<span className="hidden sm:inline"> 188</span>
+            </span>
           </button>
 
           <div className="relative flex items-center">
@@ -1082,6 +1074,8 @@ function LandingPage({
                 <img
                   src={homeHero}
                   alt="Ilustração de acolhimento"
+                  decoding="async"
+                  fetchPriority="high"
                   className="w-full object-contain rounded-[32px] mix-blend-multiply transition-all duration-700 group-hover:scale-[1.03] group-hover:brightness-105"
                   referrerPolicy="no-referrer"
                 />
@@ -1158,10 +1152,10 @@ function LandingPage({
                     <Building2 className="w-6 h-6" />
                   </div>
                   <h3 className="text-base sm:text-lg font-bold text-forest tracking-tight leading-snug group-hover:text-forest">
-                    Sou Empresa (NR1)
+                    Sou Empresa
                   </h3>
                   <p className="text-xs sm:text-sm text-forest/90 group-hover:text-forest font-medium mt-1.5 leading-relaxed transition-colors">
-                    Programa de saúde mental para colaboradores.
+                    Programa de saúde mental para colaboradores (NR1 & Acolhimento).
                   </p>
                 </motion.button>
               </div>
@@ -1626,14 +1620,16 @@ function LandingPage({
         <ProfissionaisCarousel />
       </main>
 
-      {/* Footer */}
-      <Footer onNavigate={onNavigate} />
+      {/* Footer com padding inferior para telas móveis */}
+      <div className="pb-16 sm:pb-0">
+        <Footer onNavigate={onNavigate} />
+      </div>
 
-      {/* Floating Action Buttons */}
-      <div className="fixed bottom-4 sm:bottom-6 left-1/2 -translate-x-1/2 z-50 flex flex-col sm:flex-row gap-2 sm:gap-3 opacity-95 sm:opacity-50 hover:opacity-100 transition-opacity duration-300 w-[90%] sm:w-auto">
+      {/* Floating Action Buttons - Desktop & Tablet */}
+      <div className="hidden sm:flex fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex-row gap-3 opacity-85 hover:opacity-100 transition-opacity duration-300 w-auto">
         <button
           onClick={() => onNavigate("acolhimento")}
-          className="w-full sm:w-auto px-6 py-2.5 sm:px-8 sm:py-3 md:py-4 bg-sun text-forest rounded-full font-semibold shadow-xl shadow-sun/20 transition-all hover:bg-sun-dark flex items-center justify-center gap-2 whitespace-nowrap text-xs sm:text-sm md:text-base pointer-events-auto"
+          className="px-8 py-3.5 bg-sun text-forest rounded-full font-semibold shadow-xl shadow-sun/20 transition-all hover:bg-sun-dark flex items-center justify-center gap-2 whitespace-nowrap text-sm md:text-base pointer-events-auto cursor-pointer hover:scale-102"
         >
           Iniciar meu Acolhimento
           <ArrowRight className="w-4 h-4 md:w-5 md:h-5" />
@@ -1641,9 +1637,50 @@ function LandingPage({
         {doacoesAtivas && (
           <button
             onClick={() => onNavigate("doacao")}
-            className="w-full sm:w-auto px-6 py-2.5 sm:px-8 sm:py-3 md:py-4 border-2 border-sun/50 text-forest rounded-full font-semibold bg-white/90 backdrop-blur hover:bg-sun-light transition-all whitespace-nowrap text-xs sm:text-sm md:text-base pointer-events-auto text-center"
+            className="px-8 py-3.5 border-2 border-sun/50 text-forest rounded-full font-semibold bg-white/90 backdrop-blur hover:bg-sun-light transition-all whitespace-nowrap text-sm md:text-base pointer-events-auto text-center cursor-pointer hover:scale-102"
           >
             Doe uma sessão de terapia
+          </button>
+        )}
+      </div>
+
+      {/* Mobile Bottom Quick-Action Bar (Compacto, ergonômico e com área segura) */}
+      <div className="sm:hidden fixed bottom-0 inset-x-0 z-50 bg-white/95 backdrop-blur-xl border-t border-soft shadow-xl px-3 pt-2 pb-safe flex items-center justify-between gap-2">
+        <button
+          onClick={() => setShowCvvModal(true)}
+          className="flex flex-col items-center justify-center gap-0.5 px-2.5 py-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-amber-950 text-[10px] font-bold shadow-xs active:scale-95 transition-all shrink-0 cursor-pointer"
+          title="Apoio Imediato 24h CVV 188"
+        >
+          <PhoneCall className="w-4 h-4 text-amber-950" />
+          <span>CVV 188</span>
+        </button>
+
+        <button
+          onClick={() => onNavigate("acolhimento")}
+          className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-sun hover:bg-sun-dark text-forest font-bold text-xs shadow-md shadow-sun/20 active:scale-95 transition-all cursor-pointer"
+        >
+          <HeartHandshake className="w-4 h-4 text-forest shrink-0" />
+          <span className="truncate">Iniciar Acolhimento</span>
+          <ArrowRight className="w-3.5 h-3.5 text-forest shrink-0" />
+        </button>
+
+        {doacoesAtivas ? (
+          <button
+            onClick={() => onNavigate("doacao")}
+            className="flex flex-col items-center justify-center gap-0.5 px-2.5 py-1.5 rounded-xl border border-sun/60 bg-sun-light/60 hover:bg-sun-light text-forest text-[10px] font-bold active:scale-95 transition-all shrink-0 cursor-pointer"
+            title="Doe uma sessão de terapia"
+          >
+            <Leaf className="w-4 h-4 text-emerald-700" />
+            <span>Doar</span>
+          </button>
+        ) : (
+          <button
+            onClick={() => onNavigate("acolhimento")}
+            className="flex flex-col items-center justify-center gap-0.5 px-2.5 py-1.5 rounded-xl bg-forest/5 hover:bg-forest/10 text-forest text-[10px] font-bold active:scale-95 transition-all shrink-0 cursor-pointer"
+            title="Conheça a equipe de terapeutas"
+          >
+            <Users className="w-4 h-4 text-forest" />
+            <span>Equipe</span>
           </button>
         )}
       </div>

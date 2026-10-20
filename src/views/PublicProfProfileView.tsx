@@ -2,10 +2,12 @@ import React, { useEffect, useState } from "react";
 import { ArrowLeft, User, Phone, MapPin, Calendar, Award, Heart, CheckCircle2, Instagram, Linkedin, Globe, Share2, BookOpen, Sparkles } from "lucide-react";
 import { doc, getDoc, collection, query, where, onSnapshot } from "firebase/firestore";
 import { db } from "../lib/firebase";
-import logoImage from '../assets/images/logo_acolhe.jpeg';
+import logoImage from '../assets/images/logo_acolhe.svg';
+import { BrandLogo } from '../components/BrandLogo';
 import { Breadcrumbs } from "../components/Breadcrumbs";
 import { ArtigoBlog } from "../types/blog";
 import { BlogCard } from "../components/BlogCard";
+import { formatProfessionalName } from "../utils/formatters";
 
 export function PublicProfProfileView({ 
   profUid, 
@@ -55,7 +57,11 @@ export function PublicProfProfileView({
           const data = snap.data();
           // Suppress inactive professional presentation
           if (data.role === 'profissional' && data.ativo !== false) {
-            setProf(data);
+            const rawName = data.name || data.nome || data.displayName || "Profissional";
+            setProf({
+              ...data,
+              name: formatProfessionalName(rawName),
+            });
           }
         }
       } catch (err) {
@@ -71,20 +77,21 @@ export function PublicProfProfileView({
     if (!prof) return;
 
     const originalTitle = document.title;
+    const formattedName = formatProfessionalName(prof.name);
     const profissaoOuTitulo = prof.profissao || (prof.especialidade ? `Profissional - ${prof.especialidade}` : "Profissional de Saúde");
-    const formattedTitle = `${prof.name} | ${profissaoOuTitulo} - Projeto AcolheMente`;
+    const formattedTitle = `${formattedName} | ${profissaoOuTitulo} - Projeto AcolheMente`;
 
     document.title = formattedTitle;
 
     // Atualiza meta tags dinamicamente para compartilhamento e preview em redes sociais / WhatsApp
-    const descriptionText = prof.bioCurta || (prof.biografia ? prof.biografia.slice(0, 150) + "..." : `Conheça o perfil profissional de ${prof.name} (${profissaoOuTitulo}) no Projeto AcolheMente Saúde.`);
+    const descriptionText = prof.bioCurta || (prof.biografia ? prof.biografia.slice(0, 150) + "..." : `Conheça o perfil profissional de ${formattedName} (${profissaoOuTitulo}) no Projeto AcolheMente Saúde.`);
 
     const metaMap: Record<string, { attr: string; val: string }> = {
       description: { attr: "name", val: descriptionText },
-      "og:title": { attr: "property", val: `${prof.name} - ${profissaoOuTitulo}` },
+      "og:title": { attr: "property", val: `${formattedName} - ${profissaoOuTitulo}` },
       "og:description": { attr: "property", val: descriptionText },
       "og:type": { attr: "property", val: "profile" },
-      "twitter:title": { attr: "name", val: `${prof.name} - ${profissaoOuTitulo}` },
+      "twitter:title": { attr: "name", val: `${formattedName} - ${profissaoOuTitulo}` },
       "twitter:description": { attr: "name", val: descriptionText },
     };
 
@@ -217,27 +224,18 @@ export function PublicProfProfileView({
           </button>
         </div>
 
-        <button 
+        <BrandLogo 
+          size="md"
+          badge="Parceiro"
           onClick={handleGoHome}
-          className="flex items-center gap-3 hover:opacity-90 transition-all p-1.5 rounded-2xl hover:bg-forest/5 cursor-pointer text-left"
-          title="Ir para a página principal do AcolheMente"
-        >
-          <div className="w-10 h-10 bg-sun rounded-full flex items-center justify-center text-forest overflow-hidden shrink-0 shadow-sm border border-forest/10">
-             <img src={logoImage} alt="AcolheMente Logo" className="w-full h-full object-cover" />
-          </div>
-          <div>
-            <span className="font-serif font-semibold text-sm sm:text-base tracking-tight text-forest block">AcolheMente</span>
-            <span className="text-[10px] text-forest/60 block -mt-0.5">Saúde & Acolhimento</span>
-          </div>
-          <span className="text-[10px] sm:text-xs text-forest/70 px-2 py-0.5 rounded-full bg-forest/5 font-semibold border border-forest/10 ml-1">Parceiro</span>
-        </button>
+        />
       </header>
       
       <Breadcrumbs 
         items={[
           { label: "Início", onClick: handleGoHome }, 
           { label: "Profissionais", onClick: handleGoHome },
-          { label: prof ? `${prof.profissao || "Profissional"} ${prof.name}` : "Perfil do Profissional", active: true }
+          { label: prof ? `${prof.profissao || "Profissional"} ${formatProfessionalName(prof.name)}` : "Perfil do Profissional", active: true }
         ]} 
         className="max-w-4xl px-0 mb-6 w-full" 
       />
@@ -250,7 +248,7 @@ export function PublicProfProfileView({
           <div className="w-40 h-40 sm:w-48 sm:h-48 rounded-full overflow-hidden border-4 border-sun shadow-md relative bg-forest/10 flex-shrink-0 flex items-center justify-center">
             {prof.photoUrl ? (
               <>
-                <img src={prof.photoUrl} alt={prof.name} className="w-full h-full object-cover" />
+                <img src={prof.photoUrl} alt={formatProfessionalName(prof.name)} className="w-full h-full object-cover" />
                 {/* Esmaecimento no pé da foto */}
                 <div className="absolute inset-x-0 bottom-0 h-10 sm:h-12 bg-gradient-to-t from-white/90 via-white/40 to-transparent pointer-events-none" />
               </>
@@ -260,7 +258,7 @@ export function PublicProfProfileView({
           </div>
           
           <div className="flex flex-col gap-1 items-center w-full">
-            <h1 className="font-serif text-2xl font-semibold leading-tight">{prof.name}</h1>
+            <h1 className="font-serif text-2xl font-semibold leading-tight">{formatProfessionalName(prof.name)}</h1>
             <span className="text-xs uppercase tracking-wider font-bold text-sun-dark mt-1">
               {prof.profissao || "Profissional de Saúde"}
             </span>
@@ -288,9 +286,10 @@ export function PublicProfProfileView({
               <button 
                 onClick={() => {
                   const url = `${window.location.origin}?prof=${profUid}`;
+                  const formattedName = formatProfessionalName(prof.name);
                   const profissaoOuTitulo = prof.profissao || (prof.especialidade ? `Profissional - ${prof.especialidade}` : "Profissional de Saúde");
-                  const shareTitle = `${prof.name} - ${profissaoOuTitulo}`;
-                  const shareText = `Conheça o perfil profissional de ${prof.name} (${profissaoOuTitulo}) no Projeto AcolheMente Saúde.`;
+                  const shareTitle = `${formattedName} - ${profissaoOuTitulo}`;
+                  const shareText = `Conheça o perfil profissional de ${formattedName} (${profissaoOuTitulo}) no Projeto AcolheMente Saúde.`;
 
                   if (navigator.share) {
                     navigator.share({

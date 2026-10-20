@@ -98,7 +98,7 @@ import {
   DEMANDAS_PESSOAIS_OPCOES,
   DEMANDAS_TRABALHO_NR1_OPCOES,
 } from "../types/corporativo";
-import logoImage from "../assets/images/logo_acolhe.jpeg";
+import logoImage from "../assets/images/logo_acolhe.svg";
 
 export interface ColaboradorItem {
   id: string;

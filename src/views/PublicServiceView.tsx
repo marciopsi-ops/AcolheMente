@@ -2,7 +2,8 @@ import React, { useEffect, useState } from "react";
 import { ArrowLeft, Calendar, Clock, CreditCard, User, Phone, Mail, CheckCircle2, Share2, Heart, ExternalLink, ShieldCheck, Sparkles, ArrowRight } from "lucide-react";
 import { doc, getDoc, collection, query, where, getDocs, addDoc, serverTimestamp, onSnapshot } from "firebase/firestore";
 import { db, handleFirestoreError, OperationType } from "../lib/firebase";
-import logoImage from "../assets/images/logo_acolhe.jpeg";
+import logoImage from "../assets/images/logo_acolhe.svg";
+import { BrandLogo } from "../components/BrandLogo";
 import { Breadcrumbs } from "../components/Breadcrumbs";
 
 interface PublicServiceViewProps {
@@ -190,20 +191,11 @@ export function PublicServiceView({ serviceId, eventId, onBack, onGoHome }: Publ
         >
           <ArrowLeft className="w-5 h-5 sm:w-6 sm:h-6" />
         </button>
-        <button 
+        <BrandLogo 
+          size="md"
+          badge="Parceiro"
           onClick={handleGoHome}
-          className="flex items-center gap-3 hover:opacity-90 transition-all p-1.5 rounded-2xl hover:bg-forest/5 cursor-pointer text-left"
-          title="Ir para a página principal do AcolheMente"
-        >
-          <div className="w-10 h-10 bg-sun rounded-full flex items-center justify-center text-forest overflow-hidden shrink-0 shadow-sm">
-             <img src={logoImage} alt="AcolheMente Logo" className="w-full h-full object-cover" />
-          </div>
-          <div>
-            <span className="font-serif font-semibold text-sm sm:text-base tracking-tight text-forest block">AcolheMente</span>
-            <span className="text-[10px] text-forest/60 block -mt-0.5">Saúde & Acolhimento</span>
-          </div>
-          <span className="text-[10px] sm:text-xs text-forest/60 px-2 py-0.5 rounded-full bg-forest/5 font-semibold border border-forest/10 ml-1">Parceiro</span>
-        </button>
+        />
       </header>
 
       <Breadcrumbs items={[{ label: "Início", onClick: handleGoHome }, { label: item ? item.titulo : (isEvent ? "Evento" : "Serviço"), active: true }]} className="max-w-2xl px-0 mb-6" />

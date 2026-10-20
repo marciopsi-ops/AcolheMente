@@ -50,6 +50,7 @@ import {
   onSnapshot 
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
+import { formatProfessionalName } from "../utils/formatters";
 import { 
   CargoEmpresa, 
   ServicoCorporativoConfig, 
@@ -325,6 +326,14 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
   const [empresaValidated, setEmpresaValidated] = useState<EmpresaData | null>(null);
   const [codeError, setCodeError] = useState("");
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("codigo") || params.get("code") || params.get("convenio") || params.get("empresa");
+    if (code) {
+      setInputCode(code);
+    }
+  }, []);
+
   // 2. Fluxo: "identificacao", "triagem_motivo" (Questionário de Demanda e Riscos NR-1) e "vitrine"
   const [etapaAtual, setEtapaAtual] = useState<"identificacao" | "triagem_motivo" | "vitrine">("identificacao");
 
@@ -534,7 +543,7 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
 
             loaded.push({
               id: docSnap.id,
-              name: data.name || data.nome || "Profissional AcolheMente",
+              name: formatProfessionalName(data.name || data.nome || "Profissional AcolheMente"),
               foto,
               profissao: data.cargo || data.profissao || (data.crp ? "Psicólogo(a) Clínico(a)" : "Terapeuta"),
               crp: data.crp ? `CRP ${data.crp}` : "Profissional Credenciado",
@@ -1163,24 +1172,6 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
               )}
             </button>
           </form>
-
-          {/* Dica de teste amigável */}
-          <div className="p-3 bg-warm/50 rounded-xl border border-soft/80 text-[11px] text-forest/70 space-y-1">
-            <p className="font-bold flex items-center gap-1 text-forest">
-              <Sparkles className="w-3.5 h-3.5 text-sun-dark" />
-              Ambiente de Demonstração Corporativa:
-            </p>
-            <p>
-              Caso esteja testando a plataforma, você pode usar o código de demonstração:{" "}
-              <button
-                type="button"
-                onClick={() => setInputCode("EMP-2026")}
-                className="font-mono font-bold text-forest underline cursor-pointer hover:text-sun-dark"
-              >
-                EMP-2026
-              </button>
-            </p>
-          </div>
 
           <div className="pt-2 border-t border-soft text-center">
             <p className="text-[11px] text-forest/60 flex items-center justify-center gap-1">
@@ -2325,7 +2316,7 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
                               </div>
                             </div>
                             <h3 className="font-serif text-sm sm:text-base font-bold text-forest leading-tight group-hover:text-forest transition-colors truncate">
-                              {prof.name}
+                              {formatProfessionalName(prof.name)}
                             </h3>
                             <p className="text-xs text-forest/70 font-medium truncate">
                               {prof.profissao}
@@ -2602,7 +2593,7 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
                             </span>
                           </div>
                           <h2 className="font-serif text-xl sm:text-2xl font-bold text-forest leading-tight">
-                            {prof.name}
+                            {formatProfessionalName(prof.name)}
                           </h2>
                           <p className="text-xs sm:text-sm text-forest/70 font-medium">
                             {prof.profissao}
@@ -2903,8 +2894,8 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
                   <span className="text-[10px] sm:text-[11px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 inline-block">
                     Iniciar Acolhimento Corporativo
                   </span>
-                  <h3 className="font-bold font-serif text-forest text-sm sm:text-lg mt-0.5 truncate leading-tight" title={modalConfigurarContato.prof.name}>
-                    Dr(a). {modalConfigurarContato.prof.name}
+                  <h3 className="font-bold font-serif text-forest text-sm sm:text-lg mt-0.5 truncate leading-tight" title={formatProfessionalName(modalConfigurarContato.prof.name)}>
+                    Dr(a). {formatProfessionalName(modalConfigurarContato.prof.name)}
                   </h3>
                   {modalConfigurarContato.prof.crp && (
                     <span className="text-[10px] sm:text-[11px] text-forest/60 font-mono">

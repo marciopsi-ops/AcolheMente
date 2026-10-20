@@ -7,7 +7,8 @@ import { sendCompanyLeadEmail } from "../lib/emailService";
 import { Breadcrumbs } from "../components/Breadcrumbs";
 
 import empresaHero from '../assets/images/empresa_hero_photo_1781024092529.png';
-import logoImage from '../assets/images/logo_acolhe.jpeg';
+import logoImage from '../assets/images/logo_acolhe.svg';
+import { BrandLogo } from '../components/BrandLogo';
 
 export function EmpresaView({ onNavigate }: { onNavigate: (view: 'landing' | 'acolhimento' | 'dashboard' | 'profile' | 'empresa') => void }) {
   const [formData, setFormData] = useState({
@@ -151,8 +152,8 @@ export function EmpresaView({ onNavigate }: { onNavigate: (view: 'landing' | 'ac
   return (
     <div className="min-h-screen bg-warm overflow-y-auto">
       {/* Header */}
-      <nav className="h-20 bg-white/50 backdrop-blur-md border-b border-soft px-6 md:px-12 flex justify-between items-center sticky top-0 z-50">
-        <div className="flex items-center gap-4">
+      <nav className="h-16 sm:h-20 bg-white/70 backdrop-blur-md border-b border-soft px-3.5 sm:px-6 md:px-12 flex justify-between items-center sticky top-0 z-50">
+        <div className="flex items-center gap-2 sm:gap-4 min-w-0">
           <button 
             onClick={() => {
               window.scrollTo({ top: 0, left: 0, behavior: "instant" });
@@ -163,17 +164,14 @@ export function EmpresaView({ onNavigate }: { onNavigate: (view: 'landing' | 'ac
           >
             <ArrowLeft className="w-5 h-5 sm:w-6 sm:h-6" />
           </button>
-          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
-            <div className="w-10 h-10 sm:w-11 sm:h-11 bg-sun rounded-full flex items-center justify-center text-forest overflow-hidden shrink-0 shadow-sm">
-               <img src={logoImage} alt="AcolheMente Logo" className="w-full h-full object-cover" />
-            </div>
-            <span className="font-serif text-base sm:text-xl md:text-2xl font-semibold tracking-tight text-forest flex flex-col sm:flex-row sm:items-baseline sm:gap-2 min-w-0 leading-tight sm:leading-normal">
-              <span className="shrink-0">AcolheMente</span>
-              <span className="text-[10px] sm:text-xs md:text-sm font-sans font-medium text-forest/70 truncate block sm:inline">
-                Para Empresas
-              </span>
-            </span>
-          </div>
+          <BrandLogo 
+            size="md"
+            badge="Para Empresas"
+            onClick={() => {
+              window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+              onNavigate('landing');
+            }}
+          />
         </div>
       </nav>
 

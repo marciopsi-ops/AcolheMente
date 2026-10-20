@@ -38,7 +38,8 @@ import { auth, db } from "../lib/firebase";
 import { ArtigoBlog } from "../types/blog";
 import { BlogCard } from "../components/BlogCard";
 import { Breadcrumbs } from "../components/Breadcrumbs";
-import logoImage from "../assets/images/logo_acolhe.jpeg";
+import logoImage from "../assets/images/logo_acolhe.svg";
+import { BrandLogo } from "../components/BrandLogo";
 
 interface BlogViewProps {
   initialArtigoId?: string | null;
@@ -356,27 +357,11 @@ export function BlogView({
         </div>
 
         {/* Brand Center / Right */}
-        <button
+        <BrandLogo 
+          size="md"
+          badge="Blog"
           onClick={handleGoHome}
-          className="flex items-center gap-3 hover:opacity-90 transition-all p-1 rounded-2xl hover:bg-forest/5 cursor-pointer text-left"
-          title="Ir para a página inicial do AcolheMente"
-        >
-          <div className="w-10 h-10 bg-sun rounded-full flex items-center justify-center text-forest overflow-hidden shrink-0 shadow-sm border border-forest/10">
-            <img
-              src={logoImage}
-              alt="AcolheMente Logo"
-              className="w-full h-full object-cover"
-            />
-          </div>
-          <div className="hidden sm:block">
-            <span className="font-serif font-semibold text-base tracking-tight text-forest block">
-              AcolheMente Blog
-            </span>
-            <span className="text-[10px] text-forest/60 block -mt-0.5">
-              Conhecimento & Acolhimento Aberto
-            </span>
-          </div>
-        </button>
+        />
 
         {/* Header Right / Navigation */}
         <div className="flex items-center gap-2">
@@ -652,16 +637,16 @@ export function BlogView({
                   )}
                 </div>
 
-                {/* Category Pills */}
-                <div className="flex items-center gap-1.5 overflow-x-auto w-full md:w-auto pb-1 max-w-full">
+                {/* Category Pills - Touch-friendly com snap e rolagem suave */}
+                <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar scroll-smooth snap-x snap-proximity overscroll-x-contain touch-pan-x w-full md:w-auto pb-1.5 max-w-full px-0.5">
                   {categories.map((cat) => (
                     <button
                       key={cat}
                       onClick={() => setSelectedCategory(cat)}
-                      className={`px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
+                      className={`px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all cursor-pointer snap-start shrink-0 active:scale-95 ${
                         selectedCategory === cat
-                          ? "bg-forest text-white shadow-xs"
-                          : "bg-white text-forest/70 hover:bg-warm border border-soft"
+                          ? "bg-forest text-white shadow-xs font-bold"
+                          : "bg-white text-forest/70 hover:bg-warm border border-soft hover:border-forest/30"
                       }`}
                     >
                       {cat}

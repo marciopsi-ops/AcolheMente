@@ -178,7 +178,7 @@ import {
 } from "firebase/firestore";
 import { initializeApp } from "firebase/app";
 import firebaseConfig from "../../firebase-applet-config.json";
-import logoImage from "../assets/images/logo_acolhe.jpeg";
+import logoImage from "../assets/images/logo_acolhe.svg";
 import { parseCSV, parseAndValidateData, ParseResult, ImportedProfissional } from "../lib/importParser";
 import { Breadcrumbs } from "../components/Breadcrumbs";
 import { GestaoEsteiraTarefas } from "../components/GestaoEsteiraTarefas";
@@ -195,6 +195,7 @@ import { PacienteProntuarioModal, ProntuarioRegistroItem } from "../components/P
 import { GestaoCampanhasBanner } from "../components/GestaoCampanhasBanner";
 import { GestaoPlanosProfissionais } from "../components/GestaoPlanosProfissionais";
 import { PLANOS_PROFISSIONAIS_PADRAO, PlanoProfissionalItem } from "../types/planosProfissionais";
+import { formatProfessionalName } from "../utils/formatters";
 
 const safeLocalStorage = {
   getItem: (key: string): string | null => {
@@ -855,6 +856,7 @@ const COLUMNS = [
 const DebouncedInput = ({
   value,
   onChange,
+  onBlur,
   className,
   placeholder,
   type = "text",
@@ -864,6 +866,7 @@ const DebouncedInput = ({
 }: {
   value: string;
   onChange: (val: string) => void;
+  onBlur?: () => void;
   className?: string;
   placeholder?: string;
   type?: string;
@@ -895,6 +898,9 @@ const DebouncedInput = ({
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     if (localVal !== value) {
       onChange(localVal);
+    }
+    if (onBlur) {
+      onBlur();
     }
   };
 
@@ -3831,6 +3837,12 @@ export function DashboardView({
   const handleUpdateSelfProfile = async (updates: Partial<UserProfile>) => {
     if (!profile?.uid) return;
     try {
+      if (typeof updates.name === "string" && updates.name.trim()) {
+        updates.name = formatProfessionalName(updates.name);
+      }
+      if (typeof (updates as any).nome === "string" && (updates as any).nome.trim()) {
+        (updates as any).nome = formatProfessionalName((updates as any).nome);
+      }
       const cleanUpdates = Object.fromEntries(
         Object.entries(updates).filter(([_, v]) => v !== undefined),
       );
@@ -3946,7 +3958,7 @@ export function DashboardView({
 
       // Cria o registro no Firestore usando a conexão principal db existente
       await setDoc(doc(db, "users", cred.user.uid), {
-        name: newProfName,
+        name: formatProfessionalName(newProfName),
         email: newProfEmail,
         role: newProfRole,
         requirePasswordChange: true,
@@ -6013,7 +6025,7 @@ export function DashboardView({
             </button>
             <div className="h-6 w-px bg-soft shrink-0"></div>
             <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
-              <div className="w-9 h-9 sm:w-10 sm:h-10 bg-sun rounded-full flex items-center justify-center text-forest overflow-hidden hidden sm:flex shadow-xs shrink-0">
+              <div className="w-9 h-9 sm:w-10 sm:h-10 bg-[#ffde59] rounded-xl flex items-center justify-center text-forest overflow-hidden hidden sm:flex shadow-xs shrink-0 border border-sun-dark/20">
                 <img
                   src={logoImage}
                   alt="AcolheMente Logo"
@@ -7054,7 +7066,7 @@ export function DashboardView({
                 Links de Cadastros e Formulários
               </h2>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
                 {[
                   {
                     title: "Formulário de Acolhimento",
@@ -7075,6 +7087,11 @@ export function DashboardView({
                     title: "Formulário para Empresas",
                     desc: "Link para registro de empresas e leads (NR1).",
                     path: "?view=empresa",
+                  },
+                  {
+                    title: "Acesso Demo Protegido",
+                    desc: "Link corporativo pré-configurado de demonstração (Código: EMP-2026).",
+                    path: "?view=acolhimento&via=corporativo&codigo=EMP-2026",
                   },
                 ].map((item, idx) => {
                   const url = `${window.location.origin}${item.path}`;
@@ -9761,6 +9778,11 @@ export function DashboardView({
                       type="text"
                       value={profile.name || ""}
                       onChange={(val) => setProfile({ ...profile, name: val })}
+                      onBlur={() => {
+                        if (profile.name) {
+                          setProfile({ ...profile, name: formatProfessionalName(profile.name) });
+                        }
+                      }}
                       className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors text-sm text-forest"
                     />
                   </div>

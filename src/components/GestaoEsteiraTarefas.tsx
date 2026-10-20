@@ -33,6 +33,7 @@ import {
   Eye,
   BadgeAlert
 } from "lucide-react";
+import { formatProfessionalName } from "../utils/formatters";
 
 export type DemandType = "alert" | "pendency" | "task" | "message";
 
@@ -457,7 +458,7 @@ export function GestaoEsteiraTarefas({
         cards.push({
           entityId: prof.id || prof.uid || "prof",
           entityType: "profissional",
-          entityName: prof.name || prof.nome || "Profissional Ativo",
+          entityName: formatProfessionalName(prof.name || prof.nome || "Profissional Ativo"),
           entitySubtitle: `CRP: ${prof.crp || "Pendente"} • ${prof.email || prof.telefone || ""}`,
           entityContact: prof.telefone,
           entityEmail: prof.email,
