@@ -29,6 +29,8 @@ import {
   Sparkles,
   Link2,
   Copy,
+  ExternalLink,
+  RefreshCw,
 } from "lucide-react";
 import { doc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../lib/firebase";
@@ -362,7 +364,45 @@ export function FichaPacienteExternoModal({
               <span className={`w-2 h-2 rounded-full shrink-0 ml-0.5 ${currentPaciente.contratoAssinado ? "bg-emerald-500" : "bg-amber-500"}`} />
             </button>
 
-            {/* Agendar Sessão na Agenda Clínica */}
+            {/* Link de Atualização Cadastral para o Paciente */}
+            <div className="flex items-center gap-0.5 bg-emerald-50/70 p-0.5 rounded-lg sm:rounded-xl border border-emerald-300/80 shadow-2xs shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  const url = `${window.location.origin}/cadastro_externo?prof=${profile?.uid || user?.uid}&paciente=${currentPaciente.id}&tipo=externo`;
+                  navigator.clipboard.writeText(url);
+                  showToast("Link de atualização cadastral copiado para a área de transferência!", "success");
+                }}
+                className="flex items-center gap-1 sm:gap-1.5 text-[10px] sm:text-xs font-bold text-emerald-900 hover:bg-emerald-100/80 px-2 sm:px-2.5 py-1 rounded-md sm:rounded-lg transition-colors whitespace-nowrap cursor-pointer"
+                title="Copiar link para o paciente conferir e atualizar seu cadastro"
+              >
+                <RefreshCw className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+                <span>Atualização de Cadastro</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const url = `${window.location.origin}/cadastro_externo?prof=${profile?.uid || user?.uid}&paciente=${currentPaciente.id}&tipo=externo`;
+                  const msg = `Olá ${nomeDisplay}! Tudo bem? Para mantermos seus dados cadastrais e seu prontuário clínico sempre atualizados e em total conformidade, por favor acesse este link seguro para conferir e atualizar seu cadastro quando puder:\n\n${url}\n\nQualquer dúvida estou à disposição!`;
+                  openWhatsApp(msg);
+                }}
+                className="p-1 sm:p-1.5 text-emerald-700 hover:text-emerald-950 hover:bg-emerald-100/80 rounded-md sm:rounded-lg transition-colors cursor-pointer"
+                title="Enviar link de atualização cadastral via WhatsApp"
+              >
+                <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const url = `${window.location.origin}/cadastro_externo?prof=${profile?.uid || user?.uid}&paciente=${currentPaciente.id}&tipo=externo`;
+                  window.open(url, "_blank");
+                }}
+                className="p-1 sm:p-1.5 text-emerald-700 hover:text-emerald-950 hover:bg-emerald-100/80 rounded-md sm:rounded-lg transition-colors cursor-pointer"
+                title="Abrir formulário de atualização em nova aba"
+              >
+                <ExternalLink className="w-3.5 h-3.5 text-emerald-700" />
+              </button>
+            </div>
             {onNavigateToAgenda && (
               <button
                 type="button"

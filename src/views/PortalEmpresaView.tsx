@@ -97,6 +97,8 @@ import {
   TemaQueixaItem,
   DEMANDAS_PESSOAIS_OPCOES,
   DEMANDAS_TRABALHO_NR1_OPCOES,
+  FaixaPrecoContrato,
+  calcularPrecoContratoEmpresa,
 } from "../types/corporativo";
 import logoImage from "../assets/images/logo_acolhe.svg";
 
@@ -1498,6 +1500,16 @@ export function PortalEmpresaView({
       ? fc.historicoFaturas
       : [];
 
+    const regrasFaixasPreco: FaixaPrecoContrato[] = Array.isArray(empresaAtiva?.faturamentoConfig?.regrasFaixasPreco)
+      ? empresaAtiva.faturamentoConfig.regrasFaixasPreco
+      : Array.isArray(fc.regrasFaixasPreco)
+      ? fc.regrasFaixasPreco
+      : [];
+
+    const diferenciarTitularDependente = Boolean(
+      empresaAtiva?.faturamentoConfig?.diferenciarTitularDependente ?? fc.diferenciarTitularDependente
+    );
+
     return {
       valorPorVida,
       diaVencimento,
@@ -1508,32 +1520,29 @@ export function PortalEmpresaView({
       valorFixoMensal,
       servicosAdicionaisMesAtual,
       historicoFaturas,
+      regrasFaixasPreco,
+      diferenciarTitularDependente,
     };
   }, [empresaAtiva]);
 
   // Cálculo da Mensalidade Atual (Ao Vivo)
   const faturamentoAtualCalculado = useMemo(() => {
     const {
-      valorPorVida = 18.0,
-      modeloCobranca = "por_vida",
-      franquiaMinimaVidas = 0,
-      valorFixoMensal = 0,
       servicosAdicionaisMesAtual = [],
       diaVencimento = 10,
     } = faturamentoConfig;
 
     const vidasAtivas = vidasCadastradasAtivas;
 
-    let subtotalVidas = 0;
-    if (modeloCobranca === "fixo_mensal") {
-      subtotalVidas = valorFixoMensal;
-    } else if (modeloCobranca === "franquia_excedente") {
-      const baseVidas = Math.max(franquiaMinimaVidas, vidasAtivas);
-      subtotalVidas = baseVidas * valorPorVida;
-    } else {
-      // Padrão: por vida ativa
-      subtotalVidas = vidasAtivas * valorPorVida;
-    }
+    const calculoContrato = calcularPrecoContratoEmpresa(
+      vidasAtivas,
+      totalTitulares,
+      totalDependentes,
+      faturamentoConfig
+    );
+
+    const subtotalVidas = calculoContrato.subtotal;
+    const valorPorVida = calculoContrato.valorUnitarioAplicado;
 
     const totalServicosAdicionais = servicosAdicionaisMesAtual.reduce((acc, item) => {
       const qtd = Number(item.quantidade) || 1;
@@ -1566,6 +1575,7 @@ export function PortalEmpresaView({
       valorTotal: valorTotalPrevisto,
       status: "previsto" as StatusFatura,
       dataVencimento: dataVencimentoFormatada,
+      observacoes: calculoContrato.descricaoRegra,
     };
   }, [faturamentoConfig, vidasCadastradasAtivas, totalTitulares, totalDependentes, mesSelecionado, anoSelecionado]);
 

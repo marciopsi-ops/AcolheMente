@@ -60,11 +60,14 @@ interface TriagemCorporativaKanbanProps {
     crp?: string;
   } | null;
   onOpenWhatsApp?: (phone: string, text?: string) => void;
+  onNavigateToAgenda?: (pacienteId?: string) => void;
 }
 
 export const TriagemCorporativaKanban: React.FC<TriagemCorporativaKanbanProps> = ({
   currentRole,
   currentUserProfile,
+  onOpenWhatsApp,
+  onNavigateToAgenda,
 }) => {
   const [fichas, setFichas] = useState<FichaBordoCorporativa[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1163,6 +1166,7 @@ interface ModalFichaBordoProps {
   currentUserProfile?: any;
   showToast: (msg: string) => void;
   saving?: boolean;
+  onNavigateToAgenda?: (pacienteId?: string) => void;
 }
 
 const ModalFichaBordoDetalhes: React.FC<ModalFichaBordoProps> = ({
@@ -1179,6 +1183,7 @@ const ModalFichaBordoDetalhes: React.FC<ModalFichaBordoProps> = ({
   currentUserProfile,
   showToast,
   saving,
+  onNavigateToAgenda,
 }) => {
   const isProfissional = currentRole === "profissional";
   const [novaNota, setNovaNota] = useState("");
@@ -1347,6 +1352,53 @@ const ModalFichaBordoDetalhes: React.FC<ModalFichaBordoProps> = ({
           </div>
 
           <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+            {/* Link de Atualização Cadastral para o Paciente */}
+            <div className="flex items-center gap-0.5 bg-emerald-50/70 p-0.5 rounded-lg sm:rounded-xl border border-emerald-300/80 shadow-2xs shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  const profParam = ficha.profissionalId || "";
+                  const link = `${window.location.origin}/cadastro_externo?paciente=${ficha.id}&tipo=corporativo${profParam ? `&prof=${profParam}` : ""}`;
+                  navigator.clipboard.writeText(link);
+                  showToast("Link de atualização cadastral copiado para a área de transferência!");
+                }}
+                className="flex items-center gap-1 sm:gap-1.5 text-[10px] sm:text-xs font-bold text-emerald-900 hover:bg-emerald-100/80 px-2 sm:px-2.5 py-1 rounded-md sm:rounded-lg transition-colors whitespace-nowrap cursor-pointer"
+                title="Copiar link para o colaborador conferir e atualizar seu cadastro"
+              >
+                <RefreshCw className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+                <span className="hidden sm:inline">Atualização de Cadastro</span>
+                <span className="sm:hidden">Cadastro</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const profParam = ficha.profissionalId || "";
+                  const link = `${window.location.origin}/cadastro_externo?paciente=${ficha.id}&tipo=corporativo${profParam ? `&prof=${profParam}` : ""}`;
+                  const pNome = formNome ? formNome.split(" ")[0] : ficha.colaboradorNome.split(" ")[0];
+                  const msg = `Olá ${pNome}! Tudo bem? 🌿\n\nPara mantermos seus dados cadastrais e prontuário sempre em dia e com total segurança, por favor acesse nosso link seguro para conferir e atualizar seu cadastro quando puder:\n\n${link}\n\nQualquer dúvida estou à disposição!`;
+                  const wppClean = (ficha.colaboradorWhatsapp || "").replace(/\D/g, "");
+                  const cleanNum = wppClean.startsWith("55") ? wppClean : `55${wppClean}`;
+                  window.open(`https://wa.me/${cleanNum}?text=${encodeURIComponent(msg)}`, "_blank");
+                }}
+                className="p-1 sm:p-1.5 text-emerald-700 hover:text-emerald-950 hover:bg-emerald-100/80 rounded-md sm:rounded-lg transition-colors cursor-pointer"
+                title="Enviar link de atualização cadastral via WhatsApp"
+              >
+                <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const profParam = ficha.profissionalId || "";
+                  const link = `${window.location.origin}/cadastro_externo?paciente=${ficha.id}&tipo=corporativo${profParam ? `&prof=${profParam}` : ""}`;
+                  window.open(link, "_blank");
+                }}
+                className="p-1 sm:p-1.5 text-emerald-700 hover:text-emerald-950 hover:bg-emerald-100/80 rounded-md sm:rounded-lg transition-colors cursor-pointer"
+                title="Abrir formulário de atualização em nova aba"
+              >
+                <ExternalLink className="w-3.5 h-3.5 text-emerald-700" />
+              </button>
+            </div>
+
             <button
               type="button"
               onClick={onAbrirContrato}
@@ -1371,6 +1423,22 @@ const ModalFichaBordoDetalhes: React.FC<ModalFichaBordoProps> = ({
                 {ficha.contratoAssinado ? "Assinado" : "Contrato"}
               </span>
             </button>
+
+            {onNavigateToAgenda && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onNavigateToAgenda(ficha.id);
+                }}
+                className="flex items-center gap-1 sm:gap-1.5 text-[10px] sm:text-xs font-bold text-white bg-forest hover:bg-forest/90 px-2.5 sm:px-3.5 py-1 sm:py-1.5 rounded-lg sm:rounded-xl shadow-2xs transition-all whitespace-nowrap cursor-pointer"
+                title="Agendar na Agenda Clínica"
+              >
+                <Calendar className="w-3.5 h-3.5 text-sun shrink-0" />
+                <span className="hidden sm:inline">Agendar Sessão</span>
+                <span className="sm:hidden">Agendar</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={onWhatsApp}
@@ -1511,13 +1579,14 @@ const ModalFichaBordoDetalhes: React.FC<ModalFichaBordoProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    const link = `${window.location.origin}/?dados_faturamento=${ficha.id}`;
+                    const profParam = ficha.profissionalId || "";
+                    const link = `${window.location.origin}/cadastro_externo?paciente=${ficha.id}&tipo=corporativo${profParam ? `&prof=${profParam}` : ""}`;
                     const pNome = formNome ? formNome.split(" ")[0] : ficha.colaboradorNome.split(" ")[0];
-                    const msg = `Olá, *${pNome}*! Tudo bem? 🌿\n\nPara fins de emissão de recibos e documentação dos seus atendimentos psicológicos, por favor confirme seus dados cadastrais (CPF, data de nascimento e e-mail) através do nosso link seguro:\n\n${link}\n\nLeva menos de 1 minuto e garante a correta emissão fiscal. Muito obrigado!`;
+                    const msg = `Olá, *${pNome}*! Tudo bem? 🌿\n\nPara fins de emissão de recibos, documentação dos seus atendimentos psicológicos e atualização cadastral, por favor confirme seus dados através do nosso link seguro:\n\n${link}\n\nLeva menos de 1 minuto e garante a correta emissão fiscal. Muito obrigado!`;
                     const wppClean = (ficha.colaboradorWhatsapp || "").replace(/\D/g, "");
                     const wppUrl = wppClean ? `https://wa.me/55${wppClean}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`;
                     window.open(wppUrl, "_blank");
-                    showToast("Mensagem de coleta aberta no WhatsApp!");
+                    showToast("Mensagem de atualização cadastral aberta no WhatsApp!");
                   }}
                   className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
                   title="Enviar convite de preenchimento direto no WhatsApp do paciente"
@@ -2102,13 +2171,14 @@ const ModalFichaBordoDetalhes: React.FC<ModalFichaBordoProps> = ({
                     <input
                       type="text"
                       readOnly
-                      value={`${window.location.origin}/?dados_faturamento=${ficha.id}`}
+                      value={`${window.location.origin}/cadastro_externo?paciente=${ficha.id}&tipo=corporativo${ficha.profissionalId ? `&prof=${ficha.profissionalId}` : ""}`}
                       className="bg-transparent text-xs font-mono text-forest flex-1 outline-none select-all truncate"
                     />
                     <button
                       type="button"
                       onClick={() => {
-                        const link = `${window.location.origin}/?dados_faturamento=${ficha.id}`;
+                        const profParam = ficha.profissionalId || "";
+                        const link = `${window.location.origin}/cadastro_externo?paciente=${ficha.id}&tipo=corporativo${profParam ? `&prof=${profParam}` : ""}`;
                         navigator.clipboard.writeText(link);
                         showToast("Link copiado para a área de transferência!");
                       }}
@@ -2127,9 +2197,9 @@ const ModalFichaBordoDetalhes: React.FC<ModalFichaBordoProps> = ({
                   <div className="bg-warm/30 p-3 rounded-xl border border-soft text-[11px] text-forest/80 whitespace-pre-line leading-relaxed font-sans">
                     {`Olá, ${formNome ? formNome.split(" ")[0] : ficha.colaboradorNome.split(" ")[0]}! Tudo bem? 🌿
 
-Para fins de emissão de recibos e documentação dos seus atendimentos psicológicos, por favor confirme seus dados cadastrais (CPF, data de nascimento e e-mail) através do nosso link seguro:
+Para fins de emissão de recibos, documentação dos seus atendimentos psicológicos e atualização cadastral, por favor confirme seus dados através do nosso link seguro:
 
-${window.location.origin}/?dados_faturamento=${ficha.id}
+${window.location.origin}/cadastro_externo?paciente=${ficha.id}&tipo=corporativo${ficha.profissionalId ? `&prof=${ficha.profissionalId}` : ""}
 
 Leva menos de 1 minuto e garante a correta emissão fiscal. Muito obrigado!`}
                   </div>
@@ -2147,9 +2217,10 @@ Leva menos de 1 minuto e garante a correta emissão fiscal. Muito obrigado!`}
                 <button
                   type="button"
                   onClick={() => {
-                    const link = `${window.location.origin}/?dados_faturamento=${ficha.id}`;
+                    const profParam = ficha.profissionalId || "";
+                    const link = `${window.location.origin}/cadastro_externo?paciente=${ficha.id}&tipo=corporativo${profParam ? `&prof=${profParam}` : ""}`;
                     const pNome = formNome ? formNome.split(" ")[0] : ficha.colaboradorNome.split(" ")[0];
-                    const msg = `Olá, *${pNome}*! Tudo bem? 🌿\n\nPara fins de emissão de recibos e documentação dos seus atendimentos psicológicos, por favor confirme seus dados cadastrais (CPF, data de nascimento e e-mail) através do nosso link seguro:\n\n${link}\n\nLeva menos de 1 minuto e garante a correta emissão fiscal. Muito obrigado!`;
+                    const msg = `Olá, *${pNome}*! Tudo bem? 🌿\n\nPara fins de emissão de recibos, documentação dos seus atendimentos psicológicos e atualização cadastral, por favor confirme seus dados através do nosso link seguro:\n\n${link}\n\nLeva menos de 1 minuto e garante a correta emissão fiscal. Muito obrigado!`;
                     navigator.clipboard.writeText(msg);
                     showToast("Texto completo copiado para o WhatsApp!");
                   }}
@@ -2161,9 +2232,10 @@ Leva menos de 1 minuto e garante a correta emissão fiscal. Muito obrigado!`}
                 <button
                   type="button"
                   onClick={() => {
-                    const link = `${window.location.origin}/?dados_faturamento=${ficha.id}`;
+                    const profParam = ficha.profissionalId || "";
+                    const link = `${window.location.origin}/cadastro_externo?paciente=${ficha.id}&tipo=corporativo${profParam ? `&prof=${profParam}` : ""}`;
                     const pNome = formNome ? formNome.split(" ")[0] : ficha.colaboradorNome.split(" ")[0];
-                    const msg = `Olá, *${pNome}*! Tudo bem? 🌿\n\nPara fins de emissão de recibos e documentação dos seus atendimentos psicológicos, por favor confirme seus dados cadastrais (CPF, data de nascimento e e-mail) através do nosso link seguro:\n\n${link}\n\nLeva menos de 1 minuto e garante a correta emissão fiscal. Muito obrigado!`;
+                    const msg = `Olá, *${pNome}*! Tudo bem? 🌿\n\nPara fins de emissão de recibos, documentação dos seus atendimentos psicológicos e atualização cadastral, por favor confirme seus dados através do nosso link seguro:\n\n${link}\n\nLeva menos de 1 minuto e garante a correta emissão fiscal. Muito obrigado!`;
                     const wppClean = (ficha.colaboradorWhatsapp || "").replace(/\D/g, "");
                     const wppUrl = wppClean ? `https://wa.me/55${wppClean}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`;
                     window.open(wppUrl, "_blank");

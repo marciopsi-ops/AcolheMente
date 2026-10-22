@@ -315,8 +315,19 @@ export interface FaturaHistoricoItem {
   fechadoPor?: string;
 }
 
+export interface FaixaPrecoContrato {
+  id: string;
+  deVidas: number; // Mínimo de vidas da faixa (ex: 1)
+  ateVidas?: number | null; // Máximo de vidas (ex: 50, ou null para "acima de")
+  valorPorVida: number; // Ex: R$ 18,00
+  valorTitular?: number; // Opcional: preço diferenciado para titular
+  valorDependente?: number; // Opcional: preço diferenciado para dependente
+  valorFixoFaixa?: number; // Opcional: valor global fixo caso a empresa atinja essa faixa
+  descricao?: string; // Ex: "1 a 50 vidas"
+}
+
 export interface FaturamentoConfig {
-  modeloCobranca?: "por_vida" | "franquia_excedente" | "fixo_mensal";
+  modeloCobranca?: "por_vida" | "franquia_excedente" | "fixo_mensal" | "faixas_vidas";
   valorPorVida?: number;
   valorMensal?: number;
   valorTitular?: number;
@@ -332,6 +343,114 @@ export interface FaturamentoConfig {
   bancoConta?: string;
   servicosAdicionaisMesAtual?: ServicoAdicionalItem[];
   historicoFaturas?: FaturaHistoricoItem[];
+  // Regras de Precificação por Faixas de Contrato
+  regrasFaixasPreco?: FaixaPrecoContrato[];
+  diferenciarTitularDependente?: boolean;
+}
+
+export function calcularPrecoContratoEmpresa(
+  totalVidas: number,
+  qtdTitulares: number,
+  qtdDependentes: number,
+  config?: FaturamentoConfig | null
+): {
+  modelo: string;
+  valorUnitarioAplicado: number;
+  subtotal: number;
+  faixaAplicada?: FaixaPrecoContrato;
+  descricaoRegra: string;
+} {
+  const modelo = config?.modeloCobranca || "por_vida";
+  const valorFixo = Number(config?.valorMensal ?? config?.valorFixoMensal ?? 0);
+  const valorPadraoVida = Number(config?.valorPorVida ?? 18);
+
+  if (modelo === "fixo_mensal" && valorFixo > 0) {
+    return {
+      modelo: "fixo_mensal",
+      valorUnitarioAplicado: valorFixo,
+      subtotal: valorFixo,
+      descricaoRegra: `Valor fixo contratual mensal de R$ ${valorFixo.toFixed(2)}`,
+    };
+  }
+
+  if (modelo === "franquia_excedente") {
+    const franquia = Number(config?.franquiaMinimaVidas || 0);
+    const excedente = Math.max(0, totalVidas - franquia);
+    const subtotal = valorFixo + (excedente * valorPadraoVida);
+    return {
+      modelo: "franquia_excedente",
+      valorUnitarioAplicado: valorPadraoVida,
+      subtotal,
+      descricaoRegra: `Franquia de ${franquia} vidas (R$ ${valorFixo.toFixed(2)}) + ${excedente} excedentes a R$ ${valorPadraoVida.toFixed(2)}/vida`,
+    };
+  }
+
+  // Regra de Faixas de Vidas
+  if (modelo === "faixas_vidas" && Array.isArray(config?.regrasFaixasPreco) && config.regrasFaixasPreco.length > 0) {
+    const faixas = [...config.regrasFaixasPreco].sort((a, b) => a.deVidas - b.deVidas);
+    // Encontra a faixa onde o totalVidas se encaixa
+    const faixaEncontrada = faixas.find((f) => {
+      const minOk = totalVidas >= (f.deVidas || 0);
+      const maxOk = f.ateVidas == null || f.ateVidas === 0 || totalVidas <= f.ateVidas;
+      return minOk && maxOk;
+    }) || faixas[faixas.length - 1]; // fallback para a maior faixa se passar de todas
+
+    if (faixaEncontrada) {
+      if (faixaEncontrada.valorFixoFaixa && faixaEncontrada.valorFixoFaixa > 0) {
+        return {
+          modelo: "faixas_vidas",
+          valorUnitarioAplicado: faixaEncontrada.valorFixoFaixa,
+          subtotal: faixaEncontrada.valorFixoFaixa,
+          faixaAplicada: faixaEncontrada,
+          descricaoRegra: `Faixa ${faixaEncontrada.deVidas} a ${faixaEncontrada.ateVidas || "∞"} vidas: Valor fixo de R$ ${faixaEncontrada.valorFixoFaixa.toFixed(2)}`,
+        };
+      }
+
+      if (config.diferenciarTitularDependente && (faixaEncontrada.valorTitular || faixaEncontrada.valorDependente)) {
+        const vTit = Number(faixaEncontrada.valorTitular ?? faixaEncontrada.valorPorVida ?? 0);
+        const vDep = Number(faixaEncontrada.valorDependente ?? faixaEncontrada.valorPorVida ?? 0);
+        const subtotal = (qtdTitulares * vTit) + (qtdDependentes * vDep);
+        return {
+          modelo: "faixas_vidas",
+          valorUnitarioAplicado: faixaEncontrada.valorPorVida,
+          subtotal,
+          faixaAplicada: faixaEncontrada,
+          descricaoRegra: `Faixa ${faixaEncontrada.deVidas} a ${faixaEncontrada.ateVidas || "∞"} vidas: ${qtdTitulares} titulares a R$ ${vTit.toFixed(2)} e ${qtdDependentes} dependentes a R$ ${vDep.toFixed(2)}`,
+        };
+      }
+
+      const precoVida = Number(faixaEncontrada.valorPorVida || valorPadraoVida);
+      const subtotal = totalVidas * precoVida;
+      return {
+        modelo: "faixas_vidas",
+        valorUnitarioAplicado: precoVida,
+        subtotal,
+        faixaAplicada: faixaEncontrada,
+        descricaoRegra: `Faixa ${faixaEncontrada.deVidas} a ${faixaEncontrada.ateVidas || "∞"} vidas: R$ ${precoVida.toFixed(2)} por vida (${totalVidas} vidas ativas)`,
+      };
+    }
+  }
+
+  // Preço por vida padrão
+  if (config?.diferenciarTitularDependente && (config.valorTitular || config.valorDependente)) {
+    const vTit = Number(config.valorTitular ?? valorPadraoVida);
+    const vDep = Number(config.valorDependente ?? valorPadraoVida);
+    const subtotal = (qtdTitulares * vTit) + (qtdDependentes * vDep);
+    return {
+      modelo: "por_vida",
+      valorUnitarioAplicado: valorPadraoVida,
+      subtotal,
+      descricaoRegra: `${qtdTitulares} titulares (R$ ${vTit.toFixed(2)}) e ${qtdDependentes} dependentes (R$ ${vDep.toFixed(2)})`,
+    };
+  }
+
+  const subtotal = totalVidas * valorPadraoVida;
+  return {
+    modelo: "por_vida",
+    valorUnitarioAplicado: valorPadraoVida,
+    subtotal,
+    descricaoRegra: `R$ ${valorPadraoVida.toFixed(2)} por vida ativa (${totalVidas} vidas)`,
+  };
 }
 
 export interface SequenciaVidasGrupo {

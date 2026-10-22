@@ -946,100 +946,100 @@ export function ProfissionalAgendaView({
       </div>
 
       {/* 2. CARDS DE INDICADORES MENSAIS EM TEMPO REAL - COMPACTOS E OTIMIZADOS VERTICALMENTE */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-2.5">
+      <div className="grid grid-cols-3 lg:grid-cols-6 gap-2">
         {/* Total do Mês */}
-        <div className="bg-white px-3 py-2 rounded-xl border border-soft shadow-2xs flex items-center justify-between gap-2">
+        <div className="bg-white px-2.5 py-1.5 rounded-xl border border-soft shadow-2xs flex items-center justify-between gap-1.5">
           <div className="min-w-0">
-            <span className="text-[10px] font-semibold text-forest/60 uppercase tracking-wider block truncate">
+            <span className="text-[9px] sm:text-[10px] font-semibold text-forest/60 uppercase tracking-wider block truncate">
               Total Mês
             </span>
-            <span className="text-base sm:text-lg font-bold text-forest leading-tight block">
+            <span className="text-sm sm:text-base font-bold text-forest leading-tight block">
               {metricasMensais.total}
             </span>
           </div>
-          <div className="w-7 h-7 rounded-lg bg-forest/5 flex items-center justify-center shrink-0">
-            <CalendarDays className="w-3.5 h-3.5 text-forest/50" />
+          <div className="w-6 h-6 rounded-lg bg-forest/5 flex items-center justify-center shrink-0">
+            <CalendarDays className="w-3 h-3 text-forest/50" />
           </div>
         </div>
 
         {/* Realizadas */}
-        <div className="bg-white px-3 py-2 rounded-xl border border-soft shadow-2xs flex items-center justify-between gap-2">
+        <div className="bg-white px-2.5 py-1.5 rounded-xl border border-soft shadow-2xs flex items-center justify-between gap-1.5">
           <div className="min-w-0">
-            <span className="text-[10px] font-semibold text-emerald-700 uppercase tracking-wider block truncate">
+            <span className="text-[9px] sm:text-[10px] font-semibold text-emerald-700 uppercase tracking-wider block truncate">
               Realizadas
             </span>
-            <span className="text-base sm:text-lg font-bold text-emerald-700 leading-tight block">
+            <span className="text-sm sm:text-base font-bold text-emerald-700 leading-tight block">
               {metricasMensais.realizadas}
             </span>
           </div>
-          <div className="w-7 h-7 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0">
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+          <div className="w-6 h-6 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0">
+            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
           </div>
         </div>
 
         {/* Agendadas (Programadas) */}
-        <div className="bg-white px-3 py-2 rounded-xl border border-soft shadow-2xs flex items-center justify-between gap-2">
+        <div className="bg-white px-2.5 py-1.5 rounded-xl border border-soft shadow-2xs flex items-center justify-between gap-1.5">
           <div className="min-w-0">
-            <span className="text-[10px] font-semibold text-sky-700 uppercase tracking-wider block truncate">
+            <span className="text-[9px] sm:text-[10px] font-semibold text-sky-700 uppercase tracking-wider block truncate">
               Programadas
             </span>
-            <span className="text-base sm:text-lg font-bold text-sky-700 leading-tight block">
+            <span className="text-sm sm:text-base font-bold text-sky-700 leading-tight block">
               {metricasMensais.agendadas}
             </span>
           </div>
-          <div className="w-7 h-7 rounded-lg bg-sky-50 flex items-center justify-center shrink-0">
-            <Clock className="w-3.5 h-3.5 text-sky-600" />
+          <div className="w-6 h-6 rounded-lg bg-sky-50 flex items-center justify-center shrink-0">
+            <Clock className="w-3 h-3 text-sky-600" />
           </div>
         </div>
 
         {/* Remarcadas */}
-        <div className="bg-white px-3 py-2 rounded-xl border border-soft shadow-2xs flex items-center justify-between gap-2">
+        <div className="bg-white px-2.5 py-1.5 rounded-xl border border-soft shadow-2xs flex items-center justify-between gap-1.5">
           <div className="min-w-0">
-            <span className="text-[10px] font-semibold text-amber-700 uppercase tracking-wider block truncate">
+            <span className="text-[9px] sm:text-[10px] font-semibold text-amber-700 uppercase tracking-wider block truncate">
               Remarcadas
             </span>
-            <span className="text-base sm:text-lg font-bold text-amber-700 leading-tight block">
+            <span className="text-sm sm:text-base font-bold text-amber-700 leading-tight block">
               {metricasMensais.remarcadas}
             </span>
           </div>
-          <div className="w-7 h-7 rounded-lg bg-amber-50 flex items-center justify-center shrink-0">
-            <RotateCcw className="w-3.5 h-3.5 text-amber-600" />
+          <div className="w-6 h-6 rounded-lg bg-amber-50 flex items-center justify-center shrink-0">
+            <RotateCcw className="w-3 h-3 text-amber-600" />
           </div>
         </div>
 
         {/* Canceladas */}
-        <div className="bg-white px-3 py-2 rounded-xl border border-soft shadow-2xs flex items-center justify-between gap-2">
+        <div className="bg-white px-2.5 py-1.5 rounded-xl border border-soft shadow-2xs flex items-center justify-between gap-1.5">
           <div className="min-w-0">
-            <span className="text-[10px] font-semibold text-rose-700 uppercase tracking-wider block truncate">
+            <span className="text-[9px] sm:text-[10px] font-semibold text-rose-700 uppercase tracking-wider block truncate">
               Canceladas
             </span>
-            <span className="text-base sm:text-lg font-bold text-rose-700 leading-tight block">
+            <span className="text-sm sm:text-base font-bold text-rose-700 leading-tight block">
               {metricasMensais.canceladas}
             </span>
           </div>
-          <div className="w-7 h-7 rounded-lg bg-rose-50 flex items-center justify-center shrink-0">
-            <XCircle className="w-3.5 h-3.5 text-rose-600" />
+          <div className="w-6 h-6 rounded-lg bg-rose-50 flex items-center justify-center shrink-0">
+            <XCircle className="w-3 h-3 text-rose-600" />
           </div>
         </div>
 
         {/* Horários Fixos */}
-        <div className="bg-white px-3 py-2 rounded-xl border border-soft shadow-2xs flex items-center justify-between gap-2">
+        <div className="bg-white px-2.5 py-1.5 rounded-xl border border-soft shadow-2xs flex items-center justify-between gap-1.5">
           <div className="min-w-0">
-            <span className="text-[10px] font-semibold text-purple-700 uppercase tracking-wider block truncate">
+            <span className="text-[9px] sm:text-[10px] font-semibold text-purple-700 uppercase tracking-wider block truncate">
               Fixados 📌
             </span>
-            <span className="text-base sm:text-lg font-bold text-purple-700 leading-tight block">
+            <span className="text-sm sm:text-base font-bold text-purple-700 leading-tight block">
               {metricasMensais.fixos}
             </span>
           </div>
-          <div className="w-7 h-7 rounded-lg bg-purple-50 flex items-center justify-center shrink-0">
-            <Pin className="w-3.5 h-3.5 text-purple-600" />
+          <div className="w-6 h-6 rounded-lg bg-purple-50 flex items-center justify-center shrink-0">
+            <Pin className="w-3 h-3 text-purple-600" />
           </div>
         </div>
       </div>
 
       {/* 3. BARRA DE CONTROLE: NAVEGAÇÃO DE DATAS, VISUALIZAÇÃO E FILTROS */}
-      <div className="bg-white p-3 sm:p-4 rounded-2xl border border-soft shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+      <div className="sticky top-0 z-20 bg-white/95 backdrop-blur-md p-2.5 sm:p-3 rounded-2xl border border-soft shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2.5">
         {/* Navegação de Data */}
         <div className="flex items-center gap-2">
           <div className="flex items-center bg-warm rounded-xl border border-soft p-0.5">
@@ -1546,7 +1546,7 @@ export function ProfissionalAgendaView({
           </div>
 
           {/* Grade Semanal */}
-          <div className="bg-white rounded-2xl border border-soft shadow-xs overflow-hidden">
+          <div className="bg-white rounded-2xl border border-soft shadow-xs">
             <div className="overflow-x-auto min-w-full pb-2 touch-pan-y">
               <div className="min-w-[780px] xl:min-w-0">
                 {/* Header dos 7 dias */}

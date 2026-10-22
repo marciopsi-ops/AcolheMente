@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { db } from "../lib/firebase";
-import { addDoc, collection, doc, getDoc, serverTimestamp } from "firebase/firestore";
+import { addDoc, collection, doc, getDoc, updateDoc, serverTimestamp } from "firebase/firestore";
 import {
   CheckCircle2,
   ChevronRight,
@@ -39,6 +39,11 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
   const paramModalidade = urlParams.get("modalidade") || "";
   const paramFrequencia = urlParams.get("frequencia") || "";
   const paramOrigem = urlParams.get("origem") || "";
+  const paramPacienteId = urlParams.get("paciente") || urlParams.get("id") || urlParams.get("pacienteId") || "";
+  const paramTipo = urlParams.get("tipo") || "externo";
+  const isModoAtualizacao = Boolean(paramPacienteId);
+  const [loadedCollection, setLoadedCollection] = useState<string>("pacientes");
+  const [loadingPacienteExistente, setLoadingPacienteExistente] = useState(false);
 
   // Form states - Básicos
   const [nome, setNome] = useState("");
@@ -145,6 +150,102 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
     loadProf();
   }, [profUid, paramModalidade]);
 
+  // Carregar dados existentes do paciente caso seja um link de atualização cadastral
+  useEffect(() => {
+    if (!paramPacienteId) return;
+
+    const loadPaciente = async () => {
+      setLoadingPacienteExistente(true);
+      try {
+        let snap: any = null;
+        let col = "pacientes";
+
+        if (paramTipo === "acolhimento") {
+          col = "acolhimentos";
+          snap = await getDoc(doc(db, "acolhimentos", paramPacienteId));
+        } else if (paramTipo === "corporativo") {
+          col = "triagem_corporativa";
+          snap = await getDoc(doc(db, "triagem_corporativa", paramPacienteId));
+        } else {
+          snap = await getDoc(doc(db, "pacientes", paramPacienteId));
+          if (!snap.exists()) {
+            col = "acolhimentos";
+            snap = await getDoc(doc(db, "acolhimentos", paramPacienteId));
+          }
+          if (!snap.exists()) {
+            col = "triagem_corporativa";
+            snap = await getDoc(doc(db, "triagem_corporativa", paramPacienteId));
+          }
+        }
+
+        if (snap && snap.exists()) {
+          const d = snap.data();
+          setLoadedCollection(col);
+          setNome(d.nomeCivil || d.nome || d.colaboradorNome || d.nomeCompleto || "");
+          setNomeSocial(d.nomeSocial || d.nomeDesejado || "");
+          setEmail(d.email || d.colaboradorEmail || "");
+          setTelefone(d.telefone || d.colaboradorWhatsapp || d.whatsapp || "");
+          setDataNascimento(d.dataNascimento || d.colaboradorDataNascimento || "");
+          setCpf(d.cpf || d.colaboradorCpf || "");
+          setGenero(d.genero || "");
+          setProfissao(d.profissao || d.cargoNome || "");
+
+          if (d.responsavel) {
+            setNomeResponsavel(d.responsavel.nome || d.responsavelNome || "");
+            setTelefoneResponsavel(d.responsavel.telefone || d.responsavelTelefone || "");
+            setCpfResponsavel(d.responsavel.cpf || d.responsavelCpf || "");
+            setEmailResponsavel(d.responsavel.email || d.responsavelEmail || "");
+            setParentescoResponsavel(d.responsavel.parentesco || "");
+          } else {
+            setNomeResponsavel(d.responsavelNome || "");
+            setTelefoneResponsavel(d.responsavelTelefone || "");
+            setCpfResponsavel(d.responsavelCpf || "");
+            setEmailResponsavel(d.responsavelEmail || "");
+          }
+
+          const end = d.endereco || {};
+          setCep(d.cep || end.cep || "");
+          setLogradouro(d.logradouro || end.logradouro || "");
+          setNumero(d.numero || end.numero || "");
+          setComplemento(d.complemento || end.complemento || "");
+          setBairro(d.bairro || end.bairro || "");
+          setCidade(d.cidade || end.cidade || "");
+          setUf(d.uf || end.uf || "");
+
+          setQueixaPrincipal(d.queixaPrincipal || d.motivo || d.queixa || "");
+          setTerapiaAnterior(d.terapiaAnterior || "");
+          setMedicacao(d.medicacao || "");
+          if (d.contatoEmergencia) {
+            setContatoEmergenciaNome(d.contatoEmergencia);
+          }
+          if (d.modalidade) {
+            setModalidadeEscolhida(d.modalidade);
+          }
+          setAceitouLgpd(true);
+
+          // Se não havia profissional carregado, carrega o vinculado ao paciente
+          const profTarget = d.profissionalId || d.profissionalUid;
+          if (profTarget && !profData) {
+            try {
+              const profSnap = await getDoc(doc(db, "users", profTarget));
+              if (profSnap.exists()) {
+                setProfData(profSnap.data());
+              }
+            } catch (errProf) {
+              console.error("Erro ao carregar profissional vinculado:", errProf);
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Erro ao carregar dados do paciente para atualização:", err);
+      } finally {
+        setLoadingPacienteExistente(false);
+      }
+    };
+
+    loadPaciente();
+  }, [paramPacienteId, paramTipo]);
+
   // Verificar se é menor de idade pela data de nascimento
   useEffect(() => {
     if (!dataNascimento) return;
@@ -186,14 +287,17 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
 
   // Configurações ativas do profissional
   const config = profData?.configFormularioExterno || {};
-  const tituloPagina = config.tituloPersonalizado || "Ficha de Cadastro do Paciente";
-  const mensagemBoasVindas =
-    config.mensagemBoasVindas ||
-    "Preencha seus dados abaixo para registro seguro no prontuário do consultório.";
+  const tituloPagina = isModoAtualizacao
+    ? "Atualização de Dados Cadastrais"
+    : config.tituloPersonalizado || "Ficha de Cadastro do Paciente";
+  const mensagemBoasVindas = isModoAtualizacao
+    ? "Por favor, confira e atualize seus dados cadastrais para manter seu prontuário em dia."
+    : config.mensagemBoasVindas ||
+      "Preencha seus dados abaixo para registro seguro no prontuário do consultório.";
   const valorFinalSessao = paramValor || config.valorPadrao || "";
   const solicitarEndereco = config.solicitarEndereco !== false;
   const solicitarQueixaPrincipal = config.solicitarQueixaPrincipal !== false;
-  const solicitarDisponibilidade = config.solicitarDisponibilidade !== false;
+  const solicitarDisponibilidade = !isModoAtualizacao && config.solicitarDisponibilidade !== false;
   const solicitarContatoEmergencia = config.solicitarContatoEmergencia !== false;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -230,85 +334,134 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
         ? `${contatoEmergenciaNome.trim()} (${contatoEmergenciaTelefone.trim()})`
         : "";
 
-      await addDoc(collection(db, "pacientes"), {
-        nome: nome.trim(),
-        nomeCivil: nome.trim(),
-        nomeSocial: nomeSocial.trim(),
-        nomeDesejado: (nomeSocial.trim() || nome.trim()),
-        email: email.trim(),
-        telefone: telefone.trim(),
-        dataNascimento,
-        cpf: cpf.trim(),
-        genero: genero.trim(),
-        profissao: profissao.trim(),
-        
-        // Responsável
-        responsavel: {
-          nome: nomeResponsavel.trim(),
-          telefone: telefoneResponsavel.trim(),
-          cpf: cpfResponsavel.trim(),
-          email: emailResponsavel.trim(),
-          parentesco: parentescoResponsavel.trim(),
-        },
-
-        // Endereço
-        endereco: {
+      if (isModoAtualizacao && paramPacienteId) {
+        // MODO ATUALIZAÇÃO: atualiza o registro existente
+        await updateDoc(doc(db, loadedCollection, paramPacienteId), {
+          nome: nome.trim(),
+          nomeCivil: nome.trim(),
+          nomeSocial: nomeSocial.trim(),
+          nomeDesejado: (nomeSocial.trim() || nome.trim()),
+          email: email.trim(),
+          telefone: telefone.trim(),
+          dataNascimento,
+          cpf: cpf.trim(),
+          genero: genero.trim(),
+          profissao: profissao.trim(),
+          ...(loadedCollection === "triagem_corporativa"
+            ? {
+                colaboradorNome: nome.trim(),
+                colaboradorWhatsapp: telefone.trim(),
+                colaboradorEmail: email.trim(),
+                colaboradorCpf: cpf.trim(),
+                colaboradorDataNascimento: dataNascimento,
+              }
+            : {}),
+          responsavel: {
+            nome: nomeResponsavel.trim(),
+            telefone: telefoneResponsavel.trim(),
+            cpf: cpfResponsavel.trim(),
+            email: emailResponsavel.trim(),
+            parentesco: parentescoResponsavel.trim(),
+          },
+          endereco: {
+            cep: cep.trim(),
+            logradouro: logradouro.trim(),
+            numero: numero.trim(),
+            complemento: complemento.trim(),
+            bairro: bairro.trim(),
+            cidade: cidade.trim(),
+            uf: uf.trim(),
+          },
           cep: cep.trim(),
-          logradouro: logradouro.trim(),
-          numero: numero.trim(),
-          complemento: complemento.trim(),
-          bairro: bairro.trim(),
-          cidade: cidade.trim(),
-          uf: uf.trim(),
-        },
-        cep: cep.trim(),
-        enderecoCompleto,
-        cidade,
-        uf,
-        cidadeEstado: cidade ? `${cidade} - ${uf}` : "",
+          enderecoCompleto,
+          cidade,
+          uf,
+          cidadeEstado: cidade ? `${cidade} - ${uf}` : "",
+          queixaPrincipal: queixaPrincipal.trim(),
+          motivo: queixaPrincipal.trim(),
+          terapiaAnterior: terapiaAnterior.trim(),
+          medicacao: medicacao.trim(),
+          contatoEmergencia: contatoEmergenciaFinal,
+          modalidade: modalidadeEscolhida || "online",
+          dadosAtualizadosPeloPacienteEm: new Date().toISOString(),
+          updatedAt: serverTimestamp(),
+        });
+      } else {
+        // MODO NOVO CADASTRO
+        await addDoc(collection(db, "pacientes"), {
+          nome: nome.trim(),
+          nomeCivil: nome.trim(),
+          nomeSocial: nomeSocial.trim(),
+          nomeDesejado: (nomeSocial.trim() || nome.trim()),
+          email: email.trim(),
+          telefone: telefone.trim(),
+          dataNascimento,
+          cpf: cpf.trim(),
+          genero: genero.trim(),
+          profissao: profissao.trim(),
+          
+          responsavel: {
+            nome: nomeResponsavel.trim(),
+            telefone: telefoneResponsavel.trim(),
+            cpf: cpfResponsavel.trim(),
+            email: emailResponsavel.trim(),
+            parentesco: parentescoResponsavel.trim(),
+          },
 
-        // Clínico & Queixa
-        queixaPrincipal: queixaPrincipal.trim(),
-        motivo: queixaPrincipal.trim(),
-        terapiaAnterior: terapiaAnterior.trim(),
-        medicacao: medicacao.trim(),
-        contatoEmergencia: contatoEmergenciaFinal,
+          endereco: {
+            cep: cep.trim(),
+            logradouro: logradouro.trim(),
+            numero: numero.trim(),
+            complemento: complemento.trim(),
+            bairro: bairro.trim(),
+            cidade: cidade.trim(),
+            uf: uf.trim(),
+          },
+          cep: cep.trim(),
+          enderecoCompleto,
+          cidade,
+          uf,
+          cidadeEstado: cidade ? `${cidade} - ${uf}` : "",
 
-        // Acordo & Honorários Parametrizados
-        valorSessao: valorFinalSessao || "A combinar",
-        modalidade: modalidadeEscolhida || "online",
-        frequenciaSessoes: paramFrequencia || "Semanal",
-        disponibilidade: [
-          turnoPreferido ? `Turno: ${turnoPreferido}` : "",
-          diasPreferidos.length > 0 ? `Dias: ${diasPreferidos.join(", ")}` : "",
-        ]
-          .filter(Boolean)
-          .join(" | "),
+          queixaPrincipal: queixaPrincipal.trim(),
+          motivo: queixaPrincipal.trim(),
+          terapiaAnterior: terapiaAnterior.trim(),
+          medicacao: medicacao.trim(),
+          contatoEmergencia: contatoEmergenciaFinal,
 
-        // Origem & Rastreio
-        fonteIndicacao: fonteIndicacao || "Formulário Web",
-        origem: "formulario_externo",
-        origemCampanha: paramOrigem || "",
-        tipo: "externo",
-        profissionalId: profUid || "avulso",
-        status: "Em Atendimento",
-        statusTratamento: "Em Atendimento",
-        atribuicaoStatus: "Aceito",
-        viaAcesso: "Carteira Externa",
-        aceitouLgpd: true,
+          valorSessao: valorFinalSessao || "A combinar",
+          modalidade: modalidadeEscolhida || "online",
+          frequenciaSessoes: paramFrequencia || "Semanal",
+          disponibilidade: [
+            turnoPreferido ? `Turno: ${turnoPreferido}` : "",
+            diasPreferidos.length > 0 ? `Dias: ${diasPreferidos.join(", ")}` : "",
+          ]
+            .filter(Boolean)
+            .join(" | "),
 
-        // Histórico & Prontuário prontos
-        prontuarioClinico: [],
-        historicoSessoes: [],
+          fonteIndicacao: fonteIndicacao || "Formulário Web",
+          origem: "formulario_externo",
+          origemCampanha: paramOrigem || "",
+          tipo: "externo",
+          profissionalId: profUid || "avulso",
+          status: "Em Atendimento",
+          statusTratamento: "Em Atendimento",
+          atribuicaoStatus: "Aceito",
+          viaAcesso: "Carteira Externa",
+          aceitouLgpd: true,
 
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
+          prontuarioClinico: [],
+          historicoSessoes: [],
+
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      }
 
       setSubmitted(true);
     } catch (err) {
       console.error("Erro ao salvar cadastro do paciente:", err);
-      setErrorMsg("Ocorreu um erro ao salvar seu cadastro. Por favor, tente novamente.");
+      setErrorMsg("Ocorreu um erro ao salvar suas informações. Por favor, tente novamente.");
     } finally {
       setSubmitting(false);
     }
@@ -326,14 +479,23 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
             <CheckCircle2 className="w-9 h-9" />
           </div>
           <h2 className="font-serif text-2xl font-bold text-forest">
-            Cadastro Concluído com Sucesso!
+            {isModoAtualizacao ? "Dados Atualizados com Sucesso!" : "Cadastro Concluído com Sucesso!"}
           </h2>
           <p className="text-sm text-forest/75 leading-relaxed">
-            Seus dados cadastrais foram encaminhados com total segurança e sigilo ao prontuário do(a){" "}
-            <strong>{formatProfessionalName(profNome)}</strong>.
+            {isModoAtualizacao ? (
+              <>
+                Seus dados cadastrais foram revisados e atualizados diretamente no prontuário do(a){" "}
+                <strong>{formatProfessionalName(profNome)}</strong>.
+              </>
+            ) : (
+              <>
+                Seus dados cadastrais foram encaminhados com total segurança e sigilo ao prontuário do(a){" "}
+                <strong>{formatProfessionalName(profNome)}</strong>.
+              </>
+            )}
           </p>
           <div className="w-full bg-warm/60 p-4 rounded-2xl border border-soft text-xs text-forest/70 space-y-1 text-left">
-            <p>• O profissional entrará em contato via WhatsApp ou E-mail para confirmação e detalhes da sua sessão.</p>
+            <p>• Suas informações foram sincronizadas e registradas com data e hora.</p>
             <p>• Suas informações estão resguardadas sob rigoroso sigilo ético profissional e LGPD.</p>
           </div>
           <button
@@ -899,16 +1061,16 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
             </label>
           </div>
 
-          {/* BOTÃO FINALIZAR CADASTRO */}
+          {/* BOTÃO FINALIZAR / ATUALIZAR CADASTRO */}
           <button
             type="submit"
             disabled={submitting}
             className="w-full py-4 px-6 rounded-2xl bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 hover:from-amber-500 hover:to-yellow-500 text-amber-950 font-bold text-sm sm:text-base transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
           >
             {submitting ? (
-              <span>Salvando Cadastro no Prontuário...</span>
+              <span>{isModoAtualizacao ? "Salvando Atualizações no Prontuário..." : "Salvando Cadastro no Prontuário..."}</span>
             ) : (
-              <span>Finalizar Cadastro Seguro</span>
+              <span>{isModoAtualizacao ? "Confirmar e Salvar Atualização Cadastral" : "Finalizar Cadastro Seguro"}</span>
             )}
           </button>
         </form>

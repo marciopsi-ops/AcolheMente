@@ -29,6 +29,8 @@ import {
   ItemCatalogoCorporativo,
   SEQUENCIA_NUMERICA_VIDAS_OPCOES,
   FichaBordoCorporativa,
+  FaixaPrecoContrato,
+  calcularPrecoContratoEmpresa,
 } from "../types/corporativo";
 import {
   Activity,
@@ -1215,6 +1217,15 @@ export function DashboardView({
     data: new Date().toISOString().split("T")[0],
   });
   const [isAddingServicoAdmin, setIsAddingServicoAdmin] = useState(false);
+  const [isAddingFaixaPreco, setIsAddingFaixaPreco] = useState(false);
+  const [novaFaixaPrecoForm, setNovaFaixaPrecoForm] = useState({
+    deVidas: 1,
+    ateVidas: "" as string | number,
+    valorPorVida: 18,
+    valorTitular: 18,
+    valorDependente: 10,
+    valorFixoFaixa: 0,
+  });
   const [empresaFilterCategoria, setEmpresaFilterCategoria] = useState<"todas" | "empresa_direta" | "canal_parceiro" | "empresa_conectada">("todas");
   const [empresaSearchTerm, setEmpresaSearchTerm] = useState("");
   const [expandedEmpresas, setExpandedEmpresas] = useState<Record<string, boolean>>({});
@@ -11428,6 +11439,9 @@ export function DashboardView({
                 const url = `https://wa.me/${full}${text ? `?text=${encodeURIComponent(text)}` : ""}`;
                 window.open(url, "_blank");
               }}
+              onNavigateToAgenda={() => {
+                setActiveTab("agenda");
+              }}
             />
           </div>
         </div>
@@ -14590,6 +14604,74 @@ export function DashboardView({
                     </span>
                   )}
                 </button>
+
+                {/* Botão Agendar Sessão */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedCard(null);
+                    setActiveTab("agenda");
+                  }}
+                  className="flex items-center gap-1 sm:gap-1.5 text-[10px] sm:text-xs font-bold text-white bg-forest hover:bg-forest/90 px-2.5 sm:px-3.5 py-1 sm:py-1.5 rounded-lg sm:rounded-xl shadow-2xs transition-all whitespace-nowrap cursor-pointer"
+                  title="Agendar Sessão na Agenda Clínica"
+                >
+                  <Calendar className="w-3.5 h-3.5 text-sun shrink-0" />
+                  <span>Agendar Sessão</span>
+                </button>
+
+                {/* Botão Link de Atualização de Cadastro para o Paciente */}
+                <div className="flex items-center gap-0.5 bg-emerald-50/70 p-0.5 rounded-lg sm:rounded-xl border border-emerald-300/80 shadow-2xs shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const tipo = selectedCard.empresaNome || selectedCard.colaboradorNome ? "corporativo" : (selectedCard.tipo === "externo" ? "externo" : "acolhimento");
+                      const profParam = selectedCard.profissionalId || profile?.uid || user?.uid || "";
+                      const link = `${window.location.origin}/cadastro_externo?paciente=${selectedCard.id}&tipo=${tipo}${profParam ? `&prof=${profParam}` : ""}`;
+                      navigator.clipboard.writeText(link);
+                      showToast("Link de atualização cadastral copiado para a área de transferência!", "success");
+                    }}
+                    className="flex items-center gap-1 sm:gap-1.5 text-[10px] sm:text-xs font-bold text-emerald-900 hover:bg-emerald-100/80 px-2 sm:px-2.5 py-1 rounded-md sm:rounded-lg transition-colors whitespace-nowrap cursor-pointer"
+                    title="Copiar link para o paciente conferir e atualizar seu cadastro"
+                  >
+                    <RefreshCw className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-700 shrink-0" />
+                    <span>Atualização de Cadastro</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const tipo = selectedCard.empresaNome || selectedCard.colaboradorNome ? "corporativo" : (selectedCard.tipo === "externo" ? "externo" : "acolhimento");
+                      const profParam = selectedCard.profissionalId || profile?.uid || user?.uid || "";
+                      const link = `${window.location.origin}/cadastro_externo?paciente=${selectedCard.id}&tipo=${tipo}${profParam ? `&prof=${profParam}` : ""}`;
+                      const nomePac = selectedCard.nome || selectedCard.nomeCompleto || selectedCard.colaboradorNome || "Paciente";
+                      const msg = `Olá ${nomePac}! Tudo bem? Para mantermos seus dados cadastrais e seu prontuário clínico sempre atualizados com segurança e em total conformidade, por favor acesse este link seguro para conferir e atualizar seu cadastro quando puder:\n\n${link}\n\nQualquer dúvida estou à disposição!`;
+                      const telRaw = (selectedCard.telefone || selectedCard.colaboradorWhatsapp || selectedCard.whatsapp || "").replace(/\D/g, "");
+                      if (telRaw) {
+                        const cleanNum = telRaw.startsWith("55") ? telRaw : `55${telRaw}`;
+                        window.open(`https://wa.me/${cleanNum}?text=${encodeURIComponent(msg)}`, "_blank");
+                      } else {
+                        navigator.clipboard.writeText(link);
+                        showToast("Link copiado! (Paciente sem telefone cadastrado)", "info");
+                      }
+                    }}
+                    className="p-1 sm:p-1.5 text-emerald-700 hover:text-emerald-950 hover:bg-emerald-100/80 rounded-md sm:rounded-lg transition-colors cursor-pointer"
+                    title="Enviar link de atualização cadastral via WhatsApp"
+                  >
+                    <MessageCircle className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-600" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const tipo = selectedCard.empresaNome || selectedCard.colaboradorNome ? "corporativo" : (selectedCard.tipo === "externo" ? "externo" : "acolhimento");
+                      const profParam = selectedCard.profissionalId || profile?.uid || user?.uid || "";
+                      const link = `${window.location.origin}/cadastro_externo?paciente=${selectedCard.id}&tipo=${tipo}${profParam ? `&prof=${profParam}` : ""}`;
+                      window.open(link, "_blank");
+                    }}
+                    className="p-1 sm:p-1.5 text-emerald-700 hover:text-emerald-950 hover:bg-emerald-100/80 rounded-md sm:rounded-lg transition-colors cursor-pointer"
+                    title="Abrir formulário de atualização em nova aba"
+                  >
+                    <ExternalLink className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-700" />
+                  </button>
+                </div>
               </div>
 
               {/* Right Status Toggles & Desligar */}
@@ -18610,18 +18692,29 @@ export function DashboardView({
             (() => {
               const colabs = selectedEmpresa.colaboradoresList || [];
               const vidasAtivas = colabs.filter((c) => c.status !== "inativo" && c.status !== "desligado").length || 0;
-              const precoPorVida = Number(selectedEmpresa.faturamentoConfig?.valorPorVida ?? selectedEmpresa.valorPorVida ?? 18);
-              const valorFixoMensalAtual = Number(selectedEmpresa.faturamentoConfig?.valorMensal ?? selectedEmpresa.faturamentoConfig?.valorFixoMensal ?? selectedEmpresa.valorMensal ?? selectedEmpresa.valorFixoMensal ?? 0);
-              const modeloCobranca = selectedEmpresa.faturamentoConfig?.modeloCobranca || (valorFixoMensalAtual > 0 && precoPorVida === 0 ? "fixo_mensal" : "por_vida");
+              const totalTit = colabs.filter((c) => c.status !== "inativo" && c.status !== "desligado" && c.tipo !== "dependente").length;
+              const totalDep = colabs.filter((c) => c.status !== "inativo" && c.status !== "desligado" && c.tipo === "dependente").length;
               const diaVencimento = Number(selectedEmpresa.faturamentoConfig?.diaVencimento ?? selectedEmpresa.diaVencimento ?? 10);
               const chavePix = selectedEmpresa.faturamentoConfig?.chavePix || selectedEmpresa.chavePix || "45.892.120/0001-34";
               const favorecidoPix = selectedEmpresa.faturamentoConfig?.favorecidoPix || selectedEmpresa.favorecidoPix || "Rede AcolheMente Saúde Mental";
               const servicosAtuais: ServicoAdicionalItem[] = selectedEmpresa.servicosAdicionaisMesAtual || selectedEmpresa.faturamentoConfig?.servicosAdicionaisMesAtual || [];
               const historicoFaturas: FaturaHistoricoItem[] = selectedEmpresa.historicoFaturas || selectedEmpresa.faturamentoConfig?.historicoFaturas || [];
 
-              const subtotalVidas = modeloCobranca === "fixo_mensal" && valorFixoMensalAtual > 0
-                ? valorFixoMensalAtual
-                : vidasAtivas * precoPorVida;
+              const faixasContrato: FaixaPrecoContrato[] = selectedEmpresa.faturamentoConfig?.regrasFaixasPreco || [];
+              const diferenciarTitularDep = Boolean(selectedEmpresa.faturamentoConfig?.diferenciarTitularDependente);
+
+              const calculoContrato = calcularPrecoContratoEmpresa(
+                vidasAtivas,
+                totalTit,
+                totalDep,
+                selectedEmpresa.faturamentoConfig
+              );
+
+              const precoPorVida = calculoContrato.valorUnitarioAplicado;
+              const valorFixoMensalAtual = Number(selectedEmpresa.faturamentoConfig?.valorMensal ?? selectedEmpresa.faturamentoConfig?.valorFixoMensal ?? selectedEmpresa.valorMensal ?? selectedEmpresa.valorFixoMensal ?? 0);
+              const modeloCobranca = selectedEmpresa.faturamentoConfig?.modeloCobranca || (valorFixoMensalAtual > 0 && precoPorVida === 0 ? "fixo_mensal" : (faixasContrato.length > 0 ? "faixas_vidas" : "por_vida"));
+              const subtotalVidas = calculoContrato.subtotal;
+
               const totalServicos = servicosAtuais.reduce((acc, s) => {
                 const qtd = Number(s.quantidade || 1);
                 const val = Number(s.valorUnitario || 0);
@@ -18647,6 +18740,61 @@ export function DashboardView({
                   [campo]: valor,
                 });
                 showToast("Parâmetros financeiros atualizados com sucesso!", "success");
+              };
+
+              const handleAdicionarFaixaContrato = (e: React.FormEvent) => {
+                e.preventDefault();
+                const de = Number(novaFaixaPrecoForm.deVidas) || 1;
+                const ate = novaFaixaPrecoForm.ateVidas ? Number(novaFaixaPrecoForm.ateVidas) : null;
+                const novaFaixa: FaixaPrecoContrato = {
+                  id: `faixa_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+                  deVidas: de,
+                  ateVidas: ate,
+                  valorPorVida: Number(novaFaixaPrecoForm.valorPorVida) || 0,
+                  valorTitular: novaFaixaPrecoForm.valorTitular ? Number(novaFaixaPrecoForm.valorTitular) : undefined,
+                  valorDependente: novaFaixaPrecoForm.valorDependente ? Number(novaFaixaPrecoForm.valorDependente) : undefined,
+                  valorFixoFaixa: novaFaixaPrecoForm.valorFixoFaixa ? Number(novaFaixaPrecoForm.valorFixoFaixa) : undefined,
+                  descricao: `${de} a ${ate || "∞"} vidas`,
+                };
+                const novaLista = [...faixasContrato, novaFaixa].sort((a, b) => a.deVidas - b.deVidas);
+                handleSalvarParametrosFinanceiros("regrasFaixasPreco", novaLista);
+                setIsAddingFaixaPreco(false);
+                setNovaFaixaPrecoForm({
+                  deVidas: ate ? ate + 1 : 101,
+                  ateVidas: "",
+                  valorPorVida: 15,
+                  valorTitular: 15,
+                  valorDependente: 8,
+                  valorFixoFaixa: 0,
+                });
+                showToast("Faixa de precificação adicionada ao contrato!", "success");
+              };
+
+              const handleRemoverFaixaContrato = (faixaId: string) => {
+                const novaLista = faixasContrato.filter((f) => f.id !== faixaId);
+                handleSalvarParametrosFinanceiros("regrasFaixasPreco", novaLista);
+                showToast("Faixa removida.", "success");
+              };
+
+              const handleCarregarTabelaFaixasPadrao = () => {
+                const padrao: FaixaPrecoContrato[] = [
+                  { id: "fx_1", deVidas: 1, ateVidas: 20, valorPorVida: 22, valorTitular: 22, valorDependente: 12, descricao: "1 a 20 vidas" },
+                  { id: "fx_2", deVidas: 21, ateVidas: 50, valorPorVida: 18, valorTitular: 18, valorDependente: 10, descricao: "21 a 50 vidas" },
+                  { id: "fx_3", deVidas: 51, ateVidas: 100, valorPorVida: 15, valorTitular: 15, valorDependente: 8, descricao: "51 a 100 vidas" },
+                  { id: "fx_4", deVidas: 101, ateVidas: null, valorPorVida: 12, valorTitular: 12, valorDependente: 6, descricao: "Acima de 100 vidas" },
+                ];
+                const currentConfig = selectedEmpresa.faturamentoConfig || {};
+                const newConfig = {
+                  ...currentConfig,
+                  regrasFaixasPreco: padrao,
+                  modeloCobranca: "faixas_vidas" as const,
+                  diferenciarTitularDependente: true,
+                };
+                handleUpdateEmpresaProperties(selectedEmpresa.id, {
+                  faturamentoConfig: newConfig,
+                  modeloCobranca: "faixas_vidas",
+                });
+                showToast("Tabela escalonada padrão carregada com sucesso!", "success");
               };
 
               const handleAddServicoAdmin = (e: React.FormEvent) => {
@@ -18689,8 +18837,6 @@ export function DashboardView({
               const handleFecharFaturaAdmin = () => {
                 const mesNome = meses[now.getMonth()];
                 const anoNum = now.getFullYear();
-                const totalTit = colabs.filter((c) => c.status !== "inativo" && c.status !== "desligado" && c.tipo !== "dependente").length;
-                const totalDep = colabs.filter((c) => c.status !== "inativo" && c.status !== "desligado" && c.tipo === "dependente").length;
 
                 const novoSnapshot: FaturaHistoricoItem = {
                   id: `fat_${anoNum}_${String(now.getMonth() + 1).padStart(2, "0")}_${Date.now()}`,
@@ -18708,6 +18854,7 @@ export function DashboardView({
                   servicosAdicionais: [...servicosAtuais],
                   totalServicosAdicionais: totalServicos,
                   valorTotal: valorTotalPrevisto,
+                  observacoes: calculoContrato.descricaoRegra,
                 };
 
                 const novoHistorico = [novoSnapshot, ...historicoFaturas.filter((f) => f.competencia !== novoSnapshot.competencia)];
@@ -18740,23 +18887,28 @@ export function DashboardView({
                   {/* Banner de Previsão de Faturamento do Mês Atual (Live Calculation) */}
                   <div className="bg-gradient-to-r from-forest via-forest to-forest/90 text-white p-6 rounded-2xl border border-forest/60 shadow-md flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
                     <div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-sun text-forest">
-                          Cálculo Dinâmico (Ao Vivo)
+                          {modeloCobranca === "faixas_vidas" ? "Ajuste Automático por Faixa" : "Cálculo Dinâmico (Ao Vivo)"}
                         </span>
                         <span className="text-xs text-white/80">Competência {competenciaAtual}</span>
+                        {calculoContrato.faixaAplicada && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-white/20 text-white border border-white/25">
+                            Faixa Vigente: {calculoContrato.faixaAplicada.descricao || `${calculoContrato.faixaAplicada.deVidas} a ${calculoContrato.faixaAplicada.ateVidas || "∞"} vidas`}
+                          </span>
+                        )}
                       </div>
-                      <div className="flex items-baseline gap-3 mt-2">
+                      <div className="flex items-baseline gap-3 mt-2 flex-wrap">
                         <h3 className="font-serif text-3xl font-extrabold text-white">
                           R$ {valorTotalPrevisto.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                         </h3>
-                        <span className="text-xs text-white/70">
-                          ({vidasAtivas} vidas ativas × R$ {precoPorVida.toFixed(2)}
-                          {totalServicos !== 0 ? ` + R$ ${totalServicos.toFixed(2)} serviços extras` : ""})
+                        <span className="text-xs text-white/80">
+                          ({calculoContrato.descricaoRegra}
+                          {totalServicos !== 0 ? ` + R$ ${totalServicos.toFixed(2)} extras/descontos` : ""})
                         </span>
                       </div>
                       <p className="text-xs text-white/80 mt-1">
-                        Vencimento no dia <strong>{diaVencimento}</strong> de cada mês. Atualiza automaticamente com a folha.
+                        Base ativa atual: <strong>{vidasAtivas} vidas</strong> ({totalTit} titulares, {totalDep} dependentes). Vencimento no dia <strong>{diaVencimento}</strong> de cada mês.
                       </p>
                     </div>
 
@@ -18896,14 +19048,15 @@ export function DashboardView({
                           onChange={(e) => handleSalvarParametrosFinanceiros("modeloCobranca", e.target.value)}
                           className="w-full px-3 py-2 bg-warm/30 border border-soft focus:border-forest rounded-xl outline-none font-semibold text-forest"
                         >
-                          <option value="por_vida">Preço por Vida Ativa (Padrão Corporativo)</option>
+                          <option value="por_vida">Preço Fixo por Vida Ativa (R$ fixo/vida)</option>
+                          <option value="faixas_vidas">Tabela Escalonada / Faixas de Vidas (Ajuste Automático)</option>
                           <option value="fixo_mensal">Valor Fixo Mensal Pré-Fixado</option>
                           <option value="franquia_excedente">Franquia Mínima + Excedente</option>
                         </select>
                       </div>
 
                       <div>
-                        <label className="block font-bold text-forest mb-1">Valor por Vida Ativa (R$)</label>
+                        <label className="block font-bold text-forest mb-1">Valor Base por Vida Ativa (R$)</label>
                         <div className="flex items-center gap-2">
                           <span className="text-forest/60 font-bold">R$</span>
                           <input
@@ -18971,6 +19124,260 @@ export function DashboardView({
                         />
                       </div>
                     </div>
+                  </div>
+
+                  {/* Bloco de Regras de Precificação por Volume / Escalonamento do Contrato */}
+                  <div className="bg-white p-6 rounded-2xl border border-soft shadow-xs space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-soft gap-2">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-serif text-sm sm:text-base font-bold text-forest flex items-center gap-2">
+                            <Layers className="w-4 h-4 text-emerald-700" />
+                            <span>Regras de Precificação por Faixas de Vidas (Contrato Escalonado)</span>
+                          </h4>
+                          {modeloCobranca === "faixas_vidas" ? (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                              Ativo no Contrato
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-warm text-forest/60">
+                              Modelo inativo (selecione acima)
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-forest/70 mt-0.5">
+                          O faturamento mensal recalcula o valor automaticamente conforme a quantidade de vidas ativas (titulares e dependentes) cadastradas no mês.
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {faixasContrato.length === 0 && (
+                          <button
+                            type="button"
+                            onClick={handleCarregarTabelaFaixasPadrao}
+                            className="px-3 py-1.5 bg-warm hover:bg-forest hover:text-white text-forest text-xs font-semibold rounded-xl border border-soft transition-all flex items-center gap-1.5 cursor-pointer"
+                            title="Carregar faixas padrão da AcolheMente"
+                          >
+                            <Sparkles className="w-3.5 h-3.5 text-sun-dark" />
+                            <span>Carregar Tabela Padrão</span>
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setIsAddingFaixaPreco(!isAddingFaixaPreco)}
+                          className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-xl shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Adicionar Faixa</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Opções globais de precificação por faixas */}
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3 bg-warm/30 rounded-xl border border-soft text-xs">
+                      <label className="flex items-center gap-2 cursor-pointer font-bold text-forest">
+                        <input
+                          type="checkbox"
+                          checked={diferenciarTitularDep}
+                          onChange={(e) => handleSalvarParametrosFinanceiros("diferenciarTitularDependente", e.target.checked)}
+                          className="w-4 h-4 rounded text-forest focus:ring-forest cursor-pointer"
+                        />
+                        <span>Diferenciar valores entre Colaborador Titular e Dependentes</span>
+                      </label>
+                      <span className="text-[11px] text-forest/60">
+                        {diferenciarTitularDep
+                          ? "✓ Preço do titular e dependente calculados separadamente por vida na faixa."
+                          : "Preço único por vida cadastrada na faixa."}
+                      </span>
+                    </div>
+
+                    {/* Formulário de Adicionar Nova Faixa */}
+                    {isAddingFaixaPreco && (
+                      <form
+                        onSubmit={handleAdicionarFaixaContrato}
+                        className="p-4 bg-emerald-50/50 rounded-2xl border border-emerald-200 space-y-3 animate-in fade-in text-xs"
+                      >
+                        <div className="flex items-center justify-between pb-1 border-b border-emerald-200">
+                          <span className="font-bold text-forest flex items-center gap-1.5">
+                            <Plus className="w-3.5 h-3.5 text-emerald-700" />
+                            Nova Regra de Faixa de Vidas
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setIsAddingFaixaPreco(false)}
+                            className="p-1 text-forest/50 hover:text-forest"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2.5">
+                          <div>
+                            <label className="block font-bold text-forest mb-1">De (vidas) *</label>
+                            <input
+                              type="number"
+                              min="1"
+                              required
+                              value={novaFaixaPrecoForm.deVidas}
+                              onChange={(e) => setNovaFaixaPrecoForm({ ...novaFaixaPrecoForm, deVidas: Number(e.target.value) })}
+                              className="w-full px-2.5 py-1.5 bg-white border border-soft rounded-lg font-mono font-bold text-forest"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block font-bold text-forest mb-1">Até (vidas)</label>
+                            <input
+                              type="number"
+                              min={Number(novaFaixaPrecoForm.deVidas) || 1}
+                              placeholder="∞ (Sem limite)"
+                              value={novaFaixaPrecoForm.ateVidas || ""}
+                              onChange={(e) => setNovaFaixaPrecoForm({ ...novaFaixaPrecoForm, ateVidas: e.target.value ? Number(e.target.value) : "" })}
+                              className="w-full px-2.5 py-1.5 bg-white border border-soft rounded-lg font-mono font-bold text-forest"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block font-bold text-forest mb-1">
+                              {diferenciarTitularDep ? "Valor Titular (R$)" : "Valor / Vida (R$)"} *
+                            </label>
+                            <input
+                              type="number"
+                              step="0.50"
+                              min="0"
+                              required
+                              value={diferenciarTitularDep ? (novaFaixaPrecoForm.valorTitular || "") : (novaFaixaPrecoForm.valorPorVida || "")}
+                              onChange={(e) => {
+                                const val = Number(e.target.value);
+                                setNovaFaixaPrecoForm({
+                                  ...novaFaixaPrecoForm,
+                                  valorPorVida: val,
+                                  valorTitular: val,
+                                });
+                              }}
+                              className="w-full px-2.5 py-1.5 bg-white border border-soft rounded-lg font-mono font-bold text-forest"
+                            />
+                          </div>
+
+                          {diferenciarTitularDep && (
+                            <div>
+                              <label className="block font-bold text-forest mb-1">Valor Dependente (R$)</label>
+                              <input
+                                type="number"
+                                step="0.50"
+                                min="0"
+                                value={novaFaixaPrecoForm.valorDependente || ""}
+                                onChange={(e) => setNovaFaixaPrecoForm({ ...novaFaixaPrecoForm, valorDependente: Number(e.target.value) })}
+                                className="w-full px-2.5 py-1.5 bg-white border border-soft rounded-lg font-mono font-bold text-forest"
+                              />
+                            </div>
+                          )}
+
+                          <div>
+                            <label className="block font-bold text-forest mb-1">Fixo da Faixa (R$ opc.)</label>
+                            <input
+                              type="number"
+                              step="10"
+                              min="0"
+                              placeholder="Opcional"
+                              value={novaFaixaPrecoForm.valorFixoFaixa || ""}
+                              onChange={(e) => setNovaFaixaPrecoForm({ ...novaFaixaPrecoForm, valorFixoFaixa: Number(e.target.value) })}
+                              className="w-full px-2.5 py-1.5 bg-white border border-soft rounded-lg font-mono text-forest"
+                            />
+                          </div>
+
+                          <div className="flex items-end justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setIsAddingFaixaPreco(false)}
+                              className="px-2.5 py-1.5 text-forest/70 hover:bg-warm rounded-lg"
+                            >
+                              Cancelar
+                            </button>
+                            <button
+                              type="submit"
+                              className="px-3 py-1.5 bg-forest text-white font-bold rounded-lg shadow-2xs hover:bg-forest/90"
+                            >
+                              Salvar
+                            </button>
+                          </div>
+                        </div>
+                      </form>
+                    )}
+
+                    {/* Tabela de Faixas Cadastradas */}
+                    {faixasContrato.length === 0 ? (
+                      <div className="p-6 bg-warm/20 rounded-xl border border-dashed border-soft text-center space-y-2">
+                        <Layers className="w-6 h-6 text-forest/40 mx-auto" />
+                        <p className="text-xs text-forest/70 font-semibold">
+                          Nenhuma regra de faixa cadastrada para esta empresa ainda.
+                        </p>
+                        <p className="text-[11px] text-forest/50">
+                          Clique em "Carregar Tabela Padrão" para aplicar as faixas recomendadas de mercado ou "Adicionar Faixa" para criar regras personalizadas.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs text-left">
+                          <thead className="bg-warm/60 font-bold text-[11px] uppercase text-forest/80 border-b border-soft">
+                            <tr>
+                              <th className="p-2.5">Intervalo de Vidas</th>
+                              <th className="p-2.5 text-right">{diferenciarTitularDep ? "Valor Titular" : "Valor / Vida"}</th>
+                              {diferenciarTitularDep && <th className="p-2.5 text-right">Valor Dependente</th>}
+                              <th className="p-2.5 text-right">Fixo Global</th>
+                              <th className="p-2.5 text-center">Status no Mês Atual</th>
+                              <th className="p-2.5 text-center">Ações</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-soft">
+                            {faixasContrato.map((fx) => {
+                              const isVigente = calculoContrato.faixaAplicada?.id === fx.id;
+                              const rotuloFaixa = fx.ateVidas ? `${fx.deVidas} a ${fx.ateVidas} vidas` : `Acima de ${fx.deVidas - 1} vidas`;
+                              return (
+                                <tr key={fx.id} className={`transition-colors ${isVigente ? "bg-emerald-50/70 font-semibold" : "hover:bg-warm/20"}`}>
+                                  <td className="p-2.5 font-bold text-forest">
+                                    <div className="flex items-center gap-1.5">
+                                      {isVigente && <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse" />}
+                                      <span>{rotuloFaixa}</span>
+                                    </div>
+                                  </td>
+                                  <td className="p-2.5 text-right font-mono font-bold text-forest">
+                                    R$ {(fx.valorTitular ?? fx.valorPorVida ?? 0).toFixed(2)}
+                                  </td>
+                                  {diferenciarTitularDep && (
+                                    <td className="p-2.5 text-right font-mono text-forest/80">
+                                      R$ {(fx.valorDependente ?? fx.valorPorVida ?? 0).toFixed(2)}
+                                    </td>
+                                  )}
+                                  <td className="p-2.5 text-right font-mono text-forest/70">
+                                    {fx.valorFixoFaixa && fx.valorFixoFaixa > 0 ? `R$ ${fx.valorFixoFaixa.toFixed(2)}` : "—"}
+                                  </td>
+                                  <td className="p-2.5 text-center">
+                                    {isVigente ? (
+                                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-600 text-white shadow-2xs">
+                                        <Check className="w-3 h-3" />
+                                        Vigente ({vidasAtivas} vidas)
+                                      </span>
+                                    ) : (
+                                      <span className="text-[10px] text-forest/40">Inativa</span>
+                                    )}
+                                  </td>
+                                  <td className="p-2.5 text-center">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoverFaixaContrato(fx.id)}
+                                      className="p-1 text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                                      title="Remover faixa"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                   </div>
 
                   {/* Lançamentos e Serviços Adicionais do Mês Atual */}
