@@ -1,6 +1,6 @@
 {
-  "summary": "Plano detalhado para a página pública de profissionais e gestão:\n1. Ocultação dos planos na página pública e substituição pelo programa de Incentivo ao Engajamento com 3 meses de isenção total.\n2. Inclusão da chave seletora na área de gestão para habilitar/desabilitar a exibição pública dos planos sob demanda.\n3. Apresentação dos recursos disponíveis: assistente de recibo/NF, controle financeiro, notificações automáticas, triagem acolhedora e liberdade de agenda.\n4. Novo design hero na página pública com a foto da profissional fundida suavemente por trás do texto (padrão Empresas).",
-  "updatedAt": "2026-10-16T23:57:01.571276291Z",
-  "requestFeedback": true,
-  "userFacing": true
+  "summary":  "Plano de implementação atualizado com a Ficha de Bordo dos Pacientes Externos e a Parametrização Completa do Link de Cadastro do Formulário Público.",
+  "updatedAt":  "2026-10-22T00:13:16.674490217Z",
+  "requestFeedback":  true,
+  "userFacing":  true
 }

@@ -193,9 +193,14 @@ import { PacienteFaturamentoSpreadsheet, SessaoFaturamentoItem } from "../compon
 import { ProfissionalFaturamentoDashboard } from "../components/ProfissionalFaturamentoDashboard";
 import { PacienteProntuarioModal, ProntuarioRegistroItem } from "../components/PacienteProntuarioModal";
 import { GestaoCampanhasBanner } from "../components/GestaoCampanhasBanner";
+import { ImportExternalPatients } from "../components/ImportExternalPatients";
 import { GestaoPlanosProfissionais } from "../components/GestaoPlanosProfissionais";
 import { PLANOS_PROFISSIONAIS_PADRAO, PlanoProfissionalItem } from "../types/planosProfissionais";
 import { formatProfessionalName } from "../utils/formatters";
+import { ProfissionalAgendaView } from "../components/ProfissionalAgendaView";
+import { FeatureGate } from "../components/FeatureGate";
+import { FichaPacienteExternoModal } from "../components/FichaPacienteExternoModal";
+import { ParametrizarLinkModal } from "../components/ParametrizarLinkModal";
 
 const safeLocalStorage = {
   getItem: (key: string): string | null => {
@@ -1101,6 +1106,7 @@ export function DashboardView({
 
   // Tabs
   const [activeTab, setActiveTab] = useState<
+    | "agenda"
     | "kanban"
     | "estatisticas"
     | "doacoes"
@@ -1133,8 +1139,8 @@ export function DashboardView({
   >("all");
   const [msgSearchQuery, setMsgSearchQuery] = useState("");
 
-  // Sub-aba de Meus Pacientes (Valores Acessíveis vs Corporativo)
-  const [subTabPacientes, setSubTabPacientes] = useState<"acessiveis" | "corporativo">("acessiveis");
+  // Sub-aba de Meus Pacientes (Valores Acessíveis vs Corporativo vs Externos)
+  const [subTabPacientes, setSubTabPacientes] = useState<"acessiveis" | "corporativo" | "externos">("acessiveis");
 
   useEffect(() => {
     if (currentRole === "profissional" && activeTab === "triagemCorporativa") {
@@ -1250,6 +1256,16 @@ export function DashboardView({
     telefone: "",
     categoria: "empresa_direta" as CategoriaEmpresa,
   });
+
+  const handleUpdateProfissionalPlan = async (uid: string, plano: string) => {
+    try {
+      await updateDoc(doc(db, "users", uid), { plano });
+      showToast("Plano do profissional atualizado!", "success");
+    } catch (err) {
+      console.error("Erro ao atualizar plano:", err);
+      showToast("Erro ao atualizar plano.", "error");
+    }
+  };
 
   const handleCriarEmpresaManual = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1956,7 +1972,21 @@ export function DashboardView({
 
   // Psychologist State
   const [meusPacientes, setMeusPacientes] = useState<Acolhimento[]>([]);
+  const [pacientesExternos, setPacientesExternos] = useState<Acolhimento[]>([]);
   const [patientSortOrder, setPatientSortOrder] = useState<"fifo" | "recent">("fifo");
+  const [pacienteExternoSearchTerm, setPacienteExternoSearchTerm] = useState("");
+  const [showModalNovoPacienteExterno, setShowModalNovoPacienteExterno] = useState(false);
+  const [novoExtNome, setNovoExtNome] = useState("");
+  const [novoExtTelefone, setNovoExtTelefone] = useState("");
+  const [novoExtEmail, setNovoExtEmail] = useState("");
+  const [novoExtCpf, setNovoExtCpf] = useState("");
+  const [novoExtDataNasc, setNovoExtDataNasc] = useState("");
+  const [novoExtValor, setNovoExtValor] = useState("120");
+  const [novoExtObs, setNovoExtObs] = useState("");
+  const [isSalvandoExternoDashboard, setIsSalvandoExternoDashboard] = useState(false);
+  const [copiouLinkExterno, setCopiouLinkExterno] = useState(false);
+  const [selectedPacienteExterno, setSelectedPacienteExterno] = useState<any | null>(null);
+  const [showParametrizarLinkModal, setShowParametrizarLinkModal] = useState(false);
 
   // Kanban Drag & Drop Visual State
   const [draggingCardId, setDraggingCardId] = useState<string | null>(null);
@@ -2290,6 +2320,8 @@ export function DashboardView({
     let unsubEmpresas: (() => void) | undefined;
     let unsubConfig: (() => void) | undefined;
     let unsubComplianceMsg: (() => void) | undefined;
+    let unsubProfile: (() => void) | undefined;
+    let unsubExternos: (() => void) | undefined;
 
     const unsub = onAuthStateChanged(auth, async (u) => {
       setUser(u);
@@ -2333,7 +2365,7 @@ export function DashboardView({
             const initialRole = currentUserProfile.role || userAvailableRoles[0] || "profissional";
             setActiveRoleView(initialRole);
             if (initialRole === "profissional") {
-              setActiveTab("pacientes");
+              setActiveTab("agenda");
             } else {
               setActiveTab("kanban");
             }
@@ -2342,7 +2374,7 @@ export function DashboardView({
             const singleRole = currentUserProfile.role || userAvailableRoles[0] || "profissional";
             setActiveRoleView(singleRole);
             if (singleRole === "profissional") {
-              setActiveTab("pacientes");
+              setActiveTab("agenda");
               const hasSeenTour = safeLocalStorage.getItem("elo_tour_seen");
               if (!hasSeenTour) {
                 setShowTourModal(true);
@@ -2352,6 +2384,14 @@ export function DashboardView({
             }
           }
           setProfile(currentUserProfile);
+
+          // Escuta em tempo real do perfil do usuário (atualizações de plano feitas pelo Master refletem instantaneamente)
+          unsubProfile = onSnapshot(doc(db, "users", u.uid), (userSnap) => {
+            if (userSnap.exists()) {
+              const liveData = { ...userSnap.data(), uid: u.uid } as UserProfile;
+              setProfile((prev) => (prev ? { ...prev, ...liveData } : liveData));
+            }
+          });
         }
 
         unsubConfig = onSnapshot(
@@ -2441,6 +2481,17 @@ export function DashboardView({
               } catch (e) {}
             },
           );
+          // Listen para pacientes externos (Carteira Particular)
+          const qExternos = query(
+            collection(db, "pacientes"),
+            where("profissionalId", "==", u.uid),
+            where("tipo", "==", "externo")
+          );
+          unsubExternos = onSnapshot(qExternos, (snap) => {
+            const list: Acolhimento[] = [];
+            snap.forEach(d => list.push({ id: d.id, ...d.data() } as Acolhimento));
+            setPacientesExternos(list);
+          });
         }
 
         if (hasMaster) {
@@ -2587,6 +2638,8 @@ export function DashboardView({
         if (unsubEmpresas) unsubEmpresas();
         if (unsubConfig) unsubConfig();
         if (unsubComplianceMsg) unsubComplianceMsg();
+        if (unsubProfile) unsubProfile();
+        if (unsubExternos) unsubExternos();
         unsubCards = undefined;
         unsubDoacoes = undefined;
         unsubSol = undefined;
@@ -2595,6 +2648,8 @@ export function DashboardView({
         unsubMeusPacientes = undefined;
         unsubEmpresas = undefined;
         unsubComplianceMsg = undefined;
+        unsubProfile = undefined;
+        unsubExternos = undefined;
         setProfile(null);
         setActiveRoleView(null);
         setAcolhimentos([]);
@@ -2604,6 +2659,7 @@ export function DashboardView({
         setProfissionaisAtivos([]);
         setEmpresasLeads([]);
         setMeusPacientes([]);
+        setPacientesExternos([]);
         setFichasCorporativas([]);
         setLoadingObj(false);
       }
@@ -2620,6 +2676,8 @@ export function DashboardView({
       if (unsubEmpresas) unsubEmpresas();
       if (unsubConfig) unsubConfig();
       if (unsubComplianceMsg) unsubComplianceMsg();
+      if (unsubProfile) unsubProfile();
+      if (unsubExternos) unsubExternos();
     };
   }, []);
 
@@ -5847,10 +5905,11 @@ export function DashboardView({
 
       let valorMensal = "a combinar";
       if (target.valorSessao) {
-        if (target.valorSessao.toLowerCase().includes("gratuito")) {
+        const targetValStr = String(target.valorSessao);
+        if (targetValStr.toLowerCase().includes("gratuito")) {
           valorMensal = "Gratuito";
         } else {
-          const matches = target.valorSessao.match(/(\d+[\d.,]*)/);
+          const matches = targetValStr.match(/(\d+[\d.,]*)/);
           if (matches) {
             let cleanValor = matches[0];
             if (cleanValor.includes(",") && cleanValor.includes(".")) {
@@ -6065,7 +6124,7 @@ export function DashboardView({
                     onClick={() => {
                       setActiveRoleView(r);
                       if (r === "profissional") {
-                        setActiveTab("pacientes");
+                        setActiveTab("agenda");
                       } else if (r === "master" || r === "triagem") {
                         setActiveTab("kanban");
                       }
@@ -6352,7 +6411,16 @@ export function DashboardView({
 
           {currentRole === "profissional" && (
             <div className="flex items-center gap-1 sm:gap-2 bg-warm rounded-full p-1 border border-soft shrink-0">
-              {/* 1. Dashboard */}
+              {/* 1. Agenda (Primeira aba padrão do Profissional) */}
+              <button
+                onClick={() => setActiveTab("agenda")}
+                className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 cursor-pointer ${activeTab === "agenda" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70 hover:text-forest"}`}
+              >
+                <Calendar className="w-3.5 h-3.5 text-forest/70" />
+                <span>Agenda</span>
+              </button>
+
+              {/* 2. Dashboard */}
               <button
                 onClick={() => setActiveTab("estatisticas")}
                 className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 cursor-pointer ${activeTab === "estatisticas" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70 hover:text-forest"}`}
@@ -6906,20 +6974,19 @@ export function DashboardView({
                   </div>
 
                   {/* Card Específico: Indicador de Compromisso & Iniciativa Social (Extraordinárias) */}
-                  <div className="bg-gradient-to-r from-[#FAF8F5] via-amber-50/40 to-blue-50/40 p-6 rounded-3xl border border-amber-200/70 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-                    <div className="space-y-1.5 flex-1">
-                      <div className="flex items-center gap-2 flex-wrap">
+                  <div className="bg-gradient-to-r from-[#FAF8F5] via-amber-50/40 to-blue-50/40 p-6 rounded-3xl border border-amber-200/70 shadow-xs flex flex-col gap-4">
+                    <div className="flex flex-col gap-2">
+                      <div className="flex items-center gap-2">
                         <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-100 text-amber-900 border border-amber-200 flex items-center gap-1">
                           <HeartHandshake className="w-3.5 h-3.5 text-amber-700" />
                           Iniciativa & Compromisso Social
                         </span>
-                        <span className="text-xs font-semibold text-forest/70">
+                        <h4 className="font-serif text-lg font-bold text-forest">
                           Horas Extraordinárias de Ajuda Humanitária
-                        </span>
+                        </h4>
                       </div>
                       <p className="text-xs text-forest/75 leading-relaxed max-w-3xl">
-                        Indicador dedicado à doação de horas e democratização da saúde mental pela rede.
-                        <strong> As horas sociais a R$ 30 e atendimentos gratuitos são geridos aqui de forma separada</strong>, valorizando o compromisso dos profissionais sem reduzir ou penalizar as médias gerais de monetização comercial.
+                        Indicador dedicado à doação de horas e democratização da saúde mental pela rede. As horas sociais a R$ 30 e atendimentos gratuitos são geridos aqui de forma separada, valorizando o compromisso dos profissionais.
                       </p>
                     </div>
 
@@ -8616,6 +8683,23 @@ export function DashboardView({
             )}
           </div>
         </div>
+      ) : currentRole === "profissional" && activeTab === "agenda" ? (
+        <ProfissionalAgendaView
+          profissionalUid={user?.uid || ""}
+          profissionalNome={profile?.name || profile?.nome || "Profissional"}
+          pacientesAtivos={meusPacientes || []}
+          pacientesExternos={pacientesExternos || []}
+          plano={profile?.plano}
+          onOpenPacienteDetalhes={(pacienteId) => {
+            const found =
+              meusPacientes.find((p) => p.id === pacienteId) ||
+              pacientesExternos.find((p) => p.id === pacienteId) ||
+              acolhimentos.find((a) => a.id === pacienteId);
+            if (found) {
+              setSelectedCard(found);
+            }
+          }}
+        />
       ) : currentRole === "profissional" && activeTab === "estatisticas" ? (
         <div className="flex-1 overflow-auto p-6 md:p-8 flex flex-col gap-8 slide-up">
           <div className="max-w-6xl w-full mx-auto space-y-8">
@@ -9305,6 +9389,30 @@ export function DashboardView({
                       </span>
                     ) : null}
                   </button>
+
+                  <FeatureGate userPlan={profile?.plano} requiredPlan="avancado" fallback={
+                    <button
+                      type="button"
+                      className="px-3.5 py-1.5 rounded-lg text-forest/40 flex items-center gap-1.5 cursor-not-allowed text-xs font-semibold"
+                      title="Recurso exclusivo do Plano Avançado"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>Externos</span>
+                    </button>
+                  }>
+                    <button
+                      type="button"
+                      onClick={() => setSubTabPacientes("externos")}
+                      className={`px-3.5 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                        subTabPacientes === "externos"
+                          ? "bg-white text-forest shadow-xs font-bold"
+                          : "text-forest/70 hover:text-forest"
+                      }`}
+                    >
+                      <User className="w-3.5 h-3.5 text-forest" />
+                      <span>Externos</span>
+                    </button>
+                  </FeatureGate>
                 </div>
               </div>
 
@@ -9326,6 +9434,499 @@ export function DashboardView({
                   window.open(url, "_blank");
                 }}
               />
+            ) : subTabPacientes === "externos" ? (
+              <div className="max-w-5xl w-full mx-auto flex flex-col gap-5">
+                {/* 1. Header Card: Link de Cadastro e Perfil do Profissional */}
+                <div className="bg-white p-5 sm:p-6 rounded-2xl border border-soft shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                  <div className="flex items-center gap-4">
+                    <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl overflow-hidden border-2 border-sun shadow-md shrink-0">
+                      {profile?.photoURL ? (
+                        <img src={profile.photoURL} alt={profile.name} className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full bg-forest flex items-center justify-center text-white font-bold text-xl">
+                          {profile?.name?.charAt(0).toUpperCase()}
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h2 className="text-lg sm:text-xl font-bold font-serif text-forest">{profile?.name}</h2>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                          Carteira Particular
+                        </span>
+                      </div>
+                      <p className="text-xs text-forest/70 mt-0.5">
+                        Pacientes particulares atendidos por você fora da triagem pública.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Bloco de Compartilhamento do Link */}
+                  <div className="w-full md:w-auto md:min-w-[340px] flex flex-col gap-1.5 bg-warm/50 p-3 rounded-xl border border-soft">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-forest flex items-center gap-1.5">
+                        <Link2 className="w-3.5 h-3.5 text-forest/70" />
+                        Link do Formulário para Paciente
+                      </span>
+                      {copiouLinkExterno && (
+                        <span className="text-[10px] text-emerald-700 font-bold flex items-center gap-1">
+                          <Check className="w-3 h-3" /> Copiado!
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 bg-white px-2.5 py-1.5 rounded-lg border border-soft text-[11px] font-mono text-forest/80 truncate">
+                        {typeof window !== "undefined"
+                          ? `${window.location.origin}/cadastro_externo?prof=${profile?.uid || user?.uid}`
+                          : ""}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const url = `${window.location.origin}/cadastro_externo?prof=${profile?.uid || user?.uid}`;
+                          if (navigator?.clipboard?.writeText) {
+                            navigator.clipboard.writeText(url);
+                          }
+                          setCopiouLinkExterno(true);
+                          setTimeout(() => setCopiouLinkExterno(false), 2500);
+                        }}
+                        className="px-3 py-1.5 bg-forest hover:bg-forest/90 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer shrink-0"
+                        title="Copiar link"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Copiar</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const url = `${window.location.origin}/cadastro_externo?prof=${profile?.uid || user?.uid}`;
+                          window.open(url, "_blank");
+                        }}
+                        className="p-1.5 bg-white hover:bg-warm border border-soft text-forest/70 hover:text-forest rounded-lg transition-colors cursor-pointer shrink-0"
+                        title="Abrir formulário em nova aba"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowParametrizarLinkModal(true)}
+                        className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer shrink-0"
+                        title="Parametrizar Link e Configurações do Formulário"
+                      >
+                        <Sliders className="w-3.5 h-3.5 text-emerald-700" />
+                        <span>Parametrizar</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. Importação via Planilha */}
+                <ImportExternalPatients profUid={profile?.uid || user?.uid} />
+
+                {/* 3. Lista de Pacientes da Carteira Externa */}
+                <div className="flex flex-col gap-3">
+                  {/* Barra de Ações & Busca */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 bg-white px-4 sm:px-6 py-3.5 rounded-2xl shadow-xs border border-soft">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-forest/5 flex items-center justify-center text-forest shrink-0">
+                        <Users className="w-4 h-4 text-forest" />
+                      </div>
+                      <div>
+                        <h3 className="font-serif text-sm sm:text-base font-bold text-forest">
+                          Pacientes Cadastrados na Carteira
+                        </h3>
+                        <p className="text-[11px] text-forest/60">
+                          {pacienteExternoSearchTerm.trim()
+                            ? "Filtrando resultados da busca"
+                            : `${pacientesExternos.length} paciente(s) particular(es) vinculado(s)`}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {/* Busca Contextual */}
+                      <div className="relative">
+                        <Search className="w-3.5 h-3.5 text-forest/50 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                        <input
+                          type="text"
+                          placeholder="Buscar por nome, telefone ou CPF..."
+                          value={pacienteExternoSearchTerm}
+                          onChange={(e) => setPacienteExternoSearchTerm(e.target.value)}
+                          className="pl-8 pr-7 py-1.5 bg-warm/60 border border-soft rounded-xl text-xs text-forest placeholder:text-forest/50 focus:outline-none focus:border-forest/50 focus:bg-white w-48 sm:w-60 transition-all"
+                        />
+                        {pacienteExternoSearchTerm && (
+                          <button
+                            type="button"
+                            onClick={() => setPacienteExternoSearchTerm("")}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 text-forest/40 hover:text-forest p-0.5 cursor-pointer transition-colors"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Botão de Cadastro Manual */}
+                      <button
+                        type="button"
+                        onClick={() => setShowModalNovoPacienteExterno(true)}
+                        className="px-3.5 py-1.5 rounded-xl bg-forest hover:bg-forest/90 text-white text-xs font-semibold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+                      >
+                        <UserPlus className="w-3.5 h-3.5" />
+                        <span>Novo Paciente</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Listagem dos Pacientes */}
+                  {(() => {
+                    const filtrados = (pacientesExternos || []).filter((p: any) => {
+                      if (!pacienteExternoSearchTerm.trim()) return true;
+                      const term = pacienteExternoSearchTerm.toLowerCase();
+                      const nome = (p.nome || p.nomeCivil || "").toLowerCase();
+                      const tel = (p.telefone || "").toLowerCase();
+                      const cpf = (p.cpf || "").toLowerCase();
+                      const email = (p.email || "").toLowerCase();
+                      return nome.includes(term) || tel.includes(term) || cpf.includes(term) || email.includes(term);
+                    });
+
+                    if (filtrados.length === 0) {
+                      return (
+                        <div className="w-full text-center p-8 bg-white rounded-2xl border border-dashed border-soft text-forest/70 text-xs sm:text-sm space-y-3">
+                          <div className="w-10 h-10 rounded-full bg-emerald-50 text-emerald-700 mx-auto flex items-center justify-center">
+                            <Users className="w-5 h-5" />
+                          </div>
+                          <div className="font-bold text-forest">
+                            {pacienteExternoSearchTerm.trim()
+                              ? "Nenhum paciente encontrado com esta busca."
+                              : "Nenhum paciente particular cadastrado ainda."}
+                          </div>
+                          <p className="text-[11px] text-forest/60 max-w-md mx-auto">
+                            Compartilhe seu link exclusivo com seus pacientes, importe sua planilha de contatos ou clique no botão acima para cadastrar manualmente.
+                          </p>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="flex flex-col gap-2 w-full">
+                        {filtrados.map((p: any, idx: number) => {
+                          const nome = p.nomeCivil || p.nome || "Paciente Sem Nome";
+                          const telRaw = (p.telefone || "").replace(/\D/g, "");
+                          const waUrl = telRaw ? `https://wa.me/55${telRaw.startsWith("55") ? telRaw.slice(2) : telRaw}?text=Ol%C3%A1%20${encodeURIComponent(nome)}!` : "";
+
+                          return (
+                            <div
+                              key={p.id || `ext-${idx}`}
+                              className="bg-white rounded-xl border border-soft shadow-2xs hover:border-emerald-300 hover:shadow-xs transition-all p-3 sm:p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3"
+                            >
+                              <div
+                                onClick={() => setSelectedPacienteExterno(p)}
+                                className="flex items-center gap-3 min-w-0 cursor-pointer flex-1"
+                                title="Clique para abrir a Ficha de Bordo do Paciente"
+                              >
+                                <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-800 font-bold text-xs flex items-center justify-center border border-emerald-200 shrink-0">
+                                  {nome.charAt(0).toUpperCase()}
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="font-bold text-forest text-xs sm:text-sm truncate hover:underline">
+                                      {nome}
+                                    </span>
+                                    <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-emerald-100 text-emerald-800 font-bold border border-emerald-200">
+                                      Carteira Externa
+                                    </span>
+                                    {p.origem && (
+                                      <span className="text-[9px] text-forest/50 bg-warm px-1.5 py-0.2 rounded border border-soft">
+                                        {p.origem === "formulario_externo"
+                                          ? "Formulário"
+                                          : p.origem === "importacao_excel"
+                                          ? "Importado"
+                                          : p.origem === "agenda_clinica"
+                                          ? "Agenda"
+                                          : "Manual"}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="text-[11px] text-forest/70 flex items-center gap-3 flex-wrap mt-0.5">
+                                    {p.telefone && (
+                                      <span className="flex items-center gap-1">
+                                        <Phone className="w-3 h-3 text-forest/50" />
+                                        {p.telefone}
+                                      </span>
+                                    )}
+                                    {p.email && (
+                                      <span className="flex items-center gap-1">
+                                        <Mail className="w-3 h-3 text-forest/50" />
+                                        {p.email}
+                                      </span>
+                                    )}
+                                    {p.cpf && (
+                                      <span className="font-mono text-[10px] text-forest/60">
+                                        CPF: {p.cpf}
+                                      </span>
+                                    )}
+                                    {p.valorSessao && (
+                                      <span className="font-semibold text-emerald-800">
+                                        R$ {p.valorSessao}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Ações Rápidas */}
+                              <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedPacienteExterno(p)}
+                                  className="px-2.5 sm:px-3 py-1.5 bg-warm hover:bg-emerald-50 text-forest hover:text-emerald-900 border border-soft hover:border-emerald-300 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer"
+                                  title="Abrir Ficha de Bordo Completa"
+                                >
+                                  <FileText className="w-3.5 h-3.5 text-emerald-700" />
+                                  <span>Ficha de Bordo</span>
+                                </button>
+
+                                {waUrl && (
+                                  <a
+                                    href={waUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-lg text-xs font-semibold flex items-center gap-1 border border-emerald-200 transition-colors"
+                                    title="Conversar no WhatsApp"
+                                  >
+                                    <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
+                                    <span className="hidden sm:inline">WhatsApp</span>
+                                  </a>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setActiveTab("agenda");
+                                  }}
+                                  className="px-3 py-1.5 bg-forest hover:bg-forest/90 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer"
+                                  title="Agendar sessão na Agenda Clínica"
+                                >
+                                  <Calendar className="w-3.5 h-3.5" />
+                                  <span>Agendar Sessão</span>
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                {/* MODAL DE CADASTRO MANUAL NA ABA EXTERNOS */}
+                {showModalNovoPacienteExterno && (
+                  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+                    <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl border border-emerald-200 overflow-hidden animate-in fade-in zoom-in-95 flex flex-col max-h-[90vh]">
+                      <div className="bg-gradient-to-r from-forest to-emerald-900 text-white p-5 flex items-center justify-between shrink-0">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center text-emerald-300">
+                            <UserPlus className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <h3 className="text-base sm:text-lg font-bold font-serif text-white">
+                              Novo Paciente Particular
+                            </h3>
+                            <p className="text-xs text-emerald-100/70">
+                              Adicionar à sua carteira externa particular
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setShowModalNovoPacienteExterno(false)}
+                          className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors cursor-pointer"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      <form
+                        onSubmit={async (e) => {
+                          e.preventDefault();
+                          if (!novoExtNome.trim()) {
+                            alert("Por favor, informe o nome do paciente.");
+                            return;
+                          }
+                          if (!novoExtTelefone.trim()) {
+                            alert("Por favor, informe o telefone/WhatsApp.");
+                            return;
+                          }
+                          setIsSalvandoExternoDashboard(true);
+                          try {
+                            const valNum = parseFloat(novoExtValor.replace(",", ".")) || 100;
+                            await addDoc(collection(db, "pacientes"), {
+                              nome: novoExtNome.trim(),
+                              nomeCivil: novoExtNome.trim(),
+                              telefone: novoExtTelefone.trim(),
+                              email: novoExtEmail.trim(),
+                              cpf: novoExtCpf.trim(),
+                              dataNascimento: novoExtDataNasc || "",
+                              valorSessao: valNum,
+                              observacoes: novoExtObs.trim(),
+                              tipo: "externo",
+                              profissionalId: profile?.uid || user?.uid,
+                              status: "ativo",
+                              viaAcesso: "Particular",
+                              origem: "dashboard_manual",
+                              createdAt: serverTimestamp(),
+                              updatedAt: serverTimestamp(),
+                            });
+                            setNovoExtNome("");
+                            setNovoExtTelefone("");
+                            setNovoExtEmail("");
+                            setNovoExtCpf("");
+                            setNovoExtDataNasc("");
+                            setNovoExtValor("120");
+                            setNovoExtObs("");
+                            setShowModalNovoPacienteExterno(false);
+                          } catch (err: any) {
+                            console.error("Erro ao salvar paciente externo:", err);
+                            alert("Erro ao cadastrar: " + (err.message || "Tente novamente"));
+                          } finally {
+                            setIsSalvandoExternoDashboard(false);
+                          }
+                        }}
+                        className="p-6 overflow-y-auto flex flex-col gap-4 text-xs sm:text-sm"
+                      >
+                        <div>
+                          <label className="block text-xs font-bold text-forest mb-1">
+                            Nome Completo <span className="text-red-500">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="Ex: Maria Clara Barbosa"
+                            value={novoExtNome}
+                            onChange={(e) => setNovoExtNome(e.target.value)}
+                            className="w-full px-3 py-2 bg-warm/30 border border-soft rounded-xl text-forest focus:outline-none focus:ring-2 focus:ring-forest/30"
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs font-bold text-forest mb-1">
+                              WhatsApp / Telefone <span className="text-red-500">*</span>
+                            </label>
+                            <input
+                              type="tel"
+                              required
+                              placeholder="(11) 99999-9999"
+                              value={novoExtTelefone}
+                              onChange={(e) => {
+                                const digits = e.target.value.replace(/\D/g, "").slice(0, 11);
+                                if (digits.length <= 2) setNovoExtTelefone(digits);
+                                else if (digits.length <= 7) setNovoExtTelefone(`(${digits.slice(0, 2)}) ${digits.slice(2)}`);
+                                else setNovoExtTelefone(`(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`);
+                              }}
+                              className="w-full px-3 py-2 bg-warm/30 border border-soft rounded-xl text-forest focus:outline-none focus:ring-2 focus:ring-forest/30 font-mono"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-xs font-bold text-forest mb-1">
+                              E-mail (opcional)
+                            </label>
+                            <input
+                              type="email"
+                              placeholder="paciente@email.com"
+                              value={novoExtEmail}
+                              onChange={(e) => setNovoExtEmail(e.target.value)}
+                              className="w-full px-3 py-2 bg-warm/30 border border-soft rounded-xl text-forest focus:outline-none focus:ring-2 focus:ring-forest/30"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <div>
+                            <label className="block text-xs font-bold text-forest mb-1">
+                              CPF (opcional)
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="000.000.000-00"
+                              value={novoExtCpf}
+                              onChange={(e) => {
+                                const digits = e.target.value.replace(/\D/g, "").slice(0, 11);
+                                if (digits.length <= 3) setNovoExtCpf(digits);
+                                else if (digits.length <= 6) setNovoExtCpf(`${digits.slice(0, 3)}.${digits.slice(3)}`);
+                                else if (digits.length <= 9) setNovoExtCpf(`${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6)}`);
+                                else setNovoExtCpf(`${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`);
+                              }}
+                              className="w-full px-3 py-2 bg-warm/30 border border-soft rounded-xl text-forest focus:outline-none focus:ring-2 focus:ring-forest/30 font-mono text-xs"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-xs font-bold text-forest mb-1">
+                              Data Nasc. (opcional)
+                            </label>
+                            <input
+                              type="date"
+                              value={novoExtDataNasc}
+                              onChange={(e) => setNovoExtDataNasc(e.target.value)}
+                              className="w-full px-3 py-2 bg-warm/30 border border-soft rounded-xl text-forest focus:outline-none focus:ring-2 focus:ring-forest/30 text-xs"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-xs font-bold text-forest mb-1">
+                              Valor Sessão (R$)
+                            </label>
+                            <input
+                              type="number"
+                              min="0"
+                              step="5"
+                              value={novoExtValor}
+                              onChange={(e) => setNovoExtValor(e.target.value)}
+                              className="w-full px-3 py-2 bg-warm/30 border border-soft rounded-xl text-forest focus:outline-none focus:ring-2 focus:ring-forest/30 font-bold"
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-forest mb-1">
+                            Anotações Iniciais (opcional)
+                          </label>
+                          <textarea
+                            rows={2}
+                            placeholder="Queixa, observações clínicas ou dados adicionais..."
+                            value={novoExtObs}
+                            onChange={(e) => setNovoExtObs(e.target.value)}
+                            className="w-full px-3 py-2 bg-warm/30 border border-soft rounded-xl text-forest focus:outline-none focus:ring-2 focus:ring-forest/30 resize-none"
+                          />
+                        </div>
+
+                        <div className="pt-2 flex items-center justify-end gap-2 border-t border-soft mt-2">
+                          <button
+                            type="button"
+                            onClick={() => setShowModalNovoPacienteExterno(false)}
+                            className="px-4 py-2 rounded-xl border border-soft text-forest/70 hover:text-forest hover:bg-warm text-xs font-semibold transition-colors cursor-pointer"
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            type="submit"
+                            disabled={isSalvandoExternoDashboard}
+                            className="px-5 py-2 rounded-xl bg-forest hover:bg-forest/90 text-white text-xs font-semibold transition-all shadow-xs disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
+                          >
+                            {isSalvandoExternoDashboard ? (
+                              <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                            ) : (
+                              <Check className="w-3.5 h-3.5" />
+                            )}
+                            <span>Cadastrar Paciente</span>
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                )}
+              </div>
             ) : (
               <div className="max-w-5xl w-full mx-auto flex flex-col gap-4">
                 {/* Barra de Topo Enxuta com Contagem, Busca e Botão Expandir/Recolher Todos */}
@@ -12716,11 +13317,23 @@ export function DashboardView({
                                 Identificação & Vínculo
                               </span>
                               <div className="space-y-1.5 text-forest/80">
-                                <p className="flex justify-between">
+                                <p className="flex justify-between items-center">
                                   <strong className="text-forest/60">Papel:</strong>
                                   <span className="capitalize font-semibold text-forest">
                                     {p.role}
                                   </span>
+                                </p>
+                                <p className="flex justify-between items-center">
+                                  <strong className="text-forest/60">Plano:</strong>
+                                  <select
+                                    value={p.plano || "essencial"}
+                                    onChange={(e) => handleUpdateProfissionalPlan(p.uid || p.id!, e.target.value)}
+                                    className="text-xs font-semibold text-forest bg-warm border border-soft rounded-lg px-2 py-1 focus:outline-none"
+                                  >
+                                    <option value="essencial">Essencial</option>
+                                    <option value="avancado">Avançado</option>
+                                    <option value="ia">IA (Em desenv.)</option>
+                                  </select>
                                 </p>
                                 <p className="flex justify-between">
                                   <strong className="text-forest/60">CRP:</strong>
@@ -13571,8 +14184,65 @@ export function DashboardView({
         <EventosServicosView activeSection={activeTab === "eventos" && currentRole === "profissional" ? "eventos_e_parcerias" : activeTab} profile={profile!} />
       ) : null}
 
-      {/* Card Details Modal - Ficha de Bordo do Paciente */}
-      {selectedCard && (
+      {/* Ficha de Bordo do Paciente Externo */}
+      {selectedPacienteExterno && (
+        <FichaPacienteExternoModal
+          paciente={selectedPacienteExterno}
+          onClose={() => setSelectedPacienteExterno(null)}
+          onUpdatePaciente={(updated) => {
+            setSelectedPacienteExterno(updated);
+            setPacientesExternos((prev) =>
+              prev.map((p) => (p.id === updated.id ? { ...p, ...updated } : p))
+            );
+            setAcolhimentos((prev) =>
+              prev.map((p) => (p.id === updated.id ? { ...p, ...updated } : p))
+            );
+          }}
+          profile={profile}
+          user={user}
+          showToast={showToast}
+          onNavigateToAgenda={() => {
+            setActiveTab("agenda");
+          }}
+        />
+      )}
+
+      {/* Modal de Parametrização do Link de Cadastro */}
+      {showParametrizarLinkModal && (
+        <ParametrizarLinkModal
+          isOpen={showParametrizarLinkModal}
+          onClose={() => setShowParametrizarLinkModal(false)}
+          profUid={profile?.uid || user?.uid || ""}
+          profile={profile}
+          onUpdateProfile={(updated) => {
+            setProfile(updated);
+          }}
+          showToast={showToast}
+        />
+      )}
+
+      {/* Card Details Modal - Ficha de Bordo do Paciente (Externo ou Acolhimento) */}
+      {selectedCard && (selectedCard.tipo === "externo" || selectedCard.viaAcesso === "Carteira Externa") ? (
+        <FichaPacienteExternoModal
+          paciente={selectedCard}
+          onClose={() => setSelectedCard(null)}
+          onUpdatePaciente={(updated) => {
+            setSelectedCard(updated);
+            setPacientesExternos((prev) =>
+              prev.map((p) => (p.id === updated.id ? { ...p, ...updated } : p))
+            );
+            setAcolhimentos((prev) =>
+              prev.map((p) => (p.id === updated.id ? { ...p, ...updated } : p))
+            );
+          }}
+          profile={profile}
+          user={user}
+          showToast={showToast}
+          onNavigateToAgenda={() => {
+            setActiveTab("agenda");
+          }}
+        />
+      ) : selectedCard ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-1 sm:px-4 bg-forest/25 backdrop-blur-sm animate-in fade-in py-1 sm:py-3">
           <div className="bg-white rounded-2xl sm:rounded-3xl w-full max-w-[98vw] 2xl:max-w-[1550px] h-[96vh] sm:h-[95vh] flex flex-col shadow-2xl border border-soft overflow-hidden animate-in zoom-in-95">
             {/* Header Compacto & Otimizado para Telas Pequenas */}
@@ -14733,18 +15403,28 @@ export function DashboardView({
                             options = [...baseFaixas, "R$ 30,00 (Extraordinário)", "Gratuito", "A combinar"];
                           }
 
-                          if (selectedCard.valorSessao && !options.includes(selectedCard.valorSessao) && selectedCard.valorSessao !== "R$ 30,00") {
-                            options.unshift(selectedCard.valorSessao);
+                          const cardValorRaw: any = selectedCard.valorSessao;
+                          const cardValorStr = typeof cardValorRaw === "number"
+                            ? `R$ ${cardValorRaw.toFixed(2).replace(".", ",")}`
+                            : cardValorRaw != null
+                            ? String(cardValorRaw).trim()
+                            : "";
+
+                          if (cardValorStr && !options.includes(cardValorStr) && cardValorStr !== "R$ 30,00") {
+                            options.unshift(cardValorStr);
                           }
 
                           return options.map((val) => {
-                            const is30 = val.startsWith("R$ 30,00");
-                            const actualValToSave = is30 ? "R$ 30,00" : val;
-                            const isSelected = selectedCard.valorSessao === actualValToSave;
+                            const valStr = String(val ?? "");
+                            const is30 = valStr.startsWith("R$ 30,00");
+                            const actualValToSave = is30 ? "R$ 30,00" : valStr;
+                            const isSelected =
+                              String(selectedCard.valorSessao ?? "") === actualValToSave ||
+                              cardValorStr === actualValToSave;
 
                             return (
                               <button
-                                key={val}
+                                key={valStr}
                                 type="button"
                                 disabled={currentRole !== "master" && currentRole !== "triagem"}
                                 onClick={() => handleUpdateAcolhimentoProperty(selectedCard.id, "valorSessao", actualValToSave)}
@@ -14754,7 +15434,7 @@ export function DashboardView({
                                     : is30 ? "bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100" : "bg-white text-forest border-soft hover:bg-sun/30"
                                 } ${(currentRole !== "master" && currentRole !== "triagem") ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
                               >
-                                {val}
+                                {valStr}
                               </button>
                             );
                           });
@@ -14896,9 +15576,10 @@ export function DashboardView({
                       </span>
                       <span className="text-lg font-extrabold text-forest block mt-0.5">
                         {(() => {
-                          if (!selectedCard.valorSessao) return "A combinar";
-                          if (selectedCard.valorSessao.toLowerCase().includes("gratuito")) return "Gratuito";
-                          const matches = selectedCard.valorSessao.match(/(\d+[\d.,]*)/);
+                          const cardValStr = String(selectedCard.valorSessao ?? "").trim();
+                          if (!cardValStr) return "A combinar";
+                          if (cardValStr.toLowerCase().includes("gratuito")) return "Gratuito";
+                          const matches = cardValStr.match(/(\d+[\d.,]*)/);
                           if (!matches) return "A combinar";
                           let cleanValor = matches[0];
                           if (cleanValor.includes(",") && cleanValor.includes(".")) {
@@ -15902,7 +16583,7 @@ export function DashboardView({
             </div>
           </div>
         </div>
-      )}
+      ) : null}
       {/* Tour Modal / Primeiros Passos */}
       {showTourModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center px-4 bg-forest/20 backdrop-blur-sm animate-in fade-in py-4">

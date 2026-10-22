@@ -150,10 +150,11 @@ export const PatientNotificationModal: React.FC<PatientNotificationModalProps> =
 
   // Compute Monthly Estimate
   const calculatedValorMensal = useMemo(() => {
-    if (!target?.valorSessao) return "A combinar";
-    if (target.valorSessao.toLowerCase().includes("gratuito")) return "Gratuito";
+    const valStr = String(target?.valorSessao ?? "").trim();
+    if (!valStr) return "A combinar";
+    if (valStr.toLowerCase().includes("gratuito")) return "Gratuito";
 
-    const matches = target.valorSessao.match(/(\d+[\d.,]*)/);
+    const matches = valStr.match(/(\d+[\d.,]*)/);
     if (matches) {
       let cleanValor = matches[0];
       if (cleanValor.includes(",") && cleanValor.includes(".")) {

@@ -26,7 +26,7 @@ interface ContratoGeradorModalProps {
   allUsers?: any[];
   showToast: (msg: string, type?: "success" | "error" | "info") => void;
   onContratoSalvo?: (updatedPaciente: any) => void;
-  collectionName?: "acolhimentos" | "triagem_corporativa";
+  collectionName?: "acolhimentos" | "triagem_corporativa" | "pacientes";
   tipoAcolhimento?: "particular" | "corporativo";
 }
 

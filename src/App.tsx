@@ -51,6 +51,7 @@ import { ProfissionalLandingView } from "./views/ProfissionalLandingView";
 import { ContratoLandingView } from "./views/ContratoLandingView";
 import { PropostaLandingView } from "./views/PropostaLandingView";
 import { FichaEmpresaLandingView } from "./views/FichaEmpresaLandingView";
+import { ExternalPatientLandingView } from "./views/ExternalPatientLandingView";
 import { PortalEmpresaView } from "./views/PortalEmpresaView";
 import { BlogView } from "./views/BlogView";
 import { ColetaFaturamentoView } from "./views/ColetaFaturamentoView";
@@ -392,8 +393,17 @@ export default function App() {
     | "doacao"
     | "profissional"
     | "blog"
+    | "cadastro_externo"
   >(() => {
     const params = new URLSearchParams(window.location.search);
+    const pathname = window.location.pathname;
+    if (
+      pathname.includes("cadastro_externo") ||
+      params.get("view") === "cadastro_externo" ||
+      Boolean(params.get("cadastro_externo"))
+    ) {
+      return "cadastro_externo";
+    }
     const viewParam = params.get("view") as any;
     if (
       viewParam &&
@@ -406,6 +416,7 @@ export default function App() {
         "doacao",
         "profissional",
         "blog",
+        "cadastro_externo",
       ].includes(viewParam)
     ) {
       return viewParam;
@@ -437,6 +448,12 @@ export default function App() {
       setPublicArtigoId(p.get("artigo"));
       const v = p.get("view");
       if (
+        window.location.pathname.includes("cadastro_externo") ||
+        p.get("cadastro_externo") ||
+        v === "cadastro_externo"
+      ) {
+        setCurrentView("cadastro_externo");
+      } else if (
         v &&
         [
           "landing",
@@ -447,6 +464,7 @@ export default function App() {
           "doacao",
           "profissional",
           "blog",
+          "cadastro_externo",
         ].includes(v)
       ) {
         setCurrentView(v as any);
@@ -658,6 +676,8 @@ export default function App() {
     content = <DoacaoView onNavigate={handleNavigate} />;
   } else if (currentView === "profissional") {
     content = <ProfissionalLandingView onNavigate={handleNavigate} />;
+  } else if (currentView === "cadastro_externo") {
+    content = <ExternalPatientLandingView profUid={publicProfUid} onGoHome={handleGoToLanding} />;
   } else {
     content = (
       <div className="flex h-screen items-center justify-center bg-warm">

@@ -58,6 +58,27 @@
       },
       "required": ["itemId", "itemTitulo", "itemTipo", "nomeCompleto", "whatsapp", "email", "profissao", "createdAt"]
     },
+    "Agendamento": {
+      "title": "Agendamento",
+      "description": "Sessões e agendamentos clínicos da agenda do profissional com suporte a horários fixos e indicadores.",
+      "type": "object",
+      "properties": {
+        "profissionalId": { "type": "string" },
+        "pacienteId": { "type": "string" },
+        "pacienteNome": { "type": "string" },
+        "pacienteTelefone": { "type": "string" },
+        "data": { "type": "string" },
+        "horario": { "type": "string" },
+        "duracaoMinutos": { "type": "number" },
+        "modalidade": { "type": "string", "enum": ["online", "presencial"] },
+        "status": { "type": "string", "enum": ["agendada", "realizada", "remarcada", "cancelada"] },
+        "valor": { "type": "number" },
+        "isHorarioFixo": { "type": "boolean" },
+        "observacoes": { "type": "string" },
+        "createdAt": { "type": "timestamp" }
+      },
+      "required": ["profissionalId", "pacienteId", "pacienteNome", "data", "horario", "status", "createdAt"]
+    },
     "ArtigoBlog": {
       "title": "ArtigoBlog",
       "description": "Artigos e publicações informativas submetidos por profissionais e abertos para leitura pública.",

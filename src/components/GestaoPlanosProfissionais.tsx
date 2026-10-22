@@ -154,28 +154,26 @@ export function GestaoPlanosProfissionais({
   return (
     <div className="bg-warm/30 p-6 md:p-8 rounded-3xl border border-soft space-y-6">
       {/* Header do Bloco */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-soft pb-4">
-        <div>
+      <div className="flex flex-col gap-4 border-b border-soft pb-4">
+        <div className="flex flex-col gap-1.5">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="px-2.5 py-0.5 bg-sun-light text-forest text-[10px] font-bold rounded-full border border-sun-dark/30 uppercase tracking-wider">
               Quadro Integrado da Rede
-            </span>
-            <span className="text-xs font-semibold text-forest/70">
-              Psicólogos, Psicanalistas e Terapeutas
             </span>
             <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 text-[10px] font-bold rounded-full">
               {listaPlanos.filter(p => p.ativo).length} Ativo(s)
             </span>
           </div>
-          <h4 className="font-serif text-lg md:text-xl font-bold text-forest mt-1.5">
+          <h4 className="font-serif text-2xl font-bold text-forest">
             Gestão dos 3 Planos de Adesão da Rede
           </h4>
-          <p className="text-xs text-forest/75 leading-relaxed max-w-2xl mt-0.5">
-            Defina os 3 planos de participação da rede profissional. Os valores e detalhes configurados aqui alimentam diretamente tanto a página de apresentação dos profissionais quanto a escolha interativa na ficha de credenciamento.
-          </p>
         </div>
+        
+        <p className="text-xs text-forest/75 leading-relaxed max-w-3xl">
+          Defina os 3 planos de participação da rede profissional. Os valores e detalhes configurados aqui alimentam diretamente a página de apresentação e a ficha de credenciamento.
+        </p>
 
-        <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
+        <div className="flex items-center gap-2.5 flex-wrap">
           <button
             type="button"
             onClick={handleAdicionarNovoPlano}
@@ -192,7 +190,7 @@ export function GestaoPlanosProfissionais({
             title="Restaurar valores de fábrica dos 3 planos"
           >
             <RotateCcw className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Restaurar 3 Planos</span>
+            <span>Restaurar 3 Planos</span>
           </button>
           <button
             type="button"
