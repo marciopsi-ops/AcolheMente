@@ -206,8 +206,163 @@ export function PublicProfProfileView({
   // Pre-filled text for WhatsApp
   const cleanPhone = prof.telefone ? prof.telefone.replace(/\D/g, '') : '';
   const whatsAppUrl = cleanPhone 
-    ? `https://api.whatsapp.com/send?phone=55${cleanPhone}&text=${encodeURIComponent(`Olá, conheci seu perfil profissional no portal AcolheMente e gostaria de alinhar os próximos passos de nosso acompanhamento!`)}`
+    ? `https://api.whatsapp.com/send?phone=55${cleanPhone}&text=${encodeURIComponent(`Olá, conheci seu perfil profissional e gostaria de agendar uma consulta / atendimento!`)}`
     : '';
+
+  const isWhiteLabel = prof.whiteLabelEnabled && prof.plano === 'avancado';
+  if (isWhiteLabel) {
+    const wlConfig = prof.whiteLabelConfig || {};
+    const company = prof.companyData || {};
+    const customServices = prof.customServices || [];
+    const bgColor = wlConfig.backgroundColor || '#F8FAFC';
+    const primaryColor = wlConfig.primaryColor || '#0F766E';
+
+    return (
+      <div className="min-h-screen text-slate-800 p-4 sm:p-6 md:p-8 flex flex-col items-center" style={{ backgroundColor: bgColor }}>
+        <header className="w-full max-w-4xl flex items-center justify-between mb-8 sm:mb-12 gap-3 flex-wrap">
+          <button 
+            onClick={handleGoHome}
+            className="text-slate-600 hover:text-slate-950 transition-colors p-2 -ml-2 rounded-full hover:bg-black/5 cursor-pointer flex items-center gap-1.5 text-xs font-semibold"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>Voltar</span>
+          </button>
+
+          {company.logoEmpresaUrl ? (
+            <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-2xl shadow-xs border border-slate-200">
+              <img src={company.logoEmpresaUrl} alt={company.razaoSocial || prof.name} className="h-8 max-w-[120px] object-contain" />
+              {company.razaoSocial && <span className="text-xs font-bold text-slate-700">{company.razaoSocial}</span>}
+            </div>
+          ) : (
+            <div className="text-xs font-bold px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-slate-800 shadow-xs">
+              {company.razaoSocial || formatProfessionalName(prof.name)}
+            </div>
+          )}
+        </header>
+
+        <main className="w-full max-w-4xl grid grid-cols-1 md:grid-cols-3 gap-8">
+          <div className="md:col-span-1 bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-200 shadow-sm flex flex-col items-center text-center gap-6 h-fit">
+            <div className="w-40 h-40 sm:w-48 sm:h-48 rounded-full overflow-hidden border-4 shadow-md relative bg-slate-100 flex-shrink-0 flex items-center justify-center" style={{ borderColor: primaryColor }}>
+              {prof.photoUrl ? (
+                <img src={prof.photoUrl} alt={formatProfessionalName(prof.name)} className="w-full h-full object-cover" />
+              ) : (
+                <User className="w-20 h-20 text-slate-400" />
+              )}
+            </div>
+
+            <div className="flex flex-col gap-1 items-center w-full">
+              <h1 className="font-serif text-2xl font-semibold text-slate-900 leading-tight">{formatProfessionalName(prof.name)}</h1>
+              <span className="text-xs uppercase tracking-wider font-bold mt-1" style={{ color: primaryColor }}>
+                {prof.profissao || prof.especialidade || "Profissional Especializado"}
+              </span>
+
+              {company.cnpj && (
+                <span className="text-[10px] font-mono text-slate-500 mt-1">
+                  CNPJ: {company.cnpj}
+                </span>
+              )}
+
+              {prof.bioCurta && (
+                <p className="text-sm text-slate-600 italic mt-3 px-2 text-center">"{prof.bioCurta}"</p>
+              )}
+
+              <div className="flex gap-3 mt-4 items-center justify-center">
+                {prof.instagramUrl && (
+                  <a href={prof.instagramUrl.startsWith('http') ? prof.instagramUrl : `https://${prof.instagramUrl}`} target="_blank" rel="noopener noreferrer" className="p-2 bg-slate-100 rounded-full text-slate-700 hover:bg-slate-200 transition-colors shadow-xs" title="Instagram">
+                    <Instagram className="w-4 h-4" />
+                  </a>
+                )}
+                {prof.linkedinUrl && (
+                  <a href={prof.linkedinUrl.startsWith('http') ? prof.linkedinUrl : `https://${prof.linkedinUrl}`} target="_blank" rel="noopener noreferrer" className="p-2 bg-slate-100 rounded-full text-slate-700 hover:bg-slate-200 transition-colors shadow-xs" title="LinkedIn">
+                    <Linkedin className="w-4 h-4" />
+                  </a>
+                )}
+                {prof.siteUrl && (
+                  <a href={prof.siteUrl.startsWith('http') ? prof.siteUrl : `https://${prof.siteUrl}`} target="_blank" rel="noopener noreferrer" className="p-2 bg-slate-100 rounded-full text-slate-700 hover:bg-slate-200 transition-colors shadow-xs" title="Website">
+                    <Globe className="w-4 h-4" />
+                  </a>
+                )}
+              </div>
+
+              {prof.crp && (
+                <span className="text-[10px] tracking-wide font-mono px-2.5 py-1 bg-slate-100 rounded-md text-slate-600 border border-slate-200 mt-3">
+                  Registro: {prof.crp}
+                </span>
+              )}
+            </div>
+
+            {whatsAppUrl && (
+              <a 
+                href={whatsAppUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full py-4 px-2 text-white rounded-xl font-bold uppercase tracking-wider text-[11px] shadow-md hover:opacity-95 transition-all flex items-center justify-center gap-2 mt-4 text-center leading-tight cursor-pointer"
+                style={{ backgroundColor: primaryColor }}
+              >
+                <Phone className="w-5 h-5 shrink-0" /> Agendar Consulta / Atendimento
+              </a>
+            )}
+          </div>
+
+          <div className="md:col-span-2 flex flex-col gap-6">
+            <div className="bg-white p-6 sm:p-10 rounded-[2rem] border border-slate-200 shadow-sm flex flex-col gap-6">
+              <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
+                <Heart className="w-6 h-6 shrink-0" style={{ color: primaryColor }} />
+                <h2 className="font-serif text-xl sm:text-2xl font-semibold text-slate-900">Sobre Mim & Abordagem</h2>
+              </div>
+
+              {prof.biografia ? (
+                <div className="text-sm sm:text-base leading-relaxed text-slate-700 whitespace-pre-line space-y-4">
+                  {prof.biografia}
+                </div>
+              ) : (
+                <p className="text-sm text-slate-400 italic py-6">Apresentação profissional em atualização.</p>
+              )}
+            </div>
+
+            <div className="bg-white p-6 sm:p-10 rounded-[2rem] border border-slate-200 shadow-sm flex flex-col gap-6">
+              <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
+                <Award className="w-6 h-6 shrink-0" style={{ color: primaryColor }} />
+                <h2 className="font-serif text-xl sm:text-2xl font-semibold text-slate-900">Serviços & Consultas Particulares</h2>
+              </div>
+
+              {customServices.length === 0 && (!prof.servicosOferecidos || prof.servicosOferecidos.length === 0) ? (
+                <p className="text-sm text-slate-400 italic py-4">Nenhum serviço cadastrado no momento.</p>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {customServices.map((srv: any, idx: number) => (
+                    <div key={`cust-srv-${idx}`} className="p-5 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col justify-between gap-3 hover:shadow-sm transition-all">
+                      <div>
+                        <h4 className="font-serif text-base font-bold text-slate-900">{srv.title || srv.titulo}</h4>
+                        {srv.description && <p className="text-xs text-slate-600 mt-1 leading-relaxed">{srv.description}</p>}
+                      </div>
+                      <div className="flex items-center justify-between pt-2 border-t border-slate-200/60 text-xs">
+                        {srv.duration && <span className="text-slate-500 font-medium">⏱️ {srv.duration}</span>}
+                        {srv.price && <span className="font-bold px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200">R$ {srv.price}</span>}
+                      </div>
+                    </div>
+                  ))}
+
+                  {prof.servicosOferecidos && prof.servicosOferecidos.map((srv: string, idx: number) => (
+                    <div key={`std-srv-${idx}`} className="p-5 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-between">
+                      <h4 className="font-serif text-base font-bold text-slate-900">{srv}</h4>
+                      <span className="text-xs font-semibold text-slate-600">Particular</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </main>
+
+        <footer className="w-full max-w-4xl text-center py-12 text-slate-500 text-xs flex flex-col items-center gap-1.5">
+          <p>{company.razaoSocial || formatProfessionalName(prof.name)} {company.cnpj ? `• CNPJ: ${company.cnpj}` : ""}</p>
+          {company.enderecoEmpresa && <p>{company.enderecoEmpresa}</p>}
+          {company.telefoneEmpresa && <p>Tel / WhatsApp: {company.telefoneEmpresa}</p>}
+        </footer>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#FCFBF7] text-forest p-4 sm:p-6 md:p-8 flex flex-col items-center">

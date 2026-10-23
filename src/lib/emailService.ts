@@ -5,10 +5,10 @@ import { dispatchNotificationEvent } from "./notificationRulesService";
 
 // Beautiful corporate email template wrapper
 export function wrapInEmailTemplate(contentHtml: string): string {
-  // Prevent the brand name "AcolheMente" from ever breaking or hyphenating mid-word in any email client
+  // Prevent the brand name "AcolheHub" from ever breaking or hyphenating mid-word in any email client
   const protectedContent = (contentHtml || "").replace(
-    /AcolheMente/g,
-    '<span style="white-space: nowrap !important; word-break: keep-all !important; overflow-wrap: normal !important; hyphens: none !important; -webkit-hyphens: none !important; display: inline-block;">AcolheMente</span>'
+    /AcolheHub/g,
+    '<span style="white-space: nowrap !important; word-break: keep-all !important; overflow-wrap: normal !important; hyphens: none !important; -webkit-hyphens: none !important; display: inline-block;">AcolheHub</span>'
   );
 
   return `
@@ -16,7 +16,7 @@ export function wrapInEmailTemplate(contentHtml: string): string {
   <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; overflow: hidden; border: 1px solid #e2ded5; box-shadow: 0 4px 12px rgba(30, 53, 47, 0.03);">
     <!-- Header -->
     <div style="background-color: #1e352f; padding: 18px 16px; text-align: center;">
-      <h2 style="color: #ffffff; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 14px; line-height: 1.3; margin: 0; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase; white-space: nowrap !important; word-break: keep-all !important; overflow-wrap: normal !important; hyphens: none !important; -webkit-hyphens: none !important; -ms-hyphens: none !important; display: inline-block;">AcolheMente</h2>
+      <h2 style="color: #ffffff; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 14px; line-height: 1.3; margin: 0; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase; white-space: nowrap !important; word-break: keep-all !important; overflow-wrap: normal !important; hyphens: none !important; -webkit-hyphens: none !important; -ms-hyphens: none !important; display: inline-block;">AcolheHub</h2>
       <p style="color: #e8b056; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 1.2px; margin: 4px 0 0 0; white-space: nowrap !important; word-break: keep-all !important;">Saúde Mental &amp; Bem-estar</p>
     </div>
     <!-- Body -->
@@ -25,9 +25,9 @@ export function wrapInEmailTemplate(contentHtml: string): string {
     </div>
     <!-- Footer -->
     <div style="background-color: #f7f5f0; padding: 20px 18px; text-align: center; border-top: 1px solid #e2ded5; font-size: 11px; color: #737c76;">
-      <p style="margin: 0 0 6px 0; white-space: nowrap !important; word-break: keep-all !important;"><strong>Projeto AcolheMente Saúde</strong></p>
+      <p style="margin: 0 0 6px 0; white-space: nowrap !important; word-break: keep-all !important;"><strong>Projeto AcolheHub Saúde</strong></p>
       <p style="margin: 0 0 6px 0;">Cuidado que protege e transforma o ambiente de trabalho e de vida.</p>
-      <p style="margin: 0 0 6px 0;">© 2026 Projeto AcolheMente Saúde. Todos os direitos reservados.</p>
+      <p style="margin: 0 0 6px 0;">© 2026 Projeto AcolheHub Saúde. Todos os direitos reservados.</p>
       <p style="margin: 0; font-style: italic;">Este e-mail é gerado automaticamente em conformidade com a LGPD (Lei Geral de Proteção de Dados).</p>
     </div>
   </div>

@@ -7,6 +7,7 @@ import {
   Clock,
   Building2,
   User,
+  Globe,
   Filter,
   Search,
   ExternalLink,
@@ -27,8 +28,8 @@ export interface ItemPacienteFinanceiro {
   cpf?: string;
   email?: string;
   telefone?: string;
-  origemTipo: "particular" | "corporativo";
-  origemNome: string; // "Particular" ou o nome da Empresa
+  origemTipo: "particular" | "corporativo" | "externo";
+  origemNome: string; // "Triagem Acessível", nome da Empresa ou "Carteira Externa"
   perfilFaturamento: "PF" | "PJ";
   valorSessaoPadrao: number;
   sessoes: SessaoFaturamentoItem[];
@@ -38,6 +39,8 @@ export interface ItemPacienteFinanceiro {
 interface ProfissionalFaturamentoDashboardProps {
   pacientesParticulares: any[];
   fichasCorporativas: any[];
+  pacientesExternos?: any[];
+  isPlanoAvancado?: boolean;
   dadosPJ?: DadosPessoaJuridica;
   profissionalNome?: string;
   chavePix?: string;
@@ -49,6 +52,8 @@ interface ProfissionalFaturamentoDashboardProps {
 export function ProfissionalFaturamentoDashboard({
   pacientesParticulares,
   fichasCorporativas,
+  pacientesExternos,
+  isPlanoAvancado,
   dadosPJ,
   profissionalNome,
   chavePix,
@@ -62,7 +67,7 @@ export function ProfissionalFaturamentoDashboard({
 
   // 2. Filtros de Competência e Escopo
   const [competenciaSelecionada, setCompetenciaSelecionada] = useState<string>(mesAtualStr);
-  const [filtroOrigem, setFiltroOrigem] = useState<"todas" | "particular" | "corporativo">("todas");
+  const [filtroOrigem, setFiltroOrigem] = useState<"todas" | "particular" | "corporativo" | "externo">("todas");
   const [filtroPerfilEmissao, setFiltroPerfilEmissao] = useState<"todos" | "PF" | "PJ">("todos");
   const [filtroStatusPagamento, setFiltroStatusPagamento] = useState<"todos" | "pendente" | "quitado">("todos");
   const [buscaPaciente, setBuscaPaciente] = useState<string>("");
@@ -73,7 +78,7 @@ export function ProfissionalFaturamentoDashboard({
   const todosItensPacientes = useMemo<ItemPacienteFinanceiro[]>(() => {
     const lista: ItemPacienteFinanceiro[] = [];
 
-    // Pacientes Particulares
+    // Pacientes Particulares (Triagem Acessível)
     (pacientesParticulares || []).forEach((p) => {
       const sessoes: SessaoFaturamentoItem[] = Array.isArray(p.historicoSessoes)
         ? p.historicoSessoes
@@ -86,7 +91,7 @@ export function ProfissionalFaturamentoDashboard({
         email: p.email || p.pacienteEmail || "",
         telefone: p.telefone || p.whatsapp || "",
         origemTipo: "particular",
-        origemNome: "Particular",
+        origemNome: "Triagem Acessível",
         perfilFaturamento: (p.perfilFaturamento as "PF" | "PJ") || "PF",
         valorSessaoPadrao: Number(p.valorSessao || 100),
         sessoes,
@@ -122,8 +127,31 @@ export function ProfissionalFaturamentoDashboard({
       });
     });
 
+    // Pacientes Externos (Carteira Externa - Plano Avançado)
+    if (isPlanoAvancado && pacientesExternos) {
+      pacientesExternos.forEach((p) => {
+        const sessoes: SessaoFaturamentoItem[] = Array.isArray(p.historicoSessoes)
+          ? p.historicoSessoes
+          : [];
+
+        lista.push({
+          id: p.id,
+          nome: p.nome || p.nomeCompleto || "Paciente Externo",
+          cpf: p.cpf || p.pacienteCpf || "",
+          email: p.email || p.pacienteEmail || "",
+          telefone: p.telefone || p.whatsapp || "",
+          origemTipo: "externo",
+          origemNome: "Carteira Externa",
+          perfilFaturamento: (p.perfilFaturamento as "PF" | "PJ") || "PF",
+          valorSessaoPadrao: Number(p.valorSessao || 100),
+          sessoes,
+          rawObject: p,
+        });
+      });
+    }
+
     return lista;
-  }, [pacientesParticulares, fichasCorporativas]);
+  }, [pacientesParticulares, fichasCorporativas, pacientesExternos, isPlanoAvancado]);
 
   // 4. Lista de Meses / Competências disponíveis a partir das sessões existentes
   const mesesDisponiveis = useMemo(() => {
@@ -397,8 +425,9 @@ export function ProfissionalFaturamentoDashboard({
               className="bg-transparent font-medium text-xs text-forest outline-none cursor-pointer"
             >
               <option value="todas">Todas as Origens</option>
-              <option value="particular">Particular</option>
+              <option value="particular">Triagem Acessível</option>
               <option value="corporativo">Corporativo</option>
+              {isPlanoAvancado && <option value="externo">Carteira externa</option>}
             </select>
           </div>
 
@@ -638,10 +667,17 @@ export function ProfissionalFaturamentoDashboard({
                             <Building2 className="w-2.5 h-2.5 shrink-0 text-blue-700" />
                             <span className="truncate">{item.origemNome}</span>
                           </span>
+                        ) : item.origemTipo === "externo" ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-purple-900 bg-purple-50 border border-purple-200/70 px-2 py-0.5 rounded-md" title="Carteira Externa">
+                            <Globe className="w-2.5 h-2.5 shrink-0 text-purple-700" />
+                            <span className="hidden sm:inline">Carteira Externa</span>
+                            <span className="inline sm:hidden">Externo</span>
+                          </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-900 bg-emerald-50 border border-emerald-200/70 px-2 py-0.5 rounded-md">
+                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-900 bg-emerald-50 border border-emerald-200/70 px-2 py-0.5 rounded-md" title="Triagem Acessível">
                             <User className="w-2.5 h-2.5 shrink-0 text-emerald-700" />
-                            <span>Particular</span>
+                            <span className="hidden sm:inline">Triagem Acessível</span>
+                            <span className="inline sm:hidden">Acessível</span>
                           </span>
                         )}
                       </td>

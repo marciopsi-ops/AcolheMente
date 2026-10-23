@@ -1,6 +1,6 @@
 {
-  "summary":  "Revisão e resolução completa do Link do Formulário para Pacientes e otimização visual do card do link na Carteira Particular:\n1. Roteamento corrigido em App.tsx: o formulário de cadastro/atualização de paciente (cadastro_externo) agora tem prioridade absoluta sobre o perfil público do profissional, evitando que parâmetros como ?prof=... redirecionem incorretamente para a página pública de agendamento/bio.\n2. Formato de URL universal: adoção canônica de /?view=cadastro_externo&prof=... e compatibilidade mantida com /cadastro_externo?prof=..., garantindo funcionamento em qualquer servidor SPA sem erros 404.\n3. Card de Link otimizado: remoção da barra com a URL crua por extenso e adição de layout limpo com descrição objetiva, botão de copiar com feedback instantâneo, botão de abertura direta sem bloqueio de popups (tag âncora nativa com target=\"_blank\") e botão de parametrização.\n4. Parametrização e Leitura de Parâmetros: resiliência no componente ExternalPatientLandingView para resolver o UID do profissional a partir de múltiplos formatos (prof, profissional, profissionalId, uid).",
-  "updatedAt":  "2026-10-23T03:28:34.258271950Z",
+  "summary":  "Plano detalhado para implementação da Página White-Label / Cartão Virtual para Profissionais do Plano Avançado, incluindo customização de cores, dados corporativos (CNPJ/Logo), catálogo de serviços independentes e supressão de branding da plataforma.",
+  "updatedAt":  "2026-10-23T16:30:20.180007059Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

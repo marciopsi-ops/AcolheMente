@@ -193,6 +193,7 @@ import { RedeProfissionalView } from "../components/RedeProfissionalView";
 import { EmpresaColaboradoresSpreadsheet, ColaboradorItem } from "../components/EmpresaColaboradoresSpreadsheet";
 import { PacienteFaturamentoSpreadsheet, SessaoFaturamentoItem } from "../components/PacienteFaturamentoSpreadsheet";
 import { ProfissionalFaturamentoDashboard } from "../components/ProfissionalFaturamentoDashboard";
+import { ProfissionalDespesasDashboard } from "../components/ProfissionalDespesasDashboard";
 import { PacienteProntuarioModal, ProntuarioRegistroItem } from "../components/PacienteProntuarioModal";
 import { GestaoCampanhasBanner } from "../components/GestaoCampanhasBanner";
 import { ImportExternalPatients } from "../components/ImportExternalPatients";
@@ -1831,8 +1832,8 @@ export function DashboardView({
     }, 2800);
   };
 
-  // Sub-aba dentro da área de Estatísticas do Profissional ("cotas" | "faturamento")
-  const [subAbaEstatisticas, setSubAbaEstatisticas] = useState<"cotas" | "faturamento">("faturamento");
+  // Sub-aba dentro da área de Estatísticas do Profissional ("cotas" | "faturamento" | "despesas")
+  const [subAbaEstatisticas, setSubAbaEstatisticas] = useState<"cotas" | "faturamento" | "despesas">("faturamento");
 
   // Gestao Treated Items State (Persisted in safeLocalStorage)
   const [treatedItemIds, setTreatedItemIds] = useState<Set<string>>(() => {
@@ -8760,17 +8761,20 @@ export function DashboardView({
                     <Clock className="w-3.5 h-3.5 text-forest/70" />
                     <span>Cotas & Grade</span>
                   </button>
-                </div>
 
-                {/* Botão de Ação */}
-                <button
-                  type="button"
-                  onClick={handleOpenGerenciarCotaModal}
-                  className="py-2 px-4 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
-                >
-                  <Sliders className="w-3.5 h-3.5 text-emerald-200" />
-                  <span>Gerenciar Cota & Faixas</span>
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => setSubAbaEstatisticas("despesas")}
+                    className={`px-3.5 sm:px-4 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                      subAbaEstatisticas === "despesas"
+                        ? "bg-white text-rose-900 shadow-xs border border-rose-300"
+                        : "text-forest/70 hover:text-forest hover:bg-white/40"
+                    }`}
+                  >
+                    <Wallet className="w-3.5 h-3.5 text-rose-700" />
+                    <span>Gestão de Despesas</span>
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -8778,6 +8782,8 @@ export function DashboardView({
               <ProfissionalFaturamentoDashboard
                 pacientesParticulares={meusPacientes || []}
                 fichasCorporativas={minhasFichasCorporativas || []}
+                pacientesExternos={pacientesExternos || []}
+                isPlanoAvancado={profile?.plano === "avancado"}
                 dadosPJ={profile?.dadosPJ || (profile as any)?.perfilPJ}
                 profissionalNome={profile?.nome || profile?.name}
                 chavePix={profile?.chavePix}
@@ -8788,6 +8794,39 @@ export function DashboardView({
                 onSelecionarFichaCorporativa={(_ficha) => {
                   setActiveTab("triagemCorporativa");
                 }}
+                showToast={showToast}
+              />
+            ) : subAbaEstatisticas === "despesas" ? (
+              <ProfissionalDespesasDashboard
+                profissionalId={profile?.uid || user?.uid || "prof_default"}
+                receitaBruta={(() => {
+                  const pacsPartAtivosRev = meusPacientes.filter(
+                    (a) =>
+                      a.atribuicaoStatus === "Aceito" &&
+                      a.status !== "Alta" &&
+                      a.status !== "Rejeitado" &&
+                      a.status !== "Encerrado" &&
+                      a.status !== "Desistência" &&
+                      a.status !== "Cancelado",
+                  );
+                  const pacsPartRegRev = pacsPartAtivosRev.filter((a) => {
+                    const v = parseValorSessaoNumber(a.valorSessao);
+                    return v > 30 && a.viaAcesso !== "Solidário";
+                  });
+                  const valPartRegRev = pacsPartRegRev.reduce(
+                    (sum, a) => sum + parseValorSessaoNumber(a.valorSessao),
+                    0,
+                  );
+                  const fichasCorpAtivasRev = minhasFichasCorporativas.filter(
+                    (f) => f.status === "paciente",
+                  );
+                  const valCorpRev = fichasCorpAtivasRev.reduce(
+                    (sum, f) => sum + (parseValorSessaoNumber(f.valorSessao) || 0),
+                    0,
+                  );
+                  return valPartRegRev + valCorpRev;
+                })()}
+                competenciaSelecionada="todas"
                 showToast={showToast}
               />
             ) : (() => {
@@ -9533,8 +9572,8 @@ export function DashboardView({
                   </div>
                 </div>
 
-                {/* 2. Importação via Planilha */}
-                <ImportExternalPatients profUid={profile?.uid || user?.uid} />
+                {/* 2. Importação e Exportação via Planilha */}
+                <ImportExternalPatients profUid={profile?.uid || user?.uid} pacientesExternos={pacientesExternos} />
 
                 {/* 3. Lista de Pacientes da Carteira Externa */}
                 <div className="flex flex-col gap-3">
@@ -11031,6 +11070,270 @@ export function DashboardView({
                 </div>
               </div>
 
+              {/* SECTION 5: Página White-Label & Cartão Virtual (Plano Avançado) */}
+              <div className="space-y-6 pt-6 border-t border-soft">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <h3 className="font-serif text-xl text-forest flex items-center gap-2">
+                    <span className="w-6 h-6 rounded-full bg-amber-500/10 text-amber-800 text-xs flex items-center justify-center font-bold">
+                      5
+                    </span>
+                    Página White-Label & Cartão Virtual na Internet (Plano Avançado)
+                  </h3>
+                  <span className={`text-[10px] font-extrabold uppercase px-3 py-1 rounded-full border ${profile.plano === 'avancado' ? 'bg-amber-100 text-amber-900 border-amber-300' : 'bg-slate-100 text-slate-700 border-slate-300'}`}>
+                    Plano: {profile.plano === 'avancado' ? 'Avançado 🚀' : profile.plano || 'Básico / Profissional'}
+                  </span>
+                </div>
+
+                {profile.plano !== 'avancado' ? (
+                  <div className="p-6 bg-gradient-to-br from-amber-50 to-warm/60 rounded-3xl border border-amber-200/80 space-y-4 text-center">
+                    <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center mx-auto shadow-xs">
+                      <Sparkles className="w-6 h-6" />
+                    </div>
+                    <h4 className="font-serif text-lg font-bold text-forest">
+                      Desbloqueie sua Página White-Label Exclusiva
+                    </h4>
+                    <p className="text-xs sm:text-sm text-forest/75 max-w-lg mx-auto leading-relaxed">
+                      Profissionais no <strong>Plano Avançado</strong> podem ter sua própria página profissional independente (Cartão Virtual na internet), sem menção ao Acolimente, com cores personalizadas, logotipo da empresa (ou CNPJ) e catálogo próprio de serviços com precificação livre para captação de clientes externos.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setProfile({ ...profile, plano: 'avancado' });
+                        alert("Parabéns! Seu perfil foi atualizado para o Plano Avançado. Agora você pode configurar sua página White-Label.");
+                      }}
+                      className="px-6 py-3 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-all shadow-md cursor-pointer inline-flex items-center gap-2"
+                    >
+                      <Sparkles className="w-4 h-4 text-sun" /> Ativar Plano Avançado / White-Label
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-6 bg-warm/30 p-6 rounded-3xl border border-soft">
+                    <div className="flex items-center justify-between p-4 bg-white rounded-2xl border border-soft shadow-2xs">
+                      <div>
+                        <h4 className="font-bold text-sm text-forest">Ativar Página White-Label Independente</h4>
+                        <p className="text-xs text-forest/60">Oculta o branding do AcolheMente e exibe sua marca/CNPJ e cores personalizadas.</p>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={profile.whiteLabelEnabled === true}
+                          onChange={(e) => setProfile({ ...profile, whiteLabelEnabled: e.target.checked })}
+                          className="sr-only peer"
+                        />
+                        <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                      </label>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <div>
+                        <label className="text-xs font-bold text-forest mb-1 block">Cor de Fundo (Background)</label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="color"
+                            value={profile.whiteLabelConfig?.backgroundColor || "#F8FAFC"}
+                            onChange={(e) => setProfile({
+                              ...profile,
+                              whiteLabelConfig: { ...(profile.whiteLabelConfig || {}), backgroundColor: e.target.value }
+                            })}
+                            className="w-10 h-10 rounded-xl border border-soft cursor-pointer"
+                          />
+                          <input
+                            type="text"
+                            value={profile.whiteLabelConfig?.backgroundColor || "#F8FAFC"}
+                            onChange={(e) => setProfile({
+                              ...profile,
+                              whiteLabelConfig: { ...(profile.whiteLabelConfig || {}), backgroundColor: e.target.value }
+                            })}
+                            className="flex-1 text-xs font-mono bg-white border border-soft px-3 py-2 rounded-xl"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="text-xs font-bold text-forest mb-1 block">Cor Primária (Destaques)</label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="color"
+                            value={profile.whiteLabelConfig?.primaryColor || "#0F766E"}
+                            onChange={(e) => setProfile({
+                              ...profile,
+                              whiteLabelConfig: { ...(profile.whiteLabelConfig || {}), primaryColor: e.target.value }
+                            })}
+                            className="w-10 h-10 rounded-xl border border-soft cursor-pointer"
+                          />
+                          <input
+                            type="text"
+                            value={profile.whiteLabelConfig?.primaryColor || "#0F766E"}
+                            onChange={(e) => setProfile({
+                              ...profile,
+                              whiteLabelConfig: { ...(profile.whiteLabelConfig || {}), primaryColor: e.target.value }
+                            })}
+                            className="flex-1 text-xs font-mono bg-white border border-soft px-3 py-2 rounded-xl"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="text-xs font-bold text-forest mb-1 block">Cor Secundária</label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="color"
+                            value={profile.whiteLabelConfig?.secondaryColor || "#06B6D4"}
+                            onChange={(e) => setProfile({
+                              ...profile,
+                              whiteLabelConfig: { ...(profile.whiteLabelConfig || {}), secondaryColor: e.target.value }
+                            })}
+                            className="w-10 h-10 rounded-xl border border-soft cursor-pointer"
+                          />
+                          <input
+                            type="text"
+                            value={profile.whiteLabelConfig?.secondaryColor || "#06B6D4"}
+                            onChange={(e) => setProfile({
+                              ...profile,
+                              whiteLabelConfig: { ...(profile.whiteLabelConfig || {}), secondaryColor: e.target.value }
+                            })}
+                            className="flex-1 text-xs font-mono bg-white border border-soft px-3 py-2 rounded-xl"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3 pt-2 border-t border-soft/80">
+                      <h4 className="font-bold text-xs uppercase tracking-wider text-forest">Dados Corporativos & CNPJ (Opcional)</h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-[11px] font-semibold text-forest block mb-1">Razão Social / Nome da Empresa</label>
+                          <input
+                            type="text"
+                            value={profile.companyData?.razaoSocial || ""}
+                            onChange={(e) => setProfile({
+                              ...profile,
+                              companyData: { ...(profile.companyData || {}), razaoSocial: e.target.value }
+                            })}
+                            placeholder="Ex: Consultório de Psicologia Ltda"
+                            className="w-full text-xs bg-white border border-soft px-3 py-2.5 rounded-xl"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-[11px] font-semibold text-forest block mb-1">CNPJ</label>
+                          <input
+                            type="text"
+                            value={profile.companyData?.cnpj || ""}
+                            onChange={(e) => setProfile({
+                              ...profile,
+                              companyData: { ...(profile.companyData || {}), cnpj: e.target.value }
+                            })}
+                            placeholder="00.000.000/0001-00"
+                            className="w-full text-xs bg-white border border-soft px-3 py-2.5 rounded-xl font-mono"
+                          />
+                        </div>
+
+                        <div className="sm:col-span-2">
+                          <label className="text-[11px] font-semibold text-forest block mb-1">URL do Logotipo da Empresa (Logo URL)</label>
+                          <input
+                            type="url"
+                            value={profile.companyData?.logoEmpresaUrl || ""}
+                            onChange={(e) => setProfile({
+                              ...profile,
+                              companyData: { ...(profile.companyData || {}), logoEmpresaUrl: e.target.value }
+                            })}
+                            placeholder="https://exemplo.com/logo.png"
+                            className="w-full text-xs bg-white border border-soft px-3 py-2.5 rounded-xl font-mono"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3 pt-2 border-t border-soft/80">
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-bold text-xs uppercase tracking-wider text-forest">Serviços e Precificação Particular</h4>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const list = Array.isArray(profile.customServices) ? [...profile.customServices] : [];
+                            list.push({ title: "Psicoterapia Individual", description: "Sessão particular de atendimento online ou presencial.", duration: "50 min", price: "150,00" });
+                            setProfile({ ...profile, customServices: list });
+                          }}
+                          className="px-3 py-1 bg-forest text-white text-xs font-bold rounded-lg hover:bg-forest/90 transition-colors cursor-pointer"
+                        >
+                          + Adicionar Serviço
+                        </button>
+                      </div>
+
+                      <div className="space-y-2">
+                        {(!profile.customServices || profile.customServices.length === 0) ? (
+                          <p className="text-xs text-forest/60 italic">Nenhum serviço customizado cadastrado. Clique no botão acima para adicionar.</p>
+                        ) : (
+                          profile.customServices.map((srv: any, idx: number) => (
+                            <div key={`srv-item-${idx}`} className="p-3 bg-white rounded-2xl border border-soft space-y-2 relative">
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                <input
+                                  type="text"
+                                  value={srv.title || ""}
+                                  onChange={(e) => {
+                                    const list = [...profile.customServices];
+                                    list[idx] = { ...list[idx], title: e.target.value };
+                                    setProfile({ ...profile, customServices: list });
+                                  }}
+                                  placeholder="Nome do Serviço"
+                                  className="text-xs bg-warm/40 border border-soft px-3 py-2 rounded-xl font-semibold"
+                                />
+                                <input
+                                  type="text"
+                                  value={srv.duration || ""}
+                                  onChange={(e) => {
+                                    const list = [...profile.customServices];
+                                    list[idx] = { ...list[idx], duration: e.target.value };
+                                    setProfile({ ...profile, customServices: list });
+                                  }}
+                                  placeholder="Duração (ex: 50 min)"
+                                  className="text-xs bg-warm/40 border border-soft px-3 py-2 rounded-xl"
+                                />
+                                <input
+                                  type="text"
+                                  value={srv.price || ""}
+                                  onChange={(e) => {
+                                    const list = [...profile.customServices];
+                                    list[idx] = { ...list[idx], price: e.target.value };
+                                    setProfile({ ...profile, customServices: list });
+                                  }}
+                                  placeholder="Preço (ex: 150,00)"
+                                  className="text-xs bg-warm/40 border border-soft px-3 py-2 rounded-xl font-bold text-emerald-800"
+                                />
+                              </div>
+                              <textarea
+                                rows={2}
+                                value={srv.description || ""}
+                                onChange={(e) => {
+                                  const list = [...profile.customServices];
+                                  list[idx] = { ...list[idx], description: e.target.value };
+                                  setProfile({ ...profile, customServices: list });
+                                }}
+                                placeholder="Descrição detalhada do serviço..."
+                                className="w-full text-xs bg-warm/40 border border-soft px-3 py-2 rounded-xl resize-none"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const list = [...profile.customServices];
+                                  list.splice(idx, 1);
+                                  setProfile({ ...profile, customServices: list });
+                                }}
+                                className="absolute top-3 right-3 text-red-500 hover:text-red-700 p-1"
+                                title="Remover Serviço"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* Action Buttons */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-6 mt-4 border-t border-soft">
                 <button
@@ -11051,7 +11354,6 @@ export function DashboardView({
                       motivacaoProjeto: profile.motivacaoProjeto,
                       photoUrl: profile.photoUrl || "",
                       pixKey: profile.pixKey,
-                      // Novos campos persistidos
                       anoFormacao: profile.anoFormacao || "",
                       abordagem: profile.abordagem || "",
                       publicosExperiencia: profile.publicosExperiencia || [],
@@ -11062,6 +11364,11 @@ export function DashboardView({
                       servicosOferecidos: profile.servicosOferecidos || [],
                       servicosOrcamentoAcessivel: profile.servicosOrcamentoAcessivel || [],
                       outrosServicos: profile.outrosServicos || "",
+                      plano: profile.plano || 'basico',
+                      whiteLabelEnabled: profile.whiteLabelEnabled || false,
+                      whiteLabelConfig: profile.whiteLabelConfig || { primaryColor: "#0F766E", secondaryColor: "#06B6D4", backgroundColor: "#F8FAFC" },
+                      companyData: profile.companyData || { razaoSocial: "", cnpj: "", enderecoEmpresa: "", telefoneEmpresa: "", emailEmpresa: "", logoEmpresaUrl: "" },
+                      customServices: profile.customServices || [],
                     })
                   }
                   className="px-6 py-4 bg-forest text-white rounded-2xl font-bold uppercase tracking-wider text-xs hover:bg-forest/90 transition-all shadow-sm shrink-0 hover:shadow"
@@ -14628,7 +14935,7 @@ export function DashboardView({
                     onClick={() => {
                       const tipo = selectedCard.empresaNome || selectedCard.colaboradorNome ? "corporativo" : (selectedCard.tipo === "externo" ? "externo" : "acolhimento");
                       const profParam = selectedCard.profissionalId || profile?.uid || user?.uid || "";
-                      const link = `${window.location.origin}/cadastro_externo?paciente=${selectedCard.id}&tipo=${tipo}${profParam ? `&prof=${profParam}` : ""}`;
+                      const link = `${window.location.origin}/?view=cadastro_externo&paciente=${selectedCard.id}&tipo=${tipo}${profParam ? `&prof=${profParam}` : ""}`;
                       navigator.clipboard.writeText(link);
                       showToast("Link de atualização cadastral copiado para a área de transferência!", "success");
                     }}
@@ -14643,7 +14950,7 @@ export function DashboardView({
                     onClick={() => {
                       const tipo = selectedCard.empresaNome || selectedCard.colaboradorNome ? "corporativo" : (selectedCard.tipo === "externo" ? "externo" : "acolhimento");
                       const profParam = selectedCard.profissionalId || profile?.uid || user?.uid || "";
-                      const link = `${window.location.origin}/cadastro_externo?paciente=${selectedCard.id}&tipo=${tipo}${profParam ? `&prof=${profParam}` : ""}`;
+                      const link = `${window.location.origin}/?view=cadastro_externo&paciente=${selectedCard.id}&tipo=${tipo}${profParam ? `&prof=${profParam}` : ""}`;
                       const nomePac = selectedCard.nome || selectedCard.nomeCompleto || selectedCard.colaboradorNome || "Paciente";
                       const msg = `Olá ${nomePac}! Tudo bem? Para mantermos seus dados cadastrais e seu prontuário clínico sempre atualizados com segurança e em total conformidade, por favor acesse este link seguro para conferir e atualizar seu cadastro quando puder:\n\n${link}\n\nQualquer dúvida estou à disposição!`;
                       const telRaw = (selectedCard.telefone || selectedCard.colaboradorWhatsapp || selectedCard.whatsapp || "").replace(/\D/g, "");
@@ -14665,7 +14972,7 @@ export function DashboardView({
                     onClick={() => {
                       const tipo = selectedCard.empresaNome || selectedCard.colaboradorNome ? "corporativo" : (selectedCard.tipo === "externo" ? "externo" : "acolhimento");
                       const profParam = selectedCard.profissionalId || profile?.uid || user?.uid || "";
-                      const link = `${window.location.origin}/cadastro_externo?paciente=${selectedCard.id}&tipo=${tipo}${profParam ? `&prof=${profParam}` : ""}`;
+                      const link = `${window.location.origin}/?view=cadastro_externo&paciente=${selectedCard.id}&tipo=${tipo}${profParam ? `&prof=${profParam}` : ""}`;
                       window.open(link, "_blank");
                     }}
                     className="p-1 sm:p-1.5 text-emerald-700 hover:text-emerald-950 hover:bg-emerald-100/80 rounded-md sm:rounded-lg transition-colors cursor-pointer"

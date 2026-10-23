@@ -300,10 +300,6 @@ export function ParametrizarLinkModal({
                   )}
                 </div>
 
-                <div className="p-3 bg-white rounded-xl border border-soft font-mono text-xs text-forest/80 break-all select-all">
-                  {urlParametrizada}
-                </div>
-
                 <div className="flex flex-wrap items-center gap-2 pt-1">
                   <button
                     type="button"

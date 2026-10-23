@@ -369,7 +369,7 @@ export function FichaPacienteExternoModal({
               <button
                 type="button"
                 onClick={() => {
-                  const url = `${window.location.origin}/cadastro_externo?prof=${profile?.uid || user?.uid}&paciente=${currentPaciente.id}&tipo=externo`;
+                  const url = `${window.location.origin}/?view=cadastro_externo&prof=${profile?.uid || user?.uid}&paciente=${currentPaciente.id}&tipo=externo`;
                   navigator.clipboard.writeText(url);
                   showToast("Link de atualização cadastral copiado para a área de transferência!", "success");
                 }}
@@ -382,7 +382,7 @@ export function FichaPacienteExternoModal({
               <button
                 type="button"
                 onClick={() => {
-                  const url = `${window.location.origin}/cadastro_externo?prof=${profile?.uid || user?.uid}&paciente=${currentPaciente.id}&tipo=externo`;
+                  const url = `${window.location.origin}/?view=cadastro_externo&prof=${profile?.uid || user?.uid}&paciente=${currentPaciente.id}&tipo=externo`;
                   const msg = `Olá ${nomeDisplay}! Tudo bem? Para mantermos seus dados cadastrais e seu prontuário clínico sempre atualizados e em total conformidade, por favor acesse este link seguro para conferir e atualizar seu cadastro quando puder:\n\n${url}\n\nQualquer dúvida estou à disposição!`;
                   openWhatsApp(msg);
                 }}
@@ -394,7 +394,7 @@ export function FichaPacienteExternoModal({
               <button
                 type="button"
                 onClick={() => {
-                  const url = `${window.location.origin}/cadastro_externo?prof=${profile?.uid || user?.uid}&paciente=${currentPaciente.id}&tipo=externo`;
+                  const url = `${window.location.origin}/?view=cadastro_externo&prof=${profile?.uid || user?.uid}&paciente=${currentPaciente.id}&tipo=externo`;
                   window.open(url, "_blank");
                 }}
                 className="p-1 sm:p-1.5 text-emerald-700 hover:text-emerald-950 hover:bg-emerald-100/80 rounded-md sm:rounded-lg transition-colors cursor-pointer"
