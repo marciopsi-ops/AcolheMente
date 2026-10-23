@@ -885,25 +885,48 @@ const DebouncedInput = ({
   const [localVal, setLocalVal] = useState(value || "");
   const inputRef = useRef<HTMLInputElement>(null);
   const timeoutRef = useRef<any>(null);
+  const latestValRef = useRef(value || "");
+  const propValRef = useRef(value || "");
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+  propValRef.current = value || "";
 
   useEffect(() => {
     if (document.activeElement !== inputRef.current) {
       setLocalVal(value || "");
+      latestValRef.current = value || "";
     }
   }, [value]);
+
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+        if (latestValRef.current !== propValRef.current) {
+          onChangeRef.current(latestValRef.current);
+        }
+      }
+    };
+  }, []);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newVal = e.target.value;
     setLocalVal(newVal);
+    latestValRef.current = newVal;
 
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     timeoutRef.current = setTimeout(() => {
-      onChange(newVal);
+      timeoutRef.current = null;
+      onChangeRef.current(newVal);
     }, 400);
   };
 
   const handleBlur = () => {
-    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
     if (localVal !== value) {
       onChange(localVal);
     }
@@ -953,25 +976,48 @@ const DebouncedTextArea = ({
   const [localVal, setLocalVal] = useState(value || "");
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
   const timeoutRef = useRef<any>(null);
+  const latestValRef = useRef(value || "");
+  const propValRef = useRef(value || "");
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+  propValRef.current = value || "";
 
   useEffect(() => {
     if (document.activeElement !== textAreaRef.current) {
       setLocalVal(value || "");
+      latestValRef.current = value || "";
     }
   }, [value]);
+
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+        if (latestValRef.current !== propValRef.current) {
+          onChangeRef.current(latestValRef.current);
+        }
+      }
+    };
+  }, []);
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newVal = e.target.value;
     setLocalVal(newVal);
+    latestValRef.current = newVal;
 
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     timeoutRef.current = setTimeout(() => {
-      onChange(newVal);
+      timeoutRef.current = null;
+      onChangeRef.current(newVal);
     }, 400);
   };
 
   const handleBlur = () => {
-    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
     if (localVal !== value) {
       onChange(localVal);
     }
@@ -1010,23 +1056,38 @@ const EditableField = ({
   type?: string;
   placeholder?: string;
 }) => {
-  let formattedDisplay = value || "-";
+  const normalizedValue =
+    value && typeof value === "object" && !Array.isArray(value)
+      ? [
+          value.logradouro ? `${value.logradouro}${value.numero ? `, ${value.numero}` : ""}` : value.nome || "",
+          value.complemento,
+          value.bairro,
+          value.cidade ? `${value.cidade}${value.uf ? ` - ${value.uf}` : ""}` : "",
+          value.telefone ? `(${value.telefone})` : "",
+        ]
+          .filter(Boolean)
+          .join(", ")
+      : Array.isArray(value)
+      ? value.join(", ")
+      : value;
+
+  let formattedDisplay = normalizedValue || "-";
   if (
     (type === "date" ||
       field.toLowerCase().includes("data") ||
       field.toLowerCase().includes("nascimento") ||
       label.toLowerCase().includes("data") ||
       label.toLowerCase().includes("nascimento")) &&
-    value
+    normalizedValue
   ) {
-    formattedDisplay = formatDateSafely(value, "-");
+    formattedDisplay = formatDateSafely(normalizedValue, "-");
   }
 
   const strValue =
-    type === "date" && value
-      ? String(value).substring(0, 10)
-      : value != null
-        ? String(value)
+    type === "date" && normalizedValue
+      ? String(normalizedValue).substring(0, 10)
+      : normalizedValue != null
+        ? String(normalizedValue)
         : "";
 
   return (
@@ -2493,18 +2554,25 @@ export function DashboardView({
               } catch (e) {}
             },
           );
-          // Listen para pacientes externos (Carteira Particular)
-          const qExternos = query(
-            collection(db, "pacientes"),
-            where("profissionalId", "==", u.uid),
-            where("tipo", "==", "externo")
-          );
-          unsubExternos = onSnapshot(qExternos, (snap) => {
-            const list: Acolhimento[] = [];
-            snap.forEach(d => list.push({ id: d.id, ...d.data() } as Acolhimento));
-            setPacientesExternos(list);
-          });
         }
+
+        // Listen para pacientes externos (Carteira Particular) de qualquer usuário autenticado vinculado
+        const qExternos = query(
+          collection(db, "pacientes"),
+          where("profissionalId", "==", u.uid),
+          where("tipo", "==", "externo")
+        );
+        unsubExternos = onSnapshot(
+          qExternos,
+          (snap) => {
+            const list: Acolhimento[] = [];
+            snap.forEach((d) => list.push({ id: d.id, ...d.data() } as Acolhimento));
+            setPacientesExternos(list);
+          },
+          (error) => {
+            console.error("Error loading pacientes externos:", error);
+          }
+        );
 
         if (hasMaster) {
           unsubDoacoes = onSnapshot(
@@ -3730,7 +3798,10 @@ export function DashboardView({
         return;
       }
 
-      const currentPaciente = acolhimentos.find((a) => a.id === id);
+      const currentPaciente =
+        acolhimentos.find((a) => a.id === id) ||
+        meusPacientes.find((a) => a.id === id) ||
+        (selectedCard && selectedCard.id === id ? selectedCard : undefined);
 
       // Mandatory reason description check when changing frequency (only required on alterations, not initial setting)
       if (property === "frequenciaSessoes") {
@@ -3814,6 +3885,9 @@ export function DashboardView({
       }
       setSelectedCard((prev: any) => (prev && prev.id === id ? { ...prev, ...updates } : prev));
       setAcolhimentos((prev) =>
+        prev.map((a) => (a.id === id ? { ...a, ...updates } : a))
+      );
+      setMeusPacientes((prev) =>
         prev.map((a) => (a.id === id ? { ...a, ...updates } : a))
       );
     } catch (error) {
@@ -3913,6 +3987,11 @@ export function DashboardView({
       if (typeof (updates as any).nome === "string" && (updates as any).nome.trim()) {
         (updates as any).nome = formatProfessionalName((updates as any).nome);
       }
+      if (updates.pixKey !== undefined) {
+        (updates as any).chavePix = updates.pixKey;
+      } else if ((updates as any).chavePix !== undefined) {
+        updates.pixKey = (updates as any).chavePix;
+      }
       const cleanUpdates = Object.fromEntries(
         Object.entries(updates).filter(([_, v]) => v !== undefined),
       );
@@ -3922,9 +4001,10 @@ export function DashboardView({
         prev.map((p) => (p.uid === profile.uid ? { ...p, ...cleanUpdates } : p)),
       );
       setSuccessMsg("Perfil profissional salvo com sucesso!");
+      showToast("Perfil profissional salvo com sucesso!", "success");
     } catch (err) {
       console.error(err);
-      alert("Erro ao atualizar perfil.");
+      showToast("Erro ao atualizar perfil.", "error");
     }
   };
 
@@ -9801,11 +9881,11 @@ export function DashboardView({
                         onSubmit={async (e) => {
                           e.preventDefault();
                           if (!novoExtNome.trim()) {
-                            alert("Por favor, informe o nome do paciente.");
+                            showToast("Por favor, informe o nome do paciente.", "error");
                             return;
                           }
                           if (!novoExtTelefone.trim()) {
-                            alert("Por favor, informe o telefone/WhatsApp.");
+                            showToast("Por favor, informe o telefone/WhatsApp.", "error");
                             return;
                           }
                           setIsSalvandoExternoDashboard(true);
@@ -9814,17 +9894,27 @@ export function DashboardView({
                             await addDoc(collection(db, "pacientes"), {
                               nome: novoExtNome.trim(),
                               nomeCivil: novoExtNome.trim(),
+                              nomeDesejado: novoExtNome.trim(),
                               telefone: novoExtTelefone.trim(),
                               email: novoExtEmail.trim(),
                               cpf: novoExtCpf.trim(),
                               dataNascimento: novoExtDataNasc || "",
-                              valorSessao: valNum,
+                              valorSessao: String(valNum),
+                              queixaPrincipal: novoExtObs.trim(),
+                              motivo: novoExtObs.trim(),
                               observacoes: novoExtObs.trim(),
+                              modalidade: "online",
+                              frequenciaSessoes: "Semanal",
                               tipo: "externo",
                               profissionalId: profile?.uid || user?.uid,
-                              status: "ativo",
-                              viaAcesso: "Particular",
+                              status: "Em Atendimento",
+                              statusTratamento: "Em Atendimento",
+                              atribuicaoStatus: "Aceito",
+                              viaAcesso: "Carteira Externa",
                               origem: "dashboard_manual",
+                              fonteIndicacao: "Cadastro Manual",
+                              prontuarioClinico: [],
+                              historicoSessoes: [],
                               createdAt: serverTimestamp(),
                               updatedAt: serverTimestamp(),
                             });
@@ -9836,9 +9926,10 @@ export function DashboardView({
                             setNovoExtValor("120");
                             setNovoExtObs("");
                             setShowModalNovoPacienteExterno(false);
+                            showToast("Paciente particular cadastrado com sucesso!", "success");
                           } catch (err: any) {
                             console.error("Erro ao salvar paciente externo:", err);
-                            alert("Erro ao cadastrar: " + (err.message || "Tente novamente"));
+                            showToast("Erro ao cadastrar paciente: " + (err.message || "Tente novamente"), "error");
                           } finally {
                             setIsSalvandoExternoDashboard(false);
                           }
@@ -10543,10 +10634,10 @@ export function DashboardView({
                     </label>
                     <DebouncedInput
                       type="text"
-                      value={profile.pixKey || ""}
+                      value={profile.pixKey || (profile as any).chavePix || ""}
                       placeholder="Ex: CPF, Email, Celular ou Aleatória"
                       onChange={(val) =>
-                        setProfile({ ...profile, pixKey: val })
+                        setProfile({ ...profile, pixKey: val, chavePix: val } as any)
                       }
                       className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors text-sm text-forest"
                     />

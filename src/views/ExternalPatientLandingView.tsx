@@ -65,6 +65,7 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
 
   // Menor de idade
   const [isMenorIdade, setIsMenorIdade] = useState(false);
+  const [menorManualOverride, setMenorManualOverride] = useState<boolean | null>(null);
   const [nomeResponsavel, setNomeResponsavel] = useState("");
   const [telefoneResponsavel, setTelefoneResponsavel] = useState("");
   const [cpfResponsavel, setCpfResponsavel] = useState("");
@@ -95,8 +96,33 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
   const [turnoPreferido, setTurnoPreferido] = useState("");
   const [diasPreferidos, setDiasPreferidos] = useState<string[]>([]);
 
+  const DIAS_SEMANA_OPCOES = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
+
+  const FONTES_INDICACAO_OPCOES = [
+    "Instagram / Redes Sociais",
+    "Indicação de Amigo / Familiar",
+    "Google / Pesquisa na Web",
+    "Indicação de Médico / Psiquiatra",
+    "Site Pessoal",
+    "Já era meu paciente",
+    "WhatsApp Direto",
+    "Outros",
+  ];
+
+  const normalizeFonteIndicacao = (raw: string): string => {
+    const clean = String(raw || "").trim();
+    if (!clean) return "";
+    const lower = clean.toLowerCase();
+    if (lower === "instagram" || lower === "redes sociais") return "Instagram / Redes Sociais";
+    if (lower === "indicacao" || lower === "indicação") return "Indicação de Amigo / Familiar";
+    if (lower === "google") return "Google / Pesquisa na Web";
+    if (lower === "whatsapp") return "WhatsApp Direto";
+    if (lower === "site") return "Site Pessoal";
+    return clean;
+  };
+
   // Fonte de indicação
-  const [fonteIndicacao, setFonteIndicacao] = useState(paramOrigem || "");
+  const [fonteIndicacao, setFonteIndicacao] = useState(() => normalizeFonteIndicacao(paramOrigem || ""));
 
   // LGPD
   const [aceitouLgpd, setAceitouLgpd] = useState(false);
@@ -198,22 +224,38 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
           setGenero(d.genero || "");
           setProfissao(d.profissao || d.cargoNome || "");
 
-          if (d.responsavel) {
+          if (d.responsavel && typeof d.responsavel === "object") {
             setNomeResponsavel(d.responsavel.nome || d.responsavelNome || "");
             setTelefoneResponsavel(d.responsavel.telefone || d.responsavelTelefone || "");
             setCpfResponsavel(d.responsavel.cpf || d.responsavelCpf || "");
             setEmailResponsavel(d.responsavel.email || d.responsavelEmail || "");
-            setParentescoResponsavel(d.responsavel.parentesco || "");
+            setParentescoResponsavel(d.responsavel.parentesco || d.responsavelParentesco || "");
           } else {
             setNomeResponsavel(d.responsavelNome || "");
             setTelefoneResponsavel(d.responsavelTelefone || "");
             setCpfResponsavel(d.responsavelCpf || "");
             setEmailResponsavel(d.responsavelEmail || "");
+            setParentescoResponsavel(d.responsavelParentesco || "");
           }
 
-          const end = d.endereco || {};
+          if (d.isMenorIdade || d.menorIdade || d.responsavel?.nome || d.responsavelNome) {
+            setIsMenorIdade(true);
+            setMenorManualOverride(true);
+          }
+
+          const end =
+            typeof d.endereco === "object" && d.endereco !== null
+              ? d.endereco
+              : d.enderecoDetalhado && typeof d.enderecoDetalhado === "object"
+              ? d.enderecoDetalhado
+              : {};
           setCep(d.cep || end.cep || "");
-          setLogradouro(d.logradouro || end.logradouro || "");
+          setLogradouro(
+            d.logradouro ||
+              end.logradouro ||
+              (typeof d.endereco === "string" ? d.endereco : "") ||
+              ""
+          );
           setNumero(d.numero || end.numero || "");
           setComplemento(d.complemento || end.complemento || "");
           setBairro(d.bairro || end.bairro || "");
@@ -223,11 +265,45 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
           setQueixaPrincipal(d.queixaPrincipal || d.motivo || d.queixa || "");
           setTerapiaAnterior(d.terapiaAnterior || "");
           setMedicacao(d.medicacao || "");
-          if (d.contatoEmergencia) {
-            setContatoEmergenciaNome(d.contatoEmergencia);
+
+          const rawEmergencia = d.contatoEmergencia;
+          if (rawEmergencia && typeof rawEmergencia === "object") {
+            setContatoEmergenciaNome(String(rawEmergencia.nome || ""));
+            setContatoEmergenciaTelefone(String(rawEmergencia.telefone || ""));
+          } else if (typeof rawEmergencia === "string" && rawEmergencia.trim()) {
+            const match = rawEmergencia.match(/^(.*?)\s*\(([^)]*)\)\s*$/);
+            if (match) {
+              setContatoEmergenciaNome(match[1].trim());
+              setContatoEmergenciaTelefone(match[2].trim());
+            } else {
+              setContatoEmergenciaNome(rawEmergencia.trim());
+              setContatoEmergenciaTelefone(
+                String(d.contatoEmergenciaObj?.telefone || d.contatoEmergenciaTelefone || "")
+              );
+            }
+          } else if (d.contatoEmergenciaObj && typeof d.contatoEmergenciaObj === "object") {
+            setContatoEmergenciaNome(String(d.contatoEmergenciaObj.nome || ""));
+            setContatoEmergenciaTelefone(String(d.contatoEmergenciaObj.telefone || ""));
           }
+
           if (d.modalidade) {
-            setModalidadeEscolhida(d.modalidade);
+            setModalidadeEscolhida(String(d.modalidade).toLowerCase());
+          }
+          if (d.turnoPreferido) {
+            setTurnoPreferido(String(d.turnoPreferido));
+          }
+          if (Array.isArray(d.diasPreferidos)) {
+            setDiasPreferidos(d.diasPreferidos.filter(Boolean));
+          } else if (typeof d.diasPreferidos === "string" && d.diasPreferidos.trim()) {
+            setDiasPreferidos(
+              d.diasPreferidos
+                .split(",")
+                .map((s: string) => s.trim())
+                .filter(Boolean)
+            );
+          }
+          if (d.fonteIndicacao) {
+            setFonteIndicacao(normalizeFonteIndicacao(d.fonteIndicacao));
           }
           setAceitouLgpd(true);
 
@@ -254,10 +330,11 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
     loadPaciente();
   }, [paramPacienteId, paramTipo]);
 
-  // Verificar se é menor de idade pela data de nascimento
+  // Verificar se é menor de idade pela data de nascimento (respeitando override manual se marcado)
   useEffect(() => {
     if (!dataNascimento) return;
-    const nasc = new Date(dataNascimento);
+    const nasc = new Date(`${dataNascimento}T12:00:00`);
+    if (isNaN(nasc.getTime())) return;
     const hoje = new Date();
     let idade = hoje.getFullYear() - nasc.getFullYear();
     const m = hoje.getMonth() - nasc.getMonth();
@@ -266,10 +343,10 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
     }
     if (idade < 18) {
       setIsMenorIdade(true);
-    } else {
+    } else if (menorManualOverride === null) {
       setIsMenorIdade(false);
     }
-  }, [dataNascimento]);
+  }, [dataNascimento, menorManualOverride]);
 
   // Busca automática de CEP
   const handleBuscarCep = async (cepValue: string) => {
@@ -305,8 +382,14 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
   const valorFinalSessao = paramValor || config.valorPadrao || "";
   const solicitarEndereco = config.solicitarEndereco !== false;
   const solicitarQueixaPrincipal = config.solicitarQueixaPrincipal !== false;
-  const solicitarDisponibilidade = !isModoAtualizacao && config.solicitarDisponibilidade !== false;
+  const solicitarDisponibilidade = config.solicitarDisponibilidade !== false;
   const solicitarContatoEmergencia = config.solicitarContatoEmergencia !== false;
+
+  const toggleDiaPreferido = (dia: string) => {
+    setDiasPreferidos((prev) =>
+      prev.includes(dia) ? prev.filter((d) => d !== dia) : [...prev, dia]
+    );
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -318,7 +401,7 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
     }
 
     if (isMenorIdade && (!nomeResponsavel.trim() || !telefoneResponsavel.trim() || !cpfResponsavel.trim())) {
-      setErrorMsg("Para pacientes menores de 18 anos, os dados do responsável legal são obrigatórios.");
+      setErrorMsg("Para pacientes menores de 18 anos ou com responsável legal, preencha nome, CPF e telefone do responsável.");
       return;
     }
 
@@ -329,32 +412,72 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
 
     setSubmitting(true);
     try {
+      const cidadeTrim = String(cidade || "").trim();
+      const ufTrim = String(uf || "").trim().toUpperCase();
+      const logradouroTrim = String(logradouro || "").trim();
+      const numeroTrim = String(numero || "").trim();
+      const complementoTrim = String(complemento || "").trim();
+      const bairroTrim = String(bairro || "").trim();
+      const cepTrim = String(cep || "").trim();
+
       const enderecoCompleto = [
-        logradouro ? `${logradouro}${numero ? `, ${numero}` : ""}` : "",
-        complemento,
-        bairro,
-        cidade ? `${cidade}${uf ? ` - ${uf}` : ""}` : "",
+        logradouroTrim ? `${logradouroTrim}${numeroTrim ? `, ${numeroTrim}` : ""}` : "",
+        complementoTrim,
+        bairroTrim,
+        cidadeTrim ? `${cidadeTrim}${ufTrim ? ` - ${ufTrim}` : ""}` : "",
       ]
         .filter(Boolean)
         .join(", ");
 
-      const contatoEmergenciaFinal = contatoEmergenciaNome.trim()
-        ? `${contatoEmergenciaNome.trim()} (${contatoEmergenciaTelefone.trim()})`
-        : "";
+      const enderecoEstruturado = {
+        cep: cepTrim,
+        logradouro: logradouroTrim,
+        numero: numeroTrim,
+        complemento: complementoTrim,
+        bairro: bairroTrim,
+        cidade: cidadeTrim,
+        uf: ufTrim,
+      };
+
+      const emergNome = String(contatoEmergenciaNome || "").trim();
+      const emergTel = String(contatoEmergenciaTelefone || "").trim();
+      const contatoEmergenciaFinal = emergNome
+        ? emergTel
+          ? `${emergNome} (${emergTel})`
+          : emergNome
+        : emergTel;
+
+      const disponibilidadeTexto = [
+        turnoPreferido ? `Turno: ${turnoPreferido}` : "",
+        diasPreferidos.length > 0 ? `Dias: ${diasPreferidos.join(", ")}` : "",
+      ]
+        .filter(Boolean)
+        .join(" | ");
+
+      const responsavelPayload = {
+        nome: nomeResponsavel.trim(),
+        telefone: telefoneResponsavel.trim(),
+        cpf: cpfResponsavel.trim(),
+        email: emailResponsavel.trim(),
+        parentesco: parentescoResponsavel.trim(),
+      };
 
       if (isModoAtualizacao && paramPacienteId) {
-        // MODO ATUALIZAÇÃO: atualiza o registro existente
+        // MODO ATUALIZAÇÃO: atualiza o registro existente respeitando o formato de cada coleção
+        const isPacientesCol = loadedCollection === "pacientes";
         await updateDoc(doc(db, loadedCollection, paramPacienteId), {
           nome: nome.trim(),
           nomeCivil: nome.trim(),
           nomeSocial: nomeSocial.trim(),
-          nomeDesejado: (nomeSocial.trim() || nome.trim()),
+          nomeDesejado: nomeSocial.trim() || nome.trim(),
           email: email.trim(),
           telefone: telefone.trim(),
           dataNascimento,
           cpf: cpf.trim(),
           genero: genero.trim(),
           profissao: profissao.trim(),
+          isMenorIdade,
+          menorIdade: isMenorIdade,
           ...(loadedCollection === "triagem_corporativa"
             ? {
                 colaboradorNome: nome.trim(),
@@ -364,33 +487,38 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
                 colaboradorDataNascimento: dataNascimento,
               }
             : {}),
-          responsavel: {
-            nome: nomeResponsavel.trim(),
-            telefone: telefoneResponsavel.trim(),
-            cpf: cpfResponsavel.trim(),
-            email: emailResponsavel.trim(),
-            parentesco: parentescoResponsavel.trim(),
-          },
-          endereco: {
-            cep: cep.trim(),
-            logradouro: logradouro.trim(),
-            numero: numero.trim(),
-            complemento: complemento.trim(),
-            bairro: bairro.trim(),
-            cidade: cidade.trim(),
-            uf: uf.trim(),
-          },
-          cep: cep.trim(),
+          responsavel: responsavelPayload,
+          responsavelNome: nomeResponsavel.trim(),
+          responsavelTelefone: telefoneResponsavel.trim(),
+          responsavelCpf: cpfResponsavel.trim(),
+          responsavelEmail: emailResponsavel.trim(),
+          responsavelParentesco: parentescoResponsavel.trim(),
+          endereco: isPacientesCol ? enderecoEstruturado : enderecoCompleto,
+          enderecoDetalhado: enderecoEstruturado,
+          cep: cepTrim,
+          logradouro: logradouroTrim,
+          numero: numeroTrim,
+          complemento: complementoTrim,
+          bairro: bairroTrim,
           enderecoCompleto,
-          cidade,
-          uf,
-          cidadeEstado: cidade ? `${cidade} - ${uf}` : "",
+          cidade: cidadeTrim,
+          uf: ufTrim,
+          cidadeEstado: cidadeTrim ? `${cidadeTrim}${ufTrim ? ` - ${ufTrim}` : ""}` : "",
           queixaPrincipal: queixaPrincipal.trim(),
           motivo: queixaPrincipal.trim(),
           terapiaAnterior: terapiaAnterior.trim(),
           medicacao: medicacao.trim(),
           contatoEmergencia: contatoEmergenciaFinal,
+          contatoEmergenciaObj: {
+            nome: emergNome,
+            telefone: emergTel,
+          },
           modalidade: modalidadeEscolhida || "online",
+          turnoPreferido,
+          diasPreferidos,
+          ...(disponibilidadeTexto ? { disponibilidade: disponibilidadeTexto } : {}),
+          ...(fonteIndicacao ? { fonteIndicacao } : {}),
+          aceitouLgpd: true,
           dadosAtualizadosPeloPacienteEm: new Date().toISOString(),
           updatedAt: serverTimestamp(),
         });
@@ -400,52 +528,51 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
           nome: nome.trim(),
           nomeCivil: nome.trim(),
           nomeSocial: nomeSocial.trim(),
-          nomeDesejado: (nomeSocial.trim() || nome.trim()),
+          nomeDesejado: nomeSocial.trim() || nome.trim(),
           email: email.trim(),
           telefone: telefone.trim(),
           dataNascimento,
           cpf: cpf.trim(),
           genero: genero.trim(),
           profissao: profissao.trim(),
-          
-          responsavel: {
-            nome: nomeResponsavel.trim(),
-            telefone: telefoneResponsavel.trim(),
-            cpf: cpfResponsavel.trim(),
-            email: emailResponsavel.trim(),
-            parentesco: parentescoResponsavel.trim(),
-          },
+          isMenorIdade,
+          menorIdade: isMenorIdade,
 
-          endereco: {
-            cep: cep.trim(),
-            logradouro: logradouro.trim(),
-            numero: numero.trim(),
-            complemento: complemento.trim(),
-            bairro: bairro.trim(),
-            cidade: cidade.trim(),
-            uf: uf.trim(),
-          },
-          cep: cep.trim(),
+          responsavel: responsavelPayload,
+          responsavelNome: nomeResponsavel.trim(),
+          responsavelTelefone: telefoneResponsavel.trim(),
+          responsavelCpf: cpfResponsavel.trim(),
+          responsavelEmail: emailResponsavel.trim(),
+          responsavelParentesco: parentescoResponsavel.trim(),
+
+          endereco: enderecoEstruturado,
+          enderecoDetalhado: enderecoEstruturado,
+          cep: cepTrim,
+          logradouro: logradouroTrim,
+          numero: numeroTrim,
+          complemento: complementoTrim,
+          bairro: bairroTrim,
           enderecoCompleto,
-          cidade,
-          uf,
-          cidadeEstado: cidade ? `${cidade} - ${uf}` : "",
+          cidade: cidadeTrim,
+          uf: ufTrim,
+          cidadeEstado: cidadeTrim ? `${cidadeTrim}${ufTrim ? ` - ${ufTrim}` : ""}` : "",
 
           queixaPrincipal: queixaPrincipal.trim(),
           motivo: queixaPrincipal.trim(),
           terapiaAnterior: terapiaAnterior.trim(),
           medicacao: medicacao.trim(),
           contatoEmergencia: contatoEmergenciaFinal,
+          contatoEmergenciaObj: {
+            nome: emergNome,
+            telefone: emergTel,
+          },
 
           valorSessao: valorFinalSessao || "A combinar",
           modalidade: modalidadeEscolhida || "online",
           frequenciaSessoes: paramFrequencia || "Semanal",
-          disponibilidade: [
-            turnoPreferido ? `Turno: ${turnoPreferido}` : "",
-            diasPreferidos.length > 0 ? `Dias: ${diasPreferidos.join(", ")}` : "",
-          ]
-            .filter(Boolean)
-            .join(" | "),
+          turnoPreferido,
+          diasPreferidos,
+          disponibilidade: disponibilidadeTexto,
 
           fonteIndicacao: fonteIndicacao || "Formulário Web",
           origem: "formulario_externo",
@@ -476,8 +603,20 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
   };
 
   const profNome = profData?.name || profData?.nome || "Profissional Responsável";
-  const profPhoto = profData?.photoURL || profData?.fotoUrl;
+  const profPhoto = profData?.photoURL || profData?.photoUrl || profData?.fotoUrl;
   const profCrp = profData?.crp;
+  const brandName =
+    profData?.plano === "avancado" &&
+    profData?.whiteLabelEnabled &&
+    profData?.companyData?.razaoSocial?.trim()
+      ? profData.companyData.razaoSocial.trim()
+      : "AcolheHub";
+  const brandLogo =
+    profData?.plano === "avancado" &&
+    profData?.whiteLabelEnabled &&
+    profData?.companyData?.logoEmpresaUrl?.trim()
+      ? profData.companyData.logoEmpresaUrl.trim()
+      : null;
 
   if (submitted) {
     return (
@@ -522,18 +661,22 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
     <div className="min-h-screen bg-[#FDFBF7] py-8 px-4 flex flex-col items-center">
       <div className="max-w-2xl w-full flex flex-col gap-5">
         
-        {/* Breadcrumbs */}
-        <div className="flex items-center gap-2 text-xs text-forest/60 bg-white/80 px-4 py-2 rounded-xl border border-soft w-fit shadow-2xs">
-          <button
-            type="button"
-            onClick={onGoHome}
-            className="hover:text-forest flex items-center gap-1 cursor-pointer"
-          >
-            <Home className="w-3.5 h-3.5" />
-            <span>Início</span>
-          </button>
-          <ChevronRight className="w-3 h-3 text-forest/40" />
-          <span className="font-semibold text-forest">{tituloPagina}</span>
+        {/* Barra de Identificação White-Label / AcolheHub */}
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-2 text-xs text-forest/70 bg-white/90 px-3.5 py-2 rounded-xl border border-soft shadow-2xs">
+            {brandLogo ? (
+              <img src={brandLogo} alt={brandName} className="w-5 h-5 rounded object-contain" />
+            ) : (
+              <ShieldCheck className="w-4 h-4 text-emerald-700" />
+            )}
+            <span className="font-bold text-forest">{brandName}</span>
+            <ChevronRight className="w-3 h-3 text-forest/40" />
+            <span className="text-forest/70">{tituloPagina}</span>
+          </div>
+
+          <span className="text-[11px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-full flex items-center gap-1.5">
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" /> Prontuário Criptografado
+          </span>
         </div>
 
         {/* Card Header Dourado / Sun conforme identidade visual */}
@@ -596,6 +739,13 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
           onSubmit={handleSubmit}
           className="bg-white rounded-3xl border border-soft shadow-xs p-6 sm:p-8 flex flex-col gap-6"
         >
+          {loadingPacienteExistente && (
+            <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl text-amber-900 text-xs font-semibold flex items-center gap-2">
+              <Clock className="w-4 h-4 animate-spin text-amber-700" />
+              <span>Carregando seus dados atuais para conferência...</span>
+            </div>
+          )}
+
           {errorMsg && (
             <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl text-rose-800 text-xs font-semibold">
               {errorMsg}
@@ -641,11 +791,11 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-bold text-forest mb-1.5">
-                  E-mail <span className="text-red-500">*</span>
+                  E-mail {!isModoAtualizacao && <span className="text-red-500">*</span>}
                 </label>
                 <input
                   type="email"
-                  required
+                  required={!isModoAtualizacao}
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="seu.email@exemplo.com"
@@ -729,12 +879,27 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
           </div>
 
           {/* 2. RESPONSÁVEL LEGAL (Exibido se menor de 18 anos ou toggle manual) */}
+          <div className="pt-1">
+            <label className="inline-flex items-center gap-2.5 cursor-pointer select-none text-xs font-semibold text-forest/80 hover:text-forest">
+              <input
+                type="checkbox"
+                checked={isMenorIdade}
+                onChange={(e) => {
+                  setIsMenorIdade(e.target.checked);
+                  setMenorManualOverride(e.target.checked);
+                }}
+                className="w-4 h-4 rounded text-amber-500 focus:ring-amber-400 cursor-pointer"
+              />
+              <span>Paciente menor de 18 anos ou representado por responsável legal</span>
+            </label>
+          </div>
+
           {isMenorIdade && (
             <div className="p-4 sm:p-5 bg-amber-50/50 rounded-2xl border-2 border-amber-300/80 flex flex-col gap-3">
               <div className="flex items-center gap-2">
                 <AlertCircle className="w-4 h-4 text-amber-700 shrink-0" />
                 <span className="font-bold text-xs text-amber-950">
-                  Paciente Menor de 18 Anos — Dados Obrigatórios do Responsável Legal:
+                  Dados do Responsável Legal:
                 </span>
               </div>
 
@@ -768,7 +933,7 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
                 <div>
                   <label className="block text-[11px] font-semibold text-forest/70 mb-1">
                     CPF do Responsável <span className="text-red-500">*</span>
@@ -793,6 +958,19 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
                     value={telefoneResponsavel}
                     onChange={(e) => setTelefoneResponsavel(formatPhone(e.target.value))}
                     placeholder="(00) 00000-0000"
+                    className="w-full px-3.5 py-2.5 bg-white border border-soft rounded-xl text-xs text-forest focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-forest/70 mb-1">
+                    E-mail do Responsável
+                  </label>
+                  <input
+                    type="email"
+                    value={emailResponsavel}
+                    onChange={(e) => setEmailResponsavel(e.target.value)}
+                    placeholder="email@exemplo.com"
                     className="w-full px-3.5 py-2.5 bg-white border border-soft rounded-xl text-xs text-forest focus:outline-none focus:border-amber-500"
                   />
                 </div>
@@ -844,7 +1022,7 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-forest mb-1.5">
                     Número
@@ -871,7 +1049,7 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
                   />
                 </div>
 
-                <div>
+                <div className="sm:col-span-2">
                   <label className="block text-xs font-bold text-forest mb-1.5">
                     Bairro
                   </label>
@@ -886,14 +1064,28 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
 
                 <div>
                   <label className="block text-xs font-bold text-forest mb-1.5">
-                    Cidade / UF
+                    Cidade
                   </label>
                   <input
                     type="text"
-                    value={cidade ? `${cidade}${uf ? ` - ${uf}` : ""}` : ""}
+                    value={cidade}
                     onChange={(e) => setCidade(e.target.value)}
-                    placeholder="Cidade - UF"
+                    placeholder="Cidade"
                     className="w-full px-3.5 py-2.5 bg-white border border-soft rounded-xl text-xs sm:text-sm text-forest focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-forest mb-1.5">
+                    UF
+                  </label>
+                  <input
+                    type="text"
+                    maxLength={2}
+                    value={uf}
+                    onChange={(e) => setUf(e.target.value.toUpperCase())}
+                    placeholder="SP"
+                    className="w-full px-3.5 py-2.5 bg-white border border-soft rounded-xl text-xs sm:text-sm text-forest uppercase focus:outline-none focus:border-amber-500"
                   />
                 </div>
               </div>
@@ -985,6 +1177,15 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
                     className="w-full px-3.5 py-2.5 bg-white border border-soft rounded-xl text-xs sm:text-sm text-forest focus:outline-none focus:border-amber-500 cursor-pointer"
                   >
                     <option value="">Selecione seu turno preferido...</option>
+                    {turnoPreferido &&
+                      ![
+                        "Manhã (08h às 12h)",
+                        "Tarde (13h às 18h)",
+                        "Noite (18h às 21h)",
+                        "Flexível",
+                      ].includes(turnoPreferido) && (
+                        <option value={turnoPreferido}>{turnoPreferido}</option>
+                      )}
                     <option value="Manhã (08h às 12h)">Manhã (08h às 12h)</option>
                     <option value="Tarde (13h às 18h)">Tarde (13h às 18h)</option>
                     <option value="Noite (18h às 21h)">Noite (18h às 21h)</option>
@@ -993,6 +1194,33 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
                 </div>
               )}
             </div>
+
+            {solicitarDisponibilidade && (
+              <div>
+                <label className="block text-xs font-bold text-forest mb-2">
+                  Dias da Semana de Preferência <span className="text-forest/40 font-normal">(Opcional)</span>
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {DIAS_SEMANA_OPCOES.map((dia) => {
+                    const ativo = diasPreferidos.includes(dia);
+                    return (
+                      <button
+                        key={dia}
+                        type="button"
+                        onClick={() => toggleDiaPreferido(dia)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
+                          ativo
+                            ? "bg-amber-500 text-white border-amber-600 shadow-2xs"
+                            : "bg-white text-forest/75 border-soft hover:bg-warm/50"
+                        }`}
+                      >
+                        {dia}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* Contato de Emergência (Parametrizável) */}
             {solicitarContatoEmergencia && (
@@ -1024,22 +1252,23 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
           {/* 6. FONTE DE INDICAÇÃO */}
           <div>
             <label className="block text-xs font-bold text-forest mb-1.5">
-              Como você conheceu meu trabalho? <span className="text-red-500">*</span>
+              Como você conheceu meu trabalho? {!isModoAtualizacao && <span className="text-red-500">*</span>}
             </label>
             <select
-              required
+              required={!isModoAtualizacao}
               value={fonteIndicacao}
               onChange={(e) => setFonteIndicacao(e.target.value)}
               className="w-full px-4 py-3 bg-white border border-soft rounded-2xl text-xs sm:text-sm text-forest focus:outline-none focus:ring-2 focus:ring-amber-400/30 focus:border-amber-500 transition-all shadow-2xs cursor-pointer"
             >
               <option value="">Selecione uma opção...</option>
-              <option value="Instagram / Redes Sociais">Instagram / Redes Sociais</option>
-              <option value="Indicação de Amigo / Familiar">Indicação de Amigo / Familiar</option>
-              <option value="Google / Pesquisa na Web">Google / Pesquisa na Web</option>
-              <option value="Indicação de Médico / Psiquiatra">Indicação de Médico / Psiquiatra</option>
-              <option value="Já era meu paciente">Já era meu paciente</option>
-              <option value="WhatsApp Direto">WhatsApp Direto</option>
-              <option value="Outros">Outros</option>
+              {fonteIndicacao && !FONTES_INDICACAO_OPCOES.includes(fonteIndicacao) && (
+                <option value={fonteIndicacao}>{fonteIndicacao}</option>
+              )}
+              {FONTES_INDICACAO_OPCOES.map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt}
+                </option>
+              ))}
             </select>
           </div>
 
@@ -1082,6 +1311,10 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
             )}
           </button>
         </form>
+
+        <footer className="text-center text-[11px] text-forest/50 py-2">
+          © {new Date().getFullYear()} {brandName} • Gestão Clínica Segura em conformidade com o CFP e LGPD
+        </footer>
       </div>
     </div>
   );

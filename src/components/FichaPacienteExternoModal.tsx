@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   User,
   Phone,
@@ -61,6 +61,15 @@ export function FichaPacienteExternoModal({
   const [isEditing, setIsEditing] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  const latestPacienteRef = useRef<any>(paciente);
+  const pendingPatchRef = useRef<Record<string, any>>({});
+  const saveTimeoutRef = useRef<any>(null);
+
+  useEffect(() => {
+    setCurrentPaciente(paciente);
+    latestPacienteRef.current = paciente;
+  }, [paciente?.id]);
+
   // Submodals
   const [showProntuarioModal, setShowProntuarioModal] = useState(false);
   const [showFaturamentoModal, setShowFaturamentoModal] = useState(false);
@@ -74,41 +83,136 @@ export function FichaPacienteExternoModal({
   );
   const [salvandoEvolucao, setSalvandoEvolucao] = useState(false);
 
-  // Helper para salvar propriedade local e no Firestore
-  const handleUpdateField = async (field: string, value: any) => {
-    const updated = { ...currentPaciente, [field]: value };
-    setCurrentPaciente(updated);
+  const formatContatoEmergenciaDisplay = (p: any): string => {
+    const raw = p?.contatoEmergencia;
+    if (typeof raw === "string") return raw;
+    if (raw && typeof raw === "object") {
+      const n = String(raw.nome || "").trim();
+      const t = String(raw.telefone || "").trim();
+      if (n && t) return `${n} (${t})`;
+      return n || t;
+    }
+    if (p?.contatoEmergenciaObj && typeof p.contatoEmergenciaObj === "object") {
+      const n = String(p.contatoEmergenciaObj.nome || "").trim();
+      const t = String(p.contatoEmergenciaObj.telefone || "").trim();
+      if (n && t) return `${n} (${t})`;
+      return n || t;
+    }
+    return "";
+  };
+
+  const flushPendingUpdates = async (extraPatch?: Record<string, any>): Promise<boolean> => {
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = null;
+    }
+    const patchToSave = { ...pendingPatchRef.current, ...(extraPatch || {}) };
+    pendingPatchRef.current = {};
+    const targetId = latestPacienteRef.current?.id;
+    if (!targetId || Object.keys(patchToSave).length === 0) {
+      return true;
+    }
     try {
-      if (currentPaciente.id) {
-        await updateDoc(doc(db, "pacientes", currentPaciente.id), {
-          [field]: value,
-          updatedAt: serverTimestamp(),
-        });
-        onUpdatePaciente(updated);
-      }
+      await updateDoc(doc(db, "pacientes", targetId), {
+        ...patchToSave,
+        updatedAt: serverTimestamp(),
+      });
+      onUpdatePaciente(latestPacienteRef.current);
+      return true;
     } catch (err) {
-      console.error("Erro ao atualizar campo do paciente:", err);
-      showToast("Erro ao salvar alteração.", "error");
+      console.error("Erro ao salvar alterações do paciente no Firestore:", err);
+      showToast("Erro ao salvar alteração no banco de dados.", "error");
+      return false;
     }
   };
 
-  const handleUpdateNestedField = async (parentField: string, subField: string, value: any) => {
-    const currentParent = currentPaciente[parentField] || {};
-    const updatedParent = { ...currentParent, [subField]: value };
-    const updated = { ...currentPaciente, [parentField]: updatedParent };
-    setCurrentPaciente(updated);
-    try {
-      if (currentPaciente.id) {
-        await updateDoc(doc(db, "pacientes", currentPaciente.id), {
-          [parentField]: updatedParent,
-          updatedAt: serverTimestamp(),
-        });
-        onUpdatePaciente(updated);
+  useEffect(() => {
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
       }
-    } catch (err) {
-      console.error("Erro ao atualizar campo aninhado:", err);
-      showToast("Erro ao salvar alteração.", "error");
+      const patch = { ...pendingPatchRef.current };
+      pendingPatchRef.current = {};
+      const targetId = latestPacienteRef.current?.id;
+      if (targetId && Object.keys(patch).length > 0) {
+        updateDoc(doc(db, "pacientes", targetId), {
+          ...patch,
+          updatedAt: serverTimestamp(),
+        }).catch((e) => console.error("Erro ao gravar alterações pendentes ao fechar:", e));
+      }
+    };
+  }, []);
+
+  // Helper atômico para atualizar estado funcional e persistir com debounce ou imediatamente
+  const handlePatchFields = async (patch: Record<string, any>, immediate = false) => {
+    const nextState = { ...latestPacienteRef.current, ...patch };
+    latestPacienteRef.current = nextState;
+    setCurrentPaciente((prev: any) => ({ ...prev, ...patch }));
+    onUpdatePaciente(nextState);
+
+    pendingPatchRef.current = { ...pendingPatchRef.current, ...patch };
+
+    if (immediate) {
+      await flushPendingUpdates();
+    } else {
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = setTimeout(() => {
+        flushPendingUpdates();
+      }, 450);
     }
+  };
+
+  const handleUpdateField = async (field: string, value: any, immediate = false) => {
+    await handlePatchFields({ [field]: value }, immediate);
+  };
+
+  const handleUpdateNestedField = async (parentField: string, subField: string, value: any) => {
+    const existingParent =
+      latestPacienteRef.current?.[parentField] &&
+      typeof latestPacienteRef.current[parentField] === "object"
+        ? latestPacienteRef.current[parentField]
+        : {};
+    const updatedParent = { ...existingParent, [subField]: value };
+    const extraTopLevel: Record<string, any> = {};
+
+    if (parentField === "responsavel") {
+      if (subField === "nome") extraTopLevel.responsavelNome = value;
+      if (subField === "telefone") extraTopLevel.responsavelTelefone = value;
+      if (subField === "cpf") extraTopLevel.responsavelCpf = value;
+      if (subField === "email") extraTopLevel.responsavelEmail = value;
+      if (subField === "parentesco") extraTopLevel.responsavelParentesco = value;
+    } else if (parentField === "endereco") {
+      extraTopLevel[subField] = value;
+      const cepVal = updatedParent.cep || "";
+      const logVal = updatedParent.logradouro || "";
+      const numVal = updatedParent.numero || "";
+      const compVal = updatedParent.complemento || "";
+      const baiVal = updatedParent.bairro || "";
+      const cidVal = updatedParent.cidade || "";
+      const ufVal = updatedParent.uf || "";
+      extraTopLevel.cep = cepVal;
+      extraTopLevel.cidade = cidVal;
+      extraTopLevel.uf = ufVal;
+      extraTopLevel.cidadeEstado = cidVal ? `${cidVal}${ufVal ? ` - ${ufVal}` : ""}` : "";
+      extraTopLevel.enderecoCompleto = [
+        logVal ? `${logVal}${numVal ? `, ${numVal}` : ""}` : "",
+        compVal,
+        baiVal,
+        cidVal ? `${cidVal}${ufVal ? ` - ${ufVal}` : ""}` : "",
+      ]
+        .filter(Boolean)
+        .join(", ");
+    }
+
+    await handlePatchFields({
+      [parentField]: updatedParent,
+      ...extraTopLevel,
+    });
+  };
+
+  const handleCloseModal = async () => {
+    await flushPendingUpdates();
+    onClose();
   };
 
   // Salvar nova evolução rápida
@@ -148,9 +252,10 @@ export function FichaPacienteExternoModal({
         updatedAt: serverTimestamp(),
       });
 
-      const updated = { ...currentPaciente, prontuarioClinico: novaLista };
-      setCurrentPaciente(updated);
-      onUpdatePaciente(updated);
+      const nextPac = { ...latestPacienteRef.current, prontuarioClinico: novaLista };
+      latestPacienteRef.current = nextPac;
+      setCurrentPaciente(nextPac);
+      onUpdatePaciente(nextPac);
       setNovaEvolucaoTexto("");
       showToast("Evolução clínica registrada no prontuário com sucesso!", "success");
     } catch (err) {
@@ -221,8 +326,10 @@ export function FichaPacienteExternoModal({
                   <select
                     value={statusAtual}
                     onChange={(e) => {
-                      handleUpdateField("statusTratamento", e.target.value);
-                      handleUpdateField("status", e.target.value);
+                      handlePatchFields(
+                        { statusTratamento: e.target.value, status: e.target.value },
+                        true
+                      );
                     }}
                     className={`text-[9px] sm:text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full border shrink-0 cursor-pointer focus:outline-none transition-colors ${
                       statusAtual === "Em Atendimento" || statusAtual === "Ativo"
@@ -286,26 +393,36 @@ export function FichaPacienteExternoModal({
 
               <button
                 type="button"
-                onClick={() => {
+                disabled={saving}
+                onClick={async () => {
                   if (isEditing) {
-                    showToast("Dados salvos com sucesso!", "success");
+                    setSaving(true);
+                    const ok = await flushPendingUpdates();
+                    setSaving(false);
+                    if (ok) {
+                      showToast("Dados salvos com sucesso!", "success");
+                      setIsEditing(false);
+                    }
+                  } else {
+                    setIsEditing(true);
                   }
-                  setIsEditing(!isEditing);
                 }}
-                className={`flex items-center justify-center gap-1 font-bold text-[10px] sm:text-xs p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl border transition-all shadow-2xs shrink-0 cursor-pointer ${
+                className={`flex items-center justify-center gap-1 font-bold text-[10px] sm:text-xs p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl border transition-all shadow-2xs shrink-0 cursor-pointer disabled:opacity-60 ${
                   isEditing
                     ? "bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700"
                     : "bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100"
                 }`}
-                title={isEditing ? "Concluir edição" : "Editar campos da ficha"}
+                title={isEditing ? "Concluir e salvar edição" : "Editar campos da ficha"}
               >
                 {isEditing ? <Save className="w-3.5 h-3.5" /> : <Edit3 className="w-3.5 h-3.5" />}
-                <span className="hidden sm:inline">{isEditing ? "Salvar" : "Editar"}</span>
+                <span className="hidden sm:inline">
+                  {saving ? "Salvando..." : isEditing ? "Salvar" : "Editar"}
+                </span>
               </button>
 
               <button
                 type="button"
-                onClick={onClose}
+                onClick={handleCloseModal}
                 className="p-1 sm:p-1.5 text-forest/50 hover:text-red-500 rounded-full hover:bg-red-50 transition-colors shrink-0 cursor-pointer"
                 title="Fechar Ficha"
               >
@@ -406,7 +523,8 @@ export function FichaPacienteExternoModal({
             {onNavigateToAgenda && (
               <button
                 type="button"
-                onClick={() => {
+                onClick={async () => {
+                  await flushPendingUpdates();
                   onClose();
                   onNavigateToAgenda(currentPaciente.id);
                 }}
@@ -425,8 +543,7 @@ export function FichaPacienteExternoModal({
               type="button"
               onClick={() => {
                 const novo = statusAtual === "Inativo" ? "Em Atendimento" : "Inativo";
-                handleUpdateField("statusTratamento", novo);
-                handleUpdateField("status", novo);
+                handlePatchFields({ statusTratamento: novo, status: novo }, true);
                 showToast(`Status alterado para: ${novo}`, "info");
               }}
               className="flex items-center gap-1 font-bold text-[10px] sm:text-xs px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg sm:rounded-xl border border-soft bg-warm/50 text-forest/70 hover:text-forest transition-colors shadow-2xs cursor-pointer"
@@ -478,10 +595,9 @@ export function FichaPacienteExternoModal({
                 {isEditing ? (
                   <input
                     type="text"
-                    value={currentPaciente.nomeCivil || currentPaciente.nome || ""}
+                    value={currentPaciente.nomeCivil ?? currentPaciente.nome ?? ""}
                     onChange={(e) => {
-                      handleUpdateField("nomeCivil", e.target.value);
-                      handleUpdateField("nome", e.target.value);
+                      handlePatchFields({ nomeCivil: e.target.value, nome: e.target.value });
                     }}
                     className="text-xs sm:text-sm font-semibold text-forest border border-emerald-500/80 bg-emerald-50/50 rounded-lg px-2.5 py-1.5 w-full focus:outline-none"
                   />
@@ -499,8 +615,17 @@ export function FichaPacienteExternoModal({
                 {isEditing ? (
                   <input
                     type="text"
-                    value={currentPaciente.nomeSocial || currentPaciente.nomeDesejado || ""}
-                    onChange={(e) => handleUpdateField("nomeSocial", e.target.value)}
+                    value={currentPaciente.nomeSocial ?? ""}
+                    onChange={(e) =>
+                      handlePatchFields({
+                        nomeSocial: e.target.value,
+                        nomeDesejado:
+                          e.target.value.trim() ||
+                          latestPacienteRef.current?.nomeCivil ||
+                          latestPacienteRef.current?.nome ||
+                          "",
+                      })
+                    }
                     placeholder="Opcional"
                     className="text-xs sm:text-sm font-semibold text-forest border border-emerald-500/80 bg-emerald-50/50 rounded-lg px-2.5 py-1.5 w-full focus:outline-none"
                   />
@@ -637,7 +762,7 @@ export function FichaPacienteExternoModal({
               </span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
               <div className="flex flex-col gap-1 min-w-0">
                 <span className="block text-[10px] font-bold uppercase text-forest/70 tracking-wider">
                   Nome do Responsável
@@ -645,14 +770,33 @@ export function FichaPacienteExternoModal({
                 {isEditing ? (
                   <input
                     type="text"
-                    value={currentPaciente.responsavel?.nome || ""}
+                    value={currentPaciente.responsavel?.nome ?? currentPaciente.responsavelNome ?? ""}
                     onChange={(e) => handleUpdateNestedField("responsavel", "nome", e.target.value)}
                     placeholder="Nome completo do responsável"
                     className="text-xs sm:text-sm font-semibold text-forest border border-emerald-500/80 bg-emerald-50/50 rounded-lg px-2.5 py-1.5 w-full focus:outline-none"
                   />
                 ) : (
                   <span className="text-xs sm:text-sm font-semibold text-forest">
-                    {currentPaciente.responsavel?.nome || "-"}
+                    {currentPaciente.responsavel?.nome || currentPaciente.responsavelNome || "-"}
+                  </span>
+                )}
+              </div>
+
+              <div className="flex flex-col gap-1 min-w-0">
+                <span className="block text-[10px] font-bold uppercase text-forest/70 tracking-wider">
+                  Parentesco
+                </span>
+                {isEditing ? (
+                  <input
+                    type="text"
+                    value={currentPaciente.responsavel?.parentesco ?? currentPaciente.responsavelParentesco ?? ""}
+                    onChange={(e) => handleUpdateNestedField("responsavel", "parentesco", e.target.value)}
+                    placeholder="Ex: Mãe, Pai..."
+                    className="text-xs sm:text-sm font-semibold text-forest border border-emerald-500/80 bg-emerald-50/50 rounded-lg px-2.5 py-1.5 w-full focus:outline-none"
+                  />
+                ) : (
+                  <span className="text-xs sm:text-sm font-semibold text-forest">
+                    {currentPaciente.responsavel?.parentesco || currentPaciente.responsavelParentesco || "-"}
                   </span>
                 )}
               </div>
@@ -664,14 +808,14 @@ export function FichaPacienteExternoModal({
                 {isEditing ? (
                   <input
                     type="text"
-                    value={currentPaciente.responsavel?.telefone || ""}
+                    value={currentPaciente.responsavel?.telefone ?? currentPaciente.responsavelTelefone ?? ""}
                     onChange={(e) => handleUpdateNestedField("responsavel", "telefone", e.target.value)}
                     placeholder="(00) 00000-0000"
                     className="text-xs sm:text-sm font-semibold text-forest border border-emerald-500/80 bg-emerald-50/50 rounded-lg px-2.5 py-1.5 w-full focus:outline-none"
                   />
                 ) : (
                   <span className="text-xs sm:text-sm font-semibold text-forest">
-                    {currentPaciente.responsavel?.telefone || "-"}
+                    {currentPaciente.responsavel?.telefone || currentPaciente.responsavelTelefone || "-"}
                   </span>
                 )}
               </div>
@@ -683,14 +827,14 @@ export function FichaPacienteExternoModal({
                 {isEditing ? (
                   <input
                     type="text"
-                    value={currentPaciente.responsavel?.cpf || ""}
+                    value={currentPaciente.responsavel?.cpf ?? currentPaciente.responsavelCpf ?? ""}
                     onChange={(e) => handleUpdateNestedField("responsavel", "cpf", e.target.value)}
                     placeholder="000.000.000-00"
                     className="text-xs sm:text-sm font-semibold text-forest border border-emerald-500/80 bg-emerald-50/50 rounded-lg px-2.5 py-1.5 w-full focus:outline-none"
                   />
                 ) : (
                   <span className="text-xs sm:text-sm font-semibold text-forest font-mono">
-                    {currentPaciente.responsavel?.cpf || "-"}
+                    {currentPaciente.responsavel?.cpf || currentPaciente.responsavelCpf || "-"}
                   </span>
                 )}
               </div>
@@ -702,14 +846,14 @@ export function FichaPacienteExternoModal({
                 {isEditing ? (
                   <input
                     type="email"
-                    value={currentPaciente.responsavel?.email || ""}
+                    value={currentPaciente.responsavel?.email ?? currentPaciente.responsavelEmail ?? ""}
                     onChange={(e) => handleUpdateNestedField("responsavel", "email", e.target.value)}
                     placeholder="email@exemplo.com"
                     className="text-xs sm:text-sm font-semibold text-forest border border-emerald-500/80 bg-emerald-50/50 rounded-lg px-2.5 py-1.5 w-full focus:outline-none"
                   />
                 ) : (
                   <span className="text-xs sm:text-sm font-semibold text-forest truncate">
-                    {currentPaciente.responsavel?.email || "-"}
+                    {currentPaciente.responsavel?.email || currentPaciente.responsavelEmail || "-"}
                   </span>
                 )}
               </div>
@@ -785,21 +929,31 @@ export function FichaPacienteExternoModal({
                 {isEditing ? (
                   <input
                     type="text"
-                    value={currentPaciente.contatoEmergencia || ""}
-                    onChange={(e) => handleUpdateField("contatoEmergencia", e.target.value)}
-                    placeholder="Nome e telefone de pessoa de confiança"
+                    value={formatContatoEmergenciaDisplay(currentPaciente)}
+                    onChange={(e) => {
+                      const rawVal = e.target.value;
+                      const match = rawVal.match(/^(.*?)\s*\(([^)]*)\)\s*$/);
+                      const parsedObj = match
+                        ? { nome: match[1].trim(), telefone: match[2].trim() }
+                        : { nome: rawVal.trim(), telefone: "" };
+                      handlePatchFields({
+                        contatoEmergencia: rawVal,
+                        contatoEmergenciaObj: parsedObj,
+                      });
+                    }}
+                    placeholder="Nome (00) 00000-0000"
                     className="text-xs sm:text-sm font-semibold text-forest border border-emerald-500/80 bg-emerald-50/50 rounded-lg px-2.5 py-1.5 w-full focus:outline-none"
                   />
                 ) : (
                   <span className="text-xs sm:text-sm font-semibold text-forest">
-                    {currentPaciente.contatoEmergencia || "-"}
+                    {formatContatoEmergenciaDisplay(currentPaciente) || "-"}
                   </span>
                 )}
               </div>
             </div>
 
             {/* Endereço Residencial */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 pt-2 border-t border-soft/60">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-4 pt-2 border-t border-soft/60">
               <div className="flex flex-col gap-1 min-w-0">
                 <span className="block text-[10px] font-bold uppercase text-forest/70 tracking-wider">
                   CEP
@@ -807,33 +961,93 @@ export function FichaPacienteExternoModal({
                 {isEditing ? (
                   <input
                     type="text"
-                    value={currentPaciente.cep || currentPaciente.endereco?.cep || ""}
-                    onChange={(e) => handleUpdateField("cep", e.target.value)}
+                    value={currentPaciente.endereco?.cep ?? currentPaciente.cep ?? ""}
+                    onChange={(e) => handleUpdateNestedField("endereco", "cep", e.target.value)}
                     placeholder="00000-000"
                     className="text-xs sm:text-sm font-semibold text-forest border border-emerald-500/80 bg-emerald-50/50 rounded-lg px-2.5 py-1.5 w-full focus:outline-none"
                   />
                 ) : (
                   <span className="text-xs sm:text-sm font-semibold text-forest font-mono">
-                    {currentPaciente.cep || currentPaciente.endereco?.cep || "-"}
+                    {currentPaciente.endereco?.cep || currentPaciente.cep || "-"}
                   </span>
                 )}
               </div>
 
               <div className="flex flex-col gap-1 min-w-0 sm:col-span-2">
                 <span className="block text-[10px] font-bold uppercase text-forest/70 tracking-wider">
-                  Logradouro / Bairro
+                  Logradouro
                 </span>
                 {isEditing ? (
                   <input
                     type="text"
-                    value={currentPaciente.enderecoCompleto || currentPaciente.endereco?.logradouro || ""}
-                    onChange={(e) => handleUpdateField("enderecoCompleto", e.target.value)}
-                    placeholder="Rua, número, complemento, bairro"
+                    value={
+                      currentPaciente.endereco?.logradouro ??
+                      currentPaciente.logradouro ??
+                      currentPaciente.enderecoCompleto ??
+                      ""
+                    }
+                    onChange={(e) => handleUpdateNestedField("endereco", "logradouro", e.target.value)}
+                    placeholder="Rua / Avenida"
                     className="text-xs sm:text-sm font-semibold text-forest border border-emerald-500/80 bg-emerald-50/50 rounded-lg px-2.5 py-1.5 w-full focus:outline-none"
                   />
                 ) : (
                   <span className="text-xs sm:text-sm font-semibold text-forest">
-                    {currentPaciente.enderecoCompleto || currentPaciente.endereco?.logradouro || "-"}
+                    {currentPaciente.enderecoCompleto ||
+                      currentPaciente.endereco?.logradouro ||
+                      currentPaciente.logradouro ||
+                      "-"}
+                  </span>
+                )}
+              </div>
+
+              <div className="flex flex-col gap-1 min-w-0">
+                <span className="block text-[10px] font-bold uppercase text-forest/70 tracking-wider">
+                  Nº / Compl.
+                </span>
+                {isEditing ? (
+                  <div className="flex gap-1.5">
+                    <input
+                      type="text"
+                      value={currentPaciente.endereco?.numero ?? currentPaciente.numero ?? ""}
+                      onChange={(e) => handleUpdateNestedField("endereco", "numero", e.target.value)}
+                      placeholder="Nº"
+                      className="text-xs font-semibold text-forest border border-emerald-500/80 bg-emerald-50/50 rounded-lg px-2 py-1.5 w-16 focus:outline-none"
+                    />
+                    <input
+                      type="text"
+                      value={currentPaciente.endereco?.complemento ?? currentPaciente.complemento ?? ""}
+                      onChange={(e) => handleUpdateNestedField("endereco", "complemento", e.target.value)}
+                      placeholder="Compl."
+                      className="text-xs font-semibold text-forest border border-emerald-500/80 bg-emerald-50/50 rounded-lg px-2 py-1.5 flex-1 min-w-0 focus:outline-none"
+                    />
+                  </div>
+                ) : (
+                  <span className="text-xs sm:text-sm font-semibold text-forest">
+                    {[
+                      currentPaciente.endereco?.numero || currentPaciente.numero,
+                      currentPaciente.endereco?.complemento || currentPaciente.complemento,
+                    ]
+                      .filter(Boolean)
+                      .join(" - ") || "-"}
+                  </span>
+                )}
+              </div>
+
+              <div className="flex flex-col gap-1 min-w-0">
+                <span className="block text-[10px] font-bold uppercase text-forest/70 tracking-wider">
+                  Bairro
+                </span>
+                {isEditing ? (
+                  <input
+                    type="text"
+                    value={currentPaciente.endereco?.bairro ?? currentPaciente.bairro ?? ""}
+                    onChange={(e) => handleUpdateNestedField("endereco", "bairro", e.target.value)}
+                    placeholder="Bairro"
+                    className="text-xs sm:text-sm font-semibold text-forest border border-emerald-500/80 bg-emerald-50/50 rounded-lg px-2.5 py-1.5 w-full focus:outline-none"
+                  />
+                ) : (
+                  <span className="text-xs sm:text-sm font-semibold text-forest">
+                    {currentPaciente.endereco?.bairro || currentPaciente.bairro || "-"}
                   </span>
                 )}
               </div>
@@ -843,16 +1057,31 @@ export function FichaPacienteExternoModal({
                   Cidade / UF
                 </span>
                 {isEditing ? (
-                  <input
-                    type="text"
-                    value={currentPaciente.cidadeEstado || (currentPaciente.cidade ? `${currentPaciente.cidade} - ${currentPaciente.uf || ""}` : "")}
-                    onChange={(e) => handleUpdateField("cidadeEstado", e.target.value)}
-                    placeholder="Cidade - UF"
-                    className="text-xs sm:text-sm font-semibold text-forest border border-emerald-500/80 bg-emerald-50/50 rounded-lg px-2.5 py-1.5 w-full focus:outline-none"
-                  />
+                  <div className="flex gap-1.5">
+                    <input
+                      type="text"
+                      value={currentPaciente.endereco?.cidade ?? currentPaciente.cidade ?? ""}
+                      onChange={(e) => handleUpdateNestedField("endereco", "cidade", e.target.value)}
+                      placeholder="Cidade"
+                      className="text-xs font-semibold text-forest border border-emerald-500/80 bg-emerald-50/50 rounded-lg px-2 py-1.5 flex-1 min-w-0 focus:outline-none"
+                    />
+                    <input
+                      type="text"
+                      maxLength={2}
+                      value={currentPaciente.endereco?.uf ?? currentPaciente.uf ?? ""}
+                      onChange={(e) =>
+                        handleUpdateNestedField("endereco", "uf", e.target.value.toUpperCase())
+                      }
+                      placeholder="UF"
+                      className="text-xs font-semibold text-forest uppercase border border-emerald-500/80 bg-emerald-50/50 rounded-lg px-2 py-1.5 w-12 focus:outline-none"
+                    />
+                  </div>
                 ) : (
                   <span className="text-xs sm:text-sm font-semibold text-forest">
-                    {currentPaciente.cidadeEstado || (currentPaciente.cidade ? `${currentPaciente.cidade} - ${currentPaciente.uf || ""}` : "-")}
+                    {currentPaciente.cidadeEstado ||
+                      (currentPaciente.endereco?.cidade || currentPaciente.cidade
+                        ? `${currentPaciente.endereco?.cidade || currentPaciente.cidade}${(currentPaciente.endereco?.uf || currentPaciente.uf) ? ` - ${currentPaciente.endereco?.uf || currentPaciente.uf}` : ""}`
+                        : "-")}
                   </span>
                 )}
               </div>
@@ -878,10 +1107,12 @@ export function FichaPacienteExternoModal({
                 {isEditing ? (
                   <textarea
                     rows={3}
-                    value={currentPaciente.queixaPrincipal || currentPaciente.motivo || ""}
+                    value={currentPaciente.queixaPrincipal ?? currentPaciente.motivo ?? ""}
                     onChange={(e) => {
-                      handleUpdateField("queixaPrincipal", e.target.value);
-                      handleUpdateField("motivo", e.target.value);
+                      handlePatchFields({
+                        queixaPrincipal: e.target.value,
+                        motivo: e.target.value,
+                      });
                     }}
                     placeholder="Descreva a queixa que motivou a busca pelo acompanhamento psicológico..."
                     className="w-full text-xs sm:text-sm text-forest border border-emerald-500/80 bg-emerald-50/30 rounded-xl p-3 focus:outline-none focus:ring-1 focus:ring-emerald-500"
@@ -1057,14 +1288,15 @@ export function FichaPacienteExternoModal({
               <div className="flex items-center gap-2">
                 <CreditCard className="w-4 h-4 text-emerald-700 shrink-0" />
                 <span className="text-emerald-950 font-medium">
-                  Chave Pix cadastrada para cobrança: <strong>{profile?.chavePix || "Cadastre sua chave no Perfil"}</strong>
+                  Chave Pix cadastrada para cobrança:{" "}
+                  <strong>{profile?.chavePix || profile?.pixKey || "Cadastre sua chave no Perfil"}</strong>
                 </span>
               </div>
-              {profile?.chavePix && (
+              {(profile?.chavePix || profile?.pixKey) && (
                 <button
                   type="button"
                   onClick={() => {
-                    navigator.clipboard.writeText(profile.chavePix);
+                    navigator.clipboard.writeText(profile?.chavePix || profile?.pixKey);
                     showToast("Chave Pix copiada para a área de transferência!", "success");
                   }}
                   className="px-2.5 py-1 bg-white hover:bg-emerald-100 text-emerald-800 rounded-lg font-bold border border-emerald-300 flex items-center gap-1 transition-colors cursor-pointer shrink-0"
@@ -1256,7 +1488,7 @@ export function FichaPacienteExternoModal({
                 </div>
                 <button
                   type="button"
-                  onClick={() => openWhatsApp(`Olá ${nomeDisplay}! Segue a chave Pix para acerto dos honorários da sessão: ${profile?.chavePix || "sua_chave_pix"}. Muito obrigado!`)}
+                  onClick={() => openWhatsApp(`Olá ${nomeDisplay}! Segue a chave Pix para acerto dos honorários da sessão: ${profile?.chavePix || profile?.pixKey || "sua_chave_pix"}. Muito obrigado!`)}
                   className="w-full py-2 bg-white hover:bg-emerald-50 text-emerald-800 font-bold text-xs rounded-lg border border-emerald-200 transition-colors flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
                 >
                   <Send className="w-3 h-3 text-emerald-600" />
@@ -1291,7 +1523,7 @@ export function FichaPacienteExternoModal({
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleCloseModal}
             className="px-5 py-2 rounded-xl bg-forest hover:bg-forest/90 text-white font-bold text-xs shadow-xs cursor-pointer"
           >
             Fechar Ficha
@@ -1311,9 +1543,12 @@ export function FichaPacienteExternoModal({
           pacienteTelefone={currentPaciente.telefone}
           registros={currentPaciente.prontuarioClinico || []}
           onSaveRegistros={async (novosRegistros) => {
-            await handleUpdateField("prontuarioClinico", novosRegistros);
+            await handlePatchFields({ prontuarioClinico: novosRegistros }, true);
           }}
           sessoes={sessoes}
+          onSaveSessoes={async (novasSessoes) => {
+            await handlePatchFields({ historicoSessoes: novasSessoes }, true);
+          }}
           onAbrirFaturamento={() => {
             setShowProntuarioModal(false);
             setShowFaturamentoModal(true);
@@ -1354,16 +1589,43 @@ export function FichaPacienteExternoModal({
                 pacienteCpf={currentPaciente.cpf}
                 pacienteTelefone={currentPaciente.telefone}
                 pacienteEmail={currentPaciente.email}
+                valorSessaoPadrao={currentPaciente.valorSessao}
+                frequenciaPadrao={currentPaciente.frequenciaSessoes}
                 sessoes={sessoes}
                 onSaveSessoes={async (novasSessoes) => {
-                  await handleUpdateField("historicoSessoes", novasSessoes);
+                  await handlePatchFields({ historicoSessoes: novasSessoes }, true);
                 }}
+                perfilFaturamento={currentPaciente.perfilFaturamento || profile?.faturamentoPadrao || "PF"}
+                onUpdatePerfilFaturamento={async (novoPerfil) => {
+                  await handlePatchFields({ perfilFaturamento: novoPerfil }, true);
+                }}
+                onSaveDadosPJ={async (dadosPJ) => {
+                  const profId = profile?.uid || user?.uid;
+                  if (profId) {
+                    try {
+                      await updateDoc(doc(db, "users", profId), {
+                        dadosPJ,
+                        updatedAt: serverTimestamp(),
+                      });
+                      showToast("Dados de Pessoa Jurídica salvos no seu perfil!", "success");
+                    } catch (err) {
+                      console.error("Erro ao salvar dados PJ:", err);
+                      showToast("Erro ao salvar dados PJ no perfil.", "error");
+                    }
+                  }
+                }}
+                registrosProntuario={currentPaciente.prontuarioClinico || []}
                 profissionalLogado={{
                   uid: profile?.uid || user?.uid,
                   name: profile?.name || profile?.nome,
                   nome: profile?.name || profile?.nome,
                   crp: profile?.crp,
                   cpf: profile?.cpf,
+                  chavePix: profile?.chavePix || profile?.pixKey,
+                  email: profile?.email || user?.email,
+                  telefone: profile?.telefone,
+                  dadosPJ: profile?.dadosPJ,
+                  faturamentoPadrao: profile?.faturamentoPadrao,
                 }}
                 showToast={showToast}
                 onAbrirProntuarioModal={() => {
@@ -1383,6 +1645,7 @@ export function FichaPacienteExternoModal({
           paciente={currentPaciente}
           onClose={() => setShowContratoModal(false)}
           onContratoSalvo={(updated) => {
+            latestPacienteRef.current = updated;
             setCurrentPaciente(updated);
             onUpdatePaciente(updated);
           }}

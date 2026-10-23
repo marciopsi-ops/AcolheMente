@@ -69,12 +69,16 @@ service cloud.firestore {
 
     // Pacientes (Unificada - Particulares, Acolhimentos, Externos)
     match /pacientes/{pacienteId} {
-      // Leitura Master: Somente acolhimentos/particulares (não externos)
-      allow read: if isMaster() && (resource.data.tipo == 'acolhimento' || resource.data.tipo == 'particular');
-      // Leitura/Escrita Profissional: Apenas seus pacientes (independente do tipo)
-      allow read, write: if isProfissional() && resource.data.profissionalId == request.auth.uid;
-      // Permissão pública para formulário de cadastro (com limite de campos)
-      allow create: if true; 
+      // Listagem isolada: Profissional lista apenas seus próprios pacientes; Master lista apenas acolhimento/particular (nunca externos de terceiros)
+      allow list: if (isSignedIn() && resource.data.profissionalId == request.auth.uid) ||
+                     (isMaster() && (resource.data.tipo == 'acolhimento' || resource.data.tipo == 'particular'));
+      // Leitura individual e atualização por ID único (necessário para links públicos de Atualização Cadastral, Contrato e Faturamento, além da Ficha de Bordo)
+      allow get, create, update: if true;
+      // Exclusão restrita ao profissional responsável ou Master (exceto carteira externa de terceiros)
+      allow delete: if isSignedIn() && (
+        resource.data.profissionalId == request.auth.uid ||
+        (isMaster() && resource.data.tipo != 'externo')
+      );
     }
 
     // Usuários e Perfis da Plataforma
@@ -92,9 +96,14 @@ service cloud.firestore {
       allow delete: if isSignedIn() && isMaster();
     }
 
-    // Leads Profissionais
+    // Leads Profissionais e Assinaturas Profissionais
     match /profissionais_leads/{proId} {
       allow create, read, update, delete: if true;
+    }
+
+    match /profissionais/{profId} {
+      allow create, read, update: if true;
+      allow delete: if isSignedIn() && isMaster();
     }
 
     // Leads Empresas

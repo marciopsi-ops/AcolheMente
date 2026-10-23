@@ -27,10 +27,16 @@ export interface ContratoDadosParams {
     estado?: string;
     responsavelNome?: string;
     responsavelCpf?: string;
+    responsavel?: {
+      nome?: string;
+      cpf?: string;
+    };
+    isMenorIdade?: boolean;
     valorSessao?: string | number;
     frequenciaSessoes?: string;
     formatoAtendimento?: string;
     viaAcesso?: string;
+    tipo?: string;
   };
   profissional: {
     name?: string;
@@ -39,6 +45,11 @@ export interface ContratoDadosParams {
     telefone?: string;
     cpf?: string;
     especialidade?: string;
+    plano?: string;
+    whiteLabelEnabled?: boolean;
+    companyData?: {
+      razaoSocial?: string;
+    };
   };
   valorPersonalizado?: string;
   frequenciaPersonalizada?: string;
@@ -84,6 +95,18 @@ export function gerarModeloContrato({
     year: "numeric",
   });
 
+  const isExterno =
+    paciente.tipo === "externo" ||
+    paciente.viaAcesso === "Carteira Externa";
+  const brandName = isExterno
+    ? (profissional.plano === "avancado" && profissional.whiteLabelEnabled && profissional.companyData?.razaoSocial
+        ? profissional.companyData.razaoSocial
+        : "AcolheHub")
+    : "AcolheMente Saúde";
+
+  const respNome = paciente.responsavel?.nome || paciente.responsavelNome || "";
+  const respCpf = paciente.responsavel?.cpf || paciente.responsavelCpf || "";
+
   return `CONTRATO DE PRESTAÇÃO DE SERVIÇOS PSICOLÓGICOS E ENQUADRE TERAPÊUTICO
 
 Pelo presente instrumento particular e na melhor forma de direito, as partes abaixo qualificadas:
@@ -91,12 +114,12 @@ Pelo presente instrumento particular e na melhor forma de direito, as partes aba
 I. CONTRATADO(A) (PROFISSIONAL):
 Nome: ${nomeProfissional}
 Registro Profissional: ${crpProfissional}
-E-mail de Contato: ${emailProfissional || "Plataforma AcolheMente Saúde"}
-Intermediado por: AcolheMente Saúde - Plataforma de Acolhimento e Saúde Mental
+E-mail de Contato: ${emailProfissional || (isExterno ? brandName : "Plataforma AcolheMente Saúde")}
+${isExterno ? `Gestão Clínica e Documentos: ${brandName}` : "Intermediado por: AcolheMente Saúde - Plataforma de Acolhimento e Saúde Mental"}
 
 II. CONTRATANTE (PACIENTE / RESPONSÁVEL LEGAL):
 Nome do Paciente: ${nomePaciente}
-${paciente.responsavelNome ? `Responsável Legal: ${paciente.responsavelNome} (CPF: ${paciente.responsavelCpf || "Conferido"})\n` : ""}CPF: ${cpfPaciente}
+${respNome ? `Responsável Legal: ${respNome} (CPF: ${respCpf || "Conferido"})\n` : ""}CPF: ${cpfPaciente}
 E-mail: ${emailPaciente}
 Telefone/WhatsApp: ${telefonePaciente}
 
@@ -140,5 +163,5 @@ CLÁUSULA 8ª - DA VALIDADE DO ACEITE ELETRÔNICO
 8.1. As partes reconhecem expressamente a plena validade jurídica, eficácia probatória e legitimidade deste contrato por meio de aceite eletrônico, assinatura digital em tela, registro de carimbo temporal e hash criptográfico SHA-256 gerado no momento da confirmação, em conformidade com o Art. 10, § 2º da Medida Provisória nº 2.200-2/2001 e com a Lei nº 14.063/2020.
 
 Emitido em ${hoje}.
-AcolheMente Saúde • Documento Oficial`;
+${brandName} • Documento Oficial`;
 }

@@ -1,14 +1,20 @@
-import { UserProfile } from '../types/user';
+export interface BrandingProfileInput {
+  plano?: string;
+  whiteLabelEnabled?: boolean;
+  companyData?: {
+    razaoSocial?: string;
+  } | null;
+}
 
 export interface AppBranding {
   brandName: string;
   isCustom: boolean;
 }
 
-export const getAppBranding = (profile?: UserProfile | null): AppBranding => {
+export const getAppBranding = (profile?: BrandingProfileInput | null): AppBranding => {
   if (profile?.plano === 'avancado' && profile?.whiteLabelEnabled) {
     return {
-      brandName: 'AcolheHub',
+      brandName: profile.companyData?.razaoSocial?.trim() || 'AcolheHub',
       isCustom: true,
     };
   }

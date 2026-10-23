@@ -175,7 +175,7 @@ export function PropostaLandingView({
       }
     } catch (err) {
       console.error("Erro ao salvar resposta do paciente:", err);
-      alert("Erro ao registrar resposta. Por favor, tente novamente.");
+      setReasonError("Erro ao registrar resposta. Por favor, tente novamente.");
     } finally {
       setIsSubmitting(false);
     }

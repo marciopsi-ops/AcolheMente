@@ -71,24 +71,39 @@ export const ContratoGeradorModal: React.FC<ContratoGeradorModalProps> = ({
   const especialidadeProf =
     profVinculado.especialidade || profissionalLogado?.especialidade || "Psicologia Clínica";
 
+  const isExterno =
+    targetCollection === "pacientes" ||
+    paciente.tipo === "externo" ||
+    paciente.viaAcesso === "Carteira Externa";
+
+  const externalBrandName =
+    profVinculado?.plano === "avancado" &&
+    profVinculado?.whiteLabelEnabled &&
+    profVinculado?.companyData?.razaoSocial?.trim()
+      ? profVinculado.companyData.razaoSocial.trim()
+      : "AcolheHub";
+
   const nomePac =
-    (paciente.beneficiarioTipo === "dependente" && paciente.dependenteInfo)
+    paciente.beneficiarioTipo === "dependente" && paciente.dependenteInfo
       ? paciente.dependenteInfo
-      : (paciente.colaboradorNome || paciente.nome || paciente.nomeCompleto || "Paciente");
+      : paciente.nomeCivil || paciente.colaboradorNome || paciente.nome || paciente.nomeCompleto || "Paciente";
   const emailPac = paciente.email || paciente.colaboradorEmail || "";
   const telPac = paciente.colaboradorWhatsapp || paciente.telefone || paciente.whatsapp || "";
   const cpfPac = paciente.cpf || paciente.colaboradorCpf || "";
   const menorIdade =
+    paciente.isMenorIdade ||
     paciente.menorIdade ||
     paciente.beneficiarioTipo === "dependente" ||
     paciente.tratamentoPara === "Filho(a) / Criança" ||
     false;
   const respNome =
+    paciente.responsavel?.nome ||
     paciente.responsavelNome ||
-    (paciente.beneficiarioTipo === "dependente" ? (paciente.colaboradorNome || "") : "");
+    (paciente.beneficiarioTipo === "dependente" ? paciente.colaboradorNome || "" : "");
   const respCpf =
+    paciente.responsavel?.cpf ||
     paciente.responsavelCpf ||
-    (paciente.beneficiarioTipo === "dependente" ? (paciente.colaboradorCpf || "") : "");
+    (paciente.beneficiarioTipo === "dependente" ? paciente.colaboradorCpf || "" : "");
 
   const valorSessaoBase =
     paciente.valorSessao !== undefined && paciente.valorSessao !== null
@@ -117,7 +132,9 @@ export const ContratoGeradorModal: React.FC<ContratoGeradorModalProps> = ({
     String(valorSessaoBase).replace("R$", "").trim()
   );
   const [frequencia, setFrequencia] = useState<string>(freqSessaoBase);
-  const [chavePix, setChavePix] = useState<string>(profVinculado.chavePix || paciente.chavePix || "");
+  const [chavePix, setChavePix] = useState<string>(
+    profVinculado.chavePix || profVinculado.pixKey || paciente.chavePix || ""
+  );
   const [favorecidoPix, setFavorecidoPix] = useState<string>(
     profVinculado.favorecidoPix || paciente.favorecidoPix || nomeProf
   );
@@ -148,7 +165,7 @@ export const ContratoGeradorModal: React.FC<ContratoGeradorModalProps> = ({
 
     const estMensal = calcularEstimativa(val, freq);
 
-    return MODELO_CONTRATO_PADRAO
+    let compiled = MODELO_CONTRATO_PADRAO
       .replace(/{NOME_PROFISSIONAL}/g, nomeProf)
       .replace(/{CRP_PROFISSIONAL}/g, crpProf)
       .replace(/{EMAIL_PROFISSIONAL}/g, emailProf || "Informado em sessão")
@@ -163,12 +180,29 @@ export const ContratoGeradorModal: React.FC<ContratoGeradorModalProps> = ({
       .replace(/{ESTIMATIVA_MENSAL}/g, estMensal)
       .replace(/{DADOS_PIX}/g, dadosPixTexto)
       .replace(/{DATA_EMISSAO}/g, dataHoje);
+
+    if (isExterno) {
+      compiled = compiled
+        .replace(/\(Projeto AcolheMente\)/g, `(Consultório Particular • ${externalBrandName})`)
+        .replace(/Plataforma Segura AcolheMente Saúde/g, `Plataforma Segura ${externalBrandName}`)
+        .replace(/AcolheMente Saúde/g, externalBrandName)
+        .replace(/AcolheMente/g, externalBrandName);
+    }
+
+    return compiled;
   };
 
   // Inicializa o texto ao abrir
   useEffect(() => {
     if (paciente.contratoText && paciente.contratoText.trim().length > 100) {
-      setTextoContrato(paciente.contratoText);
+      const baseText = isExterno
+        ? paciente.contratoText
+            .replace(/\(Projeto AcolheMente\)/g, `(Consultório Particular • ${externalBrandName})`)
+            .replace(/Plataforma Segura AcolheMente Saúde/g, `Plataforma Segura ${externalBrandName}`)
+            .replace(/AcolheMente Saúde/g, externalBrandName)
+            .replace(/AcolheMente/g, externalBrandName)
+        : paciente.contratoText;
+      setTextoContrato(baseText);
     } else {
       const compilado = gerarTextoCompilado(valorSessao, frequencia, chavePix, favorecidoPix);
       setTextoContrato(compilado);
@@ -176,11 +210,9 @@ export const ContratoGeradorModal: React.FC<ContratoGeradorModalProps> = ({
   }, [paciente.id]);
 
   const handleRegerarModelo = () => {
-    if (window.confirm("Deseja restaurar as cláusulas com o modelo padrão oficial preenchido com os dados atuais?")) {
-      const compilado = gerarTextoCompilado(valorSessao, frequencia, chavePix, favorecidoPix);
-      setTextoContrato(compilado);
-      showToast("Texto do contrato restaurado com sucesso!", "success");
-    }
+    const compilado = gerarTextoCompilado(valorSessao, frequencia, chavePix, favorecidoPix);
+    setTextoContrato(compilado);
+    showToast("Texto do contrato restaurado com os dados atuais!", "success");
   };
 
   const linkAssinaturaPublico = `${window.location.origin}/?contrato=${paciente.id}`;

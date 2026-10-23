@@ -72,7 +72,10 @@ export function ColetaFaturamentoView({ fichaId, onGoHome }: ColetaFaturamentoVi
   const [completed, setCompleted] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [recordData, setRecordData] = useState<any>(null);
-  const [targetCollection, setTargetCollection] = useState<"triagem_corporativa" | "acolhimentos">("triagem_corporativa");
+  const [profBrandName, setProfBrandName] = useState<string>("");
+  const [targetCollection, setTargetCollection] = useState<
+    "triagem_corporativa" | "acolhimentos" | "pacientes"
+  >("triagem_corporativa");
 
   // Campos do formulário
   const [nomeCompleto, setNomeCompleto] = useState("");
@@ -86,7 +89,7 @@ export function ColetaFaturamentoView({ fichaId, onGoHome }: ColetaFaturamentoVi
     window.scrollTo({ top: 0, left: 0, behavior: "instant" });
     const loadData = async () => {
       try {
-        let col: "triagem_corporativa" | "acolhimentos" = "triagem_corporativa";
+        let col: "triagem_corporativa" | "acolhimentos" | "pacientes" = "triagem_corporativa";
         let snap = await getDoc(doc(db, "triagem_corporativa", fichaId));
 
         if (!snap.exists()) {
@@ -96,14 +99,38 @@ export function ColetaFaturamentoView({ fichaId, onGoHome }: ColetaFaturamentoVi
           }
         }
 
+        if (!snap.exists()) {
+          snap = await getDoc(doc(db, "pacientes", fichaId));
+          if (snap.exists()) {
+            col = "pacientes";
+          }
+        }
+
         if (snap.exists()) {
           const d = snap.data();
           setTargetCollection(col);
           setRecordData(d);
 
+          if (d.profissionalId) {
+            try {
+              const pSnap = await getDoc(doc(db, "users", d.profissionalId));
+              if (pSnap.exists()) {
+                const pData = pSnap.data();
+                if (
+                  pData?.plano === "avancado" &&
+                  pData?.whiteLabelEnabled &&
+                  pData?.companyData?.razaoSocial?.trim()
+                ) {
+                  setProfBrandName(pData.companyData.razaoSocial.trim());
+                }
+              }
+            } catch (e) {}
+          }
+
           // Inicializar campos com o que já tiver
           const nomeInicial =
             d.pacienteNomeCompleto ||
+            d.nomeCivil ||
             d.dadosContrato?.pacienteNome ||
             d.dadosContrato?.nome ||
             (d.beneficiarioTipo === "dependente" && d.dependenteInfo ? d.dependenteInfo : d.colaboradorNome) ||
@@ -145,11 +172,22 @@ export function ColetaFaturamentoView({ fichaId, onGoHome }: ColetaFaturamentoVi
           if (emailInicial) setEmail(emailInicial);
           if (telInicial) setTelefone(maskPhone(telInicial));
           if (dataNascInicial) setDataNascimento(dataNascInicial);
-          if (d.endereco) setEndereco(d.endereco);
 
-          // Se já preenchido anteriormente e já possui CPF
-          if (d.dadosFaturamentoPreenchidosEm && cpfInicial) {
-            // Mantém carregado para atualização se desejado
+          if (typeof d.endereco === "string" && d.endereco.trim()) {
+            setEndereco(d.endereco);
+          } else if (typeof d.enderecoCompleto === "string" && d.enderecoCompleto.trim()) {
+            setEndereco(d.enderecoCompleto);
+          } else if (d.endereco && typeof d.endereco === "object") {
+            const eObj = d.endereco;
+            const formattedEnd = [
+              eObj.logradouro ? `${eObj.logradouro}${eObj.numero ? `, ${eObj.numero}` : ""}` : "",
+              eObj.complemento,
+              eObj.bairro,
+              eObj.cidade ? `${eObj.cidade}${eObj.uf ? ` - ${eObj.uf}` : ""}` : "",
+            ]
+              .filter(Boolean)
+              .join(", ");
+            if (formattedEnd) setEndereco(formattedEnd);
           }
         } else {
           setErrorMsg("Ficha cadastral não encontrada ou link expirado.");
@@ -222,15 +260,26 @@ export function ColetaFaturamentoView({ fichaId, onGoHome }: ColetaFaturamentoVi
         pacienteDataNascimento: dataNascimento,
         pacienteEmail: email.trim().toLowerCase(),
         pacienteTelefone: telefone.trim(),
-        colaboradorEmail: email.trim().toLowerCase(),
-        colaboradorDataNascimento: dataNascimento,
         dadosFaturamentoPreenchidosEm: agoraFormatada,
         cpf: cpf.trim(),
         updatedAt: serverTimestamp(),
       };
 
-      if (endereco.trim()) {
-        updates.endereco = endereco.trim();
+      if (targetCollection === "pacientes") {
+        updates.nome = nomeCompleto.trim();
+        updates.nomeCivil = nomeCompleto.trim();
+        updates.email = email.trim().toLowerCase();
+        updates.telefone = telefone.trim();
+        updates.dataNascimento = dataNascimento;
+        if (String(endereco || "").trim()) {
+          updates.enderecoCompleto = String(endereco).trim();
+        }
+      } else {
+        updates.colaboradorEmail = email.trim().toLowerCase();
+        updates.colaboradorDataNascimento = dataNascimento;
+        if (String(endereco || "").trim()) {
+          updates.endereco = String(endereco).trim();
+        }
       }
 
       // Se for triagem corporativa, registra no histórico
@@ -333,7 +382,13 @@ export function ColetaFaturamentoView({ fichaId, onGoHome }: ColetaFaturamentoVi
         <div className="text-center space-y-2">
           <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-100/80 border border-emerald-300/80 text-emerald-900 text-xs font-semibold shadow-2xs">
             <HeartHandshake className="w-4 h-4 text-emerald-700" />
-            <span>AcolheMente Saúde • Atendimento Corporativo</span>
+            <span>
+              {targetCollection === "pacientes" ||
+              recordData?.tipo === "externo" ||
+              recordData?.viaAcesso === "Carteira Externa"
+                ? `${profBrandName || "AcolheHub"} • Consultório Particular`
+                : "AcolheMente Saúde • Atendimento Corporativo"}
+            </span>
           </div>
 
           <h1 className="text-2xl sm:text-3xl font-extrabold font-serif text-emerald-950 tracking-tight">
@@ -510,7 +565,12 @@ export function ColetaFaturamentoView({ fichaId, onGoHome }: ColetaFaturamentoVi
 
       {/* RODAPÉ */}
       <div className="text-center text-[11px] text-stone-400 mt-6">
-        © {new Date().getFullYear()} AcolheMente Saúde • Plataforma de Cuidado Psicológico e Bem-Estar Corporativo
+        © {new Date().getFullYear()}{" "}
+        {targetCollection === "pacientes" ||
+        recordData?.tipo === "externo" ||
+        recordData?.viaAcesso === "Carteira Externa"
+          ? `${profBrandName || "AcolheHub"} • Gestão Clínica Segura em conformidade com o CFP e LGPD`
+          : "AcolheMente Saúde • Plataforma de Cuidado Psicológico e Bem-Estar Corporativo"}
       </div>
     </div>
   );

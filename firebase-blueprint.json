@@ -211,6 +211,50 @@
         "dataSolicitacao": { "type": "string" }
       },
       "required": ["empresaId", "catalogoItemId", "contatoNome", "contatoEmail", "status", "dataSolicitacao"]
+    },
+    "Paciente": {
+      "title": "Paciente",
+      "description": "Cadastro e prontuário de pacientes da carteira externa particular, acolhimento ou acompanhamento clínico.",
+      "type": "object",
+      "properties": {
+        "nome": { "type": "string" },
+        "nomeCivil": { "type": "string" },
+        "nomeSocial": { "type": "string" },
+        "nomeDesejado": { "type": "string" },
+        "email": { "type": "string" },
+        "telefone": { "type": "string" },
+        "dataNascimento": { "type": "string" },
+        "cpf": { "type": "string" },
+        "genero": { "type": "string" },
+        "profissao": { "type": "string" },
+        "isMenorIdade": { "type": "boolean" },
+        "cep": { "type": "string" },
+        "logradouro": { "type": "string" },
+        "numero": { "type": "string" },
+        "complemento": { "type": "string" },
+        "bairro": { "type": "string" },
+        "cidade": { "type": "string" },
+        "uf": { "type": "string" },
+        "enderecoCompleto": { "type": "string" },
+        "queixaPrincipal": { "type": "string" },
+        "motivo": { "type": "string" },
+        "terapiaAnterior": { "type": "string" },
+        "medicacao": { "type": "string" },
+        "contatoEmergencia": { "type": "string" },
+        "modalidade": { "type": "string" },
+        "turnoPreferido": { "type": "string" },
+        "fonteIndicacao": { "type": "string" },
+        "valorSessao": { "type": "string" },
+        "frequenciaSessoes": { "type": "string" },
+        "tipo": { "type": "string", "enum": ["externo", "particular", "acolhimento"] },
+        "viaAcesso": { "type": "string", "enum": ["Carteira Externa", "Triagem Acessível", "Corporativo", "Particular"] },
+        "profissionalId": { "type": "string" },
+        "status": { "type": "string" },
+        "statusTratamento": { "type": "string" },
+        "createdAt": { "type": "timestamp" },
+        "updatedAt": { "type": "timestamp" }
+      },
+      "required": ["nome", "tipo", "profissionalId"]
     }
   },
   "firestore": {
@@ -225,6 +269,14 @@
     "triagem_corporativa": {
       "schema": { "$ref": "#/entities/TriagemCorporativa" },
       "description": "Fichas de bordo corporativas para fluxo de acolhimento conveniado."
+    },
+    "pacientes": {
+      "schema": { "$ref": "#/entities/Paciente" },
+      "description": "Coleção de pacientes particulares e da carteira externa com isolamento por profissionalId."
+    },
+    "agendamentos": {
+      "schema": { "$ref": "#/entities/Agendamento" },
+      "description": "Sessões e agendamentos clínicos da agenda do profissional."
     },
     "servicos_profissionais": {
       "schema": { "$ref": "#/entities/ServicoProfissional" },

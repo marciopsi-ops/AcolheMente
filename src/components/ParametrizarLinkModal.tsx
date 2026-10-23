@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   X,
   Link2,
@@ -18,7 +18,7 @@ import {
   Save,
   CheckCircle2,
 } from "lucide-react";
-import { doc, updateDoc } from "firebase/firestore";
+import { doc, setDoc } from "firebase/firestore";
 import { db } from "../lib/firebase";
 
 interface ParametrizarLinkModalProps {
@@ -77,6 +77,24 @@ export function ParametrizarLinkModal({
   );
   const [savingConfig, setSavingConfig] = useState(false);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const cfg = profile?.configFormularioExterno || {};
+    setTituloPersonalizado(cfg.tituloPersonalizado || "Ficha de Cadastro do Paciente");
+    setMensagemBoasVindas(
+      cfg.mensagemBoasVindas ||
+        "Olá! Por favor, preencha seus dados abaixo para cadastro seguro no consultório."
+    );
+    setSolicitarEndereco(cfg.solicitarEndereco !== false);
+    setSolicitarQueixaPrincipal(cfg.solicitarQueixaPrincipal !== false);
+    setSolicitarDisponibilidade(cfg.solicitarDisponibilidade !== false);
+    setSolicitarContatoEmergencia(cfg.solicitarContatoEmergencia !== false);
+    setValorPadraoConfig(cfg.valorPadrao || "");
+    setModalidadePadraoConfig(cfg.modalidadePadrao || "ambas");
+    if (cfg.valorPadrao !== undefined) setValorSessao(cfg.valorPadrao);
+    if (cfg.modalidadePadrao) setModalidade(cfg.modalidadePadrao);
+  }, [isOpen, profile?.configFormularioExterno]);
+
   if (!isOpen) return null;
 
   // Montagem da URL parametrizada
@@ -105,6 +123,10 @@ export function ParametrizarLinkModal({
   };
 
   const handleSaveConfigs = async () => {
+    if (!profUid) {
+      showToast("Identificador do profissional não localizado.", "error");
+      return;
+    }
     setSavingConfig(true);
     try {
       const configFormularioExterno = {
@@ -118,9 +140,14 @@ export function ParametrizarLinkModal({
         modalidadePadrao: modalidadePadraoConfig,
       };
 
-      await updateDoc(doc(db, "users", profUid), {
-        configFormularioExterno,
-      });
+      await setDoc(
+        doc(db, "users", profUid),
+        { configFormularioExterno },
+        { merge: true }
+      );
+
+      setValorSessao(valorPadraoConfig.trim());
+      setModalidade(modalidadePadraoConfig);
 
       if (onUpdateProfile && profile) {
         onUpdateProfile({ ...profile, configFormularioExterno });

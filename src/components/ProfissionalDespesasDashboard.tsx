@@ -15,6 +15,8 @@ import {
   AlertCircle,
   X,
 } from "lucide-react";
+import { doc, getDoc, setDoc } from "firebase/firestore";
+import { db } from "../lib/firebase";
 
 export interface ExpenseItem {
   id: string;
@@ -96,15 +98,56 @@ export function ProfissionalDespesasDashboard({
   const [isRecurringInput, setIsRecurringInput] = useState(false);
   const [statusInput, setStatusInput] = useState<"paid" | "pending">("paid");
 
+  // Carrega despesas salvas do Firestore ao montar
   useEffect(() => {
-    try {
-      localStorage.setItem(`acolhe_expenses_${profissionalId}`, JSON.stringify(expenses));
-    } catch (e) {}
-  }, [expenses, profissionalId]);
+    if (!profissionalId) return;
+    let cancelled = false;
+    const loadFromFirestore = async () => {
+      try {
+        const snap = await getDoc(doc(db, "users", profissionalId));
+        if (!cancelled && snap.exists()) {
+          const data = snap.data();
+          if (Array.isArray(data?.despesasProfissionais)) {
+            setExpenses(data.despesasProfissionais);
+            try {
+              localStorage.setItem(
+                `acolhe_expenses_${profissionalId}`,
+                JSON.stringify(data.despesasProfissionais)
+              );
+            } catch (e) {}
+          }
+        }
+      } catch (err) {
+        console.error("Erro ao carregar despesas do profissional:", err);
+      }
+    };
+    loadFromFirestore();
+    return () => {
+      cancelled = true;
+    };
+  }, [profissionalId]);
 
-  const handleAddExpense = (e: React.FormEvent) => {
+  const persistExpenses = async (nextList: ExpenseItem[]) => {
+    setExpenses(nextList);
+    try {
+      localStorage.setItem(`acolhe_expenses_${profissionalId}`, JSON.stringify(nextList));
+    } catch (e) {}
+    if (profissionalId) {
+      try {
+        await setDoc(
+          doc(db, "users", profissionalId),
+          { despesasProfissionais: nextList },
+          { merge: true }
+        );
+      } catch (err) {
+        console.error("Erro ao salvar despesas no Firestore:", err);
+      }
+    }
+  };
+
+  const handleAddExpense = async (e: React.FormEvent) => {
     e.preventDefault();
-    const val = parseFloat(amountInput);
+    const val = parseFloat(String(amountInput).replace(",", "."));
     if (isNaN(val) || val <= 0) {
       showToast("Informe um valor válido para a despesa.", "error");
       return;
@@ -125,17 +168,18 @@ export function ProfissionalDespesasDashboard({
       status: statusInput,
     };
 
-    setExpenses([newExpense, ...expenses]);
-    showToast("Despesa lançada com sucesso!", "success");
+    const nextList = [newExpense, ...expenses];
+    await persistExpenses(nextList);
+    showToast("Despesa lançada e salva com sucesso!", "success");
     setShowAddModal(false);
     setDescInput("");
     setAmountInput("");
     setIsRecurringInput(false);
   };
 
-  const handleDeleteExpense = (id: string) => {
-    if (!confirm("Deseja excluir esta despesa permanentemente?")) return;
-    setExpenses(expenses.filter((e) => e.id !== id));
+  const handleDeleteExpense = async (id: string) => {
+    const nextList = expenses.filter((e) => e.id !== id);
+    await persistExpenses(nextList);
     showToast("Despesa removida.", "info");
   };
 

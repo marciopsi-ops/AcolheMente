@@ -163,7 +163,9 @@ export function ContratoLandingView({
   const [signed, setSigned] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
-  const [targetCollection, setTargetCollection] = useState<"acolhimentos" | "triagem_corporativa">("acolhimentos");
+  const [targetCollection, setTargetCollection] = useState<"acolhimentos" | "triagem_corporativa" | "pacientes">("acolhimentos");
+  const [profBrandName, setProfBrandName] = useState<string>("");
+  const [profLogoUrl, setProfLogoUrl] = useState<string>("");
 
   const [formData, setFormData] = useState({
     nome: "",
@@ -196,41 +198,89 @@ export function ContratoLandingView({
     const fetchAcolhimento = async () => {
       try {
         let docSnap = await getDoc(doc(db, "acolhimentos", contratoId));
-        let col: "acolhimentos" | "triagem_corporativa" = "acolhimentos";
+        let col: "acolhimentos" | "triagem_corporativa" | "pacientes" = "acolhimentos";
         if (!docSnap.exists()) {
           docSnap = await getDoc(doc(db, "triagem_corporativa", contratoId));
           if (docSnap.exists()) {
             col = "triagem_corporativa";
           }
         }
+        if (!docSnap.exists()) {
+          docSnap = await getDoc(doc(db, "pacientes", contratoId));
+          if (docSnap.exists()) {
+            col = "pacientes";
+          }
+        }
         if (docSnap.exists()) {
           const docData = docSnap.data();
           setTargetCollection(col);
           setData(docData);
+
+          const isExt =
+            col === "pacientes" ||
+            docData.tipo === "externo" ||
+            docData.viaAcesso === "Carteira Externa";
+
+          if (isExt && docData.profissionalId) {
+            try {
+              const profSnap = await getDoc(doc(db, "users", docData.profissionalId));
+              if (profSnap.exists()) {
+                const pData = profSnap.data();
+                if (pData.plano === "avancado" && pData.whiteLabelEnabled) {
+                  if (pData.companyData?.razaoSocial) {
+                    setProfBrandName(pData.companyData.razaoSocial);
+                  }
+                  if (pData.logoEmpresaUrl) {
+                    setProfLogoUrl(pData.logoEmpresaUrl);
+                  }
+                }
+              }
+            } catch (profErr) {
+              console.warn("Perfil profissional não carregado para branding do contrato:", profErr);
+            }
+          }
+
           const nomeFinal =
             docData.nome ||
             docData.nomeCompleto ||
+            docData.nomeCivil ||
             (docData.beneficiarioTipo === "dependente" && docData.dependenteInfo ? docData.dependenteInfo : docData.colaboradorNome) ||
             "";
-          const isMenor =
+          const isMenor = Boolean(
+            docData.isMenorIdade ||
             docData.menorIdade ||
             docData.beneficiarioTipo === "dependente" ||
-            docData.tratamentoPara === "Filho(a) / Criança" ||
-            false;
-          const resp =
+            docData.tratamentoPara === "Filho(a) / Criança"
+          );
+          const respNome =
+            docData.responsavel?.nome ||
             docData.responsavelNome ||
-            (docData.beneficiarioTipo === "dependente" ? docData.colaboradorNome : "");
+            (docData.beneficiarioTipo === "dependente" ? docData.colaboradorNome : "") ||
+            "";
+          const respCpf =
+            docData.responsavel?.cpf ||
+            docData.responsavelCpf ||
+            "";
+          const respEmail =
+            docData.responsavel?.email ||
+            docData.responsavelEmail ||
+            "";
+
+          const contratanteNome = isMenor && respNome ? respNome : nomeFinal;
+          const contratanteCpf = isMenor && respCpf ? respCpf : (docData.cpf || docData.colaboradorCpf || "");
+          const contratanteEmail = isMenor && respEmail ? respEmail : (docData.email || docData.colaboradorEmail || "");
 
           setFormData((prev) => ({
             ...prev,
-            nome: nomeFinal,
-            email: docData.email || docData.colaboradorEmail || "",
-            cpf: docData.cpf || docData.colaboradorCpf || "",
+            nome: contratanteNome,
+            email: contratanteEmail,
+            cpf: contratanteCpf,
             menorIdade: isMenor,
-            nomeMenor: resp ? nomeFinal : "",
+            nomeMenor: isMenor ? nomeFinal : "",
+            cpfMenor: isMenor && respCpf ? (docData.cpf || "") : "",
           }));
 
-          setNomeRubrica((prev) => prev || nomeFinal);
+          setNomeRubrica((prev) => prev || contratanteNome);
 
           if (docData.contratoAssinado) {
             setSigned(true);
@@ -399,8 +449,18 @@ export function ContratoLandingView({
     e.preventDefault();
     setErrorMsg("");
 
-    if (!formData.nome.trim() || !formData.email.trim() || !formData.cpf.trim()) {
-      setErrorMsg("Por favor, preencha todos os campos obrigatórios (Nome, E-mail e CPF).");
+    const isExterno =
+      targetCollection === "pacientes" ||
+      data?.tipo === "externo" ||
+      data?.viaAcesso === "Carteira Externa";
+    const brandDisplay = isExterno ? (profBrandName || "AcolheHub") : "AcolheMente Saúde";
+
+    if (!formData.nome.trim() || !formData.cpf.trim() || (!isExterno && !formData.email.trim())) {
+      setErrorMsg(
+        isExterno
+          ? "Por favor, preencha todos os campos obrigatórios (Nome e CPF)."
+          : "Por favor, preencha todos os campos obrigatórios (Nome, E-mail e CPF)."
+      );
       return;
     }
 
@@ -436,7 +496,7 @@ export function ContratoLandingView({
         metodoFinal = "digitar";
       }
 
-      const textoParaHash = data.contratoText || "Contrato Terapêutico Padrão AcolheMente Saúde";
+      const textoParaHash = data.contratoText || `Contrato Terapêutico Padrão ${brandDisplay}`;
       const hashContrato = await gerarHashSha256(textoParaHash);
       const now = new Date();
       const dataIso = now.toISOString();
@@ -449,15 +509,18 @@ export function ContratoLandingView({
         second: "2-digit",
       });
 
+      const cleanEmail = formData.email.trim().toLowerCase();
+
       const auditTrail = {
         dataAceite: dataIso,
         dataAceiteFormatada: dataFormatada,
         hashContrato: hashContrato,
         pacienteNome: formData.nome.trim(),
         pacienteCpf: formData.cpf.trim(),
-        pacienteEmail: formData.email.trim().toLowerCase(),
+        pacienteEmail: cleanEmail,
         menorIdade: formData.menorIdade,
-        nomeMenor: formData.menorIdade ? formData.nomeMenor : "",
+        nomeMenor: formData.menorIdade ? formData.nomeMenor.trim() : "",
+        cpfMenor: formData.menorIdade ? formData.cpfMenor.trim() : "",
         rubricaBase64: rubricaBase64 || null,
         metodoAssinatura: metodoFinal,
         estiloFonteRubrica: metodoFinal === "digitar" ? estiloFonteRubrica : null,
@@ -472,19 +535,45 @@ export function ContratoLandingView({
       const updates: any = {
         contratoAssinado: true,
         contratoAssinadoEm: dataFormatada,
-        cpf: formData.cpf.trim(),
         dadosContrato: {
           nome: formData.nome.trim(),
-          email: formData.email.trim().toLowerCase(),
+          email: cleanEmail,
           cpf: formData.cpf.trim(),
           menorIdade: formData.menorIdade,
-          nomeMenor: formData.menorIdade ? formData.nomeMenor : "",
+          nomeMenor: formData.menorIdade ? formData.nomeMenor.trim() : "",
+          cpfMenor: formData.menorIdade ? formData.cpfMenor.trim() : "",
           ...auditTrail,
         },
         notificacao: `${notifAnterior}${notifAssinatura}`,
         statusContrato: "assinado",
         updatedAt: serverTimestamp(),
       };
+
+      if (formData.menorIdade) {
+        updates.isMenorIdade = true;
+        updates.menorIdade = true;
+        updates.responsavelNome = formData.nome.trim();
+        updates.responsavelCpf = formData.cpf.trim();
+        if (cleanEmail) {
+          updates.responsavelEmail = cleanEmail;
+        }
+        if (formData.cpfMenor.trim()) {
+          updates.cpf = formData.cpfMenor.trim();
+        }
+        if (targetCollection === "pacientes") {
+          updates.responsavel = {
+            ...(typeof data.responsavel === "object" && data.responsavel ? data.responsavel : {}),
+            nome: formData.nome.trim(),
+            cpf: formData.cpf.trim(),
+            ...(cleanEmail ? { email: cleanEmail } : {}),
+          };
+        }
+      } else {
+        updates.cpf = formData.cpf.trim();
+        if (cleanEmail && !data.email) {
+          updates.email = cleanEmail;
+        }
+      }
 
       if (targetCollection === "triagem_corporativa") {
         const agora = new Date().toISOString();
@@ -544,18 +633,31 @@ export function ContratoLandingView({
     );
   }
 
+  const isExterno =
+    targetCollection === "pacientes" ||
+    data?.tipo === "externo" ||
+    data?.viaAcesso === "Carteira Externa";
+  const brandDisplay = isExterno ? (profBrandName || "AcolheHub") : "AcolheMente Saúde";
+
   // TELA DE SUCESSO / CONTRATO JÁ ASSINADO COM SELO DE AUDITORIA
   if (signed) {
     const audit = data.dadosContrato || {};
     return (
       <div className="min-h-screen bg-warm/40 flex flex-col items-center py-12 px-4 selection:bg-emerald-100">
         <nav className="max-w-4xl w-full mb-6 flex items-center justify-between">
-          <div className="flex items-center gap-3 cursor-pointer" onClick={onGoHome || onBack}>
-            <div className="w-10 h-10 bg-emerald-700 text-white rounded-xl flex items-center justify-center shadow-xs">
-              <Leaf className="w-5 h-5" />
-            </div>
+          <div
+            className={`flex items-center gap-3 ${isExterno ? "" : "cursor-pointer"}`}
+            onClick={isExterno ? undefined : (onGoHome || onBack)}
+          >
+            {isExterno && profLogoUrl ? (
+              <img src={profLogoUrl} alt={brandDisplay} className="h-10 w-auto max-w-[140px] object-contain rounded-lg" />
+            ) : (
+              <div className="w-10 h-10 bg-emerald-700 text-white rounded-xl flex items-center justify-center shadow-xs">
+                <Leaf className="w-5 h-5" />
+              </div>
+            )}
             <span className="font-serif text-xl font-bold tracking-tight text-forest">
-              AcolheMente Saúde
+              {brandDisplay}
             </span>
           </div>
 
@@ -666,12 +768,19 @@ export function ContratoLandingView({
   return (
     <div className="min-h-screen bg-warm/40 flex flex-col selection:bg-emerald-100">
       <nav className="p-4 md:px-12 flex items-center justify-between bg-white/70 backdrop-blur-md sticky top-0 z-50 border-b border-soft">
-        <div className="flex items-center gap-3 cursor-pointer" onClick={onBack || onGoHome}>
-          <div className="w-10 h-10 bg-emerald-700 text-white rounded-xl flex items-center justify-center shadow-xs">
-            <Leaf className="w-5 h-5" />
-          </div>
+        <div
+          className={`flex items-center gap-3 ${isExterno ? "" : "cursor-pointer"}`}
+          onClick={isExterno ? undefined : (onBack || onGoHome)}
+        >
+          {isExterno && profLogoUrl ? (
+            <img src={profLogoUrl} alt={brandDisplay} className="h-10 w-auto max-w-[140px] object-contain rounded-lg" />
+          ) : (
+            <div className="w-10 h-10 bg-emerald-700 text-white rounded-xl flex items-center justify-center shadow-xs">
+              <Leaf className="w-5 h-5" />
+            </div>
+          )}
           <span className="font-serif text-xl sm:text-2xl font-bold tracking-tight text-forest">
-            AcolheMente Saúde
+            {brandDisplay}
           </span>
         </div>
 
@@ -682,15 +791,17 @@ export function ContratoLandingView({
         </div>
       </nav>
 
-      <div className="max-w-5xl mx-auto w-full px-4 md:px-8 mt-4">
-        <Breadcrumbs
-          items={[
-            { label: "Início", onClick: onBack || onGoHome },
-            { label: "Contrato Terapêutico & Aceite", active: true },
-          ]}
-          className="!px-0 !mt-0"
-        />
-      </div>
+      {!isExterno && (
+        <div className="max-w-5xl mx-auto w-full px-4 md:px-8 mt-4">
+          <Breadcrumbs
+            items={[
+              { label: "Início", onClick: onBack || onGoHome },
+              { label: "Contrato Terapêutico & Aceite", active: true },
+            ]}
+            className="!px-0 !mt-0"
+          />
+        </div>
+      )}
 
       <main className="flex-1 max-w-5xl mx-auto w-full p-4 md:p-8 space-y-8">
         {/* Cabeçalho da Proposta / Contrato */}
@@ -811,11 +922,11 @@ export function ContratoLandingView({
 
             <div className="space-y-1.5 sm:col-span-3">
               <label className="text-xs font-bold uppercase tracking-wider text-forest/80">
-                E-mail para Recebimento de Comprovantes <span className="text-rose-600">*</span>
+                E-mail para Recebimento de Comprovantes {!isExterno && <span className="text-rose-600">*</span>}
               </label>
               <input
                 type="email"
-                required
+                required={!isExterno}
                 value={formData.email}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                 className="w-full bg-warm/30 text-sm text-forest border border-soft rounded-xl p-3 focus:outline-none focus:ring-2 focus:ring-emerald-600 shadow-2xs"
@@ -1082,7 +1193,11 @@ export function ContratoLandingView({
       </main>
 
       <footer className="w-full max-w-5xl mx-auto p-6 md:p-8 text-center text-xs text-forest/50 mt-auto">
-        <p>Projeto AcolheMente Saúde • Plataforma de Apoio e Gestão em Psicologia • Resoluções CFP 11/2018 e 04/2020 • Em conformidade com a LGPD (Lei nº 13.709/2018).</p>
+        {isExterno ? (
+          <p>{brandDisplay} • Gestão Clínica e Documentos Digitais • Resoluções CFP 11/2018 e 04/2020 • Em conformidade com a LGPD (Lei nº 13.709/2018).</p>
+        ) : (
+          <p>Projeto AcolheMente Saúde • Plataforma de Apoio e Gestão em Psicologia • Resoluções CFP 11/2018 e 04/2020 • Em conformidade com a LGPD (Lei nº 13.709/2018).</p>
+        )}
       </footer>
     </div>
   );

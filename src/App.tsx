@@ -451,6 +451,12 @@ export default function App() {
       );
       setPublicPortalEmpresaId(p.get("portal_empresa") || p.get("portal_rh") || p.get("empresa_portal"));
       setPublicArtigoId(p.get("artigo"));
+      setPublicFaturamentoId(
+        p.get("dados_faturamento") ||
+        p.get("faturamento_dados") ||
+        p.get("cadastro_recibo") ||
+        p.get("recibo_dados")
+      );
       const v = p.get("view");
       if (
         window.location.pathname.includes("cadastro_externo") ||
@@ -493,6 +499,7 @@ export default function App() {
     publicServiceId,
     publicEventoId,
     publicContratoId,
+    publicFaturamentoId,
     publicPropostaId,
     publicArtigoId,
   ]);
@@ -564,6 +571,7 @@ export default function App() {
     setPublicFichaEmpresaId(null);
     setPublicPortalEmpresaId(null);
     setPublicArtigoId(null);
+    setPublicFaturamentoId(null);
     setCurrentView("landing");
   };
 
@@ -598,27 +606,9 @@ export default function App() {
   // Visualização prioritária do formulário para paciente (externo ou atualização)
   if (currentView === "cadastro_externo") {
     return (
-      <>
-        <ExternalPatientLandingView
-          profUid={publicProfUid}
-          onGoHome={handleGoToLanding}
-        />
-        <PWAInstallBanner />
-      </>
-    );
-  }
-
-  if (publicProfUid) {
-    return (
-      <PublicProfProfileView
+      <ExternalPatientLandingView
         profUid={publicProfUid}
-        onBack={handleBackFromPublicProfile}
         onGoHome={handleGoToLanding}
-        onReadArtigo={(artigoId) => {
-          setPublicProfUid(null);
-          setPublicArtigoId(artigoId);
-          setCurrentView("blog");
-        }}
       />
     );
   }
@@ -669,6 +659,21 @@ export default function App() {
         empresaId={publicFichaEmpresaId}
         onBack={handleBackFromPublicProfile}
         onGoHome={handleGoToLanding}
+      />
+    );
+  }
+
+  if (publicProfUid) {
+    return (
+      <PublicProfProfileView
+        profUid={publicProfUid}
+        onBack={handleBackFromPublicProfile}
+        onGoHome={handleGoToLanding}
+        onReadArtigo={(artigoId) => {
+          setPublicProfUid(null);
+          setPublicArtigoId(artigoId);
+          setCurrentView("blog");
+        }}
       />
     );
   }
