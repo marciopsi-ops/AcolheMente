@@ -818,7 +818,7 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
                       <span className="text-[10px] text-forest/50 font-bold mr-1">R$</span>
                       <input
                         type="number"
-                        step="5"
+                        step="0.01"
                         min="0"
                         value={sessao.valor || 0}
                         onChange={(e) => handleUpdateItem(sessao.id, "valor", parseFloat(e.target.value) || 0)}

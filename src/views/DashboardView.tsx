@@ -9472,59 +9472,61 @@ export function DashboardView({
                     </div>
                   </div>
 
-                  {/* Bloco de Compartilhamento do Link */}
-                  <div className="w-full md:w-auto md:min-w-[340px] flex flex-col gap-1.5 bg-warm/50 p-3 rounded-xl border border-soft">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-bold text-forest flex items-center gap-1.5">
-                        <Link2 className="w-3.5 h-3.5 text-forest/70" />
-                        Link do Formulário para Paciente
-                      </span>
-                      {copiouLinkExterno && (
-                        <span className="text-[10px] text-emerald-700 font-bold flex items-center gap-1">
-                          <Check className="w-3 h-3" /> Copiado!
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1 bg-white px-2.5 py-1.5 rounded-lg border border-soft text-[11px] font-mono text-forest/80 truncate">
-                        {typeof window !== "undefined"
-                          ? `${window.location.origin}/cadastro_externo?prof=${profile?.uid || user?.uid}`
-                          : ""}
+                  {/* Bloco de Compartilhamento do Link (Otimizado sem link escrito, com ícones e descrição básica) */}
+                  <div className="w-full md:w-auto flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-warm/50 p-3 sm:px-4 sm:py-3 rounded-2xl border border-soft shadow-2xs">
+                    <div className="flex flex-col pr-1">
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-forest">
+                        <Link2 className="w-3.5 h-3.5 text-forest/70 shrink-0" />
+                        <span>Formulário para Pacientes</span>
+                        {copiouLinkExterno && (
+                          <span className="ml-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                            Copiado!
+                          </span>
+                        )}
                       </div>
+                      <p className="text-[11px] text-forest/65 mt-0.5">
+                        Envie para seus pacientes particulares realizarem o cadastro ou atualização cadastral.
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 shrink-0 w-full sm:w-auto justify-end">
                       <button
                         type="button"
                         onClick={() => {
-                          const url = `${window.location.origin}/cadastro_externo?prof=${profile?.uid || user?.uid}`;
+                          const url = `${window.location.origin}/?view=cadastro_externo&prof=${profile?.uid || user?.uid}`;
                           if (navigator?.clipboard?.writeText) {
                             navigator.clipboard.writeText(url);
                           }
                           setCopiouLinkExterno(true);
+                          if (typeof showToast === "function") {
+                            showToast("Link do formulário copiado com sucesso!", "success");
+                          }
                           setTimeout(() => setCopiouLinkExterno(false), 2500);
                         }}
-                        className="px-3 py-1.5 bg-forest hover:bg-forest/90 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer shrink-0"
-                        title="Copiar link"
+                        className="px-3 py-1.5 bg-forest hover:bg-forest/90 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer active:scale-95"
+                        title="Copiar link do formulário"
                       >
-                        <Copy className="w-3.5 h-3.5" />
-                        <span>Copiar</span>
+                        {copiouLinkExterno ? <Check className="w-3.5 h-3.5 text-sun" /> : <Copy className="w-3.5 h-3.5" />}
+                        <span>{copiouLinkExterno ? "Copiado" : "Copiar Link"}</span>
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const url = `${window.location.origin}/cadastro_externo?prof=${profile?.uid || user?.uid}`;
-                          window.open(url, "_blank");
-                        }}
-                        className="p-1.5 bg-white hover:bg-warm border border-soft text-forest/70 hover:text-forest rounded-lg transition-colors cursor-pointer shrink-0"
-                        title="Abrir formulário em nova aba"
+
+                      <a
+                        href={`${typeof window !== "undefined" ? window.location.origin : ""}/?view=cadastro_externo&prof=${profile?.uid || user?.uid}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-1.5 sm:p-2 bg-white hover:bg-warm border border-soft text-forest/70 hover:text-forest rounded-xl transition-all shadow-2xs cursor-pointer flex items-center justify-center hover:border-forest/30"
+                        title="Abrir formulário do paciente em nova aba"
                       >
                         <ExternalLink className="w-3.5 h-3.5" />
-                      </button>
+                      </a>
+
                       <button
                         type="button"
                         onClick={() => setShowParametrizarLinkModal(true)}
-                        className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer shrink-0"
-                        title="Parametrizar Link e Configurações do Formulário"
+                        className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer active:scale-95"
+                        title="Parametrizar link e configurações do formulário"
                       >
-                        <Sliders className="w-3.5 h-3.5 text-emerald-700" />
+                        <Sliders className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
                         <span>Parametrizar</span>
                       </button>
                     </div>
@@ -9891,7 +9893,7 @@ export function DashboardView({
                             <input
                               type="number"
                               min="0"
-                              step="5"
+                              step="0.01"
                               value={novoExtValor}
                               onChange={(e) => setNovoExtValor(e.target.value)}
                               className="w-full px-3 py-2 bg-warm/30 border border-soft rounded-xl text-forest focus:outline-none focus:ring-2 focus:ring-forest/30 font-bold"
@@ -17628,7 +17630,7 @@ export function DashboardView({
                 }`}
               >
                 <Building2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-sun-dark shrink-0" />
-                <span>Dados da Empresa</span>
+                <span>Dados & Contatos Fiscais</span>
               </button>
 
               <button
@@ -17897,7 +17899,7 @@ export function DashboardView({
                               </label>
                               <input
                                 type="number"
-                                step="0.10"
+                                step="0.01"
                                 min="0"
                                 placeholder="2.00"
                                 className="text-sm bg-white border border-soft px-3 py-1.5 rounded-lg font-semibold text-forest focus:outline-none focus:border-sun-dark"
@@ -17920,7 +17922,7 @@ export function DashboardView({
                               </label>
                               <input
                                 type="number"
-                                step="0.10"
+                                step="0.01"
                                 min="0"
                                 placeholder="1.00"
                                 className="text-sm bg-white border border-soft px-3 py-1.5 rounded-lg font-semibold text-forest focus:outline-none focus:border-sun-dark"
@@ -18030,11 +18032,17 @@ export function DashboardView({
                     </div>
                   </section>
 
-              {/* 1. DADOS CADASTRAIS (Razão Social & CNPJ) */}
-              <section className="bg-warm/30 p-5 rounded-2xl border border-soft">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-3 flex items-center gap-2">
-                  <Building2 className="w-4 h-4 text-sun-dark" /> Dados Cadastrais da Empresa
-                </h4>
+              {/* 1. DADOS CADASTRAIS & INFORMAÇÕES FISCAIS */}
+              <section className="bg-warm/30 p-5 rounded-2xl border border-soft space-y-4">
+                <div className="flex items-center justify-between pb-2 border-b border-soft">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-forest flex items-center gap-2">
+                    <Building2 className="w-4 h-4 text-sun-dark" /> Dados Cadastrais & Informações Fiscais
+                  </h4>
+                  <span className="text-[10px] font-bold text-forest/60 bg-white px-2 py-0.5 rounded-md border border-soft">
+                    Cadastro Oficial PJ
+                  </span>
+                </div>
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
                   <div className="flex flex-col gap-1">
                     <label className="text-[10px] font-semibold uppercase text-forest/70 ml-2">
@@ -18075,7 +18083,7 @@ export function DashboardView({
                       CNPJ
                     </label>
                     <DebouncedInput
-                      className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark"
+                      className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark font-mono"
                       placeholder="00.000.000/0001-00"
                       value={selectedEmpresa.cnpj || ""}
                       onChange={(val) =>
@@ -18130,14 +18138,80 @@ export function DashboardView({
                     </div>
                   </div>
                 </div>
+
+                {/* Linha Fiscal Adicional: Inscrição Estadual, Inscrição Municipal e Endereço */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 pt-1">
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-semibold uppercase text-forest/70 ml-2">
+                      Inscrição Estadual (IE)
+                    </label>
+                    <DebouncedInput
+                      className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark font-mono"
+                      placeholder="Isento ou nº da IE"
+                      value={selectedEmpresa.inscricaoEstadual || ""}
+                      onChange={(val) =>
+                        handleUpdateEmpresaProperty(
+                          selectedEmpresa.id,
+                          "inscricaoEstadual",
+                          val,
+                        )
+                      }
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-semibold uppercase text-forest/70 ml-2">
+                      Inscrição Municipal (IM)
+                    </label>
+                    <DebouncedInput
+                      className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark font-mono"
+                      placeholder="Nº da IM (Prefeitura)"
+                      value={selectedEmpresa.inscricaoMunicipal || ""}
+                      onChange={(val) =>
+                        handleUpdateEmpresaProperty(
+                          selectedEmpresa.id,
+                          "inscricaoMunicipal",
+                          val,
+                        )
+                      }
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1 sm:col-span-2">
+                    <label className="text-[10px] font-semibold uppercase text-forest/70 ml-2">
+                      Endereço Fiscal / Sede da Empresa
+                    </label>
+                    <DebouncedInput
+                      className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark"
+                      placeholder="Logradouro, nº, bairro, cidade - UF, CEP"
+                      value={selectedEmpresa.endereco || selectedEmpresa.local || ""}
+                      onChange={(val) => {
+                        handleUpdateEmpresaProperty(
+                          selectedEmpresa.id,
+                          "endereco",
+                          val,
+                        );
+                        handleUpdateEmpresaProperty(
+                          selectedEmpresa.id,
+                          "local",
+                          val,
+                        );
+                      }}
+                    />
+                  </div>
+                </div>
               </section>
 
-              {/* 2. RESPONSÁVEL E CONTATO */}
-              <section className="bg-warm/30 p-5 rounded-2xl border border-soft">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-3 flex items-center gap-2">
-                  <UserCheck className="w-4 h-4 text-sun-dark" /> Responsável Legal e Contato Principal
-                </h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* 2. RESPONSÁVEL LEGAL E CONTATOS PRINCIPAIS */}
+              <section className="bg-warm/30 p-5 rounded-2xl border border-soft space-y-4">
+                <div className="flex items-center justify-between pb-2 border-b border-soft">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-forest flex items-center gap-2">
+                    <UserCheck className="w-4 h-4 text-sun-dark" /> Responsável Legal & Contatos Principais
+                  </h4>
+                  <span className="text-[10px] font-bold text-forest/60 bg-white px-2 py-0.5 rounded-md border border-soft">
+                    Contatos Corporativos
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
                   <div className="flex flex-col gap-1">
                     <label className="text-[10px] font-semibold uppercase text-forest/70 ml-2">
                       Nome do Responsável
@@ -18165,7 +18239,7 @@ export function DashboardView({
                       CPF do Responsável
                     </label>
                     <DebouncedInput
-                      className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark"
+                      className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark font-mono"
                       placeholder="000.000.000-00"
                       value={selectedEmpresa.cpfResponsavel || ""}
                       onChange={(val) =>
@@ -18179,8 +18253,61 @@ export function DashboardView({
                   </div>
                   <div className="flex flex-col gap-1">
                     <label className="text-[10px] font-semibold uppercase text-forest/70 ml-2">
-                      E-mail Principal
+                      Cargo / Departamento
                     </label>
+                    <DebouncedInput
+                      className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark"
+                      placeholder="Ex: Diretor de RH, Gestor de Pessoas"
+                      value={selectedEmpresa.contatoDepartamento || selectedEmpresa.cargoResponsavel || ""}
+                      onChange={(val) => {
+                        handleUpdateEmpresaProperty(
+                          selectedEmpresa.id,
+                          "contatoDepartamento",
+                          val,
+                        );
+                        handleUpdateEmpresaProperty(
+                          selectedEmpresa.id,
+                          "cargoResponsavel",
+                          val,
+                        );
+                      }}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-semibold uppercase text-forest/70 ml-2">
+                      Ramo de Atividade
+                    </label>
+                    <DebouncedInput
+                      className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark"
+                      placeholder="Ex: Tecnologia, Indústria, Saúde"
+                      value={selectedEmpresa.ramoAtividade || ""}
+                      onChange={(val) =>
+                        handleUpdateEmpresaProperty(
+                          selectedEmpresa.id,
+                          "ramoAtividade",
+                          val,
+                        )
+                      }
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-center justify-between ml-2">
+                      <label className="text-[10px] font-semibold uppercase text-forest/70">
+                        E-mail Principal
+                      </label>
+                      {selectedEmpresa.email && (
+                        <a
+                          href={`mailto:${selectedEmpresa.email}`}
+                          className="text-[10px] font-semibold text-sun-dark hover:underline flex items-center gap-1"
+                          title="Enviar e-mail para este contato"
+                        >
+                          <Mail className="w-3 h-3" /> Enviar e-mail
+                        </a>
+                      )}
+                    </div>
                     <DebouncedInput
                       type="email"
                       className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark"
@@ -18196,9 +18323,22 @@ export function DashboardView({
                     />
                   </div>
                   <div className="flex flex-col gap-1">
-                    <label className="text-[10px] font-semibold uppercase text-forest/70 ml-2">
-                      Telefone
-                    </label>
+                    <div className="flex items-center justify-between ml-2">
+                      <label className="text-[10px] font-semibold uppercase text-forest/70">
+                        Telefone / WhatsApp
+                      </label>
+                      {selectedEmpresa.telefone && (
+                        <a
+                          href={`https://wa.me/55${(selectedEmpresa.telefone || "").replace(/\D/g, "")}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[10px] font-semibold text-emerald-700 hover:underline flex items-center gap-1"
+                          title="Abrir WhatsApp"
+                        >
+                          <Phone className="w-3 h-3" /> Iniciar WhatsApp
+                        </a>
+                      )}
+                    </div>
                     <DebouncedInput
                       className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark"
                       placeholder="(11) 99999-9999"
@@ -18215,395 +18355,43 @@ export function DashboardView({
                 </div>
               </section>
 
-              {/* 3. ESCOPO: QUANTIDADE DE VIDAS E PRODUTOS CONTRATADOS */}
-              <section className="bg-warm/30 p-5 rounded-2xl border border-soft">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-3 flex items-center gap-2">
-                  <Users className="w-4 h-4 text-sun-dark" /> Quantidade de Vidas & Produtos Contratados
+              {/* 3. REGISTROS DE REUNIÕES, CONTATOS & ALERTAS INTERNOS */}
+              <section className="bg-warm/30 p-5 rounded-2xl border border-soft space-y-4">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-forest/70 flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-sun-dark" /> Registros de Contatos, Reuniões & Alertas Internos
                 </h4>
+
                 <div className="space-y-4">
-                  {/* Caixa de seleção com sequência numérica para escolha de vidas */}
-                  <div className="flex flex-col gap-1.5 max-w-lg">
-                    <div className="flex items-center justify-between">
-                      <label className="text-[10px] font-semibold uppercase text-forest/70 ml-2 flex items-center gap-1.5">
-                        <Users className="w-3.5 h-3.5 text-sun-dark" />
-                        Quantidade de Vidas (Sequência Numérica)
-                      </label>
-                      {(selectedEmpresa.quantidadeVidas || selectedEmpresa.colaboradores) && (
-                        <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                          {selectedEmpresa.quantidadeVidas || selectedEmpresa.colaboradores} vidas
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="space-y-2">
-                      <select
-                        className="w-full text-sm bg-white border border-soft px-4 py-2.5 rounded-xl font-semibold text-forest focus:outline-none focus:border-sun-dark cursor-pointer shadow-xs"
-                        value={(() => {
-                          const val = selectedEmpresa.quantidadeVidas || selectedEmpresa.colaboradores || "";
-                          const num = parseInt(String(val).replace(/\D/g, ""), 10);
-                          return !isNaN(num) && num > 0 ? String(num) : (val ? "custom" : "");
-                        })()}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          if (val === "custom") {
-                            // Mantém valor atual para digitação
-                          } else if (val) {
-                            handleUpdateEmpresaProperty(selectedEmpresa.id, "quantidadeVidas", val);
-                            handleUpdateEmpresaProperty(selectedEmpresa.id, "colaboradores", val);
-                          }
-                        }}
-                      >
-                        <option value="">Selecione na sequência numérica...</option>
-                        {SEQUENCIA_NUMERICA_VIDAS_OPCOES.map((grupo) => (
-                          <optgroup key={grupo.label} label={grupo.label}>
-                            {grupo.opcoes.map((num) => (
-                              <option key={num} value={String(num)}>
-                                {num} {num === 1 ? "vida (colaborador)" : "vidas (colaboradores)"}
-                              </option>
-                            ))}
-                          </optgroup>
-                        ))}
-                        <option value="custom">Outra quantidade exata (Digitar abaixo)...</option>
-                      </select>
-
-                      {/* Digitação manual se for quantidade personalizada */}
-                      <div className="flex items-center gap-2">
-                        <DebouncedInput
-                          className="flex-1 text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark font-mono font-bold"
-                          placeholder="Número exato de vidas (ex: 73)"
-                          value={selectedEmpresa.quantidadeVidas || selectedEmpresa.colaboradores || ""}
-                          onChange={(val) => {
-                            const digits = String(val).replace(/\D/g, "");
-                            handleUpdateEmpresaProperty(
-                              selectedEmpresa.id,
-                              "quantidadeVidas",
-                              digits || val,
-                            );
-                            handleUpdateEmpresaProperty(
-                              selectedEmpresa.id,
-                              "colaboradores",
-                              digits || val,
-                            );
-                          }}
-                        />
-                        <span className="text-xs text-forest/60 font-semibold pr-1">vidas</span>
-                      </div>
-
-                      {/* Atalhos Rápidos */}
-                      <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                        <span className="text-[10px] text-forest/50 font-medium">Atalhos:</span>
-                        {[10, 25, 50, 100, 200, 500].map((qtd) => (
-                          <button
-                            key={qtd}
-                            type="button"
-                            onClick={() => {
-                              handleUpdateEmpresaProperty(selectedEmpresa.id, "quantidadeVidas", String(qtd));
-                              handleUpdateEmpresaProperty(selectedEmpresa.id, "colaboradores", String(qtd));
-                            }}
-                            className={`text-[11px] px-2 py-0.5 rounded-lg border transition-all cursor-pointer ${
-                              String(selectedEmpresa.quantidadeVidas || selectedEmpresa.colaboradores) === String(qtd)
-                                ? "bg-forest text-white border-forest font-bold"
-                                : "bg-white border-soft hover:border-sun-dark text-forest/80"
-                            }`}
-                          >
-                            {qtd} vidas
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-
                   <div className="flex flex-col gap-1">
                     <label className="text-[10px] font-semibold uppercase text-forest/70 ml-2">
-                      Produtos Contratados
+                      Histórico de Reuniões e Contatos Comerciais
                     </label>
                     <DebouncedTextArea
-                      className="w-full text-sm bg-white border border-soft px-4 py-3 rounded-2xl focus:outline-none focus:border-sun-dark resize-none h-28"
-                      placeholder="Descreva os produtos e serviços acordados com a empresa..."
-                      value={selectedEmpresa.produtosContratados || selectedEmpresa.servicosOferecidos || ""}
-                      onChange={(val) => {
-                        handleUpdateEmpresaProperty(
-                          selectedEmpresa.id,
-                          "produtosContratados",
-                          val,
-                        );
-                        handleUpdateEmpresaProperty(
-                          selectedEmpresa.id,
-                          "servicosOferecidos",
-                          val,
-                        );
-                      }}
-                    />
-                    <div className="flex flex-wrap gap-1.5 mt-1">
-                      {[
-                        "Acolhimento Psicológico Online",
-                        "Palestras & Treinamentos NR-1",
-                        "Plantão de Apoio Emocional",
-                        "Diagnóstico Psicossocial",
-                        "Canal Confidencial",
-                      ].map((item) => (
-                        <button
-                          key={item}
-                          type="button"
-                          onClick={() => {
-                            const current = selectedEmpresa.produtosContratados || selectedEmpresa.servicosOferecidos || "";
-                            const updated = current ? `${current}\n• ${item}` : `• ${item}`;
-                            handleUpdateEmpresaProperty(selectedEmpresa.id, "produtosContratados", updated);
-                            handleUpdateEmpresaProperty(selectedEmpresa.id, "servicosOferecidos", updated);
-                          }}
-                          className="text-[11px] bg-white border border-soft hover:border-sun-dark px-2.5 py-1 rounded-lg text-forest/70 transition-colors"
-                        >
-                          + {item}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </section>
-
-              {/* 4. CONDIÇÕES COMERCIAIS & FINANCEIRO */}
-              <section className="bg-warm/30 p-5 rounded-2xl border border-soft">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-3 flex items-center gap-2">
-                  <CreditCard className="w-4 h-4 text-sun-dark" /> Condições Financeiras & Variações de Contrato
-                </h4>
-                <div className="space-y-4">
-                  <div className="flex items-center gap-3 bg-white p-3 rounded-xl border border-soft">
-                    <input
-                      type="checkbox"
-                      id="contrato"
-                      checked={selectedEmpresa.contratoAssinado || false}
-                      onChange={(e) =>
-                        handleUpdateEmpresaProperty(
-                          selectedEmpresa.id,
-                          "contratoAssinado",
-                          e.target.checked,
-                        )
-                      }
-                      className="w-5 h-5 accent-sun-dark cursor-pointer rounded"
-                    />
-                    <label
-                      htmlFor="contrato"
-                      className="text-sm font-medium text-forest cursor-pointer"
-                    >
-                      Contrato Final Assinado
-                    </label>
-                  </div>
-
-                  {/* Campos Dedicados: Valor por Vida (R$) e Valor Mensal (R$) */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {/* Campo Valor por Vida */}
-                    <div className="flex flex-col gap-1">
-                      <div className="flex items-center justify-between ml-2">
-                        <label className="text-[10px] font-semibold uppercase text-forest/70">
-                          Valor por Vida em Reais (R$)
-                        </label>
-                        <span className="text-[9px] text-forest/50 font-mono">Por colaborador / mês</span>
-                      </div>
-                      <div className="flex items-center gap-2 bg-white border border-soft px-3 py-1.5 rounded-xl focus-within:border-sun-dark">
-                        <span className="text-xs font-bold text-forest/50">R$</span>
-                        <input
-                          type="number"
-                          step="0.50"
-                          min="0"
-                          className="w-full text-sm font-mono font-bold text-forest outline-none bg-transparent"
-                          placeholder="0,00"
-                          value={selectedEmpresa.valorPorVida !== undefined ? selectedEmpresa.valorPorVida : (selectedEmpresa.faturamentoConfig?.valorPorVida || "")}
-                          onChange={(e) => {
-                            const val = parseFloat(e.target.value) || 0;
-                            handleUpdateEmpresaProperty(selectedEmpresa.id, "valorPorVida", val);
-                            const curConfig = selectedEmpresa.faturamentoConfig || {};
-                            handleUpdateEmpresaProperty(selectedEmpresa.id, "faturamentoConfig", {
-                              ...curConfig,
-                              valorPorVida: val,
-                            });
-                          }}
-                        />
-                      </div>
-                      <span className="text-[10px] text-forest/50 ml-2">
-                        Preço por vida ativa para faturamento variável.
-                      </span>
-                    </div>
-
-                    {/* Campo Valor Mensal */}
-                    <div className="flex flex-col gap-1">
-                      <div className="flex items-center justify-between ml-2">
-                        <label className="text-[10px] font-semibold uppercase text-forest/70">
-                          Valor Mensal em Reais (R$)
-                        </label>
-                        <span className="text-[9px] text-forest/50 font-mono">Fixo / Contratual</span>
-                      </div>
-                      <div className="flex items-center gap-2 bg-white border border-soft px-3 py-1.5 rounded-xl focus-within:border-sun-dark">
-                        <span className="text-xs font-bold text-forest/50">R$</span>
-                        <input
-                          type="number"
-                          step="10.00"
-                          min="0"
-                          className="w-full text-sm font-mono font-bold text-forest outline-none bg-transparent"
-                          placeholder="0,00"
-                          value={selectedEmpresa.valorMensal !== undefined ? selectedEmpresa.valorMensal : (selectedEmpresa.valorFixoMensal !== undefined ? selectedEmpresa.valorFixoMensal : (selectedEmpresa.faturamentoConfig?.valorMensal || selectedEmpresa.faturamentoConfig?.valorFixoMensal || ""))}
-                          onChange={(e) => {
-                            const val = parseFloat(e.target.value) || 0;
-                            handleUpdateEmpresaProperty(selectedEmpresa.id, "valorMensal", val);
-                            handleUpdateEmpresaProperty(selectedEmpresa.id, "valorFixoMensal", val);
-                            const curConfig = selectedEmpresa.faturamentoConfig || {};
-                            handleUpdateEmpresaProperty(selectedEmpresa.id, "faturamentoConfig", {
-                              ...curConfig,
-                              valorMensal: val,
-                              valorFixoMensal: val,
-                            });
-                          }}
-                        />
-                      </div>
-                      <span className="text-[10px] text-forest/50 ml-2">
-                        Valor total acordado da mensalidade corporativa.
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Diagnóstico Contratual e Cálculos Rápidos */}
-                  {(() => {
-                    const vidasNum = parseInt(String(selectedEmpresa.quantidadeVidas || selectedEmpresa.colaboradores || "").replace(/\D/g, ""), 10) || 0;
-                    const porVidaNum = Number(selectedEmpresa.valorPorVida ?? selectedEmpresa.faturamentoConfig?.valorPorVida ?? 0);
-                    const mensalNum = Number(selectedEmpresa.valorMensal ?? selectedEmpresa.valorFixoMensal ?? selectedEmpresa.faturamentoConfig?.valorMensal ?? selectedEmpresa.faturamentoConfig?.valorFixoMensal ?? 0);
-                    const calculadoMensal = vidasNum * porVidaNum;
-                    const porVidaEquiv = vidasNum > 0 && mensalNum > 0 ? mensalNum / vidasNum : 0;
-
-                    return (
-                      <div className="bg-white/90 border border-soft rounded-xl p-3 space-y-2">
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="font-bold text-forest flex items-center gap-1.5">
-                            <Calculator className="w-3.5 h-3.5 text-sun-dark" />
-                            Cálculo & Alinhamento de Contrato:
-                          </span>
-                          <span className="text-[10px] font-bold text-forest/70">
-                            {porVidaNum > 0 && mensalNum > 0
-                              ? "Modelo Híbrido (Por Vida + Mensal)"
-                              : porVidaNum > 0
-                              ? "Modelo Variável (Por Vida)"
-                              : mensalNum > 0
-                              ? "Modelo Fixo Mensal"
-                              : "Sem precificação definida"}
-                          </span>
-                        </div>
-
-                        <div className="flex flex-wrap items-center gap-2 pt-1">
-                          {vidasNum > 0 && porVidaNum > 0 && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                handleUpdateEmpresaProperty(selectedEmpresa.id, "valorMensal", calculadoMensal);
-                                handleUpdateEmpresaProperty(selectedEmpresa.id, "valorFixoMensal", calculadoMensal);
-                                const curConfig = selectedEmpresa.faturamentoConfig || {};
-                                handleUpdateEmpresaProperty(selectedEmpresa.id, "faturamentoConfig", {
-                                  ...curConfig,
-                                  valorMensal: calculadoMensal,
-                                  valorFixoMensal: calculadoMensal,
-                                });
-                                const novoResumo = `R$ ${porVidaNum.toFixed(2)} por vida | R$ ${calculadoMensal.toFixed(2)} mensal`;
-                                handleUpdateEmpresaProperty(selectedEmpresa.id, "valoresDefinidos", novoResumo);
-                                handleUpdateEmpresaProperty(selectedEmpresa.id, "valoresAcertados", novoResumo);
-                                showToast(`Mensalidade sincronizada: R$ ${calculadoMensal.toFixed(2)} (${vidasNum} vidas × R$ ${porVidaNum.toFixed(2)})`, "success");
-                              }}
-                              className="text-[11px] bg-forest text-white hover:bg-forest/90 px-2.5 py-1 rounded-lg font-bold flex items-center gap-1 cursor-pointer shadow-xs"
-                            >
-                              <Sparkles className="w-3 h-3 text-sun" />
-                              <span>Sugerir Mensal: R$ {calculadoMensal.toFixed(2)}</span>
-                            </button>
-                          )}
-
-                          {vidasNum > 0 && mensalNum > 0 && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const porVidaFixed = Number(porVidaEquiv.toFixed(2));
-                                handleUpdateEmpresaProperty(selectedEmpresa.id, "valorPorVida", porVidaFixed);
-                                const curConfig = selectedEmpresa.faturamentoConfig || {};
-                                handleUpdateEmpresaProperty(selectedEmpresa.id, "faturamentoConfig", {
-                                  ...curConfig,
-                                  valorPorVida: porVidaFixed,
-                                });
-                                const novoResumo = `R$ ${porVidaFixed.toFixed(2)} por vida | R$ ${mensalNum.toFixed(2)} mensal`;
-                                handleUpdateEmpresaProperty(selectedEmpresa.id, "valoresDefinidos", novoResumo);
-                                handleUpdateEmpresaProperty(selectedEmpresa.id, "valoresAcertados", novoResumo);
-                                showToast(`Valor por vida sincronizado: R$ ${porVidaFixed.toFixed(2)}/vida`, "success");
-                              }}
-                              className="text-[11px] bg-emerald-100 hover:bg-emerald-200 text-emerald-900 px-2.5 py-1 rounded-lg font-bold flex items-center gap-1 cursor-pointer"
-                            >
-                              <Coins className="w-3 h-3" />
-                              <span>Sugerir Por Vida: R$ {porVidaEquiv.toFixed(2)}</span>
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })()}
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="flex flex-col gap-1">
-                      <label className="text-[10px] font-semibold uppercase text-forest/70 ml-2">
-                        Resumo / Cláusula de Valores
-                      </label>
-                      <DebouncedInput
-                        className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark font-medium"
-                        placeholder="Ex: R$ 35,00 por vida/mês ou R$ 4.500,00 mensal"
-                        value={selectedEmpresa.valoresDefinidos || selectedEmpresa.valoresAcertados || ""}
-                        onChange={(val) => {
-                          handleUpdateEmpresaProperty(
-                            selectedEmpresa.id,
-                            "valoresDefinidos",
-                            val,
-                          );
-                          handleUpdateEmpresaProperty(
-                            selectedEmpresa.id,
-                            "valoresAcertados",
-                            val,
-                          );
-                        }}
-                      />
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      <label className="text-[10px] font-semibold uppercase text-forest/70 ml-2">
-                        Forma de Pagamento
-                      </label>
-                      <DebouncedInput
-                        className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark"
-                        placeholder="Ex: Boleto Bancário Mensal, Faturamento 30 dias (NF), PIX..."
-                        value={selectedEmpresa.formaPagamento || ""}
-                        onChange={(val) =>
-                          handleUpdateEmpresaProperty(
-                            selectedEmpresa.id,
-                            "formaPagamento",
-                            val,
-                          )
-                        }
-                      />
-                      <div className="flex flex-wrap gap-1.5 mt-1">
-                        {["Boleto Bancário", "Faturamento NF (30 dias)", "PIX Corporativo (PJ)", "Cartão Corporativo"].map((opt) => (
-                          <button
-                            key={opt}
-                            type="button"
-                            onClick={() => handleUpdateEmpresaProperty(selectedEmpresa.id, "formaPagamento", opt)}
-                            className="text-[11px] bg-white border border-soft hover:border-sun-dark px-2 py-0.5 rounded-lg text-forest/70 transition-colors"
-                          >
-                            {opt}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col gap-1 max-w-sm">
-                    <label className="text-[10px] font-semibold uppercase text-forest/70 ml-2">
-                      Emissão de NF (Data/Modo)
-                    </label>
-                    <DebouncedInput
-                      className="text-sm bg-white border border-soft px-4 py-2 rounded-xl focus:outline-none focus:border-sun-dark"
-                      placeholder="Ex: Todo dia 05"
-                      value={selectedEmpresa.emissaoNf || ""}
+                      className="w-full text-sm bg-white border border-soft px-4 py-3 rounded-2xl focus:outline-none focus:border-sun-dark resize-none h-32"
+                      placeholder="Reunião 10/10: Empresa gostou da proposta..."
+                      value={selectedEmpresa.registrosDeReunioes || ""}
                       onChange={(val) =>
                         handleUpdateEmpresaProperty(
                           selectedEmpresa.id,
-                          "emissaoNf",
+                          "registrosDeReunioes",
+                          val,
+                        )
+                      }
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-semibold uppercase text-red-900/80 ml-2 flex items-center gap-1">
+                      <Info className="w-3.5 h-3.5 text-red-700" /> Alertas / Notificações Internas da Empresa
+                    </label>
+                    <DebouncedTextArea
+                      className="w-full text-sm bg-red-50/50 border border-red-100 px-4 py-3 rounded-2xl focus:outline-none focus:border-red-300 resize-none h-24 text-red-900 placeholder:text-red-900/50"
+                      placeholder="Ex: Cobrar assinatura do aditivo até sexta."
+                      value={selectedEmpresa.notificacao || ""}
+                      onChange={(val) =>
+                        handleUpdateEmpresaProperty(
+                          selectedEmpresa.id,
+                          "notificacao",
                           val,
                         )
                       }
@@ -18612,63 +18400,30 @@ export function DashboardView({
                 </div>
               </section>
 
-              <section>
-                <h4 className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-3 flex items-center gap-2">
-                  <Clock className="w-4 h-4" /> Registros de Reuniões e Contatos
-                </h4>
-                <DebouncedTextArea
-                  className="w-full text-sm bg-warm/50 border border-soft px-4 py-3 rounded-2xl focus:outline-none focus:border-sun-dark resize-none h-32"
-                  placeholder="Reunião 10/10: Empresa gostou da proposta..."
-                  value={selectedEmpresa.registrosDeReunioes || ""}
-                  onChange={(val) =>
-                    handleUpdateEmpresaProperty(
-                      selectedEmpresa.id,
-                      "registrosDeReunioes",
-                      val,
-                    )
-                  }
-                />
-              </section>
-
-              {/* Benefício Corporativo & Código de Acesso */}
-              <section className="bg-white p-2 rounded-2xl border border-soft shadow-xs">
-                <EmpresaBeneficioManager
-                  empresa={selectedEmpresa}
-                  onUpdateSuccess={(data) => {
-                    setSelectedEmpresa((prev) => (prev ? { ...prev, ...data } : null));
-                  }}
-                />
-              </section>
-
-              {/* Catálogo de Serviços & Intervenções NR-1 (GRO / PGR) - Editável na Gestão */}
-              <section className="bg-white p-1 rounded-2xl border border-soft shadow-xs">
-                <EmpresaCatalogoManager
-                  empresa={selectedEmpresa}
-                  onSaveCatalogo={(catalogoAtualizado: ItemCatalogoCorporativo[]) => {
-                    handleUpdateEmpresaProperty(selectedEmpresa.id, "catalogoServicosConfig", catalogoAtualizado);
-                    setSelectedEmpresa((prev) => (prev ? { ...prev, catalogoServicosConfig: catalogoAtualizado } : null));
-                  }}
-                  onShowToast={showToast}
-                />
-              </section>
-
-              <section>
-                <h4 className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-3 flex items-center gap-2">
-                  <Info className="w-4 h-4" /> Alertas / Notificações Internas
-                </h4>
-                <DebouncedTextArea
-                  className="w-full text-sm bg-red-50/50 border border-red-100 px-4 py-3 rounded-2xl focus:outline-none focus:border-red-300 resize-none h-24 text-red-900 placeholder:text-red-900/50"
-                  placeholder="Ex: Cobrar assinatura do aditivo até sexta."
-                  value={selectedEmpresa.notificacao || ""}
-                  onChange={(val) =>
-                    handleUpdateEmpresaProperty(
-                      selectedEmpresa.id,
-                      "notificacao",
-                      val,
-                    )
-                  }
-                />
-              </section>
+              {/* Banner Informativo de Redirecionamento para Faturamento & Contrato */}
+              <div className="p-4 bg-gradient-to-r from-emerald-50 via-warm/30 to-emerald-50/50 border border-emerald-200 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-emerald-600 text-white rounded-xl shrink-0">
+                    <DollarSign className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h5 className="font-bold text-xs sm:text-sm text-emerald-950">
+                      Gestão de Contrato & Faturamento
+                    </h5>
+                    <p className="text-[11px] text-emerald-800/80 mt-0.5">
+                      Vidas contratadas, produtos, valores por vida, faixas, minutas e fechamentos de fatura estão reunidos na aba dedicada.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEmpresaModalTab("faturamento")}
+                  className="px-4 py-2 bg-forest hover:bg-forest/90 text-white text-xs font-bold rounded-xl transition-all shadow-xs flex items-center gap-1.5 cursor-pointer shrink-0"
+                >
+                  <span>Ir para Faturamento & Contrato</span>
+                  <ArrowRight className="w-3.5 h-3.5 text-sun" />
+                </button>
+              </div>
             </>
           ) : empresaModalTab === "colaboradores" ? (
             /* Aba de Colaboradores e Dependentes em Formato de Planilha */
@@ -18884,6 +18639,541 @@ export function DashboardView({
 
               return (
                 <div className="space-y-6">
+                  {/* 1. FORMALIZAÇÃO DO CONTRATO & DOCUMENTOS JURÍDICOS */}
+                  <div className="bg-white p-5 rounded-2xl border border-soft shadow-xs space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-soft">
+                      <div className="flex items-center gap-2.5">
+                        <div className="p-2 bg-emerald-50 text-emerald-800 rounded-xl border border-emerald-200">
+                          <FileSignature className="w-5 h-5 text-emerald-700" />
+                        </div>
+                        <div>
+                          <h4 className="font-serif text-sm sm:text-base font-bold text-forest flex items-center gap-2">
+                            <span>Contrato de Parceria Corporativa</span>
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold border ${
+                              selectedEmpresa.contratoAssinado
+                                ? "bg-emerald-100 text-emerald-900 border-emerald-300"
+                                : "bg-amber-100 text-amber-900 border-amber-300"
+                            }`}>
+                              {selectedEmpresa.contratoAssinado ? "Contrato Assinado ✅" : "Pendente de Assinatura ⏳"}
+                            </span>
+                          </h4>
+                          <p className="text-[11px] text-forest/70 mt-0.5">
+                            Status formal do instrumento jurídico e parâmetros contratuais da parceria.
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Ações Rápidas de Contrato */}
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleUpdateEmpresaProperty(
+                              selectedEmpresa.id,
+                              "contratoAssinado",
+                              !selectedEmpresa.contratoAssinado,
+                            )
+                          }
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs ${
+                            selectedEmpresa.contratoAssinado
+                              ? "bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600"
+                              : "bg-white hover:bg-amber-50 text-amber-900 border-amber-300"
+                          }`}
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>{selectedEmpresa.contratoAssinado ? "Marcar como Pendente" : "Marcar como Assinado"}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const link = `${window.location.origin}/?contrato=${selectedEmpresa.id}`;
+                            navigator.clipboard.writeText(link);
+                            showToast("Link do contrato corporativo copiado!", "success");
+                          }}
+                          className="px-2.5 py-1.5 bg-white hover:bg-warm text-forest text-xs font-semibold rounded-xl border border-soft transition-colors flex items-center gap-1 shadow-2xs cursor-pointer"
+                          title="Copiar link do contrato externo para envio à empresa"
+                        >
+                          <Copy className="w-3 h-3 text-forest/60" /> Link Contrato
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setContratoText(
+                              `CONTRATO DE PRESTAÇÃO DE SERVIÇOS TIPO CORPORATIVO\n\nCONTRATANTE: ${selectedEmpresa.razaoSocial || selectedEmpresa.nomeEmpresa}, sob o CNPJ ${selectedEmpresa.cnpj || "[INSERIR CNPJ]"}, através de seu responsável ${selectedEmpresa.nomeResponsavel || selectedEmpresa.contatoNome || "[RESPONSÁVEL]"}.\n\nCONTRATADA: Projeto AcolheMente Saúde...\n\n(Edite as cláusulas abaixo)`,
+                            );
+                            setShowContratoModal(true);
+                          }}
+                          className="px-2.5 py-1.5 bg-white hover:bg-warm text-forest text-xs font-semibold rounded-xl border border-soft transition-colors flex items-center gap-1 shadow-2xs cursor-pointer"
+                          title="Visualizar ou editar minuta do contrato"
+                        >
+                          <FileText className="w-3 h-3 text-forest/60" /> Minuta
+                        </button>
+
+                        <a
+                          href={`/?portal_empresa=${selectedEmpresa.id}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-2.5 py-1.5 bg-forest hover:bg-forest/90 text-white text-xs font-bold rounded-xl transition-colors flex items-center gap-1 shadow-2xs"
+                          title="Abrir Portal do RH desta empresa em nova aba"
+                        >
+                          <BarChart3 className="w-3 h-3 text-sun" /> Portal RH
+                        </a>
+                      </div>
+                    </div>
+
+                    {/* Resumo de Valores, Forma de Pagamento e Nota Fiscal */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-bold uppercase text-forest/70 ml-1">
+                          Cláusula / Resumo de Valores
+                        </label>
+                        <DebouncedInput
+                          className="text-xs bg-warm/20 border border-soft px-3 py-2 rounded-xl focus:outline-none focus:border-sun-dark font-medium text-forest"
+                          placeholder="Ex: R$ 35,00 por vida/mês ou R$ 4.500,00 mensal"
+                          value={selectedEmpresa.valoresDefinidos || selectedEmpresa.valoresAcertados || ""}
+                          onChange={(val) => {
+                            handleUpdateEmpresaProperty(
+                              selectedEmpresa.id,
+                              "valoresDefinidos",
+                              val,
+                            );
+                            handleUpdateEmpresaProperty(
+                              selectedEmpresa.id,
+                              "valoresAcertados",
+                              val,
+                            );
+                          }}
+                        />
+                      </div>
+
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-bold uppercase text-forest/70 ml-1">
+                          Forma de Pagamento Contratual
+                        </label>
+                        <DebouncedInput
+                          className="text-xs bg-warm/20 border border-soft px-3 py-2 rounded-xl focus:outline-none focus:border-sun-dark text-forest"
+                          placeholder="Ex: Boleto Bancário Mensal, Faturamento 30 dias (NF), PIX..."
+                          value={selectedEmpresa.formaPagamento || ""}
+                          onChange={(val) =>
+                            handleUpdateEmpresaProperty(
+                              selectedEmpresa.id,
+                              "formaPagamento",
+                              val,
+                            )
+                          }
+                        />
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {["Boleto Bancário", "Faturamento NF (30 dias)", "PIX Corporativo (PJ)", "Cartão"].map((opt) => (
+                            <button
+                              key={opt}
+                              type="button"
+                              onClick={() => handleUpdateEmpresaProperty(selectedEmpresa.id, "formaPagamento", opt)}
+                              className="text-[10px] bg-white border border-soft hover:border-sun-dark px-1.5 py-0.5 rounded text-forest/70 transition-colors"
+                            >
+                              {opt}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-bold uppercase text-forest/70 ml-1">
+                          Emissão de Nota Fiscal (Data / Regime)
+                        </label>
+                        <DebouncedInput
+                          className="text-xs bg-warm/20 border border-soft px-3 py-2 rounded-xl focus:outline-none focus:border-sun-dark text-forest"
+                          placeholder="Ex: Todo dia 05, Após liquidação..."
+                          value={selectedEmpresa.emissaoNf || ""}
+                          onChange={(val) =>
+                            handleUpdateEmpresaProperty(
+                              selectedEmpresa.id,
+                              "emissaoNf",
+                              val,
+                            )
+                          }
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 2. ESCOPO DO CONTRATO: QUANTIDADE DE VIDAS & PRODUTOS CONTRATADOS */}
+                  <div className="bg-white p-5 rounded-2xl border border-soft shadow-xs space-y-4">
+                    <div className="flex items-center justify-between pb-2 border-b border-soft">
+                      <h4 className="font-serif text-sm sm:text-base font-bold text-forest flex items-center gap-2">
+                        <Users className="w-4 h-4 text-sun-dark" />
+                        <span>Escopo Contratado: Vidas & Serviços Acordados</span>
+                      </h4>
+                      {(selectedEmpresa.quantidadeVidas || selectedEmpresa.colaboradores) && (
+                        <span className="text-[11px] font-bold text-emerald-900 bg-emerald-100 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                          {selectedEmpresa.quantidadeVidas || selectedEmpresa.colaboradores} vidas contratadas
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                      {/* Vidas Contratadas */}
+                      <div className="space-y-3">
+                        <label className="text-[11px] font-bold uppercase text-forest/70 flex items-center gap-1.5">
+                          <Users className="w-3.5 h-3.5 text-sun-dark" />
+                          Quantidade de Vidas Acordadas em Contrato
+                        </label>
+
+                        <select
+                          className="w-full text-xs sm:text-sm bg-warm/20 border border-soft px-3 py-2 rounded-xl font-semibold text-forest focus:outline-none focus:border-sun-dark cursor-pointer shadow-2xs"
+                          value={(() => {
+                            const val = selectedEmpresa.quantidadeVidas || selectedEmpresa.colaboradores || "";
+                            const num = parseInt(String(val).replace(/\D/g, ""), 10);
+                            return !isNaN(num) && num > 0 ? String(num) : (val ? "custom" : "");
+                          })()}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            if (val === "custom") {
+                              // Mantém para digitação
+                            } else if (val) {
+                              handleUpdateEmpresaProperty(selectedEmpresa.id, "quantidadeVidas", val);
+                              handleUpdateEmpresaProperty(selectedEmpresa.id, "colaboradores", val);
+                            }
+                          }}
+                        >
+                          <option value="">Selecione na sequência numérica...</option>
+                          {SEQUENCIA_NUMERICA_VIDAS_OPCOES.map((grupo) => (
+                            <optgroup key={grupo.label} label={grupo.label}>
+                              {grupo.opcoes.map((num) => (
+                                <option key={num} value={String(num)}>
+                                  {num} {num === 1 ? "vida (colaborador)" : "vidas (colaboradores)"}
+                                </option>
+                              ))}
+                            </optgroup>
+                          ))}
+                          <option value="custom">Outra quantidade exata (Digitar abaixo)...</option>
+                        </select>
+
+                        {/* Digitação manual do número exato */}
+                        <div className="flex items-center gap-2">
+                          <DebouncedInput
+                            className="flex-1 text-sm bg-white border border-soft px-3 py-2 rounded-xl focus:outline-none focus:border-sun-dark font-mono font-bold"
+                            placeholder="Número exato de vidas (ex: 73)"
+                            value={selectedEmpresa.quantidadeVidas || selectedEmpresa.colaboradores || ""}
+                            onChange={(val) => {
+                              const digits = String(val).replace(/\D/g, "");
+                              handleUpdateEmpresaProperty(
+                                selectedEmpresa.id,
+                                "quantidadeVidas",
+                                digits || val,
+                              );
+                              handleUpdateEmpresaProperty(
+                                selectedEmpresa.id,
+                                "colaboradores",
+                                digits || val,
+                              );
+                            }}
+                          />
+                          <span className="text-xs text-forest/60 font-semibold pr-1">vidas</span>
+                        </div>
+
+                        {/* Atalhos Rápidos */}
+                        <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                          <span className="text-[10px] text-forest/50 font-medium">Atalhos rápidos:</span>
+                          {[10, 25, 50, 100, 200, 500].map((qtd) => (
+                            <button
+                              key={qtd}
+                              type="button"
+                              onClick={() => {
+                                handleUpdateEmpresaProperty(selectedEmpresa.id, "quantidadeVidas", String(qtd));
+                                handleUpdateEmpresaProperty(selectedEmpresa.id, "colaboradores", String(qtd));
+                              }}
+                              className={`text-[10px] px-2 py-0.5 rounded-lg border transition-all cursor-pointer ${
+                                String(selectedEmpresa.quantidadeVidas || selectedEmpresa.colaboradores) === String(qtd)
+                                  ? "bg-forest text-white border-forest font-bold"
+                                  : "bg-white border-soft hover:border-sun-dark text-forest/80"
+                              }`}
+                            >
+                              {qtd} vidas
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Produtos e Serviços Contratados */}
+                      <div className="space-y-2">
+                        <label className="text-[11px] font-bold uppercase text-forest/70 block">
+                          Produtos & Serviços Contratados
+                        </label>
+                        <DebouncedTextArea
+                          className="w-full text-xs sm:text-sm bg-warm/20 border border-soft px-3 py-2.5 rounded-xl focus:outline-none focus:border-sun-dark resize-none h-24"
+                          placeholder="Descreva os produtos e serviços acordados com a empresa..."
+                          value={selectedEmpresa.produtosContratados || selectedEmpresa.servicosOferecidos || ""}
+                          onChange={(val) => {
+                            handleUpdateEmpresaProperty(
+                              selectedEmpresa.id,
+                              "produtosContratados",
+                              val,
+                            );
+                            handleUpdateEmpresaProperty(
+                              selectedEmpresa.id,
+                              "servicosOferecidos",
+                              val,
+                            );
+                          }}
+                        />
+                        <div className="flex flex-wrap gap-1">
+                          {[
+                            "Acolhimento Psicológico Online",
+                            "Palestras & Treinamentos NR-1",
+                            "Plantão de Apoio Emocional",
+                            "Diagnóstico Psicossocial",
+                            "Canal Confidencial",
+                          ].map((item) => (
+                            <button
+                              key={item}
+                              type="button"
+                              onClick={() => {
+                                const current = selectedEmpresa.produtosContratados || selectedEmpresa.servicosOferecidos || "";
+                                const updated = current ? `${current}\n• ${item}` : `• ${item}`;
+                                handleUpdateEmpresaProperty(selectedEmpresa.id, "produtosContratados", updated);
+                                handleUpdateEmpresaProperty(selectedEmpresa.id, "servicosOferecidos", updated);
+                              }}
+                              className="text-[10px] bg-white border border-soft hover:border-sun-dark px-2 py-0.5 rounded-lg text-forest/70 transition-colors"
+                            >
+                              + {item}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Bloco de Sincronização & Valores Contratuais (Por Vida vs Fixo Mensal) */}
+                    <div className="pt-3 border-t border-soft space-y-3">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="flex flex-col gap-1">
+                          <div className="flex items-center justify-between ml-1">
+                            <label className="text-[10px] font-bold uppercase text-forest/70">
+                              Valor por Vida Acordado (R$)
+                            </label>
+                            <span className="text-[9px] text-forest/50 font-mono">Por colaborador / mês</span>
+                          </div>
+                          <div className="flex items-center gap-2 bg-warm/20 border border-soft px-3 py-1.5 rounded-xl focus-within:border-sun-dark">
+                            <span className="text-xs font-bold text-forest/50">R$</span>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              className="w-full text-sm font-mono font-bold text-forest outline-none bg-transparent"
+                              placeholder="0,00"
+                              value={selectedEmpresa.valorPorVida !== undefined ? selectedEmpresa.valorPorVida : (selectedEmpresa.faturamentoConfig?.valorPorVida || "")}
+                              onChange={(e) => {
+                                const val = parseFloat(e.target.value) || 0;
+                                handleUpdateEmpresaProperty(selectedEmpresa.id, "valorPorVida", val);
+                                const curConfig = selectedEmpresa.faturamentoConfig || {};
+                                handleUpdateEmpresaProperty(selectedEmpresa.id, "faturamentoConfig", {
+                                  ...curConfig,
+                                  valorPorVida: val,
+                                });
+                              }}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="flex flex-col gap-1">
+                          <div className="flex items-center justify-between ml-1">
+                            <label className="text-[10px] font-bold uppercase text-forest/70">
+                              Valor Mensal Contratual (R$)
+                            </label>
+                            <span className="text-[9px] text-forest/50 font-mono">Fixo / Mensalidade</span>
+                          </div>
+                          <div className="flex items-center gap-2 bg-warm/20 border border-soft px-3 py-1.5 rounded-xl focus-within:border-sun-dark">
+                            <span className="text-xs font-bold text-forest/50">R$</span>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              className="w-full text-sm font-mono font-bold text-forest outline-none bg-transparent"
+                              placeholder="0,00"
+                              value={selectedEmpresa.valorMensal !== undefined ? selectedEmpresa.valorMensal : (selectedEmpresa.valorFixoMensal !== undefined ? selectedEmpresa.valorFixoMensal : (selectedEmpresa.faturamentoConfig?.valorMensal || selectedEmpresa.faturamentoConfig?.valorFixoMensal || ""))}
+                              onChange={(e) => {
+                                const val = parseFloat(e.target.value) || 0;
+                                handleUpdateEmpresaProperty(selectedEmpresa.id, "valorMensal", val);
+                                handleUpdateEmpresaProperty(selectedEmpresa.id, "valorFixoMensal", val);
+                                const curConfig = selectedEmpresa.faturamentoConfig || {};
+                                handleUpdateEmpresaProperty(selectedEmpresa.id, "faturamentoConfig", {
+                                  ...curConfig,
+                                  valorMensal: val,
+                                  valorFixoMensal: val,
+                                });
+                              }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Diagnóstico Contratual e Cálculos Rápidos */}
+                      {(() => {
+                        const vidasNum = parseInt(String(selectedEmpresa.quantidadeVidas || selectedEmpresa.colaboradores || "").replace(/\D/g, ""), 10) || 0;
+                        const porVidaNum = Number(selectedEmpresa.valorPorVida ?? selectedEmpresa.faturamentoConfig?.valorPorVida ?? 0);
+                        const mensalNum = Number(selectedEmpresa.valorMensal ?? selectedEmpresa.valorFixoMensal ?? selectedEmpresa.faturamentoConfig?.valorMensal ?? selectedEmpresa.faturamentoConfig?.valorFixoMensal ?? 0);
+                        const calculadoMensal = vidasNum * porVidaNum;
+                        const porVidaEquiv = vidasNum > 0 && mensalNum > 0 ? mensalNum / vidasNum : 0;
+
+                        return (
+                          <div className="bg-warm/30 border border-soft rounded-xl p-3 space-y-2">
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="font-bold text-forest flex items-center gap-1.5">
+                                <Calculator className="w-3.5 h-3.5 text-sun-dark" />
+                                Alinhamento de Contrato & Diagnóstico:
+                              </span>
+                              <span className="text-[10px] font-bold text-forest/70">
+                                {porVidaNum > 0 && mensalNum > 0
+                                  ? "Modelo Híbrido (Por Vida + Mensal)"
+                                  : porVidaNum > 0
+                                  ? "Modelo Variável (Por Vida)"
+                                  : mensalNum > 0
+                                  ? "Modelo Fixo Mensal"
+                                  : "Sem precificação definida"}
+                              </span>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2 pt-1">
+                              {vidasNum > 0 && porVidaNum > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    handleUpdateEmpresaProperty(selectedEmpresa.id, "valorMensal", calculadoMensal);
+                                    handleUpdateEmpresaProperty(selectedEmpresa.id, "valorFixoMensal", calculadoMensal);
+                                    const curConfig = selectedEmpresa.faturamentoConfig || {};
+                                    handleUpdateEmpresaProperty(selectedEmpresa.id, "faturamentoConfig", {
+                                      ...curConfig,
+                                      valorMensal: calculadoMensal,
+                                      valorFixoMensal: calculadoMensal,
+                                    });
+                                    const novoResumo = `R$ ${porVidaNum.toFixed(2)} por vida | R$ ${calculadoMensal.toFixed(2)} mensal`;
+                                    handleUpdateEmpresaProperty(selectedEmpresa.id, "valoresDefinidos", novoResumo);
+                                    handleUpdateEmpresaProperty(selectedEmpresa.id, "valoresAcertados", novoResumo);
+                                    showToast(`Mensalidade sincronizada: R$ ${calculadoMensal.toFixed(2)} (${vidasNum} vidas × R$ ${porVidaNum.toFixed(2)})`, "success");
+                                  }}
+                                  className="text-[11px] bg-forest text-white hover:bg-forest/90 px-2.5 py-1 rounded-lg font-bold flex items-center gap-1 cursor-pointer shadow-2xs"
+                                >
+                                  <Sparkles className="w-3 h-3 text-sun" />
+                                  <span>Sugerir Mensal: R$ {calculadoMensal.toFixed(2)}</span>
+                                </button>
+                              )}
+
+                              {vidasNum > 0 && mensalNum > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const porVidaFixed = Number(porVidaEquiv.toFixed(2));
+                                    handleUpdateEmpresaProperty(selectedEmpresa.id, "valorPorVida", porVidaFixed);
+                                    const curConfig = selectedEmpresa.faturamentoConfig || {};
+                                    handleUpdateEmpresaProperty(selectedEmpresa.id, "faturamentoConfig", {
+                                      ...curConfig,
+                                      valorPorVida: porVidaFixed,
+                                    });
+                                    const novoResumo = `R$ ${porVidaFixed.toFixed(2)} por vida | R$ ${mensalNum.toFixed(2)} mensal`;
+                                    handleUpdateEmpresaProperty(selectedEmpresa.id, "valoresDefinidos", novoResumo);
+                                    handleUpdateEmpresaProperty(selectedEmpresa.id, "valoresAcertados", novoResumo);
+                                    showToast(`Valor por vida sincronizado: R$ ${porVidaFixed.toFixed(2)}/vida`, "success");
+                                  }}
+                                  className="text-[11px] bg-emerald-100 hover:bg-emerald-200 text-emerald-900 px-2.5 py-1 rounded-lg font-bold flex items-center gap-1 cursor-pointer"
+                                >
+                                  <Coins className="w-3 h-3" />
+                                  <span>Sugerir Por Vida: R$ {porVidaEquiv.toFixed(2)}</span>
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </div>
+
+                  {/* Se for Canal Parceiro: Tabela de Repasse & Regras do Canal de Benefícios */}
+                  {hasEmpresaCategoria(selectedEmpresa, "canal_parceiro") && (
+                    <div className="bg-purple-50/70 p-5 rounded-2xl border border-purple-200 shadow-xs space-y-3">
+                      <div className="flex items-center justify-between pb-2 border-b border-purple-200">
+                        <span className="text-xs font-bold uppercase text-purple-950 flex items-center gap-2">
+                          <Building2 className="w-4 h-4 text-purple-700" />
+                          Tabela de Repasse & Regras do Canal de Benefícios
+                        </span>
+                        <span className="text-[10px] font-bold text-purple-800 bg-purple-100 px-2.5 py-0.5 rounded-full border border-purple-200">
+                          Aplicável a todas as empresas conectadas a este canal
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div className="flex flex-col gap-1 bg-white p-3 rounded-xl border border-purple-100 shadow-2xs">
+                          <label className="text-[10px] font-bold uppercase text-forest/70">
+                            Repasse Titular / Vidas (R$)
+                          </label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            placeholder="2.00"
+                            className="text-sm bg-white border border-soft px-3 py-1.5 rounded-lg font-semibold text-forest focus:outline-none focus:border-sun-dark"
+                            value={selectedEmpresa.regraPrecoCanal?.valorTitularMensal ?? ""}
+                            onChange={(e) => {
+                              const val = parseFloat(e.target.value) || 0;
+                              const currentRegra = selectedEmpresa.regraPrecoCanal || {};
+                              handleUpdateEmpresaProperty(selectedEmpresa.id, "regraPrecoCanal", {
+                                ...currentRegra,
+                                valorTitularMensal: val,
+                              });
+                            }}
+                          />
+                          <span className="text-[10px] text-forest/60">Custo base mensal por titular ativo</span>
+                        </div>
+
+                        <div className="flex flex-col gap-1 bg-white p-3 rounded-xl border border-purple-100 shadow-2xs">
+                          <label className="text-[10px] font-bold uppercase text-forest/70">
+                            Repasse Dependente (R$)
+                          </label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            placeholder="1.00"
+                            className="text-sm bg-white border border-soft px-3 py-1.5 rounded-lg font-semibold text-forest focus:outline-none focus:border-sun-dark"
+                            value={selectedEmpresa.regraPrecoCanal?.valorDependenteMensal ?? ""}
+                            onChange={(e) => {
+                              const val = parseFloat(e.target.value) || 0;
+                              const currentRegra = selectedEmpresa.regraPrecoCanal || {};
+                              handleUpdateEmpresaProperty(selectedEmpresa.id, "regraPrecoCanal", {
+                                ...currentRegra,
+                                valorDependenteMensal: val,
+                              });
+                            }}
+                          />
+                          <span className="text-[10px] text-forest/60">Custo base mensal por dependente ativo</span>
+                        </div>
+
+                        <div className="flex flex-col gap-1 bg-white p-3 rounded-xl border border-purple-100 shadow-2xs">
+                          <label className="text-[10px] font-bold uppercase text-forest/70">
+                            Dia de Corte do Faturamento
+                          </label>
+                          <input
+                            type="number"
+                            min="1"
+                            max="31"
+                            placeholder="30"
+                            className="text-sm bg-white border border-soft px-3 py-1.5 rounded-lg font-semibold text-forest focus:outline-none focus:border-sun-dark"
+                            value={selectedEmpresa.regraPrecoCanal?.diaCorteMensal ?? 30}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value, 10) || 30;
+                              const currentRegra = selectedEmpresa.regraPrecoCanal || {};
+                              handleUpdateEmpresaProperty(selectedEmpresa.id, "regraPrecoCanal", {
+                                ...currentRegra,
+                                diaCorteMensal: val,
+                              });
+                            }}
+                          />
+                          <span className="text-[10px] text-forest/60">Dia do mês para cálculo do lote de vidas</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Banner de Previsão de Faturamento do Mês Atual (Live Calculation) */}
                   <div className="bg-gradient-to-r from-forest via-forest to-forest/90 text-white p-6 rounded-2xl border border-forest/60 shadow-md flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
                     <div>
@@ -19061,7 +19351,7 @@ export function DashboardView({
                           <span className="text-forest/60 font-bold">R$</span>
                           <input
                             type="number"
-                            step="0.50"
+                            step="0.01"
                             min="0"
                             value={precoPorVida}
                             onChange={(e) => handleSalvarParametrosFinanceiros("valorPorVida", Number(e.target.value))}
@@ -19076,7 +19366,7 @@ export function DashboardView({
                           <span className="text-forest/60 font-bold">R$</span>
                           <input
                             type="number"
-                            step="10.00"
+                            step="0.01"
                             min="0"
                             value={Number(selectedEmpresa.faturamentoConfig?.valorMensal ?? selectedEmpresa.faturamentoConfig?.valorFixoMensal ?? selectedEmpresa.valorMensal ?? selectedEmpresa.valorFixoMensal ?? 0)}
                             onChange={(e) => {
@@ -19242,7 +19532,7 @@ export function DashboardView({
                             </label>
                             <input
                               type="number"
-                              step="0.50"
+                              step="0.01"
                               min="0"
                               required
                               value={diferenciarTitularDep ? (novaFaixaPrecoForm.valorTitular || "") : (novaFaixaPrecoForm.valorPorVida || "")}
@@ -19263,7 +19553,7 @@ export function DashboardView({
                               <label className="block font-bold text-forest mb-1">Valor Dependente (R$)</label>
                               <input
                                 type="number"
-                                step="0.50"
+                                step="0.01"
                                 min="0"
                                 value={novaFaixaPrecoForm.valorDependente || ""}
                                 onChange={(e) => setNovaFaixaPrecoForm({ ...novaFaixaPrecoForm, valorDependente: Number(e.target.value) })}
@@ -19276,7 +19566,7 @@ export function DashboardView({
                             <label className="block font-bold text-forest mb-1">Fixo da Faixa (R$ opc.)</label>
                             <input
                               type="number"
-                              step="10"
+                              step="0.01"
                               min="0"
                               placeholder="Opcional"
                               value={novaFaixaPrecoForm.valorFixoFaixa || ""}
@@ -19378,6 +19668,28 @@ export function DashboardView({
                         </table>
                       </div>
                     )}
+                  </div>
+
+                  {/* Benefício Corporativo & Regras de Coparticipação por Cargo */}
+                  <div className="bg-white p-2 rounded-2xl border border-soft shadow-xs">
+                    <EmpresaBeneficioManager
+                      empresa={selectedEmpresa}
+                      onUpdateSuccess={(data) => {
+                        setSelectedEmpresa((prev) => (prev ? { ...prev, ...data } : null));
+                      }}
+                    />
+                  </div>
+
+                  {/* Catálogo de Serviços & Intervenções NR-1 (GRO / PGR) - Contratados */}
+                  <div className="bg-white p-1 rounded-2xl border border-soft shadow-xs">
+                    <EmpresaCatalogoManager
+                      empresa={selectedEmpresa}
+                      onSaveCatalogo={(catalogoAtualizado: ItemCatalogoCorporativo[]) => {
+                        handleUpdateEmpresaProperty(selectedEmpresa.id, "catalogoServicosConfig", catalogoAtualizado);
+                        setSelectedEmpresa((prev) => (prev ? { ...prev, catalogoServicosConfig: catalogoAtualizado } : null));
+                      }}
+                      onShowToast={showToast}
+                    />
                   </div>
 
                   {/* Lançamentos e Serviços Adicionais do Mês Atual */}

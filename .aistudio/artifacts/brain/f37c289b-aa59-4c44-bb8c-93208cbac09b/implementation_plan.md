@@ -25,15 +25,14 @@
 - Acesso direto na aba "Carteira de Pacientes Externos" via botão **"Parametrizar"**.
 - **Aba 1: Gerador de Link Inteligente**:
   - Definição em tempo real de: Valor da Sessão (R$), Modalidade (Online / Presencial / Ambas), Frequência sugerida e Origem/Canal (Instagram, WhatsApp, Google, Indicação, etc.).
-  - Geração automática da URL parametrizada: `/cadastro_externo?prof=...&valor=150&modalidade=online&origem=Instagram`.
-  - Botões rápidos: "Copiar Link", "Enviar no WhatsApp" com mensagem pronta e "Testar Formulário".
+  - Geração automática da URL parametrizada: `/?view=cadastro_externo&prof=...&valor=150&modalidade=online&origem=Instagram`.
+  - Botões rápidos: "Copiar Link", "Enviar no WhatsApp" com mensagem pronta e "Testar Formulário" com link direto seguro.
 - **Aba 2: Configurações Globais do Formulário**:
   - Título e mensagem de boas-vindas customizados do consultório.
   - Switches para ativar/desativar campos opcionais: Endereço completo, Queixa principal, Disponibilidade de turnos e Contato de emergência.
   - Valor e modalidade padrão gravados no perfil (`users/{uid}.configFormularioExterno`).
 
-### 3. Formulário Público do Paciente (`ExternalPatientLandingView.tsx`)
-- Lê os parâmetros de URL e as configurações do profissional no Firestore.
-- Exibe banner com as condições acordadas (valor e modalidade pré-fixados).
-- Formulário com busca automática de CEP (ViaCEP), validações de menores de 18 anos, queixa principal, disponibilidade e termos LGPD.
-- Salva o registro completo na coleção `pacientes` com `tipo: 'externo'` para alimentar imediatamente a Ficha de Bordo.
+### 3. Formulário Público do Paciente (`ExternalPatientLandingView.tsx`) & Resolução de Rotas
+- **Roteamento Consistente**: Avaliado com prioridade máxima no `App.tsx` para garantir que o formulário abra diretamente sem conflitar com o perfil público de atendimento (`PublicProfProfileView`).
+- **Resiliência de Parâmetros**: Leitura robusta do UID do profissional em query params (`prof`, `profissional`, `profissionalId`, `uid`), permitindo abertura impecável.
+- **Card do Link Otimizado**: Removida a exibição crua do link escrito, priorizando descrição limpa, botão de cópia com feedback, link nativo para abertura sem bloqueio de popups e atalho para o modal de parametrização.

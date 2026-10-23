@@ -35,6 +35,14 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
     return new URLSearchParams(window.location.search);
   });
 
+  const activeProfUid =
+    profUid ||
+    urlParams.get("prof") ||
+    urlParams.get("profissional") ||
+    urlParams.get("profissionalId") ||
+    urlParams.get("uid") ||
+    null;
+
   const paramValor = urlParams.get("valor") || "";
   const paramModalidade = urlParams.get("modalidade") || "";
   const paramFrequencia = urlParams.get("frequencia") || "";
@@ -122,13 +130,13 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
 
   // Carregar dados e configurações do profissional
   useEffect(() => {
-    if (!profUid) {
+    if (!activeProfUid) {
       setLoadingProf(false);
       return;
     }
     const loadProf = async () => {
       try {
-        const snap = await getDoc(doc(db, "users", profUid));
+        const snap = await getDoc(doc(db, "users", activeProfUid));
         if (snap.exists()) {
           const data = snap.data();
           setProfData(data);
@@ -148,7 +156,7 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
       }
     };
     loadProf();
-  }, [profUid, paramModalidade]);
+  }, [activeProfUid, paramModalidade]);
 
   // Carregar dados existentes do paciente caso seja um link de atualização cadastral
   useEffect(() => {
@@ -443,7 +451,7 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
           origem: "formulario_externo",
           origemCampanha: paramOrigem || "",
           tipo: "externo",
-          profissionalId: profUid || "avulso",
+          profissionalId: activeProfUid || "avulso",
           status: "Em Atendimento",
           statusTratamento: "Em Atendimento",
           atribuicaoStatus: "Aceito",

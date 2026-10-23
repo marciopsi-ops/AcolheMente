@@ -557,7 +557,7 @@ export function EmpresaBeneficioManager({ empresa, onUpdateSuccess }: EmpresaBen
                                 <input
                                   type="number"
                                   min="0"
-                                  step="5"
+                                  step="0.01"
                                   value={precoInfo.valorSessao}
                                   onChange={(e) => {
                                     const val = Math.max(0, Number(e.target.value) || 0);

@@ -88,8 +88,7 @@ export function ParametrizarLinkModal({
   if (frequencia) params.set("frequencia", frequencia);
   const finalOrigem = origem === "Outro" ? origemCustom.trim() : origem;
   if (finalOrigem) params.set("origem", finalOrigem);
-
-  const urlParametrizada = `${baseUrl}/cadastro_externo?${params.toString()}`;
+  const urlParametrizada = `${baseUrl}/?view=cadastro_externo&${params.toString()}`;
 
   const handleCopyLink = () => {
     if (navigator?.clipboard?.writeText) {
@@ -324,14 +323,15 @@ export function ParametrizarLinkModal({
                     <span>Enviar no WhatsApp</span>
                   </button>
 
-                  <button
-                    type="button"
-                    onClick={() => window.open(urlParametrizada, "_blank")}
+                  <a
+                    href={urlParametrizada}
+                    target="_blank"
+                    rel="noopener noreferrer"
                     className="px-3.5 py-2 bg-white hover:bg-warm border border-soft text-forest rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
                   >
                     <ExternalLink className="w-3.5 h-3.5 text-forest/70" />
                     <span>Testar Formulário</span>
-                  </button>
+                  </a>
                 </div>
               </div>
             </div>

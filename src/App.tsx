@@ -346,7 +346,8 @@ function FAQSection() {
 
 export default function App() {
   const [publicProfUid, setPublicProfUid] = useState<string | null>(() => {
-    return new URLSearchParams(window.location.search).get("prof");
+    const p = new URLSearchParams(window.location.search);
+    return p.get("prof") || p.get("profissional") || p.get("profissionalId") || p.get("uid");
   });
   const [publicServiceId, setPublicServiceId] = useState<string | null>(() => {
     return new URLSearchParams(window.location.search).get("servico");
@@ -399,8 +400,12 @@ export default function App() {
     const pathname = window.location.pathname;
     if (
       pathname.includes("cadastro_externo") ||
+      pathname.includes("formulario_paciente") ||
+      pathname.includes("formulario_externo") ||
       params.get("view") === "cadastro_externo" ||
-      Boolean(params.get("cadastro_externo"))
+      Boolean(params.get("cadastro_externo")) ||
+      Boolean(params.get("formulario_externo")) ||
+      Boolean(params.get("formulario_paciente"))
     ) {
       return "cadastro_externo";
     }
@@ -433,7 +438,7 @@ export default function App() {
   useEffect(() => {
     const handlePopState = () => {
       const p = new URLSearchParams(window.location.search);
-      setPublicProfUid(p.get("prof"));
+      setPublicProfUid(p.get("prof") || p.get("profissional") || p.get("profissionalId") || p.get("uid"));
       setPublicServiceId(p.get("servico"));
       setPublicEventoId(p.get("evento"));
       setPublicContratoId(p.get("contrato"));
@@ -449,7 +454,11 @@ export default function App() {
       const v = p.get("view");
       if (
         window.location.pathname.includes("cadastro_externo") ||
+        window.location.pathname.includes("formulario_paciente") ||
+        window.location.pathname.includes("formulario_externo") ||
         p.get("cadastro_externo") ||
+        p.get("formulario_externo") ||
+        p.get("formulario_paciente") ||
         v === "cadastro_externo"
       ) {
         setCurrentView("cadastro_externo");
@@ -586,6 +595,19 @@ export default function App() {
     );
   }
 
+  // Visualização prioritária do formulário para paciente (externo ou atualização)
+  if (currentView === "cadastro_externo") {
+    return (
+      <>
+        <ExternalPatientLandingView
+          profUid={publicProfUid}
+          onGoHome={handleGoToLanding}
+        />
+        <PWAInstallBanner />
+      </>
+    );
+  }
+
   if (publicProfUid) {
     return (
       <PublicProfProfileView
@@ -676,8 +698,6 @@ export default function App() {
     content = <DoacaoView onNavigate={handleNavigate} />;
   } else if (currentView === "profissional") {
     content = <ProfissionalLandingView onNavigate={handleNavigate} />;
-  } else if (currentView === "cadastro_externo") {
-    content = <ExternalPatientLandingView profUid={publicProfUid} onGoHome={handleGoToLanding} />;
   } else {
     content = (
       <div className="flex h-screen items-center justify-center bg-warm">
