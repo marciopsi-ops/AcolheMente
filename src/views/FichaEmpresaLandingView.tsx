@@ -43,6 +43,7 @@ import {
   SEQUENCIA_NUMERICA_VIDAS_OPCOES,
   TODAS_OPCOES_VIDAS_NUMEROS,
 } from "../types/corporativo";
+import { formatCnpj, isValidCnpj, getCnpjValidationError } from "../utils/formatters";
 
 // Utilitários de Formatação Monetária e Numérica
 export function formatMoedaBR(valor: number | string | undefined | null): string {
@@ -102,6 +103,8 @@ export function FichaEmpresaLandingView({
   const [createdPin, setCreatedPin] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+  const [formValidationError, setFormValidationError] = useState("");
+  const [cnpjTouched, setCnpjTouched] = useState(false);
   const [activeTab, setActiveTab] = useState<"empresa" | "colaboradores">("empresa");
   const [colaboradoresList, setColaboradoresList] = useState<ColaboradorEmpresa[]>([]);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
@@ -279,7 +282,7 @@ export function FichaEmpresaLandingView({
 
           setFormData({
             razaoSocial: d.razaoSocial || d.nomeEmpresa || "",
-            cnpj: d.cnpj || "",
+            cnpj: d.cnpj ? formatCnpj(d.cnpj) : "",
             cpfResponsavel: d.cpfResponsavel || "",
             nomeResponsavel: d.nomeResponsavel || d.contatoNome || "",
             email: d.email || "",
@@ -348,8 +351,10 @@ export function FichaEmpresaLandingView({
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
   ) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+    const formattedValue = name === "cnpj" ? formatCnpj(value) : value;
+    setFormData((prev) => ({ ...prev, [name]: formattedValue }));
     setSavedSuccess(false);
+    if (formValidationError) setFormValidationError("");
   };
 
   const handleSelectVidas = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -787,13 +792,21 @@ export function FichaEmpresaLandingView({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.razaoSocial.trim()) {
-      alert("Por favor, preencha a Razão Social da empresa.");
+      const msg = "Por favor, preencha a Razão Social da empresa.";
+      setFormValidationError(msg);
+      setToastMsg(msg);
+      window.scrollTo({ top: 0, behavior: "smooth" });
       return;
     }
-    if (!formData.cnpj.trim()) {
-      alert("Por favor, preencha o CNPJ da empresa.");
+    const cnpjErr = getCnpjValidationError(formData.cnpj, true);
+    if (cnpjErr) {
+      setCnpjTouched(true);
+      setFormValidationError(cnpjErr);
+      setToastMsg(cnpjErr);
+      window.scrollTo({ top: 0, behavior: "smooth" });
       return;
     }
+    setFormValidationError("");
 
     try {
       setSaving(true);
@@ -821,11 +834,13 @@ export function FichaEmpresaLandingView({
         modeloCobranca: numValorMensal > 0 && numValorPorVida === 0 ? "fixo_mensal" : (empresaDoc?.faturamentoConfig?.modeloCobranca || "por_vida"),
       };
 
+      const formattedCnpj = formatCnpj(formData.cnpj);
+
       if (isNovaEmpresa) {
         const generatedPin = Math.floor(1000 + Math.random() * 9000).toString();
         const newDocPayload: any = {
           razaoSocial: formData.razaoSocial.trim(),
-          cnpj: formData.cnpj.trim(),
+          cnpj: formattedCnpj,
           cpfResponsavel: formData.cpfResponsavel.trim(),
           nomeResponsavel: formData.nomeResponsavel.trim(),
           email: formData.email.trim(),
@@ -872,7 +887,7 @@ export function FichaEmpresaLandingView({
       } else {
         const updatePayload: any = {
           razaoSocial: formData.razaoSocial.trim(),
-          cnpj: formData.cnpj.trim(),
+          cnpj: formattedCnpj,
           cpfResponsavel: formData.cpfResponsavel.trim(),
           nomeResponsavel: formData.nomeResponsavel.trim(),
           email: formData.email.trim(),
@@ -1377,6 +1392,12 @@ export function FichaEmpresaLandingView({
         {/* Tab 1: Dados da Empresa Form */}
         {activeTab === "empresa" ? (
           <form onSubmit={handleSubmit} className="space-y-6">
+          {formValidationError && (
+            <div className="bg-rose-50 border border-rose-200 text-rose-800 rounded-2xl p-4 text-xs sm:text-sm flex items-start gap-3">
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+              <span className="font-medium">{formValidationError}</span>
+            </div>
+          )}
           {/* 1. DADOS JURÍDICOS DA EMPRESA */}
           <section className="bg-white rounded-3xl p-6 sm:p-8 shadow-sm border border-soft space-y-6">
             <div className="flex items-center gap-3 border-b border-soft pb-4">
@@ -1416,18 +1437,52 @@ export function FichaEmpresaLandingView({
                 <label className="text-xs font-bold uppercase tracking-wider text-forest/80">
                   CNPJ <span className="text-rose-500">*</span>
                 </label>
-                <input
-                  type="text"
-                  required
-                  name="cnpj"
-                  value={formData.cnpj}
-                  onChange={handleChange}
-                  placeholder="00.000.000/0001-00"
-                  className="px-4 py-3 bg-warm/40 border border-soft rounded-xl text-sm text-forest focus:outline-none focus:border-sun-dark focus:bg-white transition-all font-mono"
-                />
-                <span className="text-[11px] text-forest/50">
-                  Cadastro Nacional de Pessoa Jurídica da empresa.
-                </span>
+                {(() => {
+                  const cnpjDigits = formData.cnpj.replace(/\D/g, "");
+                  const cnpjIsValid = isValidCnpj(formData.cnpj);
+                  const inlineCnpjError =
+                    formData.cnpj.length > 0 && (cnpjTouched || cnpjDigits.length === 14)
+                      ? getCnpjValidationError(formData.cnpj, true)
+                      : null;
+                  return (
+                    <>
+                      <input
+                        type="text"
+                        required
+                        name="cnpj"
+                        inputMode="numeric"
+                        maxLength={18}
+                        value={formData.cnpj}
+                        onChange={handleChange}
+                        onBlur={() => setCnpjTouched(true)}
+                        aria-invalid={Boolean(inlineCnpjError)}
+                        placeholder="00.000.000/0001-00"
+                        className={`px-4 py-3 border rounded-xl text-sm text-forest focus:outline-none transition-all font-mono tabular-nums ${
+                          inlineCnpjError
+                            ? "bg-rose-50/50 border-rose-400 focus:border-rose-500 focus:bg-white"
+                            : cnpjIsValid
+                            ? "bg-emerald-50/30 border-emerald-400 focus:border-emerald-600 focus:bg-white"
+                            : "bg-warm/40 border-soft focus:border-sun-dark focus:bg-white"
+                        }`}
+                      />
+                      {inlineCnpjError ? (
+                        <span className="text-[11px] text-rose-600 font-medium flex items-center gap-1">
+                          <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                          <span>{inlineCnpjError}</span>
+                        </span>
+                      ) : cnpjIsValid ? (
+                        <span className="text-[11px] text-emerald-700 font-medium flex items-center gap-1">
+                          <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                          <span>CNPJ válido</span>
+                        </span>
+                      ) : (
+                        <span className="text-[11px] text-forest/50">
+                          Cadastro Nacional de Pessoa Jurídica da empresa.
+                        </span>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
             </div>
           </section>

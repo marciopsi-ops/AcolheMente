@@ -46,9 +46,8 @@ import {
   serverTimestamp,
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
-import { PacienteFaturamentoSpreadsheet, SessaoFaturamentoItem } from "./PacienteFaturamentoSpreadsheet";
 import { FichaBordoCorporativa, StatusFichaCorporativa } from "../types/corporativo";
-import { ContratoGeradorModal } from "./ContratoGeradorModal";
+import { FichaPacienteExternoModal } from "./FichaPacienteExternoModal";
 
 interface TriagemCorporativaKanbanProps {
   currentRole: "master" | "triagem" | "profissional";
@@ -72,8 +71,8 @@ export const TriagemCorporativaKanban: React.FC<TriagemCorporativaKanbanProps> =
   const [fichas, setFichas] = useState<FichaBordoCorporativa[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Modo do Kanban: Atendimento (Solicitação -> Paciente) ou Desfechos (Altas / Interrupções)
-  const [modoKanban, setModoKanban] = useState<"atendimento" | "desfechos">("atendimento");
+  // Subabas do Corporativo: Solicitação de Serviço -> Atendimento -> Desfechos (Altas / Interrupções)
+  const [modoKanban, setModoKanban] = useState<"solicitacoes" | "atendimento" | "desfechos">("atendimento");
 
   // Filtros
   const [busca, setBusca] = useState("");
@@ -88,7 +87,6 @@ export const TriagemCorporativaKanban: React.FC<TriagemCorporativaKanbanProps> =
 
   // Modais
   const [fichaDetalhes, setFichaDetalhes] = useState<FichaBordoCorporativa | null>(null);
-  const [fichaParaContrato, setFichaParaContrato] = useState<FichaBordoCorporativa | null>(null);
   const [modalDesfecho, setModalDesfecho] = useState<{
     isOpen: boolean;
     ficha: FichaBordoCorporativa | null;
@@ -361,38 +359,60 @@ export const TriagemCorporativaKanban: React.FC<TriagemCorporativaKanbanProps> =
           </p>
         </div>
 
-        {/* Alternador de Kanban: Atendimento vs Desfechos (Otimizado para Telas Pequenas) */}
-        <div className="flex items-center gap-1 bg-warm p-0.5 rounded-xl border border-soft self-start md:self-auto shrink-0 w-full sm:w-auto">
+        {/* Subabas: Solicitação de Serviço -> Atendimento -> Altas / Interrupções */}
+        <div className="flex items-center gap-1 bg-warm p-1 rounded-xl border border-soft self-start md:self-auto shrink-0 w-full sm:w-auto overflow-x-auto no-scrollbar">
+          <button
+            type="button"
+            onClick={() => setModoKanban("solicitacoes")}
+            className={`flex-1 sm:flex-initial px-2.5 sm:px-3.5 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold transition-all flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer ${
+              modoKanban === "solicitacoes"
+                ? "bg-white text-forest shadow-2xs"
+                : "text-forest/65 hover:text-forest"
+            }`}
+          >
+            <Clock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+            <span className="hidden sm:inline">Solicitação de Serviço</span>
+            <span className="sm:hidden">Solicitações</span>
+            <span
+              className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold tabular-nums shrink-0 ${
+                solicitacoes.length > 0
+                  ? "bg-amber-100 text-amber-900"
+                  : "bg-forest/10 text-forest/65"
+              }`}
+            >
+              {solicitacoes.length}
+            </span>
+          </button>
+
           <button
             type="button"
             onClick={() => setModoKanban("atendimento")}
-            className={`flex-1 sm:flex-initial px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg text-[10px] sm:text-[11px] font-bold transition-all flex items-center justify-center gap-1 sm:gap-1.5 cursor-pointer ${
+            className={`flex-1 sm:flex-initial px-2.5 sm:px-3.5 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold transition-all flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer ${
               modoKanban === "atendimento"
                 ? "bg-white text-forest shadow-2xs"
-                : "text-forest/60 hover:text-forest"
+                : "text-forest/65 hover:text-forest"
             }`}
           >
-            <Layers className="w-3 h-3 text-emerald-600 shrink-0" />
-            <span className="hidden sm:inline">Fluxo de Atendimento</span>
-            <span className="sm:hidden">Atendimento</span>
-            <span className="px-1.5 py-0.2 rounded-full text-[9px] bg-emerald-100 text-emerald-800 font-bold shrink-0">
-              {solicitacoes.length + pacientesAtivos.length}
+            <Layers className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+            <span>Atendimento</span>
+            <span className="px-1.5 py-0.5 rounded-md text-[10px] bg-emerald-100 text-emerald-800 font-bold tabular-nums shrink-0">
+              {pacientesAtivos.length}
             </span>
           </button>
 
           <button
             type="button"
             onClick={() => setModoKanban("desfechos")}
-            className={`flex-1 sm:flex-initial px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg text-[10px] sm:text-[11px] font-bold transition-all flex items-center justify-center gap-1 sm:gap-1.5 cursor-pointer ${
+            className={`flex-1 sm:flex-initial px-2.5 sm:px-3.5 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold transition-all flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer ${
               modoKanban === "desfechos"
                 ? "bg-white text-forest shadow-2xs"
-                : "text-forest/60 hover:text-forest"
+                : "text-forest/65 hover:text-forest"
             }`}
           >
-            <UserCheck className="w-3 h-3 text-purple-600 shrink-0" />
+            <UserCheck className="w-3.5 h-3.5 text-purple-600 shrink-0" />
             <span className="hidden sm:inline">Altas / Interrupções</span>
             <span className="sm:hidden">Desfechos</span>
-            <span className="px-1.5 py-0.2 rounded-full text-[9px] bg-purple-100 text-purple-800 font-bold shrink-0">
+            <span className="px-1.5 py-0.5 rounded-md text-[10px] bg-purple-100 text-purple-800 font-bold tabular-nums shrink-0">
               {altas.length + interrupcoes.length}
             </span>
           </button>
@@ -508,242 +528,216 @@ export const TriagemCorporativaKanban: React.FC<TriagemCorporativaKanbanProps> =
         </div>
       </div>
 
-      {/* KANBAN BOARD */}
+      {/* PAINEL DA SUBABA SELECIONADA (LARGURA TOTAL) */}
       {loading ? (
         <div className="py-20 text-center space-y-3">
           <RefreshCw className="w-7 h-7 text-emerald-600 animate-spin mx-auto" />
           <p className="text-xs text-forest/60 font-medium">Carregando fichas corporativas...</p>
         </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-          {modoKanban === "atendimento" ? (
-            <>
-              {/* COLUNA 1: SOLICITAÇÃO DE SERVIÇO */}
-              <div className="bg-warm/40 rounded-3xl p-5 border border-soft space-y-4">
-                <div className="flex items-center justify-between pb-3 border-b border-soft">
-                  <div className="flex items-center gap-2">
-                    <span className="w-3 h-3 rounded-full bg-amber-500 animate-pulse" />
-                    <h3 className="font-bold font-serif text-forest text-sm sm:text-base">
-                      Solicitação de Serviço
-                    </h3>
-                  </div>
-                  <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800">
-                    {solicitacoes.length} {solicitacoes.length === 1 ? "caso" : "casos"}
-                  </span>
-                </div>
+      ) : modoKanban === "solicitacoes" ? (
+        <div className="w-full bg-warm/40 rounded-3xl p-4 sm:p-6 border border-soft space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-soft">
+            <div>
+              <h3 className="font-bold font-serif text-forest text-base sm:text-lg">
+                Solicitação de Serviço
+              </h3>
+              <p className="text-xs text-forest/65 mt-0.5">
+                Colaboradores que acionaram o profissional via WhatsApp. Aguardando aceite para formalização do atendimento.
+              </p>
+            </div>
+            <span className="self-start sm:self-center text-xs font-bold text-amber-900 bg-amber-100/80 px-3 py-1 rounded-lg tabular-nums shrink-0">
+              {solicitacoes.length} {solicitacoes.length === 1 ? "solicitação" : "solicitações"}
+            </span>
+          </div>
 
-                <div className="text-[11px] text-forest/60">
-                  Colaboradores que acionaram o profissional via WhatsApp. Aguardando aceite para formalização do atendimento.
-                </div>
-
-                {solicitacoes.length === 0 ? (
-                  <div className="py-12 text-center bg-white/60 rounded-2xl border border-dashed border-soft/80 p-4">
-                    <CheckCircle2 className="w-6 h-6 text-forest/30 mx-auto mb-1.5" />
-                    <p className="text-xs font-medium text-forest/60">Nenhuma solicitação pendente no momento.</p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {solicitacoes.map((ficha) => (
-                      <CardFichaCorporativa
-                        key={ficha.id}
-                        ficha={ficha}
-                        currentRole={currentRole}
-                        isExpanded={!!expandedFichas[ficha.id]}
-                        onToggleExpand={() => toggleExpandFicha(ficha.id)}
-                        onVerDetalhes={() => setFichaDetalhes(ficha)}
-                        onAceitar={() => handleAceitarFicha(ficha)}
-                        onWhatsApp={() => handleAbrirWhatsApp(ficha)}
-                        saving={savingAction}
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* COLUNA 2: PACIENTE (EM ATENDIMENTO) */}
-              <div className="bg-warm/40 rounded-3xl p-5 border border-soft space-y-4">
-                <div className="flex items-center justify-between pb-3 border-b border-soft">
-                  <div className="flex items-center gap-2">
-                    <span className="w-3 h-3 rounded-full bg-emerald-600" />
-                    <h3 className="font-bold font-serif text-forest text-sm sm:text-base">
-                      Paciente (Em Atendimento)
-                    </h3>
-                  </div>
-                  <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">
-                    {pacientesAtivos.length} {pacientesAtivos.length === 1 ? "ativo" : "ativos"}
-                  </span>
-                </div>
-
-                <div className="text-[11px] text-forest/60">
-                  Casos com aceite formalizado pelo profissional. Sessões em andamento na condição subsidiada pela empresa.
-                </div>
-
-                {pacientesAtivos.length === 0 ? (
-                  <div className="py-12 text-center bg-white/60 rounded-2xl border border-dashed border-soft/80 p-4">
-                    <User className="w-6 h-6 text-forest/30 mx-auto mb-1.5" />
-                    <p className="text-xs font-medium text-forest/60">Nenhum paciente em atendimento nesta filtragem.</p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {pacientesAtivos.map((ficha) => (
-                      <CardFichaCorporativa
-                        key={ficha.id}
-                        ficha={ficha}
-                        currentRole={currentRole}
-                        isExpanded={!!expandedFichas[ficha.id]}
-                        onToggleExpand={() => toggleExpandFicha(ficha.id)}
-                        onVerDetalhes={() => setFichaDetalhes(ficha)}
-                        onAlta={() =>
-                          setModalDesfecho({ isOpen: true, ficha, tipo: "alta", motivo: "" })
-                        }
-                        onInterrupcao={() =>
-                          setModalDesfecho({ isOpen: true, ficha, tipo: "interrupcao", motivo: "" })
-                        }
-                        onWhatsApp={() => handleAbrirWhatsApp(ficha)}
-                        saving={savingAction}
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
-            </>
+          {solicitacoes.length === 0 ? (
+            <div className="py-12 text-center bg-white/70 rounded-2xl border border-dashed border-soft/80 p-6">
+              <CheckCircle2 className="w-6 h-6 text-forest/30 mx-auto mb-2" />
+              <p className="text-xs sm:text-sm font-semibold text-forest/70">
+                Nenhuma solicitação de serviço pendente no momento.
+              </p>
+              <p className="text-[11px] text-forest/50 mt-1">
+                Novos acionamentos corporativos aparecerão aqui para o seu aceite.
+              </p>
+            </div>
           ) : (
-            <>
-              {/* KANBAN DESFECHOS: COLUNA ALTAS CLÍNICAS */}
-              <div className="bg-warm/40 rounded-3xl p-5 border border-soft space-y-4">
-                <div className="flex items-center justify-between pb-3 border-b border-soft">
-                  <div className="flex items-center gap-2">
-                    <span className="w-3 h-3 rounded-full bg-blue-600" />
-                    <h3 className="font-bold font-serif text-forest text-sm sm:text-base">
-                      Altas Clínicas Concluídas
-                    </h3>
-                  </div>
-                  <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-blue-800">
-                    {altas.length}
-                  </span>
-                </div>
-
-                <div className="text-[11px] text-forest/60">
-                  Pacientes corporativos que completaram o processo terapêutico e obtiveram alta clínica estruturada.
-                </div>
-
-                {altas.length === 0 ? (
-                  <div className="py-12 text-center bg-white/60 rounded-2xl border border-dashed border-soft/80 p-4">
-                    <CheckCircle2 className="w-6 h-6 text-forest/30 mx-auto mb-1.5" />
-                    <p className="text-xs font-medium text-forest/60">Nenhuma alta clínica registrada nesta filtragem.</p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {altas.map((ficha) => (
-                      <CardFichaCorporativa
-                        key={ficha.id}
-                        ficha={ficha}
-                        currentRole={currentRole}
-                        isExpanded={!!expandedFichas[ficha.id]}
-                        onToggleExpand={() => toggleExpandFicha(ficha.id)}
-                        onVerDetalhes={() => setFichaDetalhes(ficha)}
-                        onReativar={() => handleReativarPaciente(ficha)}
-                        onWhatsApp={() => handleAbrirWhatsApp(ficha)}
-                        saving={savingAction}
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* KANBAN DESFECHOS: COLUNA INTERRUPÇÕES */}
-              <div className="bg-warm/40 rounded-3xl p-5 border border-soft space-y-4">
-                <div className="flex items-center justify-between pb-3 border-b border-soft">
-                  <div className="flex items-center gap-2">
-                    <span className="w-3 h-3 rounded-full bg-rose-600" />
-                    <h3 className="font-bold font-serif text-forest text-sm sm:text-base">
-                      Interrupções de Atendimento
-                    </h3>
-                  </div>
-                  <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-100 text-rose-800">
-                    {interrupcoes.length}
-                  </span>
-                </div>
-
-                <div className="text-[11px] text-forest/60">
-                  Atendimentos descontinuados antes da alta (ex.: desligamento da empresa, desistência, incompatibilidade de horários).
-                </div>
-
-                {interrupcoes.length === 0 ? (
-                  <div className="py-12 text-center bg-white/60 rounded-2xl border border-dashed border-soft/80 p-4">
-                    <UserX className="w-6 h-6 text-forest/30 mx-auto mb-1.5" />
-                    <p className="text-xs font-medium text-forest/60">Nenhuma interrupção registrada nesta filtragem.</p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {interrupcoes.map((ficha) => (
-                      <CardFichaCorporativa
-                        key={ficha.id}
-                        ficha={ficha}
-                        currentRole={currentRole}
-                        isExpanded={!!expandedFichas[ficha.id]}
-                        onToggleExpand={() => toggleExpandFicha(ficha.id)}
-                        onVerDetalhes={() => setFichaDetalhes(ficha)}
-                        onReativar={() => handleReativarPaciente(ficha)}
-                        onWhatsApp={() => handleAbrirWhatsApp(ficha)}
-                        saving={savingAction}
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
-            </>
+            <div className="space-y-2.5">
+              {solicitacoes.map((ficha, idx) => (
+                <CardFichaCorporativa
+                  key={ficha.id}
+                  ficha={ficha}
+                  index={idx}
+                  currentRole={currentRole}
+                  isExpanded={!!expandedFichas[ficha.id]}
+                  onToggleExpand={() => toggleExpandFicha(ficha.id)}
+                  onVerDetalhes={() => setFichaDetalhes(ficha)}
+                  onAceitar={() => handleAceitarFicha(ficha)}
+                  onWhatsApp={() => handleAbrirWhatsApp(ficha)}
+                  saving={savingAction}
+                />
+              ))}
+            </div>
           )}
+        </div>
+      ) : modoKanban === "atendimento" ? (
+        <div className="w-full bg-warm/40 rounded-3xl p-3.5 sm:p-5 border border-soft space-y-3">
+          <div className="flex items-center justify-end">
+            <span className="text-[11px] font-bold text-emerald-900 bg-emerald-100/80 px-2.5 py-0.5 rounded-lg tabular-nums shrink-0">
+              {pacientesAtivos.length} {pacientesAtivos.length === 1 ? "paciente ativo" : "pacientes ativos"}
+            </span>
+          </div>
+
+          {pacientesAtivos.length === 0 ? (
+            <div className="py-12 text-center bg-white/70 rounded-2xl border border-dashed border-soft/80 p-6 space-y-2">
+              <User className="w-6 h-6 text-forest/30 mx-auto" />
+              <p className="text-xs sm:text-sm font-semibold text-forest/70">
+                Nenhum paciente corporativo em atendimento nesta filtragem.
+              </p>
+              {solicitacoes.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setModoKanban("solicitacoes")}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 mt-1 rounded-xl bg-amber-100 hover:bg-amber-200/80 text-amber-900 text-xs font-bold transition-colors cursor-pointer"
+                >
+                  <Clock className="w-3.5 h-3.5" />
+                  <span>Ver {solicitacoes.length} solicitação(ões) aguardando aceite</span>
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              {pacientesAtivos.map((ficha, idx) => (
+                <CardFichaCorporativa
+                  key={ficha.id}
+                  ficha={ficha}
+                  index={idx}
+                  currentRole={currentRole}
+                  isExpanded={!!expandedFichas[ficha.id]}
+                  onToggleExpand={() => toggleExpandFicha(ficha.id)}
+                  onVerDetalhes={() => setFichaDetalhes(ficha)}
+                  onAlta={() =>
+                    setModalDesfecho({ isOpen: true, ficha, tipo: "alta", motivo: "" })
+                  }
+                  onInterrupcao={() =>
+                    setModalDesfecho({ isOpen: true, ficha, tipo: "interrupcao", motivo: "" })
+                  }
+                  onWhatsApp={() => handleAbrirWhatsApp(ficha)}
+                  onAgendarSessao={
+                    onNavigateToAgenda
+                      ? () => onNavigateToAgenda(ficha.id)
+                      : undefined
+                  }
+                  saving={savingAction}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="w-full space-y-5">
+          {/* SEÇÃO ALTAS CLÍNICAS */}
+          <div className="w-full bg-warm/40 rounded-3xl p-4 sm:p-6 border border-soft space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-soft">
+              <div>
+                <h3 className="font-bold font-serif text-forest text-base sm:text-lg">
+                  Altas Clínicas Concluídas
+                </h3>
+                <p className="text-xs text-forest/65 mt-0.5">
+                  Pacientes corporativos que completaram o processo terapêutico e obtiveram alta clínica estruturada.
+                </p>
+              </div>
+              <span className="self-start sm:self-center px-3 py-1 rounded-lg text-xs font-bold bg-blue-100 text-blue-900 tabular-nums shrink-0">
+                {altas.length} {altas.length === 1 ? "alta" : "altas"}
+              </span>
+            </div>
+
+            {altas.length === 0 ? (
+              <div className="py-10 text-center bg-white/70 rounded-2xl border border-dashed border-soft/80 p-4">
+                <CheckCircle2 className="w-6 h-6 text-forest/30 mx-auto mb-1.5" />
+                <p className="text-xs font-medium text-forest/60">Nenhuma alta clínica registrada nesta filtragem.</p>
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {altas.map((ficha, idx) => (
+                  <CardFichaCorporativa
+                    key={ficha.id}
+                    ficha={ficha}
+                    index={idx}
+                    currentRole={currentRole}
+                    isExpanded={!!expandedFichas[ficha.id]}
+                    onToggleExpand={() => toggleExpandFicha(ficha.id)}
+                    onVerDetalhes={() => setFichaDetalhes(ficha)}
+                    onReativar={() => handleReativarPaciente(ficha)}
+                    onWhatsApp={() => handleAbrirWhatsApp(ficha)}
+                    saving={savingAction}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* SEÇÃO INTERRUPÇÕES */}
+          <div className="w-full bg-warm/40 rounded-3xl p-4 sm:p-6 border border-soft space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-soft">
+              <div>
+                <h3 className="font-bold font-serif text-forest text-base sm:text-lg">
+                  Interrupções de Atendimento
+                </h3>
+                <p className="text-xs text-forest/65 mt-0.5">
+                  Atendimentos descontinuados antes da alta (ex.: desligamento da empresa, pausa prolongada ou incompatibilidade de horários).
+                </p>
+              </div>
+              <span className="self-start sm:self-center px-3 py-1 rounded-lg text-xs font-bold bg-rose-100 text-rose-900 tabular-nums shrink-0">
+                {interrupcoes.length} {interrupcoes.length === 1 ? "interrupção" : "interrupções"}
+              </span>
+            </div>
+
+            {interrupcoes.length === 0 ? (
+              <div className="py-10 text-center bg-white/70 rounded-2xl border border-dashed border-soft/80 p-4">
+                <UserX className="w-6 h-6 text-forest/30 mx-auto mb-1.5" />
+                <p className="text-xs font-medium text-forest/60">Nenhuma interrupção registrada nesta filtragem.</p>
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {interrupcoes.map((ficha, idx) => (
+                  <CardFichaCorporativa
+                    key={ficha.id}
+                    ficha={ficha}
+                    index={idx}
+                    currentRole={currentRole}
+                    isExpanded={!!expandedFichas[ficha.id]}
+                    onToggleExpand={() => toggleExpandFicha(ficha.id)}
+                    onVerDetalhes={() => setFichaDetalhes(ficha)}
+                    onReativar={() => handleReativarPaciente(ficha)}
+                    onWhatsApp={() => handleAbrirWhatsApp(ficha)}
+                    saving={savingAction}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
-      {/* MODAL FICHA DE BORDO CORPORATIVA COMPLETA */}
+      {/* MODAL FICHA DE BORDO UNIFICADA (MODO CORPORATIVO) */}
       {fichaDetalhes && (
-        <ModalFichaBordoDetalhes
-          ficha={fichaDetalhes}
-          currentRole={currentRole}
-          onClose={() => setFichaDetalhes(null)}
-          onAceitar={() => handleAceitarFicha(fichaDetalhes)}
-          onAlta={() =>
-            setModalDesfecho({ isOpen: true, ficha: fichaDetalhes, tipo: "alta", motivo: "" })
-          }
-          onInterrupcao={() =>
-            setModalDesfecho({ isOpen: true, ficha: fichaDetalhes, tipo: "interrupcao", motivo: "" })
-          }
-          onReativar={() => handleReativarPaciente(fichaDetalhes)}
-          onWhatsApp={() => handleAbrirWhatsApp(fichaDetalhes)}
-          onAbrirContrato={() => setFichaParaContrato(fichaDetalhes)}
-          onUpdateFicha={(updatedFicha) => {
-            setFichas((prev) =>
-              prev.map((f) => (f.id === updatedFicha.id ? { ...f, ...updatedFicha } : f))
-            );
-            setFichaDetalhes((prev) => (prev && prev.id === updatedFicha.id ? { ...prev, ...updatedFicha } : prev));
-          }}
-          currentUserProfile={currentUserProfile}
-          showToast={showToast}
-          saving={savingAction}
-        />
-      )}
-
-      {/* MODAL GERADOR DE CONTRATO TERAPÊUTICO PARA PACIENTES CORPORATIVOS */}
-      {fichaParaContrato && (
-        <ContratoGeradorModal
-          isOpen={!!fichaParaContrato}
-          onClose={() => setFichaParaContrato(null)}
-          paciente={fichaParaContrato}
-          profissionalLogado={currentUserProfile}
+        <FichaPacienteExternoModal
+          paciente={fichaDetalhes}
+          modoFicha="corporativo"
           collectionName="triagem_corporativa"
-          tipoAcolhimento="corporativo"
-          showToast={showToast}
-          onContratoSalvo={(updatedFicha) => {
+          currentRole={currentRole}
+          profile={currentUserProfile}
+          onClose={() => setFichaDetalhes(null)}
+          onUpdatePaciente={(updatedFicha) => {
             setFichas((prev) =>
               prev.map((f) => (f.id === updatedFicha.id ? { ...f, ...updatedFicha } : f))
             );
-            if (fichaDetalhes?.id === updatedFicha.id) {
-              setFichaDetalhes((prev) => (prev ? { ...prev, ...updatedFicha } : null));
-            }
-            setFichaParaContrato(null);
+            setFichaDetalhes((prev) =>
+              prev && prev.id === updatedFicha.id ? { ...prev, ...updatedFicha } : prev
+            );
           }}
+          showToast={(msg) => showToast(msg)}
+          onNavigateToAgenda={onNavigateToAgenda}
         />
       )}
 
@@ -774,7 +768,12 @@ export const TriagemCorporativaKanban: React.FC<TriagemCorporativaKanbanProps> =
 
             <p className="text-xs text-forest/70 leading-relaxed">
               Você está registrando o desfecho do acolhimento corporativo de{" "}
-              <strong>{modalDesfecho.ficha.colaboradorNome}</strong> ({modalDesfecho.ficha.empresaNome}).
+              <strong>
+                {modalDesfecho.ficha.nomeCivil ||
+                  modalDesfecho.ficha.pacienteNomeCompleto ||
+                  modalDesfecho.ficha.colaboradorNome}
+              </strong>{" "}
+              ({currentRole === "profissional" ? "Convênio Corporativo" : modalDesfecho.ficha.empresaNome}).
             </p>
 
             <div className="space-y-1.5">
@@ -830,6 +829,7 @@ export const TriagemCorporativaKanban: React.FC<TriagemCorporativaKanbanProps> =
 // ==========================================
 interface CardFichaProps {
   ficha: FichaBordoCorporativa;
+  index?: number;
   currentRole?: "master" | "triagem" | "profissional";
   isExpanded?: boolean;
   onToggleExpand?: () => void;
@@ -839,11 +839,13 @@ interface CardFichaProps {
   onInterrupcao?: () => void;
   onReativar?: () => void;
   onWhatsApp: () => void;
+  onAgendarSessao?: () => void;
   saving?: boolean;
 }
 
 const CardFichaCorporativa: React.FC<CardFichaProps> = ({
   ficha,
+  index,
   currentRole,
   isExpanded = false,
   onToggleExpand,
@@ -853,1405 +855,327 @@ const CardFichaCorporativa: React.FC<CardFichaProps> = ({
   onInterrupcao,
   onReativar,
   onWhatsApp,
+  onAgendarSessao,
   saving,
 }) => {
   const isProfissional = currentRole === "profissional";
 
-  const formatData = (timestamp: any) => {
-    if (!timestamp) return "Recente";
-    try {
-      if (timestamp.toDate) {
-        return timestamp.toDate().toLocaleDateString("pt-BR", {
-          day: "2-digit",
-          month: "short",
-          hour: "2-digit",
-          minute: "2-digit",
-        });
-      }
-      return new Date(timestamp).toLocaleDateString("pt-BR");
-    } catch {
-      return "Recente";
-    }
-  };
+  const nomeExibicao =
+    ficha.pacienteNomeCompleto?.trim() ||
+    ficha.colaboradorNome?.trim() ||
+    ficha.dadosContrato?.pacienteNome?.trim() ||
+    ficha.dadosContrato?.nome?.trim() ||
+    (ficha as any).nome?.trim() ||
+    "Paciente Corporativo";
 
-  return (
-    <div
-      onClick={onToggleExpand}
-      className={`bg-white rounded-2xl border transition-all cursor-pointer ${
-        isExpanded
-          ? "p-4 sm:p-5 border-forest/30 shadow-md ring-1 ring-forest/10 space-y-3.5"
-          : "p-3.5 sm:p-4 border-soft shadow-xs hover:border-forest/20 hover:shadow-sm space-y-2.5"
-      }`}
-    >
-      {/* 1. TOPO DO CARD: Selo discreto para profissional OU Empresa + Tag de Cargo para master/triagem */}
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5 flex-wrap min-w-0">
-          {isProfissional ? (
-            /* Para o profissional: selo corporativo discreto e protetor (sem empresa, cargo ou nível) */
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-[10px] font-semibold text-emerald-800 border border-emerald-200/80">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 shrink-0" />
-              <span>Corporativo</span>
-            </span>
-          ) : (
-            /* Para master/triagem: visualização administrativa com empresa e cargo */
-            <>
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-warm text-[10px] font-bold text-forest/70 border border-soft/80 truncate">
-                <Building2 className="w-3 h-3 text-emerald-700 shrink-0" />
-                <span className="truncate">{ficha.empresaNome}</span>
-              </span>
-
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 text-[10px] font-bold text-blue-900 border border-blue-200/80 truncate">
-                <Briefcase className="w-2.5 h-2.5 text-blue-600 shrink-0" />
-                <span className="truncate">{ficha.cargoNome || "Cargo não informado"}</span>
-              </span>
-            </>
-          )}
-
-          {ficha.beneficiarioTipo === "dependente" && (
-            <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-50 text-amber-800 border border-amber-200 shrink-0">
-              Dep: {ficha.dependenteParentesco || "Família"}
-            </span>
-          )}
-        </div>
-
-        <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
-          <span className="text-[10px] text-forest/40 font-medium hidden sm:inline">
-            {formatData(ficha.createdAt)}
-          </span>
-
-          {onToggleExpand && (
-            <button
-              type="button"
-              onClick={onToggleExpand}
-              className="p-1 text-forest/50 hover:text-forest hover:bg-warm rounded-md transition-colors cursor-pointer"
-              title={isExpanded ? "Recolher card" : "Expandir card"}
-            >
-              {isExpanded ? (
-                <ChevronUp className="w-4 h-4" />
-              ) : (
-                <ChevronDown className="w-4 h-4" />
-              )}
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* 2. PROTAGONISTA: Nome do Paciente / Colaborador */}
-      <div>
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <h4 className="font-bold text-forest text-sm sm:text-base font-serif leading-snug">
-            {ficha.colaboradorNome}
-          </h4>
-
-          {ficha.contratoAssinado ? (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 shrink-0">
-              <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" /> Contrato Assinado
-            </span>
-          ) : ficha.contratoText ? (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-800 border border-amber-300 shrink-0">
-              <FileSignature className="w-2.5 h-2.5 text-amber-600" /> Contrato Pendente
-            </span>
-          ) : null}
-
-          {/* BADGE DE DADOS DE FATURAMENTO / CPF */}
-          {(ficha.pacienteCpf || ficha.cpf) ? (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-50 text-emerald-900 border border-emerald-300 shrink-0" title="CPF e dados de faturamento preenchidos">
-              <CreditCard className="w-2.5 h-2.5 text-emerald-600" /> CPF Cadastrado
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-stone-100 text-stone-600 border border-stone-300 shrink-0" title="Dados de faturamento e CPF ainda não coletados">
-              <CreditCard className="w-2.5 h-2.5 text-stone-400" /> CPF Pendente
-            </span>
-          )}
-        </div>
-
-        {ficha.beneficiarioTipo === "dependente" && ficha.dependenteInfo && (
-          <p className="text-[11px] text-forest/60 mt-0.5">
-            Beneficiário atendido: <strong>{ficha.dependenteInfo}</strong>
-          </p>
-        )}
-      </div>
-
-      {/* 3. RESUMO VISÍVEL SEMPRE (Nome, Cargo [se admin] ou Selo Corporativo [se prof], Valor e Profissional Escolhido/Responsável) */}
-      <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-soft/60">
-        {/* Valor da Sessão Acordado pela Tabela Corporativa */}
-        <div className="flex items-center gap-1.5">
-          <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-800 px-2 py-0.5 rounded-lg border border-emerald-200/70 text-xs font-bold font-serif shrink-0 shadow-2xs">
-            <DollarSign className="w-3 h-3 text-emerald-600" />
-            R$ {ficha.valorSessao},00/sessão
-          </span>
-          {!isExpanded && ficha.servicoNome && (
-            <span className="text-[11px] text-forest/60 truncate max-w-[120px] sm:max-w-[180px]">
-              • {ficha.servicoNome}
-            </span>
-          )}
-        </div>
-
-        {/* Profissional Escolhido ou Responsável */}
-        <div className="flex items-center gap-1.5 min-w-0 max-w-[200px] sm:max-w-xs shrink-0">
-          {ficha.profissionalFoto ? (
-            <img
-              src={ficha.profissionalFoto}
-              alt={ficha.profissionalNome}
-              className="w-5 h-5 rounded-full object-cover border border-emerald-600 shrink-0"
-            />
-          ) : (
-            <div className="w-5 h-5 rounded-full bg-forest/10 flex items-center justify-center text-[9px] font-bold text-forest shrink-0">
-              {ficha.profissionalNome ? ficha.profissionalNome.charAt(0) : "P"}
-            </div>
-          )}
-          <span className="text-[11px] text-forest/80 font-medium truncate">
-            {ficha.status === "paciente" ? "Resp:" : "Escolhido:"}{" "}
-            <strong className="text-forest font-semibold">{ficha.profissionalNome || "Não atribuído"}</strong>
-          </span>
-        </div>
-      </div>
-
-      {/* 4. CONTEÚDO EXPANDIDO (Visível apenas quando expandido) */}
-      {isExpanded && (
-        <div className="space-y-3 pt-2 border-t border-soft/80 animate-in fade-in duration-150">
-          {/* Serviço e Frequência Detalhados */}
-          <div className="bg-emerald-50/50 rounded-xl p-3 border border-emerald-100/80 space-y-1.5 text-xs">
-            <div className="flex items-center justify-between text-forest/80 font-medium">
-              <span className="font-semibold text-emerald-950 truncate">{ficha.servicoNome}</span>
-              <span className="font-bold text-emerald-900 font-serif shrink-0">
-                R$ {ficha.valorSessao},00/sessão
-              </span>
-            </div>
-            <div className="flex items-center justify-between text-[11px] text-forest/60">
-              <span>Frequência: {ficha.frequenciaRecomendada}</span>
-              <span className="bg-white/80 px-2 py-0.5 rounded-md text-[10px] font-semibold text-forest/70 border border-soft">
-                Turno: {ficha.turnoPreferencia || "A combinar"}
-              </span>
-            </div>
-          </div>
-
-          {/* Queixa Inicial Completa */}
-          {ficha.queixa && (
-            <div className="bg-warm/30 rounded-xl p-2.5 text-xs text-forest/80 border border-soft/60">
-              <span className="text-[10px] uppercase font-bold text-forest/50 block mb-0.5">
-                Queixa / Motivo Informado:
-              </span>
-              <p className="italic leading-relaxed">"{ficha.queixa}"</p>
-            </div>
-          )}
-
-          {/* Dados Adicionais de Contato / Responsável */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-forest/70 bg-warm/20 p-2.5 rounded-xl border border-soft/50">
-            <div>
-              <span className="text-[10px] uppercase font-bold text-forest/50 block">Profissional Responsável</span>
-              <span className="font-medium text-forest">{ficha.profissionalNome} {ficha.profissionalCrp ? `(${ficha.profissionalCrp})` : ""}</span>
-            </div>
-            <div>
-              <span className="text-[10px] uppercase font-bold text-forest/50 block">Modalidade</span>
-              {isProfissional ? (
-                <span className="inline-flex items-center gap-1 font-medium text-emerald-800">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" /> Convênio Corporativo
-                </span>
-              ) : (
-                <span className="font-medium text-forest">{ficha.cargoNome} • {ficha.empresaNome}</span>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 5. AÇÕES NO RODAPÉ DO CARD */}
-      <div
-        className="pt-2 border-t border-soft flex items-center justify-between gap-1.5 sm:gap-2 flex-wrap"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={onVerDetalhes}
-            className="px-2 sm:px-2.5 py-1 rounded-lg text-[10px] sm:text-[11px] font-semibold text-forest/80 hover:text-forest bg-warm/50 hover:bg-warm transition-all flex items-center gap-1 cursor-pointer border border-soft/60 shadow-2xs"
-          >
-            <FileText className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-forest/50" />
-            <span>Ficha de Bordo</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={onWhatsApp}
-            title="Falar no WhatsApp"
-            className="p-1.5 text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer border border-emerald-200/50"
-          >
-            <Phone className="w-3.5 h-3.5" />
-          </button>
-        </div>
-
-        <div className="flex items-center gap-1">
-          {/* Botão de Aceite se for Solicitação de Serviço */}
-          {ficha.status === "solicitacao_servico" && onAceitar && (
-            <button
-              type="button"
-              disabled={saving}
-              onClick={onAceitar}
-              className="px-2.5 sm:px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] sm:text-[11px] font-bold transition-all shadow-2xs flex items-center gap-1 cursor-pointer disabled:opacity-50"
-            >
-              <Check className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-              <span>Aceitar Ficha</span>
-            </button>
-          )}
-
-          {/* Botões de Alta / Interrupção se for Paciente ativo */}
-          {ficha.status === "paciente" && (
-            <div className="flex items-center gap-1">
-              {onAlta && (
-                <button
-                  type="button"
-                  onClick={onAlta}
-                  className="px-2 py-0.5 sm:px-2.5 sm:py-1 text-[10px] sm:text-[11px] font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-md sm:rounded-lg transition-all cursor-pointer border border-blue-200/60"
-                >
-                  Alta
-                </button>
-              )}
-              {onInterrupcao && (
-                <button
-                  type="button"
-                  onClick={onInterrupcao}
-                  className="px-2 py-0.5 sm:px-2.5 sm:py-1 text-[10px] sm:text-[11px] font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 rounded-md sm:rounded-lg transition-all cursor-pointer border border-rose-200/60"
-                >
-                  Interromper
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* Botão de Reativar se estiver em Alta ou Interrupção */}
-          {(ficha.status === "alta" || ficha.status === "interrupcao") && onReativar && (
-            <button
-              type="button"
-              disabled={saving}
-              onClick={onReativar}
-              className="px-2.5 py-1 bg-forest text-white rounded-lg text-[10px] sm:text-[11px] font-semibold hover:bg-forest/90 transition-all cursor-pointer disabled:opacity-50 flex items-center gap-1"
-            >
-              <RotateCcw className="w-3 h-3" />
-              <span>Reativar</span>
-            </button>
-          )}
-
-          {/* Botão sutil de alternar expandir/recolher no rodapé */}
-          {onToggleExpand && (
-            <button
-              type="button"
-              onClick={onToggleExpand}
-              className="text-forest/60 hover:text-forest font-semibold flex items-center gap-0.5 px-1.5 py-0.5 rounded hover:bg-warm cursor-pointer text-[10px] uppercase tracking-wider shrink-0 transition-colors"
-            >
-              <span>{isExpanded ? "Menos" : "Mais"}</span>
-              {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// ==========================================
-// SUBCOMPONENTE: MODAL DA FICHA DE BORDO
-// ==========================================
-interface ModalFichaBordoProps {
-  ficha: FichaBordoCorporativa;
-  currentRole?: "master" | "triagem" | "profissional";
-  onClose: () => void;
-  onAceitar: () => void;
-  onAlta: () => void;
-  onInterrupcao: () => void;
-  onReativar: () => void;
-  onWhatsApp: () => void;
-  onAbrirContrato: () => void;
-  onUpdateFicha?: (updatedFicha: FichaBordoCorporativa) => void;
-  currentUserProfile?: any;
-  showToast: (msg: string) => void;
-  saving?: boolean;
-  onNavigateToAgenda?: (pacienteId?: string) => void;
-}
-
-const ModalFichaBordoDetalhes: React.FC<ModalFichaBordoProps> = ({
-  ficha,
-  currentRole,
-  onClose,
-  onAceitar,
-  onAlta,
-  onInterrupcao,
-  onReativar,
-  onWhatsApp,
-  onAbrirContrato,
-  onUpdateFicha,
-  currentUserProfile,
-  showToast,
-  saving,
-  onNavigateToAgenda,
-}) => {
-  const isProfissional = currentRole === "profissional";
-  const [novaNota, setNovaNota] = useState("");
-  const [salvandoNota, setSalvandoNota] = useState(false);
-
-  // Estado para Coleta e Edição de Dados Cadastrais & Faturamento
-  const [modalColetaLink, setModalColetaLink] = useState(false);
-  const [editandoDados, setEditandoDados] = useState(false);
-  const [salvandoDados, setSalvandoDados] = useState(false);
-
-  const [formNome, setFormNome] = useState(
-    ficha.pacienteNomeCompleto ||
-    ficha.dadosContrato?.pacienteNome ||
-    ficha.dadosContrato?.nome ||
-    (ficha.beneficiarioTipo === "dependente" && ficha.dependenteInfo ? ficha.dependenteInfo : ficha.colaboradorNome) ||
-    ""
-  );
-  const [formCpf, setFormCpf] = useState(
-    ficha.pacienteCpf ||
-    ficha.cpf ||
-    ficha.dadosContrato?.pacienteCpf ||
-    ficha.dadosContrato?.cpf ||
-    ""
-  );
-  const [formDataNasc, setFormDataNasc] = useState(
-    ficha.pacienteDataNascimento ||
-    ficha.colaboradorDataNascimento ||
-    ""
-  );
-  const [formEmail, setFormEmail] = useState(
-    ficha.pacienteEmail ||
-    ficha.colaboradorEmail ||
-    ""
-  );
-  const [formTelefone, setFormTelefone] = useState(
+  const telefoneExibicao =
     ficha.pacienteTelefone ||
-    (ficha as any).colaboradorTelefone ||
     ficha.colaboradorWhatsapp ||
-    ""
-  );
-  const [formTelefoneEmergencia, setFormTelefoneEmergencia] = useState(
-    (ficha as any).contatoEmergencia ||
-    (ficha as any).telefoneEmergencia ||
-    (ficha as any).colaboradorContatoEmergencia ||
-    ""
-  );
+    (ficha as any).colaboradorTelefone ||
+    (ficha as any).telefone ||
+    "";
 
-  const handleSalvarDadosFaturamentoManualmente = async () => {
-    setSalvandoDados(true);
-    try {
-      const updates: any = {
-        pacienteNomeCompleto: formNome.trim(),
-        pacienteCpf: formCpf.trim(),
-        pacienteDataNascimento: formDataNasc,
-        pacienteEmail: formEmail.trim().toLowerCase(),
-        pacienteTelefone: formTelefone.trim(),
-        contatoEmergencia: formTelefoneEmergencia.trim(),
-        telefoneEmergencia: formTelefoneEmergencia.trim(),
-        colaboradorContatoEmergencia: formTelefoneEmergencia.trim(),
-        colaboradorEmail: formEmail.trim().toLowerCase(),
-        colaboradorDataNascimento: formDataNasc,
-        cpf: formCpf.trim(),
-        dadosFaturamentoPreenchidosEm: new Date().toLocaleDateString("pt-BR"),
-        updatedAt: serverTimestamp(),
-      };
-
-      await updateDoc(doc(db, "triagem_corporativa", ficha.id), updates);
-      Object.assign(ficha, updates);
-      if (onUpdateFicha) {
-        onUpdateFicha({ ...ficha, ...updates });
-      }
-      setEditandoDados(false);
-      showToast("Dados cadastrais do paciente atualizados com sucesso!");
-    } catch (err) {
-      console.error("Erro ao salvar dados do paciente:", err);
-      showToast("Erro ao salvar dados.");
-    } finally {
-      setSalvandoDados(false);
+  const formatPhone = (raw: string) => {
+    const digits = raw.replace(/\D/g, "");
+    const local = digits.startsWith("55") && digits.length >= 12 ? digits.slice(2) : digits;
+    if (local.length === 11) {
+      return `(${local.slice(0, 2)}) ${local.slice(2, 7)}-${local.slice(7)}`;
     }
-  };
-
-  const handleSalvarNota = async () => {
-    if (!novaNota.trim()) return;
-    setSalvandoNota(true);
-    try {
-      const agora = new Date().toISOString();
-      const novoHistorico = [
-        ...(ficha.historico || []),
-        {
-          data: agora,
-          autor: "Triagem / Profissional",
-          acao: "Anotação de Evolução / Triagem",
-          detalhes: novaNota.trim(),
-        },
-      ];
-
-      await updateDoc(doc(db, "triagem_corporativa", ficha.id), {
-        observacoesTriagem: ficha.observacoesTriagem
-          ? `${ficha.observacoesTriagem}\n[${new Date().toLocaleDateString("pt-BR")}] ${novaNota.trim()}`
-          : `[${new Date().toLocaleDateString("pt-BR")}] ${novaNota.trim()}`,
-        updatedAt: serverTimestamp(),
-        historico: novoHistorico,
-      });
-
-      ficha.historico = novoHistorico;
-      ficha.observacoesTriagem = ficha.observacoesTriagem
-        ? `${ficha.observacoesTriagem}\n[${new Date().toLocaleDateString("pt-BR")}] ${novaNota.trim()}`
-        : `[${new Date().toLocaleDateString("pt-BR")}] ${novaNota.trim()}`;
-      setNovaNota("");
-    } catch (err) {
-      console.error("Erro ao salvar nota:", err);
-    } finally {
-      setSalvandoNota(false);
+    if (local.length === 10) {
+      return `(${local.slice(0, 2)}) ${local.slice(2, 6)}-${local.slice(6)}`;
     }
+    return raw;
   };
 
-  const statusConfig: Record<StatusFichaCorporativa, { label: string; bg: string; text: string }> = {
-    solicitacao_servico: {
-      label: "Solicitação de Serviço",
-      bg: "bg-amber-100",
-      text: "text-amber-900",
-    },
-    paciente: {
-      label: "Paciente Ativo (Em Atendimento)",
-      bg: "bg-emerald-100",
-      text: "text-emerald-900",
-    },
-    alta: {
-      label: "Alta Clínica Concluída",
-      bg: "bg-blue-100",
-      text: "text-blue-900",
-    },
-    interrupcao: {
-      label: "Atendimento Interrompido",
-      bg: "bg-rose-100",
-      text: "text-rose-900",
-    },
-  };
+  const telefoneFormatado = telefoneExibicao ? formatPhone(telefoneExibicao) : "";
 
-  const statusBadge = statusConfig[ficha.status] || {
-    label: ficha.status,
-    bg: "bg-gray-100",
-    text: "text-gray-800",
-  };
+  const statusLabel =
+    ficha.status === "paciente"
+      ? "Em Atendimento"
+      : ficha.status === "solicitacao_servico"
+        ? "Solicitação"
+        : ficha.status === "alta"
+          ? "Alta Clínica"
+          : "Interrompido";
+
+  const statusBadgeClass =
+    ficha.status === "paciente"
+      ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+      : ficha.status === "solicitacao_servico"
+        ? "bg-amber-50 text-amber-800 border-amber-200"
+        : ficha.status === "alta"
+          ? "bg-blue-50 text-blue-800 border-blue-200"
+          : "bg-rose-50 text-rose-800 border-rose-200";
+
+  const frequenciaCurta = ficha.frequenciaRecomendada
+    ? ficha.frequenciaRecomendada.split("(")[0].trim()
+    : "Semanal";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-forest/75 backdrop-blur-xs animate-in fade-in duration-200">
-      <div className="bg-white rounded-3xl max-w-3xl w-full max-h-[90vh] flex flex-col shadow-2xl border border-soft overflow-hidden">
-        {/* TOP BAR */}
-        <div className="px-3.5 sm:px-6 py-2.5 sm:py-4 bg-warm/30 border-b border-soft flex items-center justify-between gap-2 sm:gap-4 shrink-0">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5 sm:gap-2 mb-0.5 sm:mb-1">
-              <span className={`px-2 sm:px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-bold shrink-0 ${statusBadge.bg} ${statusBadge.text}`}>
-                {statusBadge.label}
+    <div className="bg-white rounded-2xl border border-soft shadow-2xs hover:border-forest/30 transition-all overflow-hidden">
+      {/* Layout em 2 Linhas sem Sobreposição */}
+      <div
+        onClick={onToggleExpand}
+        className="px-3.5 sm:px-4 py-3 flex flex-col gap-2.5 cursor-pointer hover:bg-warm/25 transition-colors select-none"
+      >
+        {/* LINHA 1: Identificação + Selo de Status (esquerda) e Ações Rápidas (direita) */}
+        <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center justify-between gap-2.5">
+          <div className="w-full sm:w-auto sm:min-w-[260px] sm:flex-1 flex items-center gap-2 overflow-hidden">
+            {typeof index === "number" && (
+              <span className="text-[11px] font-mono tabular-nums font-bold text-forest/60 bg-warm px-1.5 py-0.5 rounded-md border border-soft shrink-0">
+                #{index + 1}
               </span>
-              <span className="text-[10px] sm:text-xs text-forest/50 font-medium truncate">
-                Ficha de Bordo Corporativa
+            )}
+
+            <h4
+              className="font-bold text-xs sm:text-sm text-forest truncate min-w-0 flex-1 sm:flex-initial"
+              title={nomeExibicao}
+            >
+              {nomeExibicao}
+            </h4>
+
+            <span
+              className={`px-2 py-0.5 rounded-full text-[10px] font-bold border shrink-0 whitespace-nowrap ${statusBadgeClass}`}
+            >
+              {statusLabel}
+            </span>
+
+            {ficha.beneficiarioTipo === "dependente" && (
+              <span className="hidden lg:inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-warm text-forest/75 border border-soft shrink-0 max-w-[180px] truncate">
+                Dependente{ficha.dependenteInfo ? `: ${ficha.dependenteInfo}` : ""}
               </span>
-            </div>
-            <h3
-              className="text-base sm:text-xl font-bold font-serif text-forest truncate leading-tight"
-              title={ficha.colaboradorNome}
-            >
-              {ficha.colaboradorNome}
-            </h3>
-          </div>
-
-          <div className="flex items-center gap-1 sm:gap-2 shrink-0">
-            {/* Link de Atualização Cadastral para o Paciente */}
-            <div className="flex items-center gap-0.5 bg-emerald-50/70 p-0.5 rounded-lg sm:rounded-xl border border-emerald-300/80 shadow-2xs shrink-0">
-              <button
-                type="button"
-                onClick={() => {
-                  const profParam = ficha.profissionalId || "";
-                  const link = `${window.location.origin}/cadastro_externo?paciente=${ficha.id}&tipo=corporativo${profParam ? `&prof=${profParam}` : ""}`;
-                  navigator.clipboard.writeText(link);
-                  showToast("Link de atualização cadastral copiado para a área de transferência!");
-                }}
-                className="flex items-center gap-1 sm:gap-1.5 text-[10px] sm:text-xs font-bold text-emerald-900 hover:bg-emerald-100/80 px-2 sm:px-2.5 py-1 rounded-md sm:rounded-lg transition-colors whitespace-nowrap cursor-pointer"
-                title="Copiar link para o colaborador conferir e atualizar seu cadastro"
-              >
-                <RefreshCw className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
-                <span className="hidden sm:inline">Atualização de Cadastro</span>
-                <span className="sm:hidden">Cadastro</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const profParam = ficha.profissionalId || "";
-                  const link = `${window.location.origin}/cadastro_externo?paciente=${ficha.id}&tipo=corporativo${profParam ? `&prof=${profParam}` : ""}`;
-                  const pNome = formNome ? formNome.split(" ")[0] : ficha.colaboradorNome.split(" ")[0];
-                  const msg = `Olá ${pNome}! Tudo bem? 🌿\n\nPara mantermos seus dados cadastrais e prontuário sempre em dia e com total segurança, por favor acesse nosso link seguro para conferir e atualizar seu cadastro quando puder:\n\n${link}\n\nQualquer dúvida estou à disposição!`;
-                  const wppClean = (ficha.colaboradorWhatsapp || "").replace(/\D/g, "");
-                  const cleanNum = wppClean.startsWith("55") ? wppClean : `55${wppClean}`;
-                  window.open(`https://wa.me/${cleanNum}?text=${encodeURIComponent(msg)}`, "_blank");
-                }}
-                className="p-1 sm:p-1.5 text-emerald-700 hover:text-emerald-950 hover:bg-emerald-100/80 rounded-md sm:rounded-lg transition-colors cursor-pointer"
-                title="Enviar link de atualização cadastral via WhatsApp"
-              >
-                <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const profParam = ficha.profissionalId || "";
-                  const link = `${window.location.origin}/cadastro_externo?paciente=${ficha.id}&tipo=corporativo${profParam ? `&prof=${profParam}` : ""}`;
-                  window.open(link, "_blank");
-                }}
-                className="p-1 sm:p-1.5 text-emerald-700 hover:text-emerald-950 hover:bg-emerald-100/80 rounded-md sm:rounded-lg transition-colors cursor-pointer"
-                title="Abrir formulário de atualização em nova aba"
-              >
-                <ExternalLink className="w-3.5 h-3.5 text-emerald-700" />
-              </button>
-            </div>
-
-            <button
-              type="button"
-              onClick={onAbrirContrato}
-              className={`px-2 py-1 sm:px-3 sm:py-1.5 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold flex items-center gap-1 sm:gap-1.5 cursor-pointer shadow-xs transition-all ${
-                ficha.contratoAssinado
-                  ? "bg-emerald-700 hover:bg-emerald-800 text-white"
-                  : ficha.contratoText
-                    ? "bg-amber-600 hover:bg-amber-700 text-white"
-                    : "bg-forest hover:bg-forest/90 text-white"
-              }`}
-              title="Gerar ou visualizar contrato terapêutico com aceite digital"
-            >
-              <FileSignature className="w-3.5 h-3.5 text-sun shrink-0" />
-              <span className="hidden sm:inline">
-                {ficha.contratoAssinado
-                  ? "Contrato Assinado"
-                  : ficha.contratoText
-                    ? "Gerenciar Contrato"
-                    : "Gerar Contrato"}
-              </span>
-              <span className="sm:hidden">
-                {ficha.contratoAssinado ? "Assinado" : "Contrato"}
-              </span>
-            </button>
-
-            {onNavigateToAgenda && (
-              <button
-                type="button"
-                onClick={() => {
-                  onClose();
-                  onNavigateToAgenda(ficha.id);
-                }}
-                className="flex items-center gap-1 sm:gap-1.5 text-[10px] sm:text-xs font-bold text-white bg-forest hover:bg-forest/90 px-2.5 sm:px-3.5 py-1 sm:py-1.5 rounded-lg sm:rounded-xl shadow-2xs transition-all whitespace-nowrap cursor-pointer"
-                title="Agendar na Agenda Clínica"
-              >
-                <Calendar className="w-3.5 h-3.5 text-sun shrink-0" />
-                <span className="hidden sm:inline">Agendar Sessão</span>
-                <span className="sm:hidden">Agendar</span>
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={onWhatsApp}
-              className="px-2 py-1 sm:px-3 sm:py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold flex items-center gap-1 sm:gap-1.5 cursor-pointer shadow-xs transition-all"
-              title="Chamar colaborador no WhatsApp"
-            >
-              <MessageCircle className="w-3.5 h-3.5 shrink-0" />
-              <span className="hidden sm:inline">Chamar WhatsApp</span>
-              <span className="sm:hidden">Whats</span>
-            </button>
-            <button
-              onClick={onClose}
-              className="p-1 sm:p-1.5 text-forest/40 hover:text-forest rounded-full cursor-pointer transition-colors shrink-0"
-              title="Fechar"
-            >
-              <X className="w-4 h-4 sm:w-5 sm:h-5" />
-            </button>
-          </div>
-        </div>
-
-        {/* CORPO DO MODAL (SCROLL) */}
-        <div className="p-5 sm:p-6 overflow-y-auto space-y-6 text-forest">
-          {/* BLOCO 1: DADOS CORPORATIVOS & BENEFICIÁRIO (Sem dados socioeconômicos) */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="bg-warm/20 rounded-2xl p-4 border border-soft/80 space-y-2">
-              <h4 className="text-xs font-bold text-forest uppercase tracking-wider flex items-center gap-1.5">
-                <Building2 className="w-3.5 h-3.5 text-emerald-700" />
-                Vínculo Corporativo
-              </h4>
-              <div className="text-xs space-y-1">
-                {isProfissional ? (
-                  <>
-                    <div className="pt-0.5 pb-1">
-                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 text-[11px] font-semibold text-emerald-800 border border-emerald-200">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 shrink-0" />
-                        Paciente Corporativo (Convênio Ativo)
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-forest/60 italic leading-relaxed">
-                      Os dados de cargo, nível e identificação da empresa são sigilosos e protegidos pela gestão de acolhimento.
-                    </p>
-                    <p className="pt-1">
-                      <strong className="text-forest/60">WhatsApp:</strong>{" "}
-                      <span className="font-mono">{ficha.colaboradorWhatsapp}</span>
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <p>
-                      <strong className="text-forest/60">Empresa Conveniada:</strong>{" "}
-                      <span className="font-semibold">{ficha.empresaNome}</span>
-                    </p>
-                    <p>
-                      <strong className="text-forest/60">Cargo / Função:</strong>{" "}
-                      <span>{ficha.cargoNome}</span>
-                    </p>
-                    <p>
-                      <strong className="text-forest/60">WhatsApp:</strong>{" "}
-                      <span className="font-mono">{ficha.colaboradorWhatsapp}</span>
-                    </p>
-                  </>
-                )}
-              </div>
-            </div>
-
-            <div className="bg-warm/20 rounded-2xl p-4 border border-soft/80 space-y-2">
-              <h4 className="text-xs font-bold text-forest uppercase tracking-wider flex items-center gap-1.5">
-                <User className="w-3.5 h-3.5 text-emerald-700" />
-                Paciente Atendido
-              </h4>
-              <div className="text-xs space-y-1">
-                <p>
-                  <strong className="text-forest/60">Tipo de Beneficiário:</strong>{" "}
-                  <span className="capitalize font-semibold">{ficha.beneficiarioTipo}</span>
-                </p>
-                {ficha.beneficiarioTipo === "dependente" ? (
-                  <>
-                    <p>
-                      <strong className="text-forest/60">Nome do Dependente:</strong>{" "}
-                      <span className="font-semibold">{ficha.dependenteInfo || "Não especificado"}</span>
-                    </p>
-                    <p>
-                      <strong className="text-forest/60">Parentesco:</strong>{" "}
-                      <span>{ficha.dependenteParentesco || "Família"}</span>
-                    </p>
-                  </>
-                ) : (
-                  <p className="text-forest/60 italic">
-                    O próprio colaborador titular é quem realiza o acompanhamento.
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* NOVO BLOCO: DADOS CADASTRAIS & FATURAMENTO DO PACIENTE */}
-          <div className="bg-gradient-to-r from-emerald-50/90 via-warm/25 to-emerald-50/70 rounded-2xl p-4 sm:p-5 border border-emerald-300/80 space-y-3.5 shadow-2xs">
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-emerald-700 text-white flex items-center justify-center shadow-xs shrink-0">
-                  <CreditCard className="w-4 h-4 text-sun" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h4 className="text-xs font-bold text-forest uppercase tracking-wider">
-                      Dados para Recibos & Faturamento (Tomador)
-                    </h4>
-                    {formCpf ? (
-                      <span className="text-[10px] bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
-                        <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                        Cadastrado
-                      </span>
-                    ) : (
-                      <span className="text-[10px] bg-amber-100 text-amber-800 border border-amber-300 px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
-                        <AlertCircle className="w-3 h-3 text-amber-600" />
-                        Pendente
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-[11px] text-forest/60">
-                    CPF, data de nascimento e contatos para emissão na Receita Federal (Receita Saúde) e NFS-e
-                  </p>
-                </div>
-              </div>
-
-              {/* Ações: Gerar Link / Enviar WhatsApp / Editar */}
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <button
-                  type="button"
-                  onClick={() => setModalColetaLink(true)}
-                  className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95"
-                  title="Gerar e copiar link de coleta para envio ao paciente"
-                >
-                  <ExternalLink className="w-3.5 h-3.5 text-sun" />
-                  <span>Link de Coleta</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    const profParam = ficha.profissionalId || "";
-                    const link = `${window.location.origin}/cadastro_externo?paciente=${ficha.id}&tipo=corporativo${profParam ? `&prof=${profParam}` : ""}`;
-                    const pNome = formNome ? formNome.split(" ")[0] : ficha.colaboradorNome.split(" ")[0];
-                    const msg = `Olá, *${pNome}*! Tudo bem? 🌿\n\nPara fins de emissão de recibos, documentação dos seus atendimentos psicológicos e atualização cadastral, por favor confirme seus dados através do nosso link seguro:\n\n${link}\n\nLeva menos de 1 minuto e garante a correta emissão fiscal. Muito obrigado!`;
-                    const wppClean = (ficha.colaboradorWhatsapp || "").replace(/\D/g, "");
-                    const wppUrl = wppClean ? `https://wa.me/55${wppClean}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`;
-                    window.open(wppUrl, "_blank");
-                    showToast("Mensagem de atualização cadastral aberta no WhatsApp!");
-                  }}
-                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
-                  title="Enviar convite de preenchimento direto no WhatsApp do paciente"
-                >
-                  <MessageCircle className="w-3.5 h-3.5" />
-                  <span>Enviar WhatsApp</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setEditandoDados(!editandoDados)}
-                  className="px-2.5 py-1.5 bg-white hover:bg-warm text-forest border border-soft rounded-xl text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer shadow-2xs"
-                  title="Editar dados manualmente nesta ficha"
-                >
-                  <Edit3 className="w-3.5 h-3.5 text-forest/70" />
-                  <span>{editandoDados ? "Fechar Edição" : "Editar"}</span>
-                </button>
-              </div>
-            </div>
-
-            {/* MODO VISUALIZAÇÃO DOS DADOS */}
-            {!editandoDados ? (
-              <div className="bg-white/95 p-3.5 sm:p-4 rounded-xl border border-emerald-200/90 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2.5 sm:gap-3 text-xs shadow-2xs">
-                <div>
-                  <span className="text-[10px] text-forest/60 uppercase font-bold tracking-wider block">Nome do Tomador</span>
-                  <span className="font-bold text-forest truncate block" title={formNome || "Não informado"}>
-                    {formNome || <em className="text-forest/40 font-normal">Não informado</em>}
-                  </span>
-                </div>
-
-                <div>
-                  <span className="text-[10px] text-forest/60 uppercase font-bold tracking-wider block">CPF</span>
-                  <span className="font-mono font-bold text-emerald-900 block">
-                    {formCpf ? formCpf : <span className="text-amber-600 font-sans font-medium text-[11px]">Pendente de coleta</span>}
-                  </span>
-                </div>
-
-                <div>
-                  <span className="text-[10px] text-forest/60 uppercase font-bold tracking-wider block">Data de Nascimento</span>
-                  <span className="font-medium text-forest block">
-                    {formDataNasc ? formDataNasc.split("-").reverse().join("/") : <span className="text-forest/40 text-[11px]">Não informada</span>}
-                  </span>
-                </div>
-
-                <div>
-                  <span className="text-[10px] text-forest/60 uppercase font-bold tracking-wider block">E-mail</span>
-                  <span className="font-medium text-forest truncate block" title={formEmail || "Não informado"}>
-                    {formEmail || <span className="text-forest/40 text-[11px]">Não informado</span>}
-                  </span>
-                </div>
-
-                <div>
-                  <span className="text-[10px] text-forest/60 uppercase font-bold tracking-wider block">Telefone / WhatsApp</span>
-                  <span className="font-medium text-forest truncate block" title={formTelefone || "Não informado"}>
-                    {formTelefone || <span className="text-forest/40 text-[11px]">Não informado</span>}
-                  </span>
-                </div>
-
-                <div>
-                  <span className="text-[10px] text-forest/60 uppercase font-bold tracking-wider block">Contato de Emergência</span>
-                  <span className="font-medium text-forest truncate block" title={formTelefoneEmergencia || "Não informado"}>
-                    {formTelefoneEmergencia ? (
-                      <span className="font-semibold text-rose-800">{formTelefoneEmergencia}</span>
-                    ) : (
-                      <span className="text-forest/40 text-[11px]">Não informado</span>
-                    )}
-                  </span>
-                </div>
-              </div>
-            ) : (
-              /* MODO EDIÇÃO MANUAL DIRETA */
-              <div className="bg-white p-4 rounded-xl border border-emerald-300 space-y-3 text-xs shadow-xs">
-                <div className="flex items-center justify-between pb-1 border-b border-soft">
-                  <span className="font-bold text-forest">Edição Manual dos Dados Cadastrais</span>
-                  <span className="text-[10px] text-forest/60">Preencha diretamente se o paciente informar por mensagem</span>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  <div>
-                    <label className="text-[11px] font-bold text-forest/70 block mb-1">Nome Completo do Paciente *</label>
-                    <input
-                      type="text"
-                      value={formNome}
-                      onChange={(e) => setFormNome(e.target.value)}
-                      className="w-full px-3 py-1.5 rounded-lg border border-soft text-forest text-xs outline-none focus:border-emerald-600"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-[11px] font-bold text-forest/70 block mb-1">CPF (apenas números ou pontuado) *</label>
-                    <input
-                      type="text"
-                      value={formCpf}
-                      onChange={(e) => setFormCpf(e.target.value)}
-                      placeholder="000.000.000-00"
-                      className="w-full px-3 py-1.5 rounded-lg border border-soft text-forest font-mono text-xs outline-none focus:border-emerald-600"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-[11px] font-bold text-forest/70 block mb-1">Data de Nascimento</label>
-                    <input
-                      type="date"
-                      value={formDataNasc}
-                      onChange={(e) => setFormDataNasc(e.target.value)}
-                      className="w-full px-3 py-1.5 rounded-lg border border-soft text-forest text-xs outline-none focus:border-emerald-600"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-[11px] font-bold text-forest/70 block mb-1">E-mail para Recibo</label>
-                    <input
-                      type="email"
-                      value={formEmail}
-                      onChange={(e) => setFormEmail(e.target.value)}
-                      placeholder="email@paciente.com"
-                      className="w-full px-3 py-1.5 rounded-lg border border-soft text-forest text-xs outline-none focus:border-emerald-600"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-[11px] font-bold text-forest/70 block mb-1">Telefone / WhatsApp</label>
-                    <input
-                      type="text"
-                      value={formTelefone}
-                      onChange={(e) => setFormTelefone(e.target.value)}
-                      placeholder="(11) 99999-9999"
-                      className="w-full px-3 py-1.5 rounded-lg border border-soft text-forest text-xs outline-none focus:border-emerald-600"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-[11px] font-bold text-forest/70 block mb-1">Telefone / WhatsApp de Emergência</label>
-                    <input
-                      type="text"
-                      value={formTelefoneEmergencia}
-                      onChange={(e) => setFormTelefoneEmergencia(e.target.value)}
-                      placeholder="Ex: (11) 98765-4321 (Mãe/Cônjuge)"
-                      className="w-full px-3 py-1.5 rounded-lg border border-soft text-forest text-xs outline-none focus:border-emerald-600"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-end gap-2 pt-2 border-t border-soft">
-                  <button
-                    type="button"
-                    onClick={() => setEditandoDados(false)}
-                    className="px-3 py-1.5 text-xs text-forest/70 hover:text-forest"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="button"
-                    disabled={salvandoDados}
-                    onClick={handleSalvarDadosFaturamentoManualmente}
-                    className="px-4 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold transition-all cursor-pointer shadow-xs disabled:opacity-50"
-                  >
-                    {salvandoDados ? "Gravando..." : "Salvar Alterações"}
-                  </button>
-                </div>
-              </div>
             )}
           </div>
 
-          {/* BLOCO 2: CONDIÇÃO COMERCIAL DA TABELA CORPORATIVA */}
-          <div className="bg-emerald-50/40 rounded-2xl p-4 sm:p-5 border border-emerald-200/60 space-y-2">
-            <h4 className="text-xs font-bold text-emerald-950 uppercase tracking-wider flex items-center gap-1.5">
-              <DollarSign className="w-3.5 h-3.5 text-emerald-700" />
-              Condição Comercial Fixada pela Empresa
-            </h4>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs pt-1">
-              <div className="bg-white/90 p-3 rounded-xl border border-emerald-100">
-                <span className="text-[11px] text-forest/60 block">Serviço Solicitado</span>
-                <span className="font-bold text-forest text-sm">{ficha.servicoNome}</span>
-              </div>
-              <div className="bg-white/90 p-3 rounded-xl border border-emerald-100">
-                <span className="text-[11px] text-forest/60 block">Valor por Sessão</span>
-                <span className="font-bold text-emerald-900 text-sm font-serif">
-                  R$ {ficha.valorSessao},00
-                </span>
-              </div>
-              <div className="bg-white/90 p-3 rounded-xl border border-emerald-100">
-                <span className="text-[11px] text-forest/60 block">Frequência Recomendada</span>
-                <span className="font-semibold text-forest text-xs">{ficha.frequenciaRecomendada}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* BLOCO: CONTRATO TERAPÊUTICO & FORMALIZAÇÃO CLÍNICA */}
-          <div className="bg-gradient-to-r from-emerald-50/70 via-warm/20 to-emerald-50/70 rounded-2xl p-4 sm:p-5 border border-emerald-200/90 space-y-3.5">
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-emerald-700 text-white flex items-center justify-center shadow-xs shrink-0">
-                  <FileSignature className="w-4 h-4 text-sun" />
-                </div>
-                <div>
-                  <h4 className="text-xs font-bold text-forest uppercase tracking-wider">
-                    Contrato Terapêutico & Aceite Digital (CFP)
-                  </h4>
-                  <p className="text-[11px] text-forest/60">
-                    Formalização do enquadre clínico, honorários conveniados e sigilo profissional
-                  </p>
-                </div>
-              </div>
-
-              {ficha.contratoAssinado ? (
-                <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Assinado & Válido
-                </span>
-              ) : ficha.contratoText ? (
-                <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1">
-                  <Clock className="w-3.5 h-3.5 text-amber-600" /> Aguardando Assinatura do Paciente
-                </span>
-              ) : (
-                <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-warm text-forest/70 border border-soft">
-                  Contrato Pendente
-                </span>
-              )}
-            </div>
-
-            {ficha.contratoAssinado ? (
-              <div className="bg-white/95 p-4 rounded-xl border border-emerald-200 space-y-2.5 text-xs shadow-2xs">
-                <div className="flex items-center justify-between flex-wrap gap-2 text-xs">
-                  <span className="text-forest/80">
-                    Signatário: <strong className="text-forest">{ficha.dadosContrato?.pacienteNome || ficha.colaboradorNome}</strong>
-                    {ficha.dadosContrato?.pacienteCpf && <span className="font-mono text-forest/60"> (CPF: {ficha.dadosContrato.pacienteCpf})</span>}
-                  </span>
-                  <span className="font-bold text-emerald-900 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-                    Assinado em: {ficha.contratoAssinadoEm || ficha.dadosContrato?.dataAceiteFormatada || "Registrado"}
-                  </span>
-                </div>
-                {ficha.dadosContrato?.hashContrato && (
-                  <div className="text-[10px] text-forest/60 font-mono bg-warm/40 p-2 rounded-lg border border-soft/80 break-all select-all">
-                    Hash SHA-256: {ficha.dadosContrato.hashContrato}
-                  </div>
-                )}
-                <div className="flex items-center justify-end gap-2 pt-1 flex-wrap">
-                  <button
-                    type="button"
-                    onClick={onAbrirContrato}
-                    className="px-3 py-1.5 bg-forest text-white rounded-xl text-xs font-semibold hover:bg-forest/90 transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
-                  >
-                    <FileSignature className="w-3.5 h-3.5 text-sun" />
-                    <span>Ver / Reemitir Contrato</span>
-                  </button>
-                  <a
-                    href={`/?contrato=${ficha.id}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                    <span>Abrir Via Pública</span>
-                  </a>
-                </div>
-              </div>
-            ) : ficha.contratoText ? (
-              <div className="bg-white/95 p-4 rounded-xl border border-amber-200 space-y-2.5 text-xs shadow-2xs">
-                <p className="text-forest/80 text-xs leading-relaxed">
-                  O contrato foi gerado com as regras conveniadas de <strong>R$ {ficha.valorSessao},00/sessão</strong> ({ficha.frequenciaRecomendada}) com a empresa <strong>{ficha.empresaNome}</strong>. O link seguro está pronto para envio ao paciente.
-                </p>
-                <div className="flex items-center justify-end gap-2 pt-1 flex-wrap">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const link = `${window.location.origin}/?contrato=${ficha.id}`;
-                      navigator.clipboard.writeText(link);
-                      showToast("Link seguro do contrato copiado!");
-                    }}
-                    className="px-3 py-1.5 bg-white text-forest border border-soft hover:bg-warm rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
-                  >
-                    <Copy className="w-3.5 h-3.5 text-forest/60" />
-                    <span>Copiar Link de Assinatura</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={onAbrirContrato}
-                    className="px-3.5 py-1.5 bg-forest text-white hover:bg-forest/90 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
-                  >
-                    <FileSignature className="w-3.5 h-3.5 text-sun" />
-                    <span>Gerenciar / Enviar WhatsApp</span>
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="bg-white/90 p-4 rounded-xl border border-soft flex items-center justify-between gap-4 flex-wrap text-xs shadow-2xs">
-                <p className="text-forest/70 text-xs max-w-md leading-relaxed">
-                  Formalize o enquadre terapêutico corporativo (sigilo profissional, faltas e frequência acordada com a <strong>{ficha.empresaNome}</strong>) gerando um contrato com link para assinatura digital do paciente.
-                </p>
-                <button
-                  type="button"
-                  onClick={onAbrirContrato}
-                  className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
-                >
-                  <FileSignature className="w-3.5 h-3.5 text-sun" />
-                  <span>Gerar Contrato para este Paciente</span>
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* ÁREA DE FATURAMENTO, SESSÕES & RECIBOS DO COLABORADOR */}
-          <div className="pt-1">
-            <PacienteFaturamentoSpreadsheet
-              pacienteId={ficha.id}
-              pacienteNome={formNome || ficha.pacienteNomeCompleto || ficha.dadosContrato?.pacienteNome || ficha.colaboradorNome}
-              pacienteCpf={formCpf || ficha.pacienteCpf || ficha.dadosContrato?.pacienteCpf || ""}
-              pacienteTelefone={formTelefone || ficha.pacienteTelefone || (ficha as any).colaboradorTelefone || ficha.colaboradorWhatsapp || ""}
-              pacienteEmail={formEmail || ficha.pacienteEmail || (ficha as any).colaboradorEmail || ""}
-              valorSessaoPadrao={ficha.valorSessao || "80"}
-              frequenciaPadrao={ficha.frequenciaRecomendada || "Semanal"}
-              sessoes={Array.isArray((ficha as any).historicoSessoes) ? (ficha as any).historicoSessoes : []}
-              onSaveSessoes={async (novasSessoes) => {
-                try {
-                  await updateDoc(doc(db, "triagem_corporativa", ficha.id), {
-                    historicoSessoes: novasSessoes,
-                    updatedAt: serverTimestamp(),
-                  });
-                  (ficha as any).historicoSessoes = novasSessoes;
-                  if (onUpdateFicha) {
-                    onUpdateFicha({ ...ficha, historicoSessoes: novasSessoes } as any);
-                  }
-                } catch (err) {
-                  console.error("Erro ao salvar sessões de faturamento corporativo:", err);
-                  showToast("Erro ao salvar sessões de faturamento.");
-                }
-              }}
-              perfilFaturamento={(ficha as any).perfilFaturamento || "PF"}
-              onUpdatePerfilFaturamento={async (novoPerfil) => {
-                try {
-                  await updateDoc(doc(db, "triagem_corporativa", ficha.id), {
-                    perfilFaturamento: novoPerfil,
-                    updatedAt: serverTimestamp(),
-                  });
-                  (ficha as any).perfilFaturamento = novoPerfil;
-                  if (onUpdateFicha) {
-                    onUpdateFicha({ ...ficha, perfilFaturamento: novoPerfil } as any);
-                  }
-                } catch (err) {
-                  console.error("Erro ao atualizar perfil de faturamento corporativo:", err);
-                  showToast("Erro ao atualizar perfil de faturamento.");
-                }
-              }}
-              onSaveDadosPJ={async (novosDadosPJ) => {
-                const targetUid = currentUserProfile?.uid || currentUserProfile?.id;
-                if (!targetUid) return;
-                try {
-                  await updateDoc(doc(db, "users", targetUid), {
-                    dadosPJ: novosDadosPJ,
-                    updatedAt: serverTimestamp(),
-                  });
-                  if (currentUserProfile) {
-                    currentUserProfile.dadosPJ = novosDadosPJ;
-                  }
-                } catch (err) {
-                  console.error("Erro ao salvar dados da PJ corporativo:", err);
-                  showToast("Erro ao salvar dados da PJ.");
-                }
-              }}
-              profissionalLogado={{
-                name: ficha.profissionalNome || currentUserProfile?.name || currentUserProfile?.nome,
-                nome: ficha.profissionalNome || currentUserProfile?.nome || currentUserProfile?.name,
-                crp: ficha.profissionalCrp || currentUserProfile?.crp,
-                cpf: currentUserProfile?.cpf,
-                especialidade: currentUserProfile?.especialidade,
-                chavePix: currentUserProfile?.chavePix,
-                email: currentUserProfile?.email,
-                telefone: currentUserProfile?.telefone,
-                dadosPJ: currentUserProfile?.dadosPJ || currentUserProfile?.perfilPJ,
-                faturamentoPadrao: currentUserProfile?.faturamentoPadrao || "PF",
-              }}
-              showToast={showToast}
-              isCorporativo={true}
-              empresaNome={ficha.empresaNome || "Empresa Conveniada"}
-            />
-          </div>
-
-          {/* BLOCO 3: DEMANDA CLÍNICA & PREFERÊNCIAS */}
-          <div className="bg-warm/20 rounded-2xl p-4 sm:p-5 border border-soft space-y-3">
-            <h4 className="text-xs font-bold text-forest uppercase tracking-wider flex items-center gap-1.5">
-              <Heart className="w-3.5 h-3.5 text-emerald-700" />
-              Demanda & Preferência de Horários
-            </h4>
-            <div className="text-xs space-y-2">
-              <p>
-                <strong className="text-forest/60">Disponibilidade de Turno:</strong>{" "}
-                <span className="px-2 py-0.5 rounded-md bg-white border border-soft font-semibold text-forest">
-                  {ficha.turnoPreferencia || "Horários a combinar"}
-                </span>
-              </p>
-              <div>
-                <strong className="text-forest/60 block mb-1">Queixa / Motivo Informado:</strong>
-                <p className="bg-white p-3 rounded-xl border border-soft text-forest/80 leading-relaxed italic">
-                  "{ficha.queixa || "Acolhimento psicológico no convênio corporativo."}"
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* BLOCO 4: PROFISSIONAL RESPONSÁVEL */}
-          <div className="bg-warm/20 rounded-2xl p-4 border border-soft flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              {ficha.profissionalFoto ? (
-                <img
-                  src={ficha.profissionalFoto}
-                  alt={ficha.profissionalNome}
-                  className="w-10 h-10 rounded-full object-cover border border-emerald-600"
-                />
-              ) : (
-                <div className="w-10 h-10 rounded-full bg-forest/10 flex items-center justify-center font-bold text-forest text-sm">
-                  {ficha.profissionalNome ? ficha.profissionalNome.charAt(0) : "P"}
-                </div>
-              )}
-              <div>
-                <span className="text-[10px] text-forest/50 font-bold uppercase block">
-                  Profissional Requisitado
-                </span>
-                <h5 className="font-bold text-forest text-sm">{ficha.profissionalNome}</h5>
-                {ficha.profissionalCrp && (
-                  <span className="text-[11px] text-forest/60 font-mono">
-                    CRP: {ficha.profissionalCrp}
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {ficha.aceitoPor && (
-              <div className="text-right text-[11px] text-emerald-800 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200">
-                <span>Aceite formalizado por:</span>
-                <strong className="block font-bold">{ficha.aceitoPor}</strong>
-              </div>
-            )}
-          </div>
-
-          {/* BLOCO 5: HISTÓRICO & LINHA DO TEMPO */}
-          <div className="space-y-3">
-            <h4 className="text-xs font-bold text-forest uppercase tracking-wider flex items-center gap-1.5">
-              <Calendar className="w-3.5 h-3.5 text-forest/50" />
-              Histórico do Caso
-            </h4>
-            <div className="bg-warm/30 rounded-2xl p-4 border border-soft space-y-2.5 max-h-48 overflow-y-auto text-xs">
-              {ficha.historico && ficha.historico.length > 0 ? (
-                ficha.historico.map((h, idx) => (
-                  <div key={idx} className="pb-2 border-b border-soft/60 last:border-none last:pb-0">
-                    <div className="flex items-center justify-between text-[11px] text-forest/50">
-                      <strong>{h.autor}</strong>
-                      <span>{new Date(h.data).toLocaleString("pt-BR")}</span>
-                    </div>
-                    <p className="font-semibold text-forest text-xs mt-0.5">{h.acao}</p>
-                    {h.detalhes && <p className="text-[11px] text-forest/70">{h.detalhes}</p>}
-                  </div>
-                ))
-              ) : (
-                <p className="text-forest/50 text-[11px]">Nenhum evento registrado no histórico.</p>
-              )}
-            </div>
-          </div>
-
-          {/* BLOCO 6: OBSERVAÇÕES E NOTAS INTERNAS */}
-          <div className="space-y-2">
-            <h4 className="text-xs font-bold text-forest uppercase tracking-wider flex items-center gap-1.5">
-              <FileText className="w-3.5 h-3.5 text-forest/50" />
-              Anotações Internas (Triagem & Profissional)
-            </h4>
-            {ficha.observacoesTriagem && (
-              <pre className="bg-warm/20 p-3 rounded-xl border border-soft text-xs text-forest/80 font-sans whitespace-pre-wrap">
-                {ficha.observacoesTriagem}
-              </pre>
-            )}
-            <div className="flex items-center gap-2">
-              <input
-                type="text"
-                value={novaNota}
-                onChange={(e) => setNovaNota(e.target.value)}
-                placeholder="Adicionar nota interna ao histórico deste colaborador..."
-                className="flex-1 p-2.5 bg-warm/30 rounded-xl text-xs border border-soft outline-none focus:border-forest/40"
-              />
-              <button
-                type="button"
-                disabled={salvandoNota || !novaNota.trim()}
-                onClick={handleSalvarNota}
-                className="px-4 py-2.5 bg-forest text-white rounded-xl text-xs font-bold hover:bg-forest/90 transition-all cursor-pointer disabled:opacity-50"
-              >
-                {salvandoNota ? "Salvando..." : "Adicionar"}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* RODAPÉ DE AÇÕES */}
-        <div className="p-4 sm:p-5 bg-warm/30 border-t border-soft flex items-center justify-between gap-3 shrink-0">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 text-xs font-semibold text-forest/70 hover:text-forest"
+          <div
+            className="w-full sm:w-auto flex flex-wrap items-center justify-end gap-1.5 sm:gap-2 shrink-0 sm:ml-auto"
+            onClick={(e) => e.stopPropagation()}
           >
-            Fechar
-          </button>
-
-          <div className="flex items-center gap-2">
-            {/* Aceitar Solicitação */}
-            {ficha.status === "solicitacao_servico" && (
+            {ficha.status === "solicitacao_servico" && onAceitar && (
               <button
                 type="button"
                 disabled={saving}
                 onClick={onAceitar}
-                className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                className="px-2.5 sm:px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-colors shadow-2xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50 whitespace-nowrap"
+                title="Aceitar Solicitação de Serviço"
               >
-                <Check className="w-4 h-4" />
-                <span>Dar Aceite na Ficha (Mover para Paciente)</span>
+                <Check className="w-3.5 h-3.5 shrink-0" />
+                <span>Aceitar Ficha</span>
               </button>
             )}
 
-            {/* Ações de Paciente Ativo */}
-            {ficha.status === "paciente" && (
-              <>
-                <button
-                  type="button"
-                  onClick={onAlta}
-                  className="px-4 py-2 text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-xl border border-blue-200 transition-all cursor-pointer"
-                >
-                  Conceder Alta Clínica
-                </button>
-                <button
-                  type="button"
-                  onClick={onInterrupcao}
-                  className="px-4 py-2 text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 rounded-xl border border-rose-200 transition-all cursor-pointer"
-                >
-                  Registrar Interrupção
-                </button>
-              </>
-            )}
-
-            {/* Reativação */}
-            {(ficha.status === "alta" || ficha.status === "interrupcao") && (
+            {telefoneExibicao && (
               <button
                 type="button"
-                disabled={saving}
-                onClick={onReativar}
-                className="px-5 py-2.5 bg-forest hover:bg-forest/90 text-white rounded-xl text-xs font-bold shadow-xs transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                onClick={onWhatsApp}
+                className="px-2.5 py-1.5 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 rounded-xl text-xs font-semibold flex items-center gap-1.5 border border-emerald-200 transition-colors shadow-2xs cursor-pointer whitespace-nowrap"
+                title="Conversar no WhatsApp"
               >
-                <RefreshCw className="w-4 h-4" />
-                <span>Reativar Paciente no Kanban</span>
+                <MessageCircle className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                <span>WhatsApp</span>
+              </button>
+            )}
+
+            {ficha.status === "paciente" && onAgendarSessao && (
+              <button
+                type="button"
+                onClick={onAgendarSessao}
+                className="px-2.5 sm:px-3 py-1.5 bg-sun-dark text-forest font-semibold text-xs rounded-xl hover:bg-forest hover:text-white transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs group whitespace-nowrap"
+                title="Agendar Sessão na Agenda Clínica"
+              >
+                <Calendar className="w-3.5 h-3.5 text-forest group-hover:text-white transition-colors shrink-0" />
+                <span>Agendar</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={onVerDetalhes}
+              className="px-2.5 sm:px-3 py-1.5 bg-forest text-white font-semibold text-xs rounded-xl hover:bg-forest/90 transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs whitespace-nowrap"
+              title="Abrir Ficha de Bordo"
+            >
+              <FileText className="w-3.5 h-3.5 text-sun shrink-0" />
+              <span className="hidden sm:inline">Ficha de Bordo</span>
+              <span className="sm:hidden">Ficha</span>
+            </button>
+
+            {onToggleExpand && (
+              <button
+                type="button"
+                onClick={onToggleExpand}
+                className="p-1.5 text-forest/60 hover:text-forest hover:bg-warm rounded-lg transition-colors cursor-pointer shrink-0"
+                title={isExpanded ? "Recolher detalhes" : "Expandir detalhes"}
+              >
+                {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
               </button>
             )}
           </div>
         </div>
 
-        {/* MODAL: LINK DE COLETA DE DADOS PARA FATURAMENTO */}
-        {modalColetaLink && (
-          <div className="fixed inset-0 z-60 flex items-center justify-center p-3 sm:p-4 bg-forest/80 backdrop-blur-xs animate-in fade-in duration-200">
-            <div className="bg-white rounded-3xl max-w-lg w-full p-5 sm:p-6 shadow-2xl border border-soft space-y-4">
-              <div className="flex items-center justify-between pb-3 border-b border-soft">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center">
-                    <CreditCard className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-bold text-forest">Link de Coleta Cadastral</h4>
-                    <p className="text-[11px] text-forest/60">Envio para preenchimento direto pelo paciente</p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setModalColetaLink(false)}
-                  className="p-1 text-forest/40 hover:text-forest rounded-full"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
+        {/* LINHA 2: Metadados Alinhados (Vínculo, Serviço, Telefone & Condição Clínica) */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-4 pt-2 border-t border-soft/60 text-[11px] sm:text-xs text-forest/70">
+          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 min-w-0">
+            <span className="font-semibold text-forest/85">
+              {isProfissional ? "Convênio Corporativo" : ficha.empresaNome || "Corporativo"}
+            </span>
 
-              <div className="space-y-3 text-xs text-forest/80">
-                <p>
-                  O paciente acessará uma página segura para informar <strong>Nome Completo</strong>, <strong>CPF</strong>, <strong>Data de Nascimento</strong>, <strong>E-mail</strong> e <strong>Telefone</strong>. Assim que ele enviar, os dados serão atualizados automaticamente nesta ficha.
-                </p>
+            {!isProfissional && ficha.cargoNome && (
+              <span className="text-forest/70 before:content-['•'] before:mr-2.5 before:text-forest/30">
+                {ficha.cargoNome}
+              </span>
+            )}
 
-                <div>
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-forest/60 block mb-1">
-                    Link Seguro Exclusivo do Paciente:
-                  </label>
-                  <div className="flex items-center gap-1.5 bg-warm/30 p-2 rounded-xl border border-soft">
-                    <input
-                      type="text"
-                      readOnly
-                      value={`${window.location.origin}/cadastro_externo?paciente=${ficha.id}&tipo=corporativo${ficha.profissionalId ? `&prof=${ficha.profissionalId}` : ""}`}
-                      className="bg-transparent text-xs font-mono text-forest flex-1 outline-none select-all truncate"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const profParam = ficha.profissionalId || "";
-                        const link = `${window.location.origin}/cadastro_externo?paciente=${ficha.id}&tipo=corporativo${profParam ? `&prof=${profParam}` : ""}`;
-                        navigator.clipboard.writeText(link);
-                        showToast("Link copiado para a área de transferência!");
-                      }}
-                      className="px-2.5 py-1 bg-white hover:bg-warm border border-soft rounded-lg text-xs font-semibold text-forest flex items-center gap-1 cursor-pointer shadow-2xs"
-                    >
-                      <Copy className="w-3.5 h-3.5 text-forest/60" />
-                      <span>Copiar</span>
-                    </button>
-                  </div>
-                </div>
+            {ficha.servicoNome && (
+              <span className="text-forest/70 truncate max-w-[230px] before:content-['•'] before:mr-2.5 before:text-forest/30">
+                {ficha.servicoNome}
+              </span>
+            )}
 
-                <div>
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-forest/60 block mb-1">
-                    Sugestão de Mensagem para WhatsApp:
-                  </label>
-                  <div className="bg-warm/30 p-3 rounded-xl border border-soft text-[11px] text-forest/80 whitespace-pre-line leading-relaxed font-sans">
-                    {`Olá, ${formNome ? formNome.split(" ")[0] : ficha.colaboradorNome.split(" ")[0]}! Tudo bem? 🌿
+            {telefoneFormatado && (
+              <span className="font-mono tabular-nums text-forest/70 whitespace-nowrap before:content-['•'] before:mr-2.5 before:text-forest/30">
+                {telefoneFormatado}
+              </span>
+            )}
 
-Para fins de emissão de recibos, documentação dos seus atendimentos psicológicos e atualização cadastral, por favor confirme seus dados através do nosso link seguro:
+            {!isProfissional && ficha.profissionalNome && (
+              <span className="text-forest/70 before:content-['•'] before:mr-2.5 before:text-forest/30">
+                Prof.: {ficha.profissionalNome}
+              </span>
+            )}
+          </div>
 
-${window.location.origin}/cadastro_externo?paciente=${ficha.id}&tipo=corporativo${ficha.profissionalId ? `&prof=${ficha.profissionalId}` : ""}
+          <div className="flex flex-wrap items-center sm:justify-end gap-x-2.5 gap-y-1 shrink-0 text-[11px] sm:text-xs">
+            {ficha.contratoAssinado ? (
+              <span className="text-emerald-700 font-semibold whitespace-nowrap">
+                Contrato assinado
+              </span>
+            ) : ficha.contratoText ? (
+              <span className="text-amber-700 font-semibold whitespace-nowrap">
+                Contrato pendente
+              </span>
+            ) : null}
 
-Leva menos de 1 minuto e garante a correta emissão fiscal. Muito obrigado!`}
-                  </div>
-                </div>
-              </div>
+            <span
+              className={`text-forest/65 whitespace-nowrap ${
+                ficha.contratoAssinado || ficha.contratoText
+                  ? "before:content-['•'] before:mr-2.5 before:text-forest/30"
+                  : ""
+              }`}
+            >
+              {frequenciaCurta}
+            </span>
 
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-soft">
-                <button
-                  type="button"
-                  onClick={() => setModalColetaLink(false)}
-                  className="px-3.5 py-2 text-xs font-semibold text-forest/70 hover:text-forest"
-                >
-                  Fechar
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const profParam = ficha.profissionalId || "";
-                    const link = `${window.location.origin}/cadastro_externo?paciente=${ficha.id}&tipo=corporativo${profParam ? `&prof=${profParam}` : ""}`;
-                    const pNome = formNome ? formNome.split(" ")[0] : ficha.colaboradorNome.split(" ")[0];
-                    const msg = `Olá, *${pNome}*! Tudo bem? 🌿\n\nPara fins de emissão de recibos, documentação dos seus atendimentos psicológicos e atualização cadastral, por favor confirme seus dados através do nosso link seguro:\n\n${link}\n\nLeva menos de 1 minuto e garante a correta emissão fiscal. Muito obrigado!`;
-                    navigator.clipboard.writeText(msg);
-                    showToast("Texto completo copiado para o WhatsApp!");
-                  }}
-                  className="px-3 py-2 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Copy className="w-3.5 h-3.5" />
-                  <span>Copiar Mensagem</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const profParam = ficha.profissionalId || "";
-                    const link = `${window.location.origin}/cadastro_externo?paciente=${ficha.id}&tipo=corporativo${profParam ? `&prof=${profParam}` : ""}`;
-                    const pNome = formNome ? formNome.split(" ")[0] : ficha.colaboradorNome.split(" ")[0];
-                    const msg = `Olá, *${pNome}*! Tudo bem? 🌿\n\nPara fins de emissão de recibos, documentação dos seus atendimentos psicológicos e atualização cadastral, por favor confirme seus dados através do nosso link seguro:\n\n${link}\n\nLeva menos de 1 minuto e garante a correta emissão fiscal. Muito obrigado!`;
-                    const wppClean = (ficha.colaboradorWhatsapp || "").replace(/\D/g, "");
-                    const wppUrl = wppClean ? `https://wa.me/55${wppClean}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`;
-                    window.open(wppUrl, "_blank");
-                    setModalColetaLink(false);
-                    showToast("Fechamento aberto no WhatsApp!");
-                  }}
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
-                >
-                  <MessageCircle className="w-3.5 h-3.5" />
-                  <span>Abrir no WhatsApp</span>
-                </button>
-              </div>
+            {ficha.valorSessao ? (
+              <span className="font-bold text-emerald-800 tabular-nums whitespace-nowrap before:content-['•'] before:mr-2.5 before:text-forest/30">
+                R$ {ficha.valorSessao}/sessão
+              </span>
+            ) : null}
+          </div>
+        </div>
+      </div>
+
+      {/* Painel Expandido de Detalhes e Desfechos */}
+      {isExpanded && (
+        <div
+          className="px-4 py-3 bg-warm/25 border-t border-soft/80 flex flex-col gap-2.5 text-xs animate-in fade-in duration-150"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-forest/85">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[11px] font-semibold text-forest/55">
+                {isProfissional ? "Modalidade" : "Empresa / Convênio"}
+              </span>
+              <span className="font-medium">
+                {isProfissional ? "Convênio Corporativo Ativo" : ficha.empresaNome || "Corporativo"}
+              </span>
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[11px] font-semibold text-forest/55">
+                {isProfissional ? "Serviço / Turno" : "Cargo / Área"}
+              </span>
+              <span className="font-medium">
+                {isProfissional
+                  ? `${ficha.servicoNome || "Psicoterapia"}${ficha.turnoPreferencia ? ` · ${ficha.turnoPreferencia}` : ""}`
+                  : ficha.cargoNome || "Não informado"}
+              </span>
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[11px] font-semibold text-forest/55">Condição / Valor</span>
+              <span className="font-medium tabular-nums">
+                R$ {ficha.valorSessao},00/sessão ({ficha.frequenciaRecomendada || "Semanal"})
+              </span>
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[11px] font-semibold text-forest/55">Profissional Responsável</span>
+              <span className="font-medium">{ficha.profissionalNome || "Não atribuído"}</span>
             </div>
           </div>
-        )}
-      </div>
+
+          {ficha.queixa && (
+            <div className="pt-2 border-t border-soft/50 flex flex-col gap-1">
+              <span className="text-[11px] font-semibold text-forest/55">Queixa / Motivo:</span>
+              <p className="p-2.5 bg-white rounded-lg border border-soft/80 text-forest/80 leading-relaxed text-xs">
+                {ficha.queixa}
+              </p>
+            </div>
+          )}
+
+          <div className="pt-2 border-t border-soft/50 flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-2 flex-wrap">
+              {ficha.status === "solicitacao_servico" && onAceitar && (
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={onAceitar}
+                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-all shadow-2xs flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  <span>Aceitar Ficha</span>
+                </button>
+              )}
+
+              {ficha.status === "paciente" && (
+                <>
+                  {onAlta && (
+                    <button
+                      type="button"
+                      onClick={onAlta}
+                      className="px-3 py-1.5 text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-all cursor-pointer border border-blue-200"
+                    >
+                      Registrar Alta
+                    </button>
+                  )}
+                  {onInterrupcao && (
+                    <button
+                      type="button"
+                      onClick={onInterrupcao}
+                      className="px-3 py-1.5 text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 rounded-lg transition-all cursor-pointer border border-rose-200"
+                    >
+                      Interromper Atendimento
+                    </button>
+                  )}
+                </>
+              )}
+
+              {(ficha.status === "alta" || ficha.status === "interrupcao") && onReativar && (
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={onReativar}
+                  className="px-3 py-1.5 bg-forest text-white rounded-lg text-xs font-semibold hover:bg-forest/90 transition-all cursor-pointer disabled:opacity-50 flex items-center gap-1"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Reativar Paciente</span>
+                </button>
+              )}
+            </div>
+
+            <span className="text-[11px] text-forest/50">
+              Clique em "Ficha de Bordo" para prontuário, contrato e histórico completo.
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -278,6 +278,38 @@ export interface FichaBordoCorporativa {
   colaboradorEmail?: string;
   colaboradorDataNascimento?: string;
   dadosFaturamentoPreenchidosEm?: string;
+  // Campos Unificados da Ficha de Bordo (Agenda, Financeiro & Prontuário)
+  historicoSessoes?: any[];
+  prontuarioClinico?: any[];
+  perfilFaturamento?: "PF" | "PJ";
+  modalidade?: "online" | "presencial" | "hibrido";
+  formaPagamento?: string;
+  frequenciaSessoes?: string;
+  nome?: string;
+  nomeCivil?: string;
+  nomeSocial?: string;
+  nomeDesejado?: string;
+  genero?: string;
+  profissao?: string;
+  estadoCivil?: string;
+  fonteIndicacao?: string;
+  terapiaAnterior?: string;
+  medicacao?: string;
+  disponibilidade?: string;
+  queixaPrincipal?: string;
+  motivo?: string;
+  telefone?: string;
+  email?: string;
+  dataNascimento?: string;
+  contatoEmergencia?: any;
+  contatoEmergenciaObj?: any;
+  responsavel?: any;
+  endereco?: any;
+  cep?: string;
+  cidade?: string;
+  uf?: string;
+  cidadeEstado?: string;
+  enderecoCompleto?: string;
 }
 
 export interface ServicoAdicionalItem {

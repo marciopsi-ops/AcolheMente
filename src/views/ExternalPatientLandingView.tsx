@@ -645,13 +645,6 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
             <p>• Suas informações foram sincronizadas e registradas com data e hora.</p>
             <p>• Suas informações estão resguardadas sob rigoroso sigilo ético profissional e LGPD.</p>
           </div>
-          <button
-            type="button"
-            onClick={onGoHome}
-            className="mt-2 px-6 py-2.5 rounded-full bg-forest text-white font-semibold text-xs hover:bg-forest/90 transition-all cursor-pointer shadow-xs"
-          >
-            Voltar para o Início
-          </button>
         </div>
       </div>
     );

@@ -69,6 +69,8 @@ export interface AgendamentoSessao {
   diaSemanaFixo?: number; // 0 a 6
   frequenciaRecorrencia?: "semanal" | "quinzenal";
   frequencia?: "nenhuma" | "semanal" | "quinzenal";
+  origemTipo?: string;
+  servicoB2BId?: string;
   createdAt?: any;
   updatedAt?: any;
 }
@@ -78,9 +80,13 @@ interface ProfissionalAgendaViewProps {
   profissionalNome?: string;
   pacientesAtivos: Acolhimento[];
   pacientesExternos?: any[];
+  fichasCorporativas?: any[];
+  empresasB2B?: any[];
   plano?: string;
   onOpenPacienteDetalhes?: (pacienteId: string) => void;
   onNovoPacienteExternoCadastrado?: (paciente: any) => void;
+  initialPacienteId?: string | null;
+  onClearInitialPacienteId?: () => void;
 }
 
 type ViewMode = "dia" | "semana" | "mes" | "lista";
@@ -122,9 +128,13 @@ export function ProfissionalAgendaView({
   profissionalNome = "Profissional",
   pacientesAtivos = [],
   pacientesExternos = [],
+  fichasCorporativas = [],
+  empresasB2B = [],
   plano = "",
   onOpenPacienteDetalhes,
   onNovoPacienteExternoCadastrado,
+  initialPacienteId,
+  onClearInitialPacienteId,
 }: ProfissionalAgendaViewProps) {
   // Verificação de Plano Avançado (libera carteira de pacientes externos)
   const isPlanoAvancado = useMemo(() => {
@@ -243,9 +253,9 @@ export function ProfissionalAgendaView({
     return () => unsubscribe();
   }, [profissionalUid]);
 
-  // Lista unificada de pacientes (ativos da plataforma + carteira externa)
+  // Lista unificada de pacientes (ativos da plataforma + carteira externa + corporativos ativos)
   const todosPacientesElegiveis = useMemo(() => {
-    const list: Array<Acolhimento & { isExterno?: boolean; viaAcesso?: string }> = [];
+    const list: Array<any> = [];
     const ids = new Set<string>();
 
     (pacientesAtivos || []).forEach((p) => {
@@ -267,8 +277,65 @@ export function ProfissionalAgendaView({
       }
     });
 
+    (fichasCorporativas || []).forEach((f: any) => {
+      if (
+        f.id &&
+        !ids.has(f.id) &&
+        (f.status === "paciente" || f.status === "solicitacao_servico")
+      ) {
+        ids.add(f.id);
+        const corpNome =
+          f.nomeCivil ||
+          f.pacienteNomeCompleto ||
+          (f.beneficiarioTipo === "dependente" && f.dependenteInfo
+            ? f.dependenteInfo
+            : f.colaboradorNome) ||
+          f.colaboradorNome ||
+          f.nome ||
+          "Paciente Corporativo";
+        list.push({
+          id: f.id,
+          nome: corpNome,
+          nomeCivil: corpNome,
+          nomeDesejado: f.nomeSocial || f.nomeDesejado || corpNome,
+          telefone:
+            f.telefone ||
+            f.pacienteTelefone ||
+            f.colaboradorWhatsapp ||
+            f.colaboradorTelefone ||
+            "",
+          email: f.email || f.pacienteEmail || f.colaboradorEmail || "",
+          valorSessao: String(f.valorSessao || ""),
+          viaAcesso: "Convênio Corporativo",
+          isExterno: false,
+          isCorporativo: true,
+        });
+      }
+    });
+
+    if (isPlanoAvancado) {
+      (empresasB2B || []).forEach((emp: any) => {
+        if (emp.id && !ids.has(emp.id) && emp.statusComercial !== "encerrada") {
+          ids.add(emp.id);
+          const empNome = `[B2B] ${emp.nomeFantasia || emp.razaoSocial || "Empresa Cliente"}`;
+          list.push({
+            id: emp.id,
+            nome: empNome,
+            nomeCivil: empNome,
+            nomeDesejado: empNome,
+            telefone: emp.contatoTelefone || "",
+            email: emp.contatoEmail || emp.emailFinanceiroNf || "",
+            valorSessao: String(emp.valorServicoPadrao || "1500"),
+            viaAcesso: "Empresa B2B",
+            isExterno: false,
+            isEmpresaB2B: true,
+          });
+        }
+      });
+    }
+
     return list;
-  }, [pacientesAtivos, pacientesExternos]);
+  }, [pacientesAtivos, pacientesExternos, fichasCorporativas, empresasB2B, isPlanoAvancado]);
 
   // Lista de pacientes elegíveis para agendamento (ativos + externos)
   const sugestoesPacientes = useMemo(() => {
@@ -525,6 +592,19 @@ export function ProfissionalAgendaView({
     setIsPacienteDropdownOpen(false);
   };
 
+  // Abertura automática quando redirecionado de "Agendar Sessão" na Ficha ou Kanban Corporativo
+  useEffect(() => {
+    if (!initialPacienteId) return;
+    const found = todosPacientesElegiveis.find((p) => p.id === initialPacienteId);
+    if (found) {
+      handleOpenNovoAgendamento();
+      handleSelectPaciente(found);
+      if (onClearInitialPacienteId) {
+        onClearInitialPacienteId();
+      }
+    }
+  }, [initialPacienteId, todosPacientesElegiveis]);
+
   // Cadastro Rápido de Paciente Externo no Firestore
   const handleCadastrarNovoPacienteExterno = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -624,6 +704,15 @@ export function ProfissionalAgendaView({
         }
       }
 
+      if (!docSnap.exists()) {
+        const corpRef = doc(db, "triagem_corporativa", pacienteId);
+        const corpSnap = await getDoc(corpRef);
+        if (corpSnap.exists()) {
+          targetRef = corpRef;
+          docSnap = corpSnap;
+        }
+      }
+
       if (docSnap.exists()) {
         const acolhimentoData = docSnap.data();
         const historicoExistente = Array.isArray(acolhimentoData.historicoSessoes)
@@ -649,9 +738,62 @@ export function ProfissionalAgendaView({
           historicoSessoes: historicoExistente,
           updatedAt: serverTimestamp(),
         });
+        return;
+      }
+
+      // Verifica se é uma Empresa Cliente B2B (prestação de serviços corporativos)
+      const empRef = doc(db, "empresas_profissional", pacienteId);
+      const empSnap = await getDoc(empRef);
+      if (empSnap.exists()) {
+        const empData = empSnap.data();
+        const servicosExistentes = Array.isArray(empData.historicoServicos)
+          ? [...empData.historicoServicos]
+          : [];
+        const agExistente = agendamentos.find((a) => a.id === sessaoItem.id);
+        const servicoKey = agExistente?.servicoB2BId || sessaoItem.id;
+        const idxSrv = servicosExistentes.findIndex((s: any) => s.id === servicoKey);
+        const statusExecucaoMap: Record<string, "agendado" | "realizado" | "cancelado"> = {
+          agendada: "agendado",
+          realizada: "realizado",
+          desmarcada_antecedencia: "cancelado",
+          falta_sem_aviso: "cancelado",
+        };
+        const statusExec = statusExecucaoMap[sessaoItem.statusAtendimento] || "agendado";
+
+        if (idxSrv >= 0) {
+          servicosExistentes[idxSrv] = {
+            ...servicosExistentes[idxSrv],
+            data: sessaoItem.data,
+            horario: sessaoItem.horario,
+            modalidade: sessaoItem.modalidade,
+            statusExecucao: statusExec,
+            valor: sessaoItem.valor,
+          };
+        } else {
+          servicosExistentes.push({
+            id: servicoKey,
+            numeroItem: servicosExistentes.length + 1,
+            data: sessaoItem.data,
+            horario: sessaoItem.horario,
+            duracaoMinutos: 60,
+            descricaoServico: sessaoItem.observacoes || "Atendimento / Intervenção Corporativa",
+            modalidade: sessaoItem.modalidade,
+            statusExecucao: statusExec,
+            valor: sessaoItem.valor,
+            statusNotaFiscal: "pendente",
+            statusPagamento: "pendente",
+            formaPagamento: "Pix",
+            observacoes: sessaoItem.observacoes || "",
+          });
+        }
+
+        await updateDoc(empRef, {
+          historicoServicos: servicosExistentes,
+          updatedAt: serverTimestamp(),
+        });
       }
     } catch (err) {
-      console.warn("Aviso ao sincronizar sessão com ficha do paciente:", err);
+      console.warn("Aviso ao sincronizar sessão com ficha do paciente/empresa:", err);
     }
   };
 
@@ -848,11 +990,67 @@ export function ProfissionalAgendaView({
     }
   };
 
-  // Exclusão de agendamento
+  // Exclusão de agendamento (e remoção espelhada no histórico financeiro da ficha)
   const handleConfirmarExclusao = async () => {
     if (!agendamentoParaExcluir) return;
     try {
-      await deleteDoc(doc(db, "agendamentos", agendamentoParaExcluir.id));
+      const agId = agendamentoParaExcluir.id;
+      const pacId = agendamentoParaExcluir.pacienteId;
+      await deleteDoc(doc(db, "agendamentos", agId));
+
+      if (pacId && pacId !== "avulso") {
+        try {
+          let targetRef = doc(db, "acolhimentos", pacId);
+          let docSnap = await getDoc(targetRef);
+          if (!docSnap.exists()) {
+            const pacRef = doc(db, "pacientes", pacId);
+            const pacSnap = await getDoc(pacRef);
+            if (pacSnap.exists()) {
+              targetRef = pacRef;
+              docSnap = pacSnap;
+            }
+          }
+          if (!docSnap.exists()) {
+            const corpRef = doc(db, "triagem_corporativa", pacId);
+            const corpSnap = await getDoc(corpRef);
+            if (corpSnap.exists()) {
+              targetRef = corpRef;
+              docSnap = corpSnap;
+            }
+          }
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            if (Array.isArray(data.historicoSessoes)) {
+              const filtrado = data.historicoSessoes
+                .filter((s: any) => s.id !== agId)
+                .map((s: any, idx: number) => ({ ...s, numeroSessao: idx + 1 }));
+              await updateDoc(targetRef, {
+                historicoSessoes: filtrado,
+                updatedAt: serverTimestamp(),
+              });
+            }
+          } else {
+            const empRef = doc(db, "empresas_profissional", pacId);
+            const empSnap = await getDoc(empRef);
+            if (empSnap.exists()) {
+              const empData = empSnap.data();
+              const srvId = agendamentoParaExcluir.servicoB2BId || agId;
+              if (Array.isArray(empData.historicoServicos)) {
+                const atualizadoB2B = empData.historicoServicos.map((s: any) =>
+                  s.id === srvId ? { ...s, horario: "" } : s
+                );
+                await updateDoc(empRef, {
+                  historicoServicos: atualizadoB2B,
+                  updatedAt: serverTimestamp(),
+                });
+              }
+            }
+          }
+        } catch (syncErr) {
+          console.warn("Aviso ao remover sessão do histórico da ficha:", syncErr);
+        }
+      }
+
       setAgendamentoParaExcluir(null);
     } catch (err) {
       console.error("Erro ao excluir agendamento:", err);
@@ -910,7 +1108,8 @@ export function ProfissionalAgendaView({
   };
 
   return (
-    <div className="flex-1 flex flex-col gap-3.5 sm:gap-4 p-3 sm:p-5 md:p-6 bg-warm overflow-y-auto pb-36 min-h-0">
+    <div className="flex-1 min-h-0 w-full bg-warm overflow-y-auto overflow-x-hidden overscroll-y-contain [-webkit-overflow-scrolling:touch]">
+      <div className="flex flex-col gap-3.5 sm:gap-4 p-3 sm:p-5 md:p-6 pb-28 sm:pb-36">
       {/* 1. TOPO DA AGENDA: TÍTULO COMPACTO E BOTÃO DE NOVO AGENDAMENTO */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3 sm:p-4 rounded-xl border border-soft shadow-2xs">
         <div>
@@ -946,7 +1145,7 @@ export function ProfissionalAgendaView({
       </div>
 
       {/* 2. CARDS DE INDICADORES MENSAIS EM TEMPO REAL - COMPACTOS E OTIMIZADOS VERTICALMENTE */}
-      <div className="grid grid-cols-3 lg:grid-cols-6 gap-2">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
         {/* Total do Mês */}
         <div className="bg-white px-2.5 py-1.5 rounded-xl border border-soft shadow-2xs flex items-center justify-between gap-1.5">
           <div className="min-w-0">
@@ -974,21 +1173,6 @@ export function ProfissionalAgendaView({
           </div>
           <div className="w-6 h-6 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0">
             <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-          </div>
-        </div>
-
-        {/* Agendadas (Programadas) */}
-        <div className="bg-white px-2.5 py-1.5 rounded-xl border border-soft shadow-2xs flex items-center justify-between gap-1.5">
-          <div className="min-w-0">
-            <span className="text-[9px] sm:text-[10px] font-semibold text-sky-700 uppercase tracking-wider block truncate">
-              Programadas
-            </span>
-            <span className="text-sm sm:text-base font-bold text-sky-700 leading-tight block">
-              {metricasMensais.agendadas}
-            </span>
-          </div>
-          <div className="w-6 h-6 rounded-lg bg-sky-50 flex items-center justify-center shrink-0">
-            <Clock className="w-3 h-3 text-sky-600" />
           </div>
         </div>
 
@@ -1021,25 +1205,10 @@ export function ProfissionalAgendaView({
             <XCircle className="w-3 h-3 text-rose-600" />
           </div>
         </div>
-
-        {/* Horários Fixos */}
-        <div className="bg-white px-2.5 py-1.5 rounded-xl border border-soft shadow-2xs flex items-center justify-between gap-1.5">
-          <div className="min-w-0">
-            <span className="text-[9px] sm:text-[10px] font-semibold text-purple-700 uppercase tracking-wider block truncate">
-              Fixados 📌
-            </span>
-            <span className="text-sm sm:text-base font-bold text-purple-700 leading-tight block">
-              {metricasMensais.fixos}
-            </span>
-          </div>
-          <div className="w-6 h-6 rounded-lg bg-purple-50 flex items-center justify-center shrink-0">
-            <Pin className="w-3 h-3 text-purple-600" />
-          </div>
-        </div>
       </div>
 
       {/* 3. BARRA DE CONTROLE: NAVEGAÇÃO DE DATAS, VISUALIZAÇÃO E FILTROS */}
-      <div className="sticky top-0 z-20 bg-white/95 backdrop-blur-md p-2.5 sm:p-3 rounded-2xl border border-soft shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2.5">
+      <div className="md:sticky md:top-0 z-20 bg-white/95 backdrop-blur-md p-2.5 sm:p-3 rounded-2xl border border-soft shadow-sm flex flex-wrap items-center justify-between gap-2">
         {/* Navegação de Data */}
         <div className="flex items-center gap-2">
           <div className="flex items-center bg-warm rounded-xl border border-soft p-0.5">
@@ -1092,7 +1261,7 @@ export function ProfissionalAgendaView({
         </div>
 
         {/* Modos de Visualização (Dia, Semana, Mês, Lista) - Responsivo e sempre visível em qualquer orientação */}
-        <div className="flex items-center gap-2 self-start md:self-auto overflow-x-auto max-w-full pb-0.5">
+        <div className="flex items-center gap-2 shrink-0">
           <div className="flex items-center p-1 bg-warm rounded-xl border border-soft text-xs font-semibold shrink-0">
             <button
               type="button"
@@ -1264,10 +1433,10 @@ export function ProfissionalAgendaView({
             </button>
           </div>
 
-          {/* Grade Horária do Dia com Suporte a Rolagem Horizontal e Vertical */}
-          <div className="bg-white rounded-2xl border border-soft shadow-xs p-3 sm:p-5 flex flex-col gap-3 overflow-hidden">
-            <div className="overflow-x-auto min-w-full pb-2">
-              <div className="min-w-[640px] sm:min-w-0">
+          {/* Grade Horária do Dia com Suporte a Rolagem Vertical Fluida */}
+          <div className="bg-white rounded-2xl border border-soft shadow-xs p-3 sm:p-5 flex flex-col gap-3">
+            <div className="w-full">
+              <div className="w-full">
                 {(() => {
                   const dataStr = formatarDataIso(currentDate);
                   const sessoesDoDia = (agendamentosPorData.get(dataStr) || []).sort((a, b) =>
@@ -1477,13 +1646,13 @@ export function ProfissionalAgendaView({
                             <button
                               type="button"
                               onClick={() => handleOpenNovoAgendamento(dataStr, hora)}
-                              className="w-full py-2 px-3 rounded-xl border border-dashed border-soft/80 hover:border-forest/40 hover:bg-forest/[0.03] text-left text-xs text-forest/40 hover:text-forest transition-all flex items-center justify-between cursor-pointer group"
+                              className="w-full py-2 px-3 rounded-xl border border-dashed border-soft/80 hover:border-forest/40 hover:bg-forest/[0.03] text-left text-xs text-forest/40 hover:text-forest transition-all flex items-center justify-between gap-2 cursor-pointer group"
                             >
-                              <span className="flex items-center gap-1.5">
-                                <Plus className="w-3.5 h-3.5 text-forest/40 group-hover:text-forest transition-colors" />
-                                <span>Horário vago • Clique para agendar às {hora}</span>
+                              <span className="flex items-center gap-1.5 min-w-0">
+                                <Plus className="w-3.5 h-3.5 text-forest/40 group-hover:text-forest transition-colors shrink-0" />
+                                <span className="truncate">Horário vago • Clique para agendar às {hora}</span>
                               </span>
-                              <span className="text-[10px] font-semibold text-forest/40 group-hover:text-forest bg-warm px-2 py-0.5 rounded-md">
+                              <span className="text-[10px] font-semibold text-forest/40 group-hover:text-forest bg-warm px-2 py-0.5 rounded-md shrink-0">
                                 Disponível
                               </span>
                             </button>
@@ -1547,8 +1716,8 @@ export function ProfissionalAgendaView({
 
           {/* Grade Semanal */}
           <div className="bg-white rounded-2xl border border-soft shadow-xs">
-            <div className="overflow-x-auto min-w-full pb-2 touch-pan-y">
-              <div className="min-w-[780px] xl:min-w-0">
+            <div className="overflow-x-auto overflow-y-hidden min-w-full">
+              <div className="min-w-[780px] xl:min-w-0 pb-3">
                 {/* Header dos 7 dias */}
                 <div className="grid grid-cols-7 border-b border-soft bg-warm/40 text-center">
                   {diasDaSemana.map((dia) => (
@@ -1733,8 +1902,8 @@ export function ProfissionalAgendaView({
       ) : viewMode === "mes" ? (
         /* VISÃO MENSAL COM ROLAGEM HORIZONTAL E VERTICAL */
         <div className="bg-white rounded-2xl border border-soft shadow-xs p-3 sm:p-4">
-          <div className="overflow-x-auto min-w-full pb-2">
-            <div className="min-w-[720px] xl:min-w-0">
+          <div className="overflow-x-auto overflow-y-hidden min-w-full">
+            <div className="min-w-[720px] xl:min-w-0 pb-2">
               <div className="grid grid-cols-7 text-center font-bold text-xs text-forest/60 mb-2 border-b border-soft pb-2">
                 <span>Dom</span>
                 <span>Seg</span>
@@ -1849,8 +2018,8 @@ export function ProfissionalAgendaView({
               </button>
             </div>
           ) : (
-            <div className="overflow-x-auto min-w-full pb-2">
-              <div className="min-w-[720px] md:min-w-0 divide-y divide-soft">
+            <div className="w-full">
+              <div className="w-full divide-y divide-soft">
                 {agendamentosFiltrados.map((item) => (
                   <div
                     key={item.id}
@@ -2745,6 +2914,7 @@ export function ProfissionalAgendaView({
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }

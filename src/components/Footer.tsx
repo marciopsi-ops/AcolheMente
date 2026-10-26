@@ -267,6 +267,7 @@ export function Footer({ onNavigate }: { onNavigate?: (view: any) => void }) {
         <div className="flex flex-col items-start md:items-end justify-center gap-1">
           <span className="font-semibold text-forest/80 uppercase tracking-[0.25em] text-[10px]">Uma iniciativa de</span>
           <span className="font-bold text-forest tracking-wide">ELO Soluções Humanas</span>
+          <span className="text-[11px] text-forest/65 font-medium tracking-wide">CNPJ: 51.363.220/0001-10</span>
         </div>
       </div>
 

@@ -12,20 +12,29 @@ import {
   AlertTriangle,
   ExternalLink,
   Printer,
-  ChevronDown,
   Layers,
-  Sparkles,
   Send,
   X,
   User,
-  Globe,
   Building,
   Building2,
   Settings,
   Check,
   FileSpreadsheet,
   BookOpen,
+  Banknote,
+  EyeOff,
+  ShieldCheck,
 } from "lucide-react";
+import {
+  PerfilFaturamentoItem,
+  normalizePerfisFaturamento,
+  resolvePerfilFaturamentoAtivo,
+  shouldDeclararIrForItem,
+  formatPerfilCurtoLabel,
+  extractLegacySyncFields,
+} from "../types/faturamento";
+import { PerfisFaturamentoManagerModal } from "./PerfisFaturamentoManagerModal";
 
 export interface SessaoFaturamentoItem {
   id: string;
@@ -39,6 +48,8 @@ export interface SessaoFaturamentoItem {
   dataPagamento?: string;
   formaPagamento?: "Pix" | "Cartão" | "Transferência" | "Dinheiro" | "Outro";
   observacoes?: string;
+  perfilFaturamentoId?: string;
+  declararIrOverride?: boolean;
 }
 
 export interface DadosPessoaJuridica {
@@ -60,10 +71,12 @@ export interface ProfissionalLogadoFaturamento {
   especialidade?: string;
   papelOuFuncao?: string;
   chavePix?: string;
+  pixKey?: string;
   email?: string;
   telefone?: string;
   dadosPJ?: DadosPessoaJuridica;
   faturamentoPadrao?: "PF" | "PJ";
+  perfisFaturamento?: PerfilFaturamentoItem[];
 }
 
 export interface PacienteFaturamentoSpreadsheetProps {
@@ -77,8 +90,11 @@ export interface PacienteFaturamentoSpreadsheetProps {
   sessoes?: SessaoFaturamentoItem[];
   onSaveSessoes: (novasSessoes: SessaoFaturamentoItem[]) => Promise<void> | void;
   perfilFaturamento?: "PF" | "PJ";
+  perfilFaturamentoId?: string;
   onUpdatePerfilFaturamento?: (novoPerfil: "PF" | "PJ") => Promise<void> | void;
+  onUpdatePerfilFaturamentoId?: (novoId: string, via: "PF" | "PJ") => Promise<void> | void;
   onSaveDadosPJ?: (dadosPJ: DadosPessoaJuridica) => Promise<void> | void;
+  onSavePerfisFaturamento?: (perfis: PerfilFaturamentoItem[]) => Promise<void> | void;
   profissionalLogado?: ProfissionalLogadoFaturamento;
   showToast: (msg: string, type?: "success" | "error" | "info" | "warning") => void;
   isCorporativo?: boolean;
@@ -103,8 +119,11 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
   sessoes = [],
   onSaveSessoes,
   perfilFaturamento = "PF",
+  perfilFaturamentoId,
   onUpdatePerfilFaturamento,
+  onUpdatePerfilFaturamentoId,
   onSaveDadosPJ,
+  onSavePerfisFaturamento,
   profissionalLogado,
   showToast,
   isCorporativo = false,
@@ -112,7 +131,6 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
   registrosProntuario = [],
   onAbrirProntuarioModal,
 }) => {
-  // Parse numeric base session value
   const parseValorNumerico = (v: any): number => {
     if (!v) return 100;
     if (typeof v === "number") return v;
@@ -131,7 +149,6 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
 
   const valorBase = useMemo(() => parseValorNumerico(valorSessaoPadrao), [valorSessaoPadrao]);
 
-  // Filtro de Competência / Período
   const currentMonthStr = useMemo(() => {
     const d = new Date();
     const y = d.getFullYear();
@@ -139,11 +156,10 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
     return `${y}-${m}`;
   }, []);
 
-  const [filtroPeriodo, setFiltroPeriodo] = useState<string>("todas"); // 'todas', '2026-10', 'custom'
+  const [filtroPeriodo, setFiltroPeriodo] = useState<string>("todas");
   const [dataInicioCustom, setDataInicioCustom] = useState<string>("");
   const [dataFimCustom, setDataFimCustom] = useState<string>("");
 
-  // Estado local com sincronização para reatividade instantânea
   const [itensSessoes, setItensSessoes] = useState<SessaoFaturamentoItem[]>(sessoes || []);
 
   useEffect(() => {
@@ -152,12 +168,27 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
     }
   }, [sessoes]);
 
-  // Estado para exclusão segura in-app (sem window.confirm bloqueado por sandbox de iframes)
   const [sessaoParaExcluir, setSessaoParaExcluir] = useState<SessaoFaturamentoItem | null>(null);
   const [isExcluindo, setIsExcluindo] = useState<boolean>(false);
 
-  // Perfil de faturamento fixado para este paciente ("PF" ou "PJ")
-  const [perfilAtivo, setPerfilAtivo] = useState<"PF" | "PJ">(perfilFaturamento || profissionalLogado?.faturamentoPadrao || "PF");
+  // Carteira de múltiplos perfis de faturamento (PF Contas, Caixa Dinheiro Físico, Múltiplos CNPJs)
+  const [perfisLocaisOverride, setPerfisLocaisOverride] = useState<PerfilFaturamentoItem[] | null>(null);
+
+  useEffect(() => {
+    setPerfisLocaisOverride(null);
+  }, [profissionalLogado?.perfisFaturamento, profissionalLogado?.dadosPJ, profissionalLogado?.cpf, profissionalLogado?.chavePix]);
+
+  const listaPerfis = useMemo(() => {
+    if (perfisLocaisOverride && perfisLocaisOverride.length > 0) {
+      return perfisLocaisOverride;
+    }
+    return normalizePerfisFaturamento(profissionalLogado);
+  }, [perfisLocaisOverride, profissionalLogado]);
+
+  const [perfilAtivo, setPerfilAtivo] = useState<"PF" | "PJ">(
+    perfilFaturamento || profissionalLogado?.faturamentoPadrao || "PF"
+  );
+  const [localPerfilId, setLocalPerfilId] = useState<string | undefined>(perfilFaturamentoId);
 
   useEffect(() => {
     if (perfilFaturamento) {
@@ -165,67 +196,66 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
     }
   }, [perfilFaturamento]);
 
-  // Dados de Pessoa Jurídica (PJ) do profissional
-  const [dadosPJ, setDadosPJ] = useState<DadosPessoaJuridica>(profissionalLogado?.dadosPJ || {});
-
   useEffect(() => {
-    if (profissionalLogado?.dadosPJ) {
-      setDadosPJ(profissionalLogado.dadosPJ);
-      setFormPJ(profissionalLogado.dadosPJ);
-    }
-  }, [profissionalLogado?.dadosPJ]);
+    setLocalPerfilId(perfilFaturamentoId);
+  }, [perfilFaturamentoId]);
 
-  // Modais de alternância e de configuração da PJ
+  const perfilResolvidoPaciente = useMemo(
+    () => resolvePerfilFaturamentoAtivo(listaPerfis, localPerfilId, perfilAtivo),
+    [listaPerfis, localPerfilId, perfilAtivo]
+  );
+
+  const resolverPerfilDaSessao = (s?: SessaoFaturamentoItem): PerfilFaturamentoItem => {
+    if (!s) return perfilResolvidoPaciente;
+    return resolvePerfilFaturamentoAtivo(
+      listaPerfis,
+      s.perfilFaturamentoId || localPerfilId,
+      perfilAtivo
+    );
+  };
+
+  const isSessaoDeclaravelIr = (s: SessaoFaturamentoItem): boolean => {
+    const p = resolverPerfilDaSessao(s);
+    return shouldDeclararIrForItem(s, p);
+  };
+
+  // Modais de seleção e gestão completa de perfis
   const [modalAlterarPerfil, setModalAlterarPerfil] = useState<boolean>(false);
-  const [modalConfigurarPJ, setModalConfigurarPJ] = useState<boolean>(false);
-  const [salvandoPJ, setSalvandoPJ] = useState<boolean>(false);
-  const [formPJ, setFormPJ] = useState<DadosPessoaJuridica>({
-    razaoSocial: profissionalLogado?.dadosPJ?.razaoSocial || "",
-    nomeFantasia: profissionalLogado?.dadosPJ?.nomeFantasia || "",
-    cnpj: profissionalLogado?.dadosPJ?.cnpj || "",
-    inscricaoMunicipal: profissionalLogado?.dadosPJ?.inscricaoMunicipal || "",
-    chavePixPJ: profissionalLogado?.dadosPJ?.chavePixPJ || "",
-    enderecoPJ: profissionalLogado?.dadosPJ?.enderecoPJ || "",
-    cnae: profissionalLogado?.dadosPJ?.cnae || "8650-0/03",
-  });
+  const [showGerenciarPerfisModal, setShowGerenciarPerfisModal] = useState<boolean>(false);
 
-  // AÇÃO: Alternar perfil de faturamento do paciente (PF vs PJ)
-  const handleTrocarPerfilPaciente = async (novoPerfil: "PF" | "PJ") => {
+  const handleSelecionarPerfilEspecifico = async (item: PerfilFaturamentoItem) => {
     try {
-      setPerfilAtivo(novoPerfil);
-      if (onUpdatePerfilFaturamento) {
-        await onUpdatePerfilFaturamento(novoPerfil);
+      setLocalPerfilId(item.id);
+      setPerfilAtivo(item.via);
+      if (onUpdatePerfilFaturamentoId) {
+        await onUpdatePerfilFaturamentoId(item.id, item.via);
+      } else if (onUpdatePerfilFaturamento) {
+        await onUpdatePerfilFaturamento(item.via);
       }
       showToast(
-        `Modalidade de faturamento fixada em ${novoPerfil === "PJ" ? "Pessoa Jurídica (PJ)" : "Pessoa Física (PF)"}!`,
+        `Emissão deste paciente fixada em: ${formatPerfilCurtoLabel(item)} (${item.via})!`,
         "success"
       );
       setModalAlterarPerfil(false);
     } catch (err) {
-      console.error("Erro ao alterar modalidade de faturamento:", err);
-      showToast("Erro ao salvar modalidade de faturamento.", "error");
+      console.error("Erro ao alterar perfil de faturamento:", err);
+      showToast("Erro ao salvar perfil de faturamento.", "error");
     }
   };
 
-  // AÇÃO: Salvar dados da Pessoa Jurídica do profissional
-  const handleSalvarDadosPJ = async () => {
-    if (!formPJ.razaoSocial?.trim() && !formPJ.cnpj?.trim()) {
-      showToast("Por favor, preencha ao menos a Razão Social ou CNPJ da empresa.", "info");
+  const handleSalvarCarteiraPerfis = async (novosPerfis: PerfilFaturamentoItem[]) => {
+    setPerfisLocaisOverride(novosPerfis);
+    if (onSavePerfisFaturamento) {
+      await onSavePerfisFaturamento(novosPerfis);
       return;
     }
-    try {
-      setSalvandoPJ(true);
-      setDadosPJ(formPJ);
-      if (onSaveDadosPJ) {
-        await onSaveDadosPJ(formPJ);
-      }
-      showToast("Dados da Pessoa Jurídica salvos com sucesso!", "success");
-      setModalConfigurarPJ(false);
-    } catch (err) {
-      console.error("Erro ao salvar dados da PJ:", err);
-      showToast("Erro ao salvar dados da PJ.", "error");
-    } finally {
-      setSalvandoPJ(false);
+    if (onSaveDadosPJ) {
+      const legacy = extractLegacySyncFields(
+        novosPerfis,
+        profissionalLogado?.cpf,
+        profissionalLogado?.chavePix || profissionalLogado?.pixKey
+      );
+      await onSaveDadosPJ(legacy.dadosPJ);
     }
   };
 
@@ -240,28 +270,29 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
   const [modalCarneLeao, setModalCarneLeao] = useState<boolean>(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
-  // Identificação profissional dinâmica (Psicólogo vs Terapeuta / Psicanalista)
   const profNome = profissionalLogado?.name || profissionalLogado?.nome || "Profissional Responsável";
   const profCrp = profissionalLogado?.crp || "";
   const profCpf = profissionalLogado?.cpf || "";
   const isPsicologo = Boolean(profCrp && profCrp.trim().length > 2);
-  const profTitulo = isPsicologo ? "Psicólogo(a) Clínico(a)" : (profissionalLogado?.especialidade || "Terapeuta / Psicanalista");
+  const profTitulo = isPsicologo
+    ? "Psicólogo(a) Clínico(a)"
+    : profissionalLogado?.especialidade || "Terapeuta / Psicanalista";
 
   // Sessões Filtradas pelo Período Selecionado
   const sessoesFiltradas = useMemo(() => {
-    return itensSessoes.filter((s) => {
-      if (filtroPeriodo === "todas") return true;
-      if (filtroPeriodo === "custom") {
-        if (dataInicioCustom && s.data < dataInicioCustom) return false;
-        if (dataFimCustom && s.data > dataFimCustom) return false;
-        return true;
-      }
-      // Se for formato YYYY-MM
-      return s.data.startsWith(filtroPeriodo);
-    }).sort((a, b) => (a.data > b.data ? 1 : -1));
+    return itensSessoes
+      .filter((s) => {
+        if (filtroPeriodo === "todas") return true;
+        if (filtroPeriodo === "custom") {
+          if (dataInicioCustom && s.data < dataInicioCustom) return false;
+          if (dataFimCustom && s.data > dataFimCustom) return false;
+          return true;
+        }
+        return s.data.startsWith(filtroPeriodo);
+      })
+      .sort((a, b) => (a.data > b.data ? 1 : -1));
   }, [itensSessoes, filtroPeriodo, dataInicioCustom, dataFimCustom]);
 
-  // Lista única de competências (meses presentes nas sessões para o select)
   const mesesDisponiveis = useMemo(() => {
     const setMeses = new Set<string>();
     setMeses.add(currentMonthStr);
@@ -273,7 +304,7 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
     return Array.from(setMeses).sort().reverse();
   }, [itensSessoes, currentMonthStr]);
 
-  // Métricas Consolidadas do Período
+  // Métricas Consolidadas do Período (Gerencial + Separação Tributável IRPF vs Caixa s/ IR vs PJ)
   const metricas = useMemo(() => {
     let realizadas = 0;
     let agendadas = 0;
@@ -281,6 +312,10 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
     let totalPago = 0;
     let totalPendente = 0;
     let totalGeral = 0;
+    let totalTributavelIr = 0;
+    let totalPagoTributavelIr = 0;
+    let totalSemIrOuPj = 0;
+    let qtdTributavelIr = 0;
 
     sessoesFiltradas.forEach((s) => {
       const v = Number(s.valor) || 0;
@@ -294,6 +329,17 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
       } else {
         totalPendente += v;
       }
+
+      const entraIr = isSessaoDeclaravelIr(s);
+      if (entraIr) {
+        qtdTributavelIr++;
+        totalTributavelIr += v;
+        if (s.statusPagamento === "pago") {
+          totalPagoTributavelIr += v;
+        }
+      } else {
+        totalSemIrOuPj += v;
+      }
     });
 
     return {
@@ -303,14 +349,22 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
       totalPago,
       totalPendente,
       totalGeral,
+      totalTributavelIr,
+      totalPagoTributavelIr,
+      totalSemIrOuPj,
+      qtdTributavelIr,
       qtdTotal: sessoesFiltradas.length,
     };
-  }, [sessoesFiltradas]);
+  }, [sessoesFiltradas, listaPerfis, localPerfilId, perfilAtivo]);
 
-  // AÇÃO: Adicionar Nova Sessão
   const handleAdicionarSessao = async () => {
     const hojeStr = new Date().toISOString().split("T")[0];
-    const novoNumero = itensSessoes.length > 0 ? Math.max(...itensSessoes.map((s) => s.numeroSessao || 0)) + 1 : 1;
+    const novoNumero =
+      itensSessoes.length > 0
+        ? Math.max(...itensSessoes.map((s) => s.numeroSessao || 0)) + 1
+        : 1;
+
+    const isCaixaPadrao = perfilResolvidoPaciente.subtipo === "dinheiro_fisico";
 
     const novaSessao: SessaoFaturamentoItem = {
       id: `sess-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
@@ -321,7 +375,7 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
       statusAtendimento: "realizada",
       valor: valorBase,
       statusPagamento: "pendente",
-      formaPagamento: "Pix",
+      formaPagamento: isCaixaPadrao ? "Dinheiro" : "Pix",
       observacoes: "",
     };
 
@@ -336,14 +390,13 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
     }
   };
 
-  // AÇÃO: Replicar / Duplicar Sessão Existente (+7 dias sugerido)
   const handleDuplicarSessao = async (sessaoOrigem: SessaoFaturamentoItem) => {
     let novaData = sessaoOrigem.data;
     try {
       if (sessaoOrigem.data) {
         const [ano, mes, dia] = sessaoOrigem.data.split("-").map(Number);
         const dataObj = new Date(ano, mes - 1, dia);
-        dataObj.setDate(dataObj.getDate() + 7); // soma 7 dias (próxima semana)
+        dataObj.setDate(dataObj.getDate() + 7);
         const anoNovo = dataObj.getFullYear();
         const mesNovo = String(dataObj.getMonth() + 1).padStart(2, "0");
         const diaNovo = String(dataObj.getDate()).padStart(2, "0");
@@ -353,9 +406,12 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
       novaData = new Date().toISOString().split("T")[0];
     }
 
-    const novoNumero = itensSessoes.length > 0 ? Math.max(...itensSessoes.map((s) => s.numeroSessao || 0)) + 1 : 1;
+    const novoNumero =
+      itensSessoes.length > 0
+        ? Math.max(...itensSessoes.map((s) => s.numeroSessao || 0)) + 1
+        : 1;
 
-    const novaSessao: SessaoFaturamentoItem = {
+    const novaSessaoRaw: SessaoFaturamentoItem = {
       id: `sess-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
       numeroSessao: novoNumero,
       data: novaData,
@@ -365,29 +421,73 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
       valor: sessaoOrigem.valor,
       statusPagamento: "pendente",
       formaPagamento: sessaoOrigem.formaPagamento || "Pix",
+      ...(sessaoOrigem.perfilFaturamentoId
+        ? { perfilFaturamentoId: sessaoOrigem.perfilFaturamentoId }
+        : {}),
+      ...(typeof sessaoOrigem.declararIrOverride === "boolean"
+        ? { declararIrOverride: sessaoOrigem.declararIrOverride }
+        : {}),
       observacoes: sessaoOrigem.observacoes ? `Replicado de #${sessaoOrigem.numeroSessao}` : "",
     };
 
-    const atualizadas = [...itensSessoes, novaSessao];
+    const atualizadas = [...itensSessoes, novaSessaoRaw];
     setItensSessoes(atualizadas);
     try {
       await onSaveSessoes(atualizadas);
-      showToast(`Sessão duplicada com sucesso para ${novaData.split("-").reverse().join("/")}!`, "success");
+      showToast(
+        `Sessão duplicada com sucesso para ${novaData.split("-").reverse().join("/")}!`,
+        "success"
+      );
     } catch (err) {
       console.error("Erro ao salvar sessão duplicada:", err);
       showToast("Erro ao duplicar sessão.", "error");
     }
   };
 
-  // AÇÃO: Atualizar campo pontual da sessão na planilha
-  const handleUpdateItem = async (id: string, campo: keyof SessaoFaturamentoItem, valor: any) => {
+  const sanitizeSessao = (s: SessaoFaturamentoItem): SessaoFaturamentoItem =>
+    Object.fromEntries(
+      Object.entries(s).filter(([, v]) => v !== undefined)
+    ) as SessaoFaturamentoItem;
+
+  const handleUpdatePatchItem = async (id: string, patch: Partial<SessaoFaturamentoItem>) => {
     const atualizadas = itensSessoes.map((s) => {
-      if (s.id !== id) return s;
-      const updated = { ...s, [campo]: valor };
+      if (s.id !== id) return sanitizeSessao(s);
+      return sanitizeSessao({ ...s, ...patch });
+    });
+    setItensSessoes(atualizadas);
+    try {
+      await onSaveSessoes(atualizadas);
+    } catch (err) {
+      console.error("Erro ao atualizar sessão:", err);
+    }
+  };
+
+  const handleUpdateItem = async (
+    id: string,
+    campo: keyof SessaoFaturamentoItem,
+    valor: any
+  ) => {
+    const caixaFisicoPerfil = listaPerfis.find((p) => p.subtipo === "dinheiro_fisico");
+
+    const atualizadas = itensSessoes.map((s) => {
+      if (s.id !== id) return sanitizeSessao(s);
+      const updated: SessaoFaturamentoItem = { ...s, [campo]: valor };
       if (campo === "statusPagamento" && valor === "pago" && !updated.dataPagamento) {
         updated.dataPagamento = new Date().toISOString().split("T")[0];
       }
-      return updated;
+      // Ao selecionar "Dinheiro", sugere automaticamente não declarar no IR (ou vincula ao Caixa Físico se existir)
+      if (campo === "formaPagamento" && valor === "Dinheiro") {
+        const pAtual = resolverPerfilDaSessao(updated);
+        if (pAtual.via === "PF") {
+          if (caixaFisicoPerfil && !updated.perfilFaturamentoId) {
+            updated.perfilFaturamentoId = caixaFisicoPerfil.id;
+          }
+          if (typeof updated.declararIrOverride !== "boolean") {
+            updated.declararIrOverride = false;
+          }
+        }
+      }
+      return sanitizeSessao(updated);
     });
     setItensSessoes(atualizadas);
     try {
@@ -397,19 +497,16 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
     }
   };
 
-  // AÇÃO: Iniciar exclusão de sessão (abre modal in-app confiável)
   const handleSolicitarExclusao = (sessao: SessaoFaturamentoItem) => {
     setSessaoParaExcluir(sessao);
   };
 
-  // AÇÃO: Confirmar e Efetivar a exclusão da sessão
   const handleConfirmarExclusao = async () => {
     if (!sessaoParaExcluir) return;
     const { id, numeroSessao } = sessaoParaExcluir;
 
     try {
       setIsExcluindo(true);
-      // Remove correspondência segura por id ou por número
       const atualizadas = itensSessoes.filter((s) => {
         if (id && s.id) {
           return s.id !== id;
@@ -429,7 +526,6 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
     }
   };
 
-  // Utilitário de Cópia com Feedback
   const handleCopyText = (text: string, key: string, label: string) => {
     navigator.clipboard.writeText(text);
     setCopiedKey(key);
@@ -437,11 +533,12 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
     setTimeout(() => setCopiedKey(null), 2500);
   };
 
-  // Formatador de Moeda
   const fmtMoeda = (val: number) =>
-    `R$ ${Number(val || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    `R$ ${Number(val || 0).toLocaleString("pt-BR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
 
-  // Formatador de Data BR
   const fmtDataBr = (strDate: string) => {
     if (!strDate) return "-";
     const parts = strDate.split("-");
@@ -449,79 +546,143 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
     return strDate;
   };
 
-  // Formatador de Mês por extenso (ex: 2026-10 -> Outubro/2026)
   const fmtMesExtenso = (strAnoMes: string) => {
     if (!strAnoMes || strAnoMes === "todas" || strAnoMes === "custom") return strAnoMes;
     const [ano, mes] = strAnoMes.split("-");
     const meses = [
-      "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
-      "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
+      "Janeiro",
+      "Fevereiro",
+      "Março",
+      "Abril",
+      "Maio",
+      "Junho",
+      "Julho",
+      "Agosto",
+      "Setembro",
+      "Outubro",
+      "Novembro",
+      "Dezembro",
     ];
     const idx = parseInt(mes, 10) - 1;
     return `${meses[idx] || mes} de ${ano}`;
   };
 
-  // Mensagem de Fechamento para WhatsApp
   const gerarTextoFechamentoWhatsApp = () => {
-    const sessoesFinalizadas = sessoesFiltradas.filter((s) => s.statusAtendimento === "realizada");
+    const sessoesFinalizadas = sessoesFiltradas.filter(
+      (s) => s.statusAtendimento === "realizada"
+    );
     const datas = sessoesFinalizadas.map((s) => fmtDataBr(s.data)).join(", ");
-    const periodoTxt = filtroPeriodo === "todas" ? "Período Geral" : fmtMesExtenso(filtroPeriodo);
+    const periodoTxt =
+      filtroPeriodo === "todas" ? "Período Geral" : fmtMesExtenso(filtroPeriodo);
 
-    let txt = `Olá, *${pacienteNome.split(" ")[0]}*! Tudo bem? 🌿\n\n`;
+    let txt = `Olá, *${pacienteNome.split(" ")[0]}*! Tudo bem?\n\n`;
     txt += `Passando para compartilhar o fechamento dos atendimentos clínicos (*${periodoTxt}*):\n\n`;
     txt += `• *Sessões Realizadas:* ${metricas.realizadas}\n`;
     if (datas) txt += `• *Datas:* ${datas}\n`;
     txt += `• *Valor Total:* ${fmtMoeda(metricas.totalGeral)}\n`;
-    txt += `• *Status:* ${metricas.totalPendente <= 0 ? "✅ Totalmente Quitado" : `Pendente: ${fmtMoeda(metricas.totalPendente)}`}\n\n`;
+    txt += `• *Status:* ${
+      metricas.totalPendente <= 0
+        ? "Totalmente Quitado"
+        : `Pendente: ${fmtMoeda(metricas.totalPendente)}`
+    }\n\n`;
 
-    const pixAtivo = perfilAtivo === "PJ"
-      ? (dadosPJ.chavePixPJ || profissionalLogado?.chavePix)
-      : profissionalLogado?.chavePix;
+    const pAtivo = perfilResolvidoPaciente;
+    const pixAtivo =
+      pAtivo.via === "PJ"
+        ? pAtivo.chavePixPJ || profissionalLogado?.chavePix || profissionalLogado?.pixKey
+        : pAtivo.chavePix ||
+          (pAtivo.subtipo !== "dinheiro_fisico"
+            ? profissionalLogado?.chavePix || profissionalLogado?.pixKey
+            : "");
 
-    const titularPix = perfilAtivo === "PJ"
-      ? (dadosPJ.razaoSocial || dadosPJ.nomeFantasia || profNome)
-      : profNome;
+    const titularPix =
+      pAtivo.via === "PJ"
+        ? pAtivo.razaoSocial || pAtivo.nomeFantasia || profNome
+        : pAtivo.titularNome || profNome;
 
     if (pixAtivo && metricas.totalPendente > 0) {
-      txt += `💳 *Chave Pix para Regularização (${perfilAtivo === "PJ" ? "Conta Jurídica da Empresa" : "Conta Pessoal"}):*\n${pixAtivo}\n`;
+      txt += `*Chave Pix para Regularização (${
+        pAtivo.via === "PJ" ? "Conta Jurídica" : formatPerfilCurtoLabel(pAtivo)
+      }):*\n${pixAtivo}\n`;
       if (titularPix) txt += `• *Favorecido:* ${titularPix}\n`;
       txt += `\n`;
     }
 
     txt += `Caso necessite de recibo individual ou consolidado para reembolso/declaração, estou à disposição!\n`;
     txt += `Atenciosamente,\n*${profNome}*${profCrp ? ` (CRP: ${profCrp})` : ""}`;
-    if (perfilAtivo === "PJ" && (dadosPJ.razaoSocial || dadosPJ.nomeFantasia)) {
-      txt += `\n_${dadosPJ.razaoSocial || dadosPJ.nomeFantasia}_`;
+    if (pAtivo.via === "PJ" && (pAtivo.razaoSocial || pAtivo.nomeFantasia)) {
+      txt += `\n_${pAtivo.razaoSocial || pAtivo.nomeFantasia}_`;
     }
     return txt;
   };
 
-  // Texto da Discriminação de Serviços para Nota Fiscal (NFS-e)
-  const gerarDiscriminacaoNf = () => {
-    const sessoesFinalizadas = sessoesFiltradas.filter((s) => s.statusAtendimento === "realizada");
-    const datas = sessoesFinalizadas.map((s) => fmtDataBr(s.data)).join(", ");
-    const modalidades = Array.from(new Set(sessoesFinalizadas.map((s) => s.modalidade === "online" ? "modalidade online" : "modalidade presencial"))).join(" e ");
+  // Perfil PJ efetivo para o Assistente NFS-e (usa o perfil da ficha se for PJ, ou o primeiro PJ disponível)
+  const perfilPjParaNf = useMemo(() => {
+    if (perfilResolvidoPaciente.via === "PJ") return perfilResolvidoPaciente;
+    return (
+      listaPerfis.find((p) => p.via === "PJ" && p.padrao) ||
+      listaPerfis.find((p) => p.via === "PJ") ||
+      null
+    );
+  }, [perfilResolvidoPaciente, listaPerfis]);
 
-    const tipoServico = isPsicologo ? "atendimento psicológico / psicoterapia" : "atendimento terapêutico / psicanalítico";
+  const gerarDiscriminacaoNf = () => {
+    const sessoesFinalizadas = sessoesFiltradas.filter(
+      (s) => s.statusAtendimento === "realizada"
+    );
+    const datas = sessoesFinalizadas.map((s) => fmtDataBr(s.data)).join(", ");
+    const modalidades = Array.from(
+      new Set(
+        sessoesFinalizadas.map((s) =>
+          s.modalidade === "online" ? "modalidade online" : "modalidade presencial"
+        )
+      )
+    ).join(" e ");
+
+    const tipoServico = isPsicologo
+      ? "atendimento psicológico / psicoterapia"
+      : "atendimento terapêutico / psicanalítico";
 
     let desc = `Prestação de serviços de ${tipoServico} (${modalidades || "modalidade online"}), `;
     desc += `referente a ${sessoesFinalizadas.length} sessão(ões) realizada(s) nos dias: ${datas || "conforme prontuário"}. `;
     desc += `Tomador/Paciente: ${pacienteNome} (CPF: ${pacienteCpf || "Não informado"}). `;
-    if (perfilAtivo === "PJ" && dadosPJ.razaoSocial) {
-      desc += `Prestador: ${dadosPJ.razaoSocial} (CNPJ: ${dadosPJ.cnpj || "Não informado"}). `;
-      desc += `Profissional Responsável Técnico: ${profNome}${profCrp ? ` (CRP: ${profCrp})` : ""}. `;
+    if (perfilResolvidoPaciente.via === "PJ" && perfilResolvidoPaciente.razaoSocial) {
+      desc += `Prestador: ${perfilResolvidoPaciente.razaoSocial} (CNPJ: ${
+        perfilResolvidoPaciente.cnpj || "Não informado"
+      }). `;
+      desc += `Profissional Responsável Técnico: ${profNome}${
+        profCrp ? ` (CRP: ${profCrp})` : ""
+      }. `;
     } else {
-      desc += `Profissional Autônomo: ${profNome}${profCrp ? ` (CRP: ${profCrp})` : ""}. `;
+      desc += `Profissional Autônomo: ${
+        perfilResolvidoPaciente.titularNome || profNome
+      }${profCrp ? ` (CRP: ${profCrp})` : ""}. `;
     }
     desc += `Valor total: ${fmtMoeda(metricas.totalGeral)}.`;
     return desc;
   };
 
+  const perfilDoReciboAtual = useMemo(() => {
+    if (!modalRecibo.isOpen) return perfilResolvidoPaciente;
+    if (!modalRecibo.isConsolidado && modalRecibo.sessao) {
+      return resolverPerfilDaSessao(modalRecibo.sessao);
+    }
+    return perfilResolvidoPaciente;
+  }, [modalRecibo, perfilResolvidoPaciente, listaPerfis, localPerfilId, perfilAtivo]);
+
+  const perfisPFLista = useMemo(
+    () => listaPerfis.filter((p) => p.via === "PF"),
+    [listaPerfis]
+  );
+  const perfisPJLista = useMemo(
+    () => listaPerfis.filter((p) => p.via === "PJ"),
+    [listaPerfis]
+  );
+
   return (
     <div className="bg-white rounded-2xl border border-emerald-200/90 shadow-sm overflow-hidden space-y-0">
-      {/* 1. TOPO: TÍTULO, SUBTÍTULO E CONTROLES DE COMPETÊNCIA (COMPACTO, ALINHADO & OTIMIZADO VERTICALMENTE) */}
+      {/* 1. TOPO: TÍTULO, PERFIL DE EMISSÃO ATIVO E CONTROLES DE COMPETÊNCIA */}
       <div className="px-3.5 py-2 sm:px-4 bg-gradient-to-r from-emerald-50/80 via-warm/20 to-emerald-50/60 border-b border-soft flex flex-wrap items-center justify-between gap-2">
-        {/* Esquerda: Ícone + Título + Badges em linha única */}
         <div className="flex items-center gap-2 flex-wrap min-w-0">
           <div className="w-7 h-7 rounded-lg bg-emerald-700 text-white flex items-center justify-center shadow-2xs shrink-0">
             <DollarSign className="w-3.5 h-3.5 text-sun" />
@@ -529,22 +690,27 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
           <h4 className="text-xs sm:text-sm font-bold text-forest uppercase tracking-wider whitespace-nowrap">
             Faturamento & Sessões
           </h4>
-          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100/90 text-emerald-800 border border-emerald-300/80 whitespace-nowrap">
-            Tomador: PF
+          <span className="text-[10px] font-medium text-forest/60 whitespace-nowrap">
+            Tomador PF
+          </span>
+          <span className="text-forest/30 text-xs" aria-hidden="true">
+            ·
           </span>
 
-          {/* BADGE COMPACTO: PERFIL DE FATURAMENTO FIXADO PARA ESTE PACIENTE (PF vs PJ) */}
-          <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium border shadow-2xs bg-white border-soft whitespace-nowrap">
+          {/* SELETOR / INDICADOR DO PERFIL DE FATURAMENTO FIXADO NESTE PACIENTE */}
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-[10px] font-medium border shadow-2xs bg-white border-soft whitespace-nowrap">
             <span className="text-[9px] text-forest/50 uppercase font-bold tracking-wider">
               Emissão:
             </span>
-            {perfilAtivo === "PJ" ? (
+            {perfilResolvidoPaciente.via === "PJ" ? (
               <span className="flex items-center gap-1 font-bold text-blue-900">
                 <Building2 className="w-3 h-3 text-blue-700 shrink-0" />
-                <span>PJ</span>
-                {dadosPJ.cnpj ? (
-                  <span className="text-[9px] font-mono text-blue-800/80 font-normal">
-                    ({dadosPJ.cnpj})
+                <span className="truncate max-w-[140px]">
+                  {formatPerfilCurtoLabel(perfilResolvidoPaciente)}
+                </span>
+                {perfilResolvidoPaciente.cnpj ? (
+                  <span className="text-[9px] font-mono tabular-nums text-blue-800/80 font-normal">
+                    ({perfilResolvidoPaciente.cnpj})
                   </span>
                 ) : (
                   <span className="text-[9px] text-amber-600 font-normal">
@@ -552,13 +718,32 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
                   </span>
                 )}
               </span>
+            ) : perfilResolvidoPaciente.subtipo === "dinheiro_fisico" ? (
+              <span className="flex items-center gap-1 font-bold text-amber-900">
+                <Banknote className="w-3 h-3 text-amber-700 shrink-0" />
+                <span className="truncate max-w-[140px]">
+                  {formatPerfilCurtoLabel(perfilResolvidoPaciente)}
+                </span>
+                {!perfilResolvidoPaciente.declararIr && (
+                  <span className="text-[9px] text-amber-700 font-semibold">
+                    · Sem IR
+                  </span>
+                )}
+              </span>
             ) : (
               <span className="flex items-center gap-1 font-bold text-emerald-900">
                 <User className="w-3 h-3 text-emerald-700 shrink-0" />
-                <span>PF</span>
-                {profCpf && (
-                  <span className="text-[9px] font-mono text-emerald-800/80 font-normal">
-                    ({profCpf})
+                <span className="truncate max-w-[140px]">
+                  {formatPerfilCurtoLabel(perfilResolvidoPaciente)}
+                </span>
+                {(perfilResolvidoPaciente.cpf || profCpf) && (
+                  <span className="text-[9px] font-mono tabular-nums text-emerald-800/80 font-normal">
+                    ({perfilResolvidoPaciente.cpf || profCpf})
+                  </span>
+                )}
+                {!perfilResolvidoPaciente.declararIr && (
+                  <span className="text-[9px] text-amber-700 font-semibold">
+                    · Sem IR
                   </span>
                 )}
               </span>
@@ -567,18 +752,20 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
               type="button"
               onClick={() => setModalAlterarPerfil(true)}
               className="ml-0.5 text-[9px] font-bold text-forest hover:text-emerald-700 underline cursor-pointer"
-              title="Alterar modalidade de emissão deste paciente (PF vs PJ)"
+              title="Escolher entre múltiplas contas CPF, Caixa em Dinheiro Físico ou empresas CNPJ"
             >
               Alterar
             </button>
           </div>
         </div>
 
-        {/* Direita: Filtro de Competência & Botão Nova Sessão alinhados */}
+        {/* Direita: Filtro de Competência & Botão Nova Sessão */}
         <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap shrink-0">
           <div className="flex items-center gap-1.5 bg-white px-2 py-1 rounded-lg border border-soft shadow-2xs text-xs">
             <Calendar className="w-3.5 h-3.5 text-forest/60 shrink-0" />
-            <span className="text-[10px] font-bold uppercase tracking-wider text-forest/60 hidden sm:inline">Competência:</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-forest/60 hidden sm:inline">
+              Competência:
+            </span>
             <select
               value={filtroPeriodo}
               onChange={(e) => setFiltroPeriodo(e.target.value)}
@@ -600,14 +787,14 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
                 type="date"
                 value={dataInicioCustom}
                 onChange={(e) => setDataInicioCustom(e.target.value)}
-                className="text-[11px] font-mono text-forest px-1 py-0.5 bg-transparent outline-none"
+                className="text-[11px] font-mono tabular-nums text-forest px-1 py-0.5 bg-transparent outline-none"
               />
               <span className="text-forest/40 text-[10px]">até</span>
               <input
                 type="date"
                 value={dataFimCustom}
                 onChange={(e) => setDataFimCustom(e.target.value)}
-                className="text-[11px] font-mono text-forest px-1 py-0.5 bg-transparent outline-none"
+                className="text-[11px] font-mono tabular-nums text-forest px-1 py-0.5 bg-transparent outline-none"
               />
             </div>
           )}
@@ -631,7 +818,7 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
             className="px-2.5 py-1 sm:px-3 sm:py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1 shadow-2xs cursor-pointer active:scale-95 whitespace-nowrap"
           >
             <Plus className="w-3.5 h-3.5 text-sun" />
-            <span>+ Nova Sessão</span>
+            <span>Nova Sessão</span>
           </button>
         </div>
       </div>
@@ -640,86 +827,112 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
       <div className="px-3.5 py-2.5 sm:px-4 sm:py-3 bg-warm/15 border-b border-soft grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
         <div className="bg-white p-2.5 rounded-xl border border-soft shadow-2xs">
           <div className="flex items-center justify-between text-forest/60 mb-0.5">
-            <span className="text-[10px] font-bold uppercase tracking-wider">Sessões Realizadas</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider">
+              Sessões Realizadas
+            </span>
             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
           </div>
-          <div className="text-base sm:text-lg font-extrabold text-forest">
+          <div className="text-base sm:text-lg font-extrabold text-forest tabular-nums">
             {metricas.realizadas}{" "}
-            <span className="text-[11px] font-normal text-forest/60">de {metricas.qtdTotal} total</span>
+            <span className="text-[11px] font-normal text-forest/60">
+              de {metricas.qtdTotal} total
+            </span>
           </div>
         </div>
 
         <div className="bg-white p-2.5 rounded-xl border border-soft shadow-2xs">
           <div className="flex items-center justify-between text-forest/60 mb-0.5">
-            <span className="text-[10px] font-bold uppercase tracking-wider">Total Quitado</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider">
+              Total Quitado
+            </span>
             <DollarSign className="w-3.5 h-3.5 text-emerald-600" />
           </div>
-          <div className="text-base sm:text-lg font-extrabold text-emerald-700 font-serif">
+          <div className="text-base sm:text-lg font-extrabold text-emerald-700 font-mono tabular-nums">
             {fmtMoeda(metricas.totalPago)}
           </div>
         </div>
 
         <div className="bg-white p-2.5 rounded-xl border border-soft shadow-2xs">
           <div className="flex items-center justify-between text-forest/60 mb-0.5">
-            <span className="text-[10px] font-bold uppercase tracking-wider">Pendente Recebimento</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider">
+              Pendente Recebimento
+            </span>
             <Clock className="w-3.5 h-3.5 text-amber-600" />
           </div>
-          <div className={`text-base sm:text-lg font-extrabold font-serif ${metricas.totalPendente > 0 ? "text-amber-700" : "text-forest/60"}`}>
+          <div
+            className={`text-base sm:text-lg font-extrabold font-mono tabular-nums ${
+              metricas.totalPendente > 0 ? "text-amber-700" : "text-forest/60"
+            }`}
+          >
             {fmtMoeda(metricas.totalPendente)}
           </div>
         </div>
 
         <div className="bg-white p-2.5 rounded-xl border border-soft shadow-2xs">
           <div className="flex items-center justify-between text-forest/60 mb-0.5">
-            <span className="text-[10px] font-bold uppercase tracking-wider">Faturamento Período</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider">
+              Faturamento Período
+            </span>
             <Layers className="w-3.5 h-3.5 text-blue-600" />
           </div>
-          <div className="text-base sm:text-lg font-extrabold text-forest font-serif">
+          <div className="text-base sm:text-lg font-extrabold text-forest font-mono tabular-nums">
             {fmtMoeda(metricas.totalGeral)}
           </div>
+          {metricas.totalSemIrOuPj > 0 && (
+            <div className="text-[10px] text-forest/55 mt-0.5 tabular-nums">
+              IRPF: {fmtMoeda(metricas.totalTributavelIr)} · s/ IR ou PJ:{" "}
+              {fmtMoeda(metricas.totalSemIrOuPj)}
+            </div>
+          )}
         </div>
       </div>
 
       {/* 3. BARRA DE ATALHOS RÁPIDOS DE EMISSÃO & INTEGRAÇÕES */}
       <div className="px-4 sm:px-5 py-3 bg-white border-b border-soft flex flex-wrap items-center justify-between gap-2.5 text-xs">
         <div className="flex flex-wrap items-center gap-2">
-          {/* Botão: Recibo Consolidado do Período */}
           <button
             type="button"
             disabled={sessoesFiltradas.length === 0}
             onClick={() => setModalRecibo({ isOpen: true, isConsolidado: true })}
-            className="px-3 py-1.5 bg-warm hover:bg-forest hover:text-white text-forest font-semibold rounded-xl border border-soft transition-all flex items-center gap-1.5 shadow-2xs disabled:opacity-50 cursor-pointer"
+            className="px-3 py-1.5 bg-warm hover:bg-forest hover:text-white text-forest font-semibold rounded-xl border border-soft transition-all flex items-center gap-1.5 shadow-2xs disabled:opacity-50 cursor-pointer whitespace-nowrap"
             title="Gerar recibo unificado contendo todas as sessões filtradas"
           >
             <Printer className="w-3.5 h-3.5" />
             <span>Recibo Consolidado ({sessoesFiltradas.length})</span>
           </button>
 
-          {/* Botão: Espelho para Nota Fiscal (NFS-e) */}
           <button
             type="button"
             disabled={sessoesFiltradas.length === 0}
             onClick={() => setModalNf(true)}
-            className="px-3 py-1.5 bg-warm hover:bg-emerald-700 hover:text-white text-forest font-semibold rounded-xl border border-soft transition-all flex items-center gap-1.5 shadow-2xs disabled:opacity-50 cursor-pointer"
+            className="px-3 py-1.5 bg-warm hover:bg-emerald-700 hover:text-white text-forest font-semibold rounded-xl border border-soft transition-all flex items-center gap-1.5 shadow-2xs disabled:opacity-50 cursor-pointer whitespace-nowrap"
             title="Assistente de emissão: dados consolidados para emissão de Nota Fiscal no portal da sua prefeitura"
           >
             <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
             <span>Assistente NFS-e</span>
           </button>
 
-          {/* Botão: Receita Saúde / Carnê-Leão (e-CAC) */}
           <button
             type="button"
             onClick={() => setModalCarneLeao(true)}
-            className="px-3 py-1.5 bg-warm hover:bg-blue-700 hover:text-white text-forest font-semibold rounded-xl border border-soft transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer"
-            title="Dados formatados e atalho oficial do Carnê-Leão Web da Receita Federal"
+            className="px-3 py-1.5 bg-warm hover:bg-blue-700 hover:text-white text-forest font-semibold rounded-xl border border-soft transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer whitespace-nowrap"
+            title="Dados formatados e atalho oficial do Carnê-Leão Web da Receita Federal (filtra automaticamente sessões sem IR e PJ)"
           >
             <Building className="w-3.5 h-3.5 text-blue-600" />
             <span>Receita Saúde (e-CAC)</span>
           </button>
+
+          <button
+            type="button"
+            onClick={() => setShowGerenciarPerfisModal(true)}
+            className="px-3 py-1.5 bg-white hover:bg-warm text-forest/80 hover:text-forest font-semibold rounded-xl border border-soft transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer whitespace-nowrap"
+            title="Gerenciar contas CPF, Caixa em Dinheiro Físico e empresas CNPJ"
+          >
+            <Settings className="w-3.5 h-3.5 text-forest/60" />
+            <span>Perfis PF / PJ ({listaPerfis.length})</span>
+          </button>
         </div>
 
-        {/* Botão Enviar Fechamento WhatsApp */}
         <button
           type="button"
           disabled={sessoesFiltradas.length === 0}
@@ -732,7 +945,7 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
             window.open(url, "_blank");
             showToast("Fechamento aberto no WhatsApp!", "success");
           }}
-          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl transition-all flex items-center gap-1.5 shadow-2xs disabled:opacity-50 cursor-pointer"
+          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl transition-all flex items-center gap-1.5 shadow-2xs disabled:opacity-50 cursor-pointer whitespace-nowrap"
           title="Disparar resumo de fechamento e dados de pagamento para o WhatsApp do paciente"
         >
           <Send className="w-3.5 h-3.5 text-sun" />
@@ -747,7 +960,7 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
             <Calendar className="w-8 h-8 text-forest/30 mx-auto" />
             <p className="text-sm font-semibold">Nenhuma sessão registrada neste período.</p>
             <p className="text-xs text-forest/50">
-              Clique em <strong className="text-forest">+ Nova Sessão</strong> para começar o controle financeiro deste paciente.
+              Clique em <strong className="text-forest">Nova Sessão</strong> para começar o controle financeiro deste paciente.
             </p>
           </div>
         ) : (
@@ -759,173 +972,263 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
                 <th className="py-2.5 px-3 min-w-[100px]">Modalidade</th>
                 <th className="py-2.5 px-3 min-w-[125px]">Status Atendimento</th>
                 <th className="py-2.5 px-3 min-w-[95px]">Valor (R$)</th>
-                <th className="py-2.5 px-3 min-w-[110px]">Pagamento</th>
-                <th className="py-2.5 px-3 min-w-[105px]">Forma</th>
-                <th className="py-2.5 px-3 text-right min-w-[130px]">Ações</th>
+                <th className="py-2.5 px-3 min-w-[105px]">Pagamento</th>
+                <th className="py-2.5 px-3 min-w-[100px]">Forma</th>
+                <th className="py-2.5 px-3 min-w-[155px]">Conta / IRPF</th>
+                <th className="py-2.5 px-3 text-right min-w-[120px]">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-soft/60">
-              {sessoesFiltradas.map((sessao) => (
-                <tr key={sessao.id} className="hover:bg-warm/30 transition-colors">
-                  {/* # Número */}
-                  <td className="py-2 px-3 text-center font-bold text-forest/70 font-mono">
-                    #{sessao.numeroSessao}
-                  </td>
+              {sessoesFiltradas.map((sessao) => {
+                const perfilLinha = resolverPerfilDaSessao(sessao);
+                const declaraIrLinha = shouldDeclararIrForItem(sessao, perfilLinha);
 
-                  {/* Data */}
-                  <td className="py-2 px-3">
-                    <input
-                      type="date"
-                      value={sessao.data || ""}
-                      onChange={(e) => handleUpdateItem(sessao.id, "data", e.target.value)}
-                      className="bg-transparent font-medium text-xs text-forest px-1 py-0.5 rounded border border-transparent hover:border-soft focus:border-forest/40 focus:bg-white outline-none w-full"
-                    />
-                  </td>
+                return (
+                  <tr key={sessao.id} className="hover:bg-warm/30 transition-colors">
+                    {/* # Número */}
+                    <td className="py-2 px-3 text-center font-bold text-forest/70 font-mono tabular-nums">
+                      #{sessao.numeroSessao}
+                    </td>
 
-                  {/* Modalidade (Online / Presencial) */}
-                  <td className="py-2 px-3">
-                    <select
-                      value={sessao.modalidade || "online"}
-                      onChange={(e) => handleUpdateItem(sessao.id, "modalidade", e.target.value)}
-                      className={`text-[11px] font-bold px-2 py-1 rounded-lg border outline-none cursor-pointer ${
-                        sessao.modalidade === "presencial"
-                          ? "bg-purple-50 text-purple-900 border-purple-200"
-                          : "bg-sky-50 text-sky-900 border-sky-200"
-                      }`}
-                    >
-                      <option value="online">🌐 Online</option>
-                      <option value="presencial">🏢 Presencial</option>
-                    </select>
-                  </td>
-
-                  {/* Status do Atendimento */}
-                  <td className="py-2 px-3">
-                    <select
-                      value={sessao.statusAtendimento || "realizada"}
-                      onChange={(e) => handleUpdateItem(sessao.id, "statusAtendimento", e.target.value)}
-                      className="bg-white text-[11px] font-medium text-forest px-2 py-1 rounded-lg border border-soft outline-none cursor-pointer w-full"
-                    >
-                      <option value="realizada">✅ Realizada</option>
-                      <option value="agendada">⏰ Agendada</option>
-                      <option value="desmarcada_antecedencia">↩️ Desmarcada (Aviso)</option>
-                      <option value="falta_sem_aviso">⚠️ Falta sem aviso</option>
-                    </select>
-                  </td>
-
-                  {/* Valor (R$) */}
-                  <td className="py-2 px-3">
-                    <div className="relative flex items-center">
-                      <span className="text-[10px] text-forest/50 font-bold mr-1">R$</span>
+                    {/* Data */}
+                    <td className="py-2 px-3">
                       <input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        value={sessao.valor || 0}
-                        onChange={(e) => handleUpdateItem(sessao.id, "valor", parseFloat(e.target.value) || 0)}
-                        className="bg-transparent font-bold text-xs text-forest px-1.5 py-0.5 rounded border border-transparent hover:border-soft focus:border-forest/40 focus:bg-white outline-none w-20"
+                        type="date"
+                        value={sessao.data || ""}
+                        onChange={(e) => handleUpdateItem(sessao.id, "data", e.target.value)}
+                        className="bg-transparent font-mono tabular-nums font-medium text-xs text-forest px-1 py-0.5 rounded border border-transparent hover:border-soft focus:border-forest/40 focus:bg-white outline-none w-full"
                       />
-                    </div>
-                  </td>
+                    </td>
 
-                  {/* Status Pagamento */}
-                  <td className="py-2 px-3">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        handleUpdateItem(
-                          sessao.id,
-                          "statusPagamento",
-                          sessao.statusPagamento === "pago" ? "pendente" : "pago"
-                        )
-                      }
-                      className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border transition-all flex items-center gap-1 cursor-pointer ${
-                        sessao.statusPagamento === "pago"
-                          ? "bg-emerald-100 text-emerald-800 border-emerald-300"
-                          : "bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200"
-                      }`}
-                      title="Clique para alternar entre Pago e Pendente"
-                    >
-                      <span className={`w-1.5 h-1.5 rounded-full ${sessao.statusPagamento === "pago" ? "bg-emerald-600" : "bg-amber-600"}`} />
-                      <span>{sessao.statusPagamento === "pago" ? "Pago" : "Pendente"}</span>
-                    </button>
-                  </td>
+                    {/* Modalidade */}
+                    <td className="py-2 px-3">
+                      <select
+                        value={sessao.modalidade || "online"}
+                        onChange={(e) =>
+                          handleUpdateItem(sessao.id, "modalidade", e.target.value)
+                        }
+                        className={`text-[11px] font-bold px-2 py-1 rounded-lg border outline-none cursor-pointer ${
+                          sessao.modalidade === "presencial"
+                            ? "bg-purple-50 text-purple-900 border-purple-200"
+                            : "bg-sky-50 text-sky-900 border-sky-200"
+                        }`}
+                      >
+                        <option value="online">Online</option>
+                        <option value="presencial">Presencial</option>
+                      </select>
+                    </td>
 
-                  {/* Forma de Pagamento */}
-                  <td className="py-2 px-3">
-                    <select
-                      value={sessao.formaPagamento || "Pix"}
-                      onChange={(e) => handleUpdateItem(sessao.id, "formaPagamento", e.target.value)}
-                      className="bg-transparent text-[11px] text-forest/80 px-1 py-0.5 rounded border border-transparent hover:border-soft focus:border-forest/40 focus:bg-white outline-none cursor-pointer"
-                    >
-                      <option value="Pix">Pix</option>
-                      <option value="Cartão">Cartão</option>
-                      <option value="Transferência">Transferência</option>
-                      <option value="Dinheiro">Dinheiro</option>
-                      <option value="Outro">Outro</option>
-                    </select>
-                  </td>
+                    {/* Status do Atendimento */}
+                    <td className="py-2 px-3">
+                      <select
+                        value={sessao.statusAtendimento || "realizada"}
+                        onChange={(e) =>
+                          handleUpdateItem(sessao.id, "statusAtendimento", e.target.value)
+                        }
+                        className="bg-white text-[11px] font-medium text-forest px-2 py-1 rounded-lg border border-soft outline-none cursor-pointer w-full"
+                      >
+                        <option value="realizada">Realizada</option>
+                        <option value="agendada">Agendada</option>
+                        <option value="desmarcada_antecedencia">Desmarcada (Aviso)</option>
+                        <option value="falta_sem_aviso">Falta sem aviso</option>
+                      </select>
+                    </td>
 
-                  {/* Ações por Linha: Replicar, Recibo, Excluir */}
-                  <td className="py-2 px-3 text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      {/* BOTÃO PRONTUÁRIO / EVOLUÇÃO CLÍNICA DA SESSÃO */}
-                      {onAbrirProntuarioModal && (() => {
-                        const hasEvolucao = registrosProntuario?.some(
-                          (r) => r.sessaoFaturamentoId === sessao.id || (r.numeroSessao !== undefined && r.numeroSessao === sessao.numeroSessao)
-                        );
-                        return (
+                    {/* Valor (R$) */}
+                    <td className="py-2 px-3">
+                      <div className="relative flex items-center">
+                        <span className="text-[10px] text-forest/50 font-bold mr-1">R$</span>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={sessao.valor || 0}
+                          onChange={(e) =>
+                            handleUpdateItem(
+                              sessao.id,
+                              "valor",
+                              parseFloat(e.target.value) || 0
+                            )
+                          }
+                          className="bg-transparent font-mono tabular-nums font-bold text-xs text-forest px-1.5 py-0.5 rounded border border-transparent hover:border-soft focus:border-forest/40 focus:bg-white outline-none w-20"
+                        />
+                      </div>
+                    </td>
+
+                    {/* Status Pagamento */}
+                    <td className="py-2 px-3">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleUpdateItem(
+                            sessao.id,
+                            "statusPagamento",
+                            sessao.statusPagamento === "pago" ? "pendente" : "pago"
+                          )
+                        }
+                        className={`text-[11px] font-bold px-2.5 py-0.5 rounded-lg border transition-all flex items-center gap-1 cursor-pointer whitespace-nowrap ${
+                          sessao.statusPagamento === "pago"
+                            ? "bg-emerald-50 text-emerald-800 border-emerald-300"
+                            : "bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100"
+                        }`}
+                        title="Clique para alternar entre Pago e Pendente"
+                      >
+                        {sessao.statusPagamento === "pago" ? (
+                          <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
+                        ) : (
+                          <Clock className="w-3 h-3 text-amber-600 shrink-0" />
+                        )}
+                        <span>{sessao.statusPagamento === "pago" ? "Pago" : "Pendente"}</span>
+                      </button>
+                    </td>
+
+                    {/* Forma de Pagamento */}
+                    <td className="py-2 px-3">
+                      <select
+                        value={sessao.formaPagamento || "Pix"}
+                        onChange={(e) =>
+                          handleUpdateItem(sessao.id, "formaPagamento", e.target.value)
+                        }
+                        className="bg-transparent text-[11px] text-forest/80 px-1 py-0.5 rounded border border-transparent hover:border-soft focus:border-forest/40 focus:bg-white outline-none cursor-pointer"
+                      >
+                        <option value="Pix">Pix</option>
+                        <option value="Cartão">Cartão</option>
+                        <option value="Transferência">Transferência</option>
+                        <option value="Dinheiro">Dinheiro</option>
+                        <option value="Outro">Outro</option>
+                      </select>
+                    </td>
+
+                    {/* Conta / Emissor & Regra IRPF por Linha */}
+                    <td className="py-2 px-3">
+                      <div className="flex items-center gap-1">
+                        <select
+                          value={sessao.perfilFaturamentoId || ""}
+                          onChange={(e) => {
+                            const nextId = e.target.value || undefined;
+                            handleUpdatePatchItem(sessao.id, {
+                              perfilFaturamentoId: nextId,
+                            });
+                          }}
+                          className="bg-white text-[10px] font-medium text-forest px-1.5 py-1 rounded-lg border border-soft outline-none cursor-pointer max-w-[108px] truncate"
+                          title="Conta ou CNPJ receptor desta sessão (vazio = segue padrão da ficha)"
+                        >
+                          <option value="">
+                            Padrão ({formatPerfilCurtoLabel(perfilResolvidoPaciente)})
+                          </option>
+                          {listaPerfis.map((p) => (
+                            <option key={p.id} value={p.id}>
+                              [{p.via}] {formatPerfilCurtoLabel(p)}
+                            </option>
+                          ))}
+                        </select>
+
+                        {perfilLinha.via === "PJ" ? (
+                          <span
+                            className="text-[10px] font-mono font-bold text-blue-800 px-1.5 py-0.5 rounded bg-blue-50 border border-blue-200 whitespace-nowrap"
+                            title="Tributado na Pessoa Jurídica (CNPJ)"
+                          >
+                            PJ
+                          </span>
+                        ) : (
                           <button
                             type="button"
-                            onClick={() => onAbrirProntuarioModal(sessao.id)}
-                            className={`p-1 rounded-lg transition-colors cursor-pointer ${
-                              hasEvolucao
-                                ? "hover:bg-emerald-100 text-emerald-800 bg-emerald-50"
-                                : "hover:bg-warm text-forest/40 hover:text-emerald-700"
+                            onClick={() =>
+                              handleUpdatePatchItem(sessao.id, {
+                                declararIrOverride: !declaraIrLinha,
+                              })
+                            }
+                            className={`text-[10px] font-bold px-1.5 py-0.5 rounded border transition-colors cursor-pointer whitespace-nowrap flex items-center gap-0.5 ${
+                              declaraIrLinha
+                                ? "bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100"
+                                : "bg-stone-100 text-stone-600 border-stone-300 hover:bg-stone-200"
                             }`}
                             title={
-                              hasEvolucao
-                                ? `Evolução clínica vinculada à Sessão #${sessao.numeroSessao} (Clique para ver/editar)`
-                                : `Registrar anotação/evolução para a Sessão #${sessao.numeroSessao} no Prontuário`
+                              declaraIrLinha
+                                ? "Entra na base do IRPF / Receita Saúde. Clique para marcar como Caixa Sem IR."
+                                : "Caixa gerencial (NÃO entra no IRPF / Receita Saúde). Clique para incluir no IR."
                             }
                           >
-                            <BookOpen className="w-3.5 h-3.5" />
+                            {declaraIrLinha ? (
+                              <>
+                                <ShieldCheck className="w-2.5 h-2.5 text-emerald-700" />
+                                <span>c/ IR</span>
+                              </>
+                            ) : (
+                              <>
+                                <EyeOff className="w-2.5 h-2.5 text-stone-500" />
+                                <span>s/ IR</span>
+                              </>
+                            )}
                           </button>
-                        );
-                      })()}
+                        )}
+                      </div>
+                    </td>
 
-                      {/* BOTÃO REPLICAR / DUPLICAR SESSÃO */}
-                      <button
-                        type="button"
-                        onClick={() => handleDuplicarSessao(sessao)}
-                        className="p-1 hover:bg-emerald-100 text-emerald-800 rounded-lg transition-colors cursor-pointer"
-                        title="Replicar esta sessão (+7 dias de intervalo sugerido)"
-                      >
-                        <Copy className="w-3.5 h-3.5" />
-                      </button>
+                    {/* Ações por Linha */}
+                    <td className="py-2 px-3 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        {onAbrirProntuarioModal &&
+                          (() => {
+                            const hasEvolucao = registrosProntuario?.some(
+                              (r) =>
+                                r.sessaoFaturamentoId === sessao.id ||
+                                (r.numeroSessao !== undefined &&
+                                  r.numeroSessao === sessao.numeroSessao)
+                            );
+                            return (
+                              <button
+                                type="button"
+                                onClick={() => onAbrirProntuarioModal(sessao.id)}
+                                className={`p-1 rounded-lg transition-colors cursor-pointer ${
+                                  hasEvolucao
+                                    ? "hover:bg-emerald-100 text-emerald-800 bg-emerald-50"
+                                    : "hover:bg-warm text-forest/40 hover:text-emerald-700"
+                                }`}
+                                title={
+                                  hasEvolucao
+                                    ? `Evolução clínica vinculada à Sessão #${sessao.numeroSessao}`
+                                    : `Registrar evolução para a Sessão #${sessao.numeroSessao}`
+                                }
+                              >
+                                <BookOpen className="w-3.5 h-3.5" />
+                              </button>
+                            );
+                          })()}
 
-                      {/* BOTÃO RECIBO INDIVIDUAL */}
-                      <button
-                        type="button"
-                        onClick={() => setModalRecibo({ isOpen: true, sessao, isConsolidado: false })}
-                        className="p-1 hover:bg-warm text-forest/70 hover:text-forest rounded-lg transition-colors cursor-pointer"
-                        title="Emitir recibo individual desta sessão"
-                      >
-                        <FileText className="w-3.5 h-3.5" />
-                      </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDuplicarSessao(sessao)}
+                          className="p-1 hover:bg-emerald-100 text-emerald-800 rounded-lg transition-colors cursor-pointer"
+                          title="Replicar esta sessão (+7 dias sugerido)"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                        </button>
 
-                      {/* BOTÃO EXCLUIR */}
-                      <button
-                        type="button"
-                        onClick={() => handleSolicitarExclusao(sessao)}
-                        className="p-1 hover:bg-rose-100 text-rose-600 rounded-lg transition-colors cursor-pointer"
-                        title="Excluir esta sessão"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setModalRecibo({ isOpen: true, sessao, isConsolidado: false })
+                          }
+                          className="p-1 hover:bg-warm text-forest/70 hover:text-forest rounded-lg transition-colors cursor-pointer"
+                          title="Emitir recibo individual desta sessão"
+                        >
+                          <FileText className="w-3.5 h-3.5" />
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleSolicitarExclusao(sessao)}
+                          className="p-1 hover:bg-rose-100 text-rose-600 rounded-lg transition-colors cursor-pointer"
+                          title="Excluir esta sessão"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
@@ -937,12 +1240,13 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
       {modalRecibo.isOpen && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl border border-soft shadow-2xl max-w-xl w-full p-6 space-y-5 animate-in fade-in zoom-in-95 max-h-[90vh] overflow-y-auto">
-            {/* Topo do Recibo */}
             <div className="flex items-center justify-between pb-3 border-b border-soft">
               <div className="flex items-center gap-2">
                 <FileText className="w-5 h-5 text-emerald-700" />
                 <h3 className="font-serif font-bold text-base text-forest">
-                  {modalRecibo.isConsolidado ? "Recibo Consolidado do Período" : `Recibo de Atendimento #${modalRecibo.sessao?.numeroSessao}`}
+                  {modalRecibo.isConsolidado
+                    ? "Recibo Consolidado do Período"
+                    : `Recibo de Atendimento #${modalRecibo.sessao?.numeroSessao}`}
                 </h3>
               </div>
               <button
@@ -954,59 +1258,84 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
               </button>
             </div>
 
-            {/* Folha do Recibo Formatada */}
-            <div id="recibo-imprimir" className="p-6 bg-warm/20 rounded-2xl border border-soft space-y-4 font-sans text-xs text-forest leading-relaxed">
+            <div
+              id="recibo-imprimir"
+              className="p-6 bg-warm/20 rounded-2xl border border-soft space-y-4 font-sans text-xs text-forest leading-relaxed"
+            >
               <div className="text-center pb-3 border-b border-soft/80 space-y-1">
                 <h2 className="text-sm font-bold uppercase tracking-wider text-emerald-900">
-                  {perfilAtivo === "PJ"
+                  {perfilDoReciboAtual.via === "PJ"
                     ? "RECIBO DE PRESTAÇÃO DE SERVIÇOS EM SAÚDE MENTAL (PESSOA JURÍDICA)"
                     : "RECIBO DE PRESTAÇÃO DE SERVIÇOS EM SAÚDE MENTAL"}
                 </h2>
                 <p className="text-[11px] text-forest/70">
-                  {modalRecibo.isConsolidado ? `Competência: ${fmtMesExtenso(filtroPeriodo)}` : `Sessão #${modalRecibo.sessao?.numeroSessao}`}
+                  {modalRecibo.isConsolidado
+                    ? `Competência: ${fmtMesExtenso(filtroPeriodo)}`
+                    : `Sessão #${modalRecibo.sessao?.numeroSessao}`}
                 </p>
               </div>
 
-              {perfilAtivo === "PJ" ? (
+              {perfilDoReciboAtual.via === "PJ" ? (
                 <div className="bg-white p-3.5 rounded-xl border border-soft/60 space-y-1">
                   <span className="text-[10px] font-bold uppercase text-blue-900/70 block">
                     Clínica / Empresa Prestadora Emitente
                   </span>
                   <p className="font-bold text-forest text-sm">
-                    {dadosPJ.razaoSocial || dadosPJ.nomeFantasia || "Clínica de Psicologia e Terapia"}
+                    {perfilDoReciboAtual.razaoSocial ||
+                      perfilDoReciboAtual.nomeFantasia ||
+                      "Clínica de Psicologia e Terapia"}
                   </p>
-                  <p className="text-forest/70 text-xs">
-                    CNPJ: {dadosPJ.cnpj || "Não cadastrado"} {dadosPJ.inscricaoMunicipal ? `• IM: ${dadosPJ.inscricaoMunicipal}` : ""}
+                  <p className="text-forest/70 text-xs font-mono tabular-nums">
+                    CNPJ: {perfilDoReciboAtual.cnpj || "Não cadastrado"}{" "}
+                    {perfilDoReciboAtual.inscricaoMunicipal
+                      ? `• IM: ${perfilDoReciboAtual.inscricaoMunicipal}`
+                      : ""}
                   </p>
                   <p className="text-[11px] text-forest/60 pt-0.5">
-                    Responsável Técnico: {profNome} ({profTitulo}{profCrp ? ` • CRP: ${profCrp}` : ""})
+                    Responsável Técnico: {profNome} ({profTitulo}
+                    {profCrp ? ` • CRP: ${profCrp}` : ""})
                   </p>
                 </div>
               ) : (
                 <div className="bg-white p-3.5 rounded-xl border border-soft/60 space-y-1">
-                  <span className="text-[10px] font-bold uppercase text-forest/50 block">Profissional Emitente</span>
-                  <p className="font-bold text-forest text-sm">{profNome}</p>
+                  <span className="text-[10px] font-bold uppercase text-forest/50 block">
+                    Profissional Emitente
+                  </span>
+                  <p className="font-bold text-forest text-sm">
+                    {perfilDoReciboAtual.titularNome || profNome}
+                  </p>
                   <p className="text-forest/70">
-                    {profTitulo} {profCrp ? `• CRP: ${profCrp}` : ""} {profCpf ? `• CPF: ${profCpf}` : ""}
+                    {profTitulo} {profCrp ? `• CRP: ${profCrp}` : ""}{" "}
+                    {perfilDoReciboAtual.cpf || profCpf
+                      ? `• CPF: ${perfilDoReciboAtual.cpf || profCpf}`
+                      : ""}
                   </p>
                 </div>
               )}
 
               <div className="bg-white p-3.5 rounded-xl border border-soft/60 space-y-1">
-                <span className="text-[10px] font-bold uppercase text-forest/50 block">Tomador / Paciente Beneficiário</span>
+                <span className="text-[10px] font-bold uppercase text-forest/50 block">
+                  Tomador / Paciente Beneficiário
+                </span>
                 <p className="font-bold text-forest text-sm">{pacienteNome}</p>
                 <p className="text-forest/70">
-                  CPF: {pacienteCpf || "Não informado no cadastro"}
-                  {isCorporativo && empresaNome ? ` • Convênio Colaborador: ${empresaNome}` : ""}
+                  CPF: <span className="font-mono tabular-nums">{pacienteCpf || "Não informado no cadastro"}</span>
+                  {isCorporativo && empresaNome
+                    ? ` • Convênio Colaborador: ${empresaNome}`
+                    : ""}
                 </p>
               </div>
 
               <div className="p-3.5 bg-emerald-50/70 rounded-xl border border-emerald-200/80 space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="font-semibold text-emerald-950">Valor Total Pago:</span>
-                  <span className="text-base font-extrabold text-emerald-900 font-serif">
+                  <span className="text-base font-extrabold text-emerald-900 font-mono tabular-nums">
                     {modalRecibo.isConsolidado
-                      ? fmtMoeda(metricas.totalPago > 0 ? metricas.totalPago : metricas.totalGeral)
+                      ? fmtMoeda(
+                          metricas.totalPago > 0
+                            ? metricas.totalPago
+                            : metricas.totalGeral
+                        )
                       : fmtMoeda(modalRecibo.sessao?.valor || 0)}
                   </span>
                 </div>
@@ -1014,11 +1343,25 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
                   Recebi do(a) paciente acima qualificado(a) a quantia supra discriminada, referente a:
                 </p>
                 <p className="font-medium text-forest text-xs italic bg-white p-2.5 rounded-lg border border-emerald-100">
-                  {modalRecibo.isConsolidado ? (
-                    `Prestação de serviços de ${isPsicologo ? "atendimento psicológico / psicoterapia" : "atendimento terapêutico"}, compreendendo ${sessoesFiltradas.length} sessão(ões) realizada(s) na modalidade online/presencial na competência de ${fmtMesExtenso(filtroPeriodo)}.`
-                  ) : (
-                    `1 sessão de ${isPsicologo ? "atendimento psicológico / psicoterapia" : "atendimento terapêutico"}, realizada na modalidade ${modalRecibo.sessao?.modalidade === "presencial" ? "presencial" : "online"} na data de ${fmtDataBr(modalRecibo.sessao?.data || "")}.`
-                  )}
+                  {modalRecibo.isConsolidado
+                    ? `Prestação de serviços de ${
+                        isPsicologo
+                          ? "atendimento psicológico / psicoterapia"
+                          : "atendimento terapêutico"
+                      }, compreendendo ${
+                        sessoesFiltradas.length
+                      } sessão(ões) realizada(s) na modalidade online/presencial na competência de ${fmtMesExtenso(
+                        filtroPeriodo
+                      )}.`
+                    : `1 sessão de ${
+                        isPsicologo
+                          ? "atendimento psicológico / psicoterapia"
+                          : "atendimento terapêutico"
+                      }, realizada na modalidade ${
+                        modalRecibo.sessao?.modalidade === "presencial"
+                          ? "presencial"
+                          : "online"
+                      } na data de ${fmtDataBr(modalRecibo.sessao?.data || "")}.`}
                 </p>
               </div>
 
@@ -1028,24 +1371,26 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
                 </p>
                 <div className="w-48 border-b border-forest/40 pt-6" />
                 <p className="text-[11px] font-bold text-forest">
-                  {perfilAtivo === "PJ" && (dadosPJ.razaoSocial || dadosPJ.nomeFantasia)
-                    ? (dadosPJ.razaoSocial || dadosPJ.nomeFantasia)
-                    : profNome}
+                  {perfilDoReciboAtual.via === "PJ" &&
+                  (perfilDoReciboAtual.razaoSocial || perfilDoReciboAtual.nomeFantasia)
+                    ? perfilDoReciboAtual.razaoSocial || perfilDoReciboAtual.nomeFantasia
+                    : perfilDoReciboAtual.titularNome || profNome}
                 </p>
                 <p className="text-[10px] text-forest/60">
-                  {perfilAtivo === "PJ"
-                    ? `Resp. Técnico: ${profNome} (${profTitulo}${profCrp ? ` • CRP: ${profCrp}` : ""})`
+                  {perfilDoReciboAtual.via === "PJ"
+                    ? `Resp. Técnico: ${profNome} (${profTitulo}${
+                        profCrp ? ` • CRP: ${profCrp}` : ""
+                      })`
                     : `${profTitulo} ${profCrp ? `• CRP: ${profCrp}` : ""}`}
                 </p>
               </div>
             </div>
 
-            {/* Ações do Modal de Recibo */}
             <div className="flex items-center justify-end gap-2 pt-2">
               <button
                 type="button"
                 onClick={() => setModalRecibo({ isOpen: false })}
-                className="px-4 py-2 text-xs font-semibold text-forest/70 hover:text-forest"
+                className="px-4 py-2 text-xs font-semibold text-forest/70 hover:text-forest cursor-pointer"
               >
                 Fechar
               </button>
@@ -1085,84 +1430,167 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
             </div>
 
             <p className="text-xs text-forest/70">
-              Este assistente organiza e formata todos os dados do paciente. Copie os campos abaixo e cole diretamente no emissor de Nota Fiscal da sua Prefeitura ou sistema contábil:
+              Copie os campos formatados abaixo e cole diretamente no emissor de Nota Fiscal da sua Prefeitura ou sistema contábil:
             </p>
 
-            {perfilAtivo === "PF" && (
+            {perfilResolvidoPaciente.via === "PF" && (
               <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-xs text-amber-900 flex items-start gap-2">
                 <AlertCircle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
-                <div>
-                  <span className="font-bold">Aviso:</span> Este paciente está configurado para faturamento em <strong>Pessoa Física (PF)</strong>. Se você deseja emitir Nota Fiscal via CNPJ, altere a modalidade deste paciente no topo da planilha.
+                <div className="space-y-1">
+                  <div>
+                    <span className="font-bold">Aviso:</span> Este paciente está vinculado ao perfil{" "}
+                    <strong>{formatPerfilCurtoLabel(perfilResolvidoPaciente)} (PF)</strong>. Para emitir NFS-e via CNPJ, altere o perfil deste paciente para uma de suas empresas PJ.
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setModalNf(false);
+                      setModalAlterarPerfil(true);
+                    }}
+                    className="text-[11px] font-bold text-amber-950 underline cursor-pointer"
+                  >
+                    Escolher empresa CNPJ para este paciente
+                  </button>
                 </div>
               </div>
             )}
 
             <div className="space-y-3 text-xs">
-              {/* Prestador / Empresa (se PJ cadastrado) */}
-              {perfilAtivo === "PJ" && (
+              {(perfilResolvidoPaciente.via === "PJ" || perfilPjParaNf) && (
                 <div className="p-3 bg-blue-50/70 rounded-xl border border-blue-200/80 space-y-1">
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold uppercase text-blue-950">Prestador dos Serviços (Sua Empresa / Clínica)</span>
+                    <span className="text-[10px] font-bold uppercase text-blue-950">
+                      Prestador dos Serviços (Empresa Emitente)
+                    </span>
                     <button
                       type="button"
-                      onClick={() => handleCopyText(`${dadosPJ.razaoSocial || ""} - CNPJ: ${dadosPJ.cnpj || ""}`, "prestador", "Dados do prestador")}
+                      onClick={() => {
+                        const pj =
+                          perfilResolvidoPaciente.via === "PJ"
+                            ? perfilResolvidoPaciente
+                            : perfilPjParaNf!;
+                        handleCopyText(
+                          `${pj.razaoSocial || ""} - CNPJ: ${pj.cnpj || ""}`,
+                          "prestador",
+                          "Dados do prestador"
+                        );
+                      }}
                       className="text-[10px] font-bold text-blue-800 hover:underline flex items-center gap-1 cursor-pointer"
                     >
-                      {copiedKey === "prestador" ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                      {copiedKey === "prestador" ? (
+                        <Check className="w-3 h-3 text-emerald-600" />
+                      ) : (
+                        <Copy className="w-3 h-3" />
+                      )}
                       Copiar
                     </button>
                   </div>
-                  <p className="font-bold text-forest">{dadosPJ.razaoSocial || "Razão Social não informada"}</p>
-                  <p className="text-forest/70 font-mono">
-                    CNPJ: {dadosPJ.cnpj || "Não cadastrado"} {dadosPJ.inscricaoMunicipal ? `• IM: ${dadosPJ.inscricaoMunicipal}` : ""}
-                  </p>
+                  {(() => {
+                    const pj =
+                      perfilResolvidoPaciente.via === "PJ"
+                        ? perfilResolvidoPaciente
+                        : perfilPjParaNf!;
+                    return (
+                      <>
+                        <p className="font-bold text-forest">
+                          {pj.razaoSocial || pj.nomeFantasia || "Razão Social não informada"}
+                        </p>
+                        <p className="text-forest/70 font-mono tabular-nums">
+                          CNPJ: {pj.cnpj || "Não cadastrado"}{" "}
+                          {pj.inscricaoMunicipal ? `• IM: ${pj.inscricaoMunicipal}` : ""}
+                        </p>
+                      </>
+                    );
+                  })()}
                 </div>
               )}
 
-              {/* Tomador */}
               <div className="p-3 bg-warm/30 rounded-xl border border-soft space-y-1">
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold uppercase text-forest/50">Tomador dos Serviços (Paciente / Colaborador)</span>
+                  <span className="text-[10px] font-bold uppercase text-forest/50">
+                    Tomador dos Serviços (Paciente)
+                  </span>
                   <button
                     type="button"
-                    onClick={() => handleCopyText(`${pacienteNome} - CPF: ${pacienteCpf || ""}`, "tomador", "Dados do tomador")}
+                    onClick={() =>
+                      handleCopyText(
+                        `${pacienteNome} - CPF: ${pacienteCpf || ""}`,
+                        "tomador",
+                        "Dados do tomador"
+                      )
+                    }
                     className="text-[10px] font-bold text-emerald-800 hover:underline flex items-center gap-1 cursor-pointer"
                   >
-                    {copiedKey === "tomador" ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                    {copiedKey === "tomador" ? (
+                      <Check className="w-3 h-3 text-emerald-600" />
+                    ) : (
+                      <Copy className="w-3 h-3" />
+                    )}
                     Copiar
                   </button>
                 </div>
                 <p className="font-bold text-forest">{pacienteNome}</p>
-                <p className="text-forest/70">CPF: {pacienteCpf || "Não cadastrado"}</p>
+                <p className="text-forest/70 font-mono tabular-nums">
+                  CPF: {pacienteCpf || "Não cadastrado"}
+                </p>
               </div>
 
-              {/* CNAE */}
               <div className="p-3 bg-warm/30 rounded-xl border border-soft space-y-1">
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold uppercase text-forest/50">Código do Serviço / CNAE</span>
+                  <span className="text-[10px] font-bold uppercase text-forest/50">
+                    Código do Serviço / CNAE
+                  </span>
                   <button
                     type="button"
-                    onClick={() => handleCopyText(dadosPJ.cnae || "8650-0/03", "cnae", "Código CNAE")}
+                    onClick={() =>
+                      handleCopyText(
+                        (perfilResolvidoPaciente.via === "PJ"
+                          ? perfilResolvidoPaciente.cnae
+                          : perfilPjParaNf?.cnae) || "8650-0/03",
+                        "cnae",
+                        "Código CNAE"
+                      )
+                    }
                     className="text-[10px] font-bold text-emerald-800 hover:underline flex items-center gap-1 cursor-pointer"
                   >
-                    {copiedKey === "cnae" ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                    {copiedKey === "cnae" ? (
+                      <Check className="w-3 h-3 text-emerald-600" />
+                    ) : (
+                      <Copy className="w-3 h-3" />
+                    )}
                     Copiar
                   </button>
                 </div>
-                <p className="font-bold text-forest">{dadosPJ.cnae || "8650-0/03"} - Atividades de Psicologia e Psicanálise</p>
-                <p className="text-[11px] text-forest/60">Subitem LC 116: 04.16 - Psicologia / Atividades Terapêuticas</p>
+                <p className="font-bold text-forest font-mono tabular-nums">
+                  {(perfilResolvidoPaciente.via === "PJ"
+                    ? perfilResolvidoPaciente.cnae
+                    : perfilPjParaNf?.cnae) || "8650-0/03"}{" "}
+                  <span className="font-sans font-semibold">
+                    — Psicologia / Atividades Terapêuticas
+                  </span>
+                </p>
+                <p className="text-[11px] text-forest/60">
+                  Subitem LC 116: 04.16 — Psicologia e Psicanálise
+                </p>
               </div>
 
-              {/* Discriminação */}
               <div className="p-3 bg-warm/30 rounded-xl border border-soft space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold uppercase text-forest/50">Discriminação dos Serviços</span>
+                  <span className="text-[10px] font-bold uppercase text-forest/50">
+                    Discriminação dos Serviços
+                  </span>
                   <button
                     type="button"
-                    onClick={() => handleCopyText(gerarDiscriminacaoNf(), "discrim", "Discriminação")}
+                    onClick={() =>
+                      handleCopyText(gerarDiscriminacaoNf(), "discrim", "Discriminação")
+                    }
                     className="text-[10px] font-bold text-emerald-800 hover:underline flex items-center gap-1 cursor-pointer"
                   >
-                    {copiedKey === "discrim" ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                    {copiedKey === "discrim" ? (
+                      <Check className="w-3 h-3 text-emerald-600" />
+                    ) : (
+                      <Copy className="w-3 h-3" />
+                    )}
                     Copiar Texto Completo
                   </button>
                 </div>
@@ -1171,20 +1599,31 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
                 </p>
               </div>
 
-              {/* Valor Total */}
               <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 flex items-center justify-between">
                 <div>
-                  <span className="text-[10px] font-bold uppercase text-emerald-950 block">Valor Total da NFS-e</span>
-                  <span className="text-base font-extrabold text-emerald-900 font-serif">
+                  <span className="text-[10px] font-bold uppercase text-emerald-950 block">
+                    Valor Total da NFS-e
+                  </span>
+                  <span className="text-base font-extrabold text-emerald-900 font-mono tabular-nums">
                     {fmtMoeda(metricas.totalGeral)}
                   </span>
                 </div>
                 <button
                   type="button"
-                  onClick={() => handleCopyText(metricas.totalGeral.toFixed(2).replace(".", ","), "valor", "Valor total")}
+                  onClick={() =>
+                    handleCopyText(
+                      metricas.totalGeral.toFixed(2).replace(".", ","),
+                      "valor",
+                      "Valor total"
+                    )
+                  }
                   className="px-3 py-1.5 bg-white text-emerald-900 font-bold rounded-lg border border-emerald-300 hover:bg-emerald-100 flex items-center gap-1 cursor-pointer"
                 >
-                  {copiedKey === "valor" ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                  {copiedKey === "valor" ? (
+                    <Check className="w-3 h-3 text-emerald-600" />
+                  ) : (
+                    <Copy className="w-3 h-3" />
+                  )}
                   Copiar Valor
                 </button>
               </div>
@@ -1204,7 +1643,7 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
       )}
 
       {/* ========================================================================================= */}
-      {/* MODAL 3: RECEITA SAÚDE / CARNÊ-LEÃO WEB (PORTAL E-CAC)                                    */}
+      {/* MODAL 3: RECEITA SAÚDE / CARNÊ-LEÃO WEB (PORTAL E-CAC) COM FILTRO DE IRPF                 */}
       {/* ========================================================================================= */}
       {modalCarneLeao && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
@@ -1225,39 +1664,101 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
               </button>
             </div>
 
-            {perfilAtivo === "PJ" ? (
+            {/* Resumo de segregação Gerencial vs Fiscal IRPF */}
+            <div className="grid grid-cols-3 gap-2 text-xs">
+              <div className="p-2.5 rounded-xl bg-warm/40 border border-soft">
+                <span className="text-[10px] font-bold uppercase text-forest/55 block">
+                  Caixa Gerencial
+                </span>
+                <span className="font-mono tabular-nums font-bold text-forest text-xs">
+                  {fmtMoeda(metricas.totalGeral)}
+                </span>
+              </div>
+              <div className="p-2.5 rounded-xl bg-stone-50 border border-stone-200">
+                <span className="text-[10px] font-bold uppercase text-stone-500 block">
+                  Sem IR / PJ
+                </span>
+                <span className="font-mono tabular-nums font-bold text-stone-700 text-xs">
+                  {fmtMoeda(metricas.totalSemIrOuPj)}
+                </span>
+              </div>
+              <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200">
+                <span className="text-[10px] font-bold uppercase text-emerald-900 block">
+                  Base IRPF (PF)
+                </span>
+                <span className="font-mono tabular-nums font-extrabold text-emerald-800 text-xs">
+                  {fmtMoeda(metricas.totalTributavelIr)}
+                </span>
+              </div>
+            </div>
+
+            {metricas.qtdTributavelIr === 0 ? (
               <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200 space-y-2 text-xs text-amber-900">
                 <div className="flex items-center gap-2 font-bold text-amber-950">
                   <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0" />
-                  <span>Atenção Fiscal: Paciente Faturado por Pessoa Jurídica (PJ)</span>
+                  <span>
+                    {perfilResolvidoPaciente.via === "PJ"
+                      ? "Paciente Faturado via Pessoa Jurídica (CNPJ)"
+                      : "Sessões Marcadas como Caixa Gerencial (Sem Declaração IRPF)"}
+                  </span>
                 </div>
                 <p className="leading-relaxed">
-                  Este paciente está configurado para faturamento pela <strong>Pessoa Jurídica ({dadosPJ.razaoSocial || "Sua Empresa"})</strong>.
-                  As receitas de PJ são tributadas pelo Simples Nacional ou Lucro Presumido e <strong>NÃO devem ser lançadas no Carnê-Leão da Pessoa Física</strong> (e-CAC), para evitar bitributação indevida.
+                  {perfilResolvidoPaciente.via === "PJ" ? (
+                    <>
+                      As sessões deste período estão vinculadas ao CNPJ{" "}
+                      <strong>{formatPerfilCurtoLabel(perfilResolvidoPaciente)}</strong> e são
+                      tributadas na Pessoa Jurídica (não entram no Carnê-Leão / Receita Saúde).
+                    </>
+                  ) : (
+                    <>
+                      As sessões deste período estão configuradas como{" "}
+                      <strong>Caixa / Dinheiro Físico (s/ IR)</strong>. Elas somam normalmente no
+                      seu faturamento e lucro gerencial, mas ficam excluídas da exportação do
+                      Receita Saúde (e-CAC).
+                    </>
+                  )}
                 </p>
                 <p className="text-[11px] text-amber-800/80">
-                  Caso este paciente deva ser tributado no seu IRPF pessoal como autônomo, altere a modalidade dele para <strong>Pessoa Física</strong> no topo da planilha.
+                  Para incluir alguma sessão específica na base do IRPF, clique no botão{" "}
+                  <strong>s/ IR → c/ IR</strong> na linha da sessão ou altere o perfil da ficha.
                 </p>
               </div>
             ) : (
               <>
                 <p className="text-xs text-forest/70 leading-relaxed">
-                  O módulo oficial <strong>Receita Saúde</strong> no Carnê-Leão Web exige apenas os 4 campos abaixo para emissão do recibo dedutível do IRPF:
+                  Apenas as <strong>{metricas.qtdTributavelIr} sessão(ões)</strong> marcadas com{" "}
+                  <strong>c/ IR</strong> entram no valor abaixo para o módulo{" "}
+                  <strong>Receita Saúde</strong> (sessões em Caixa Físico s/ IR ou PJ já foram
+                  descontadas automaticamente):
                 </p>
 
                 <div className="space-y-2.5 text-xs">
                   <div className="p-3 bg-blue-50/70 rounded-xl border border-blue-200/80 flex items-center justify-between">
                     <div>
-                      <span className="text-[10px] font-bold uppercase text-blue-950 block">CPF do Beneficiário (Paciente)</span>
-                      <span className="font-bold text-forest font-mono">{pacienteCpf || "Pendente de preenchimento"}</span>
+                      <span className="text-[10px] font-bold uppercase text-blue-950 block">
+                        CPF do Beneficiário (Paciente)
+                      </span>
+                      <span className="font-bold text-forest font-mono tabular-nums">
+                        {pacienteCpf || "Pendente de preenchimento"}
+                      </span>
                     </div>
                     {pacienteCpf && (
                       <button
                         type="button"
-                        onClick={() => handleCopyText(pacienteCpf.replace(/\D/g, ""), "cpf_receita", "CPF")}
+                        onClick={() =>
+                          handleCopyText(
+                            pacienteCpf.replace(/\D/g, ""),
+                            "cpf_receita",
+                            "CPF"
+                          )
+                        }
                         className="px-2.5 py-1 bg-white text-blue-900 font-bold rounded-lg border border-blue-300 hover:bg-blue-100 flex items-center gap-1 cursor-pointer"
                       >
-                        {copiedKey === "cpf_receita" ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                        {copiedKey === "cpf_receita" ? (
+                          <Check className="w-3 h-3 text-emerald-600" />
+                        ) : (
+                          <Copy className="w-3 h-3" />
+                        )}
                         Copiar CPF
                       </button>
                     )}
@@ -1265,38 +1766,59 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
 
                   <div className="p-3 bg-warm/30 rounded-xl border border-soft flex items-center justify-between">
                     <div>
-                      <span className="text-[10px] font-bold uppercase text-forest/60 block">Ocupação / Serviço</span>
+                      <span className="text-[10px] font-bold uppercase text-forest/60 block">
+                        Conta / CPF Profissional Emitente
+                      </span>
                       <span className="font-semibold text-forest">
-                        {isPsicologo ? "Psicólogo (CBO 2515-10 / 2515-05)" : "Terapeuta / Psicanalista"}
+                        {formatPerfilCurtoLabel(perfilResolvidoPaciente)}{" "}
+                        {(perfilResolvidoPaciente.cpf || profCpf) && (
+                          <span className="font-mono tabular-nums text-forest/70">
+                            • CPF: {perfilResolvidoPaciente.cpf || profCpf}
+                          </span>
+                        )}
                       </span>
                     </div>
                   </div>
 
                   <div className="p-3 bg-warm/30 rounded-xl border border-soft flex items-center justify-between">
                     <div>
-                      <span className="text-[10px] font-bold uppercase text-forest/60 block">Valor Recebido no Período</span>
-                      <span className="font-extrabold text-forest font-serif text-sm">
-                        {fmtMoeda(metricas.totalPago > 0 ? metricas.totalPago : metricas.totalGeral)}
+                      <span className="text-[10px] font-bold uppercase text-forest/60 block">
+                        Valor Tributável PF no Período (c/ IR)
+                      </span>
+                      <span className="font-extrabold text-forest font-mono tabular-nums text-sm">
+                        {fmtMoeda(
+                          metricas.totalPagoTributavelIr > 0
+                            ? metricas.totalPagoTributavelIr
+                            : metricas.totalTributavelIr
+                        )}
                       </span>
                     </div>
                     <button
                       type="button"
                       onClick={() =>
                         handleCopyText(
-                          (metricas.totalPago > 0 ? metricas.totalPago : metricas.totalGeral).toFixed(2).replace(".", ","),
+                          (metricas.totalPagoTributavelIr > 0
+                            ? metricas.totalPagoTributavelIr
+                            : metricas.totalTributavelIr
+                          )
+                            .toFixed(2)
+                            .replace(".", ","),
                           "val_receita",
-                          "Valor"
+                          "Valor tributável"
                         )
                       }
                       className="px-2.5 py-1 bg-white text-forest font-bold rounded-lg border border-soft hover:bg-warm flex items-center gap-1 cursor-pointer"
                     >
-                      {copiedKey === "val_receita" ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                      {copiedKey === "val_receita" ? (
+                        <Check className="w-3 h-3 text-emerald-600" />
+                      ) : (
+                        <Copy className="w-3 h-3" />
+                      )}
                       Copiar Valor
                     </button>
                   </div>
                 </div>
 
-                {/* Link Direto para o Portal e-CAC */}
                 <div className="pt-2">
                   <a
                     href="https://cav.receita.fazenda.gov.br/autenticacao/login"
@@ -1325,16 +1847,16 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
       )}
 
       {/* ========================================================================================= */}
-      {/* MODAL 4: ALTERAR MODALIDADE DE FATURAMENTO DO PACIENTE (PF vs PJ)                         */}
+      {/* MODAL 4: SELECIONAR PERFIL DE FATURAMENTO DO PACIENTE (MÚLTIPLOS CPFs, CAIXA E CNPJs)      */}
       {/* ========================================================================================= */}
       {modalAlterarPerfil && (
         <div className="fixed inset-0 z-[60] bg-forest/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
-          <div className="bg-white rounded-3xl border border-soft shadow-2xl max-w-lg w-full p-6 space-y-4 animate-in zoom-in-95 duration-150">
+          <div className="bg-white rounded-3xl border border-soft shadow-2xl max-w-xl w-full p-6 space-y-4 animate-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-soft">
               <div className="flex items-center gap-2">
                 <DollarSign className="w-5 h-5 text-emerald-700" />
                 <h3 className="font-serif font-bold text-base text-forest">
-                  Modalidade de Faturamento deste Paciente
+                  Perfil de Recebimento & Faturamento deste Paciente
                 </h3>
               </div>
               <button
@@ -1347,100 +1869,162 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
             </div>
 
             <p className="text-xs text-forest/70 leading-relaxed">
-              Defina como as sessões de <strong className="text-forest">{pacienteNome}</strong> serão faturadas e emitidas. Esta configuração fica fixada na ficha dele e pode ser alterada quando necessário:
+              Escolha qual conta CPF, Caixa em Dinheiro Físico ou empresa CNPJ será o padrão para{" "}
+              <strong className="text-forest">{pacienteNome}</strong>. Você também pode criar quantos perfis precisar:
             </p>
 
-            <div className="space-y-3 pt-1">
-              {/* Opção Pessoa Física */}
-              <div
-                onClick={() => handleTrocarPerfilPaciente("PF")}
-                className={`p-4 rounded-2xl border transition-all cursor-pointer ${
-                  perfilAtivo === "PF"
-                    ? "bg-emerald-50/70 border-emerald-500 shadow-xs ring-1 ring-emerald-500"
-                    : "bg-white hover:bg-warm/40 border-soft"
-                }`}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-start gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0">
-                      <User className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h4 className="font-bold text-forest text-xs sm:text-sm">
-                          Pessoa Física (PF)
-                        </h4>
-                        {perfilAtivo === "PF" && (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-200 text-emerald-900">
-                            Ativo
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-[11px] text-forest/70 mt-0.5 leading-relaxed">
-                        Emissão em nome de <strong>{profNome}</strong> (CPF: {profCpf || "Não informado"} • CRP: {profCrp || "Sem registro"}).
-                      </p>
-                      <p className="text-[10px] text-emerald-800 mt-1 font-medium">
-                        ✓ Recibos dedutíveis no IRPF do paciente (Receita Saúde) e Pix da conta pessoal.
-                      </p>
-                    </div>
-                  </div>
-                </div>
+            {/* Grupo 1: Via CPF & Caixa Físico */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-forest/60">
+                  Via Pessoa Física & Caixa Físico ({perfisPFLista.length})
+                </span>
               </div>
-
-              {/* Opção Pessoa Jurídica */}
-              <div
-                className={`p-4 rounded-2xl border transition-all ${
-                  perfilAtivo === "PJ"
-                    ? "bg-blue-50/70 border-blue-500 shadow-xs ring-1 ring-blue-500"
-                    : "bg-white hover:bg-warm/40 border-soft"
-                }`}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div
-                    onClick={() => handleTrocarPerfilPaciente("PJ")}
-                    className="flex items-start gap-3 flex-1 cursor-pointer"
-                  >
-                    <div className="w-9 h-9 rounded-xl bg-blue-100 text-blue-800 flex items-center justify-center shrink-0">
-                      <Building2 className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h4 className="font-bold text-forest text-xs sm:text-sm">
-                          Pessoa Jurídica (PJ / Clínica)
-                        </h4>
-                        {perfilAtivo === "PJ" && (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-200 text-blue-900">
-                            Ativo
-                          </span>
-                        )}
+              <div className="space-y-2">
+                {perfisPFLista.map((item) => {
+                  const selecionado = perfilResolvidoPaciente.id === item.id;
+                  const isCaixa = item.subtipo === "dinheiro_fisico";
+                  return (
+                    <div
+                      key={item.id}
+                      onClick={() => handleSelecionarPerfilEspecifico(item)}
+                      className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-start justify-between gap-3 ${
+                        selecionado
+                          ? "bg-emerald-50/70 border-emerald-500 ring-1 ring-emerald-500"
+                          : "bg-white hover:bg-warm/40 border-soft"
+                      }`}
+                    >
+                      <div className="flex items-start gap-3 min-w-0">
+                        <div
+                          className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                            isCaixa
+                              ? "bg-amber-100 text-amber-800"
+                              : "bg-emerald-100 text-emerald-800"
+                          }`}
+                        >
+                          {isCaixa ? (
+                            <Banknote className="w-4 h-4" />
+                          ) : (
+                            <User className="w-4 h-4" />
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h4 className="font-bold text-forest text-xs sm:text-sm">
+                              {item.apelido}
+                            </h4>
+                            <span className="text-[11px] text-forest/60">
+                              · {item.declararIr ? "Com IRPF (Receita Saúde)" : "Sem IRPF (Caixa Gerencial)"}
+                            </span>
+                            {selecionado && (
+                              <span className="text-[10px] font-bold text-emerald-800">
+                                · Ativo nesta ficha
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-forest/70 mt-0.5 font-mono tabular-nums">
+                            {isCaixa
+                              ? "Recebimento em espécie · Soma no caixa gerencial sem compor Carnê-Leão"
+                              : `Titular: ${item.titularNome || profNome} · CPF: ${
+                                  item.cpf || profCpf || "Não informado"
+                                }${item.chavePix ? ` · Pix: ${item.chavePix}` : ""}`}
+                          </p>
+                        </div>
                       </div>
-                      <p className="text-[11px] text-forest/70 mt-0.5 leading-relaxed">
-                        Emissão em nome de <strong>{dadosPJ.razaoSocial || "Empresa / Clínica a configurar"}</strong> (CNPJ: {dadosPJ.cnpj || "Pendente de preenchimento"}).
-                      </p>
-                      <p className="text-[10px] text-blue-800 mt-1 font-medium">
-                        ✓ Espelho para Nota Fiscal (NFS-e), Recibo PJ e Pix da conta jurídica da empresa.
-                      </p>
+                      {selecionado && (
+                        <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0 mt-1" />
+                      )}
                     </div>
-                  </div>
-                </div>
-
-                <div className="mt-2.5 pt-2.5 border-t border-soft/60 flex items-center justify-between">
-                  <span className="text-[10px] text-forest/60">
-                    {dadosPJ.cnpj ? "Dados da empresa configurados." : "Necessário informar CNPJ e Razão Social."}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setModalConfigurarPJ(true)}
-                    className="text-[10px] font-bold text-blue-700 hover:text-blue-900 underline flex items-center gap-1 cursor-pointer"
-                  >
-                    <Settings className="w-3 h-3" />
-                    <span>{dadosPJ.cnpj ? "Editar dados da PJ" : "Configurar Dados da PJ"}</span>
-                  </button>
-                </div>
+                  );
+                })}
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-soft">
+            {/* Grupo 2: Via CNPJ */}
+            <div className="space-y-2 pt-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-forest/60">
+                  Via Pessoa Jurídica — Empresas CNPJ ({perfisPJLista.length})
+                </span>
+              </div>
+              {perfisPJLista.length === 0 ? (
+                <div className="p-3.5 rounded-2xl border border-dashed border-soft bg-warm/20 flex items-center justify-between gap-3 text-xs">
+                  <span className="text-forest/65">
+                    Nenhuma empresa CNPJ cadastrada ainda.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setModalAlterarPerfil(false);
+                      setShowGerenciarPerfisModal(true);
+                    }}
+                    className="px-3 py-1.5 bg-blue-700 hover:bg-blue-800 text-white font-bold rounded-xl text-xs cursor-pointer whitespace-nowrap"
+                  >
+                    + Cadastrar CNPJ
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {perfisPJLista.map((item) => {
+                    const selecionado = perfilResolvidoPaciente.id === item.id;
+                    return (
+                      <div
+                        key={item.id}
+                        onClick={() => handleSelecionarPerfilEspecifico(item)}
+                        className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-start justify-between gap-3 ${
+                          selecionado
+                            ? "bg-blue-50/70 border-blue-500 ring-1 ring-blue-500"
+                            : "bg-white hover:bg-warm/40 border-soft"
+                        }`}
+                      >
+                        <div className="flex items-start gap-3 min-w-0">
+                          <div className="w-9 h-9 rounded-xl bg-blue-100 text-blue-800 flex items-center justify-center shrink-0">
+                            <Building2 className="w-4 h-4" />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h4 className="font-bold text-forest text-xs sm:text-sm">
+                                {item.apelido || item.nomeFantasia || item.razaoSocial}
+                              </h4>
+                              <span className="text-[11px] text-blue-800 font-medium">
+                                · NFS-e / PJ
+                              </span>
+                              {selecionado && (
+                                <span className="text-[10px] font-bold text-blue-800">
+                                  · Ativo nesta ficha
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-forest/70 mt-0.5 font-mono tabular-nums">
+                              {item.razaoSocial || "Razão Social a preencher"} · CNPJ:{" "}
+                              {item.cnpj || "Não informado"}
+                              {item.chavePixPJ ? ` · Pix PJ: ${item.chavePixPJ}` : ""}
+                            </p>
+                          </div>
+                        </div>
+                        {selecionado && (
+                          <CheckCircle2 className="w-4 h-4 text-blue-700 shrink-0 mt-1" />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between gap-2 pt-3 border-t border-soft flex-wrap">
+              <button
+                type="button"
+                onClick={() => {
+                  setModalAlterarPerfil(false);
+                  setShowGerenciarPerfisModal(true);
+                }}
+                className="px-3.5 py-2 bg-forest/5 hover:bg-forest/10 text-forest rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+              >
+                <Settings className="w-3.5 h-3.5" />
+                <span>Gerenciar / Criar Contas CPF, Caixa ou CNPJ</span>
+              </button>
+
               <button
                 type="button"
                 onClick={() => setModalAlterarPerfil(false)}
@@ -1453,142 +2037,17 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
         </div>
       )}
 
-      {/* ========================================================================================= */}
-      {/* MODAL 5: CONFIGURAÇÃO DOS DADOS DA PESSOA JURÍDICA (PJ) DO PROFISSIONAL                   */}
-      {/* ========================================================================================= */}
-      {modalConfigurarPJ && (
-        <div className="fixed inset-0 z-[70] bg-forest/80 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
-          <div className="bg-white rounded-3xl border border-soft shadow-2xl max-w-lg w-full p-6 space-y-4 animate-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between pb-3 border-b border-soft">
-              <div className="flex items-center gap-2">
-                <Building2 className="w-5 h-5 text-blue-700" />
-                <h3 className="font-serif font-bold text-base text-forest">
-                  Configuração de Pessoa Jurídica (PJ)
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setModalConfigurarPJ(false)}
-                className="p-1 hover:bg-warm rounded-lg text-forest/50 hover:text-forest cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
+      {/* MODAL GERENCIADOR COMPLETO DE MÚLTIPLOS PERFIS DE FATURAMENTO */}
+      <PerfisFaturamentoManagerModal
+        isOpen={showGerenciarPerfisModal}
+        onClose={() => setShowGerenciarPerfisModal(false)}
+        perfis={listaPerfis}
+        onSavePerfis={handleSalvarCarteiraPerfis}
+        profissionalNomePadrao={profNome}
+        showToast={showToast}
+      />
 
-            <p className="text-xs text-forest/70">
-              Preencha os dados da sua empresa ou clínica. Esses dados serão utilizados para emissão dos recibos PJ, espelhos NFS-e e chave Pix jurídica:
-            </p>
-
-            <div className="space-y-3 text-xs">
-              <div>
-                <label className="block text-[11px] font-bold text-forest/80 uppercase mb-1">
-                  Razão Social *
-                </label>
-                <input
-                  type="text"
-                  placeholder="Ex: Clínica de Psicologia Silva & Associados LTDA"
-                  value={formPJ.razaoSocial || ""}
-                  onChange={(e) => setFormPJ({ ...formPJ, razaoSocial: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-soft text-forest text-xs focus:border-forest/40 outline-none"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[11px] font-bold text-forest/80 uppercase mb-1">
-                    CNPJ *
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="00.000.000/0001-00"
-                    value={formPJ.cnpj || ""}
-                    onChange={(e) => setFormPJ({ ...formPJ, cnpj: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl border border-soft text-forest text-xs font-mono focus:border-forest/40 outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-forest/80 uppercase mb-1">
-                    Inscrição Municipal (IM)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Ex: 123456-7"
-                    value={formPJ.inscricaoMunicipal || ""}
-                    onChange={(e) => setFormPJ({ ...formPJ, inscricaoMunicipal: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl border border-soft text-forest text-xs font-mono focus:border-forest/40 outline-none"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-forest/80 uppercase mb-1">
-                  Chave Pix da Conta Jurídica (PJ)
-                </label>
-                <input
-                  type="text"
-                  placeholder="Ex: CNPJ ou e-mail financeiro da empresa"
-                  value={formPJ.chavePixPJ || ""}
-                  onChange={(e) => setFormPJ({ ...formPJ, chavePixPJ: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-soft text-forest text-xs focus:border-forest/40 outline-none"
-                />
-                <span className="text-[10px] text-forest/50 mt-0.5 block">
-                  Esta chave Pix será enviada nas mensagens de WhatsApp dos pacientes faturados via PJ.
-                </span>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[11px] font-bold text-forest/80 uppercase mb-1">
-                    Código CNAE
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="8650-0/03"
-                    value={formPJ.cnae || "8650-0/03"}
-                    onChange={(e) => setFormPJ({ ...formPJ, cnae: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl border border-soft text-forest text-xs font-mono focus:border-forest/40 outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-forest/80 uppercase mb-1">
-                    Endereço Comercial / Cidade
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Ex: São Paulo / SP"
-                    value={formPJ.enderecoPJ || ""}
-                    onChange={(e) => setFormPJ({ ...formPJ, enderecoPJ: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl border border-soft text-forest text-xs focus:border-forest/40 outline-none"
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-3 border-t border-soft">
-              <button
-                type="button"
-                onClick={() => setModalConfigurarPJ(false)}
-                disabled={salvandoPJ}
-                className="px-4 py-2 rounded-xl text-xs font-semibold text-forest/70 hover:text-forest hover:bg-warm border border-soft transition-colors cursor-pointer"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={handleSalvarDadosPJ}
-                disabled={salvandoPJ}
-                className="px-4 py-2 bg-blue-700 hover:bg-blue-800 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer disabled:opacity-60"
-              >
-                {salvandoPJ ? "Salvando..." : "Salvar Dados da PJ"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================================= */}
-      {/* MODAL DE CONFIRMAÇÃO DE EXCLUSÃO DE SESSÃO (100% IN-APP, SEM WINDOW.CONFIRM)             */}
-      {/* ========================================================================================= */}
+      {/* MODAL DE CONFIRMAÇÃO DE EXCLUSÃO DE SESSÃO (100% IN-APP) */}
       {sessaoParaExcluir && (
         <div className="fixed inset-0 z-[70] bg-forest/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
           <div className="bg-white rounded-3xl border border-rose-200/90 shadow-2xl max-w-md w-full p-6 space-y-4 animate-in zoom-in-95 duration-150">
@@ -1602,8 +2061,14 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
                 </h3>
                 <p className="text-xs text-forest/70 leading-relaxed">
                   Tem certeza que deseja remover esta sessão realizada/agendada em{" "}
-                  <strong className="text-forest font-semibold">{fmtDataBr(sessaoParaExcluir.data)}</strong> no valor de{" "}
-                  <strong className="text-forest font-semibold">{fmtMoeda(sessaoParaExcluir.valor)}</strong>?
+                  <strong className="text-forest font-mono tabular-nums font-semibold">
+                    {fmtDataBr(sessaoParaExcluir.data)}
+                  </strong>{" "}
+                  no valor de{" "}
+                  <strong className="text-forest font-mono tabular-nums font-semibold">
+                    {fmtMoeda(sessaoParaExcluir.valor)}
+                  </strong>
+                  ?
                 </p>
               </div>
             </div>

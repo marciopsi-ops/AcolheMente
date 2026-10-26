@@ -1720,12 +1720,12 @@ function LandingPage({
           </button>
         ) : (
           <button
-            onClick={() => onNavigate("acolhimento")}
+            onClick={() => onNavigate("dashboard")}
             className="flex flex-col items-center justify-center gap-0.5 px-2.5 py-1.5 rounded-xl bg-forest/5 hover:bg-forest/10 text-forest text-[10px] font-bold active:scale-95 transition-all shrink-0 cursor-pointer"
-            title="Conheça a equipe de terapeutas"
+            title="Login e Área do Profissional"
           >
-            <Users className="w-4 h-4 text-forest" />
-            <span>Equipe</span>
+            <PsiIcon className="w-4 h-4 text-forest" />
+            <span className="whitespace-nowrap">Login Psi</span>
           </button>
         )}
       </div>

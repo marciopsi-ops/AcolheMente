@@ -1,13 +1,39 @@
 import React, { useEffect, useState } from "react";
-import { ArrowLeft, User, Phone, MapPin, Calendar, Award, Heart, CheckCircle2, Instagram, Linkedin, Globe, Share2, BookOpen, Sparkles } from "lucide-react";
+import {
+  ArrowLeft,
+  User,
+  Phone,
+  MapPin,
+  Calendar,
+  Award,
+  Heart,
+  CheckCircle2,
+  Share2,
+  BookOpen,
+  QrCode,
+  Copy,
+  Check,
+  X,
+  ExternalLink,
+  Video,
+  Building2,
+} from "lucide-react";
 import { doc, getDoc, collection, query, where, onSnapshot } from "firebase/firestore";
 import { db } from "../lib/firebase";
-import logoImage from '../assets/images/logo_acolhe.svg';
-import { BrandLogo } from '../components/BrandLogo';
+import { BrandLogo } from "../components/BrandLogo";
 import { Breadcrumbs } from "../components/Breadcrumbs";
 import { ArtigoBlog } from "../types/blog";
 import { BlogCard } from "../components/BlogCard";
 import { formatProfessionalName } from "../utils/formatters";
+import {
+  SOCIAL_NETWORKS_META,
+  WhatsAppBrandIcon,
+  GoogleMapsBrandIcon,
+  WazeBrandIcon,
+  normalizeSocialUrl,
+  buildMapsUrls,
+  EnderecoPresencialData,
+} from "../components/SocialBrandIcons";
 
 export function PublicProfProfileView({ 
   profUid, 
@@ -27,6 +53,7 @@ export function PublicProfProfileView({
   const [artigosProfissional, setArtigosProfissional] = useState<ArtigoBlog[]>([]);
   const [loading, setLoading] = useState(true);
   const [copySuccess, setCopySuccess] = useState(false);
+  const [shareModalOpen, setShareModalOpen] = useState(false);
 
   const handleGoHome = () => {
     window.scrollTo({ top: 0, left: 0, behavior: "instant" });
@@ -79,12 +106,21 @@ export function PublicProfProfileView({
     const originalTitle = document.title;
     const formattedName = formatProfessionalName(prof.name);
     const profissaoOuTitulo = prof.profissao || (prof.especialidade ? `Profissional - ${prof.especialidade}` : "Profissional de Saúde");
-    const formattedTitle = `${formattedName} | ${profissaoOuTitulo} - Projeto AcolheMente`;
+    const wlActive = prof.whiteLabelEnabled === true && prof.plano === "avancado";
+    const formattedTitle = wlActive
+      ? `${formattedName} | ${profissaoOuTitulo}`
+      : `${formattedName} | ${profissaoOuTitulo} - Projeto AcolheMente`;
 
     document.title = formattedTitle;
 
     // Atualiza meta tags dinamicamente para compartilhamento e preview em redes sociais / WhatsApp
-    const descriptionText = prof.bioCurta || (prof.biografia ? prof.biografia.slice(0, 150) + "..." : `Conheça o perfil profissional de ${formattedName} (${profissaoOuTitulo}) no Projeto AcolheMente Saúde.`);
+    const descriptionText =
+      (wlActive && prof.bioCurta) ||
+      (prof.biografia
+        ? prof.biografia.slice(0, 150) + "..."
+        : wlActive
+          ? `Conheça a página profissional de ${formattedName} (${profissaoOuTitulo}).`
+          : `Conheça o perfil profissional de ${formattedName} (${profissaoOuTitulo}) no Projeto AcolheMente Saúde.`);
 
     const metaMap: Record<string, { attr: string; val: string }> = {
       description: { attr: "name", val: descriptionText },
@@ -204,162 +240,641 @@ export function PublicProfProfileView({
   }
 
   // Pre-filled text for WhatsApp
-  const cleanPhone = prof.telefone ? prof.telefone.replace(/\D/g, '') : '';
-  const whatsAppUrl = cleanPhone 
-    ? `https://api.whatsapp.com/send?phone=55${cleanPhone}&text=${encodeURIComponent(`Olá, conheci seu perfil profissional e gostaria de agendar uma consulta / atendimento!`)}`
-    : '';
+  const cleanPhone = prof.telefone ? prof.telefone.replace(/\D/g, "") : "";
+  const whatsAppNumber = cleanPhone
+    ? cleanPhone.startsWith("55") && cleanPhone.length >= 12
+      ? cleanPhone
+      : `55${cleanPhone}`
+    : "";
+  const whatsAppUrl = whatsAppNumber
+    ? `https://api.whatsapp.com/send?phone=${whatsAppNumber}&text=${encodeURIComponent(
+        "Olá, conheci seu perfil profissional e gostaria de agendar uma consulta / atendimento!",
+      )}`
+    : "";
 
-  const isWhiteLabel = prof.whiteLabelEnabled && prof.plano === 'avancado';
+  const isWhiteLabel = prof.whiteLabelEnabled && prof.plano === "avancado";
   if (isWhiteLabel) {
     const wlConfig = prof.whiteLabelConfig || {};
     const company = prof.companyData || {};
     const customServices = prof.customServices || [];
-    const bgColor = wlConfig.backgroundColor || '#F8FAFC';
-    const primaryColor = wlConfig.primaryColor || '#0F766E';
+    const bgColor = wlConfig.backgroundColor || "#F8FAFC";
+    const primaryColor = wlConfig.primaryColor || "#0F766E";
+    const secondaryColor = wlConfig.secondaryColor || "#06B6D4";
+
+    const pageUrl = `${window.location.origin}?prof=${profUid}`;
+    const formattedName = formatProfessionalName(prof.name);
+    const profissaoTitulo =
+      prof.profissao || prof.especialidade || "Profissional Especializado";
+    const shareTitle = `${formattedName} — ${profissaoTitulo}`;
+    const shareDescription = prof.bioCurta
+      ? `${shareTitle}\n"${prof.bioCurta}"`
+      : `Conheça a página profissional de ${formattedName} (${profissaoTitulo}):`;
+
+    const customWaGreeting =
+      (prof.whatsappMensagem || "").trim() ||
+      `Olá ${formattedName}, vi sua página profissional e gostaria de agendar um atendimento!`;
+    const whatsAppWhiteLabelUrl = whatsAppNumber
+      ? `https://api.whatsapp.com/send?phone=${whatsAppNumber}&text=${encodeURIComponent(
+          customWaGreeting,
+        )}`
+      : "";
+    const whatsAppCtaLabel =
+      (prof.whatsappBotaoTexto || "").trim() || "Agendar pelo WhatsApp";
+
+    const activeSocialLinks = SOCIAL_NETWORKS_META.map((item) => {
+      const raw = prof[item.field];
+      const url = normalizeSocialUrl(item.key, raw);
+      return url ? { ...item, url } : null;
+    }).filter(Boolean) as Array<
+      (typeof SOCIAL_NETWORKS_META)[number] & { url: string }
+    >;
+
+    const endereco: EnderecoPresencialData = prof.enderecoPresencial || {};
+    const showPresencialAddress =
+      prof.atendePresencial === true && prof.divulgarEnderecoPresencial === true;
+    const mapsInfo = showPresencialAddress
+      ? buildMapsUrls(endereco)
+      : { query: "", embedUrl: "", googleMapsUrl: "", wazeUrl: "" };
+
+    const modalidade =
+      prof.modalidadeAtendimento ||
+      (prof.atendePresencial ? "hibrido" : "online");
+    const modalidadeLabel =
+      modalidade === "presencial"
+        ? "Atendimento Presencial"
+        : modalidade === "hibrido"
+          ? "Atendimento Online & Presencial"
+          : "Atendimento Online";
+
+    const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=10&data=${encodeURIComponent(
+      pageUrl,
+    )}`;
+
+    const handleCopyPageLink = () => {
+      navigator.clipboard
+        .writeText(pageUrl)
+        .then(() => {
+          setCopySuccess(true);
+          setTimeout(() => setCopySuccess(false), 3000);
+        })
+        .catch((err) => console.error(err));
+    };
 
     return (
-      <div className="min-h-screen text-slate-800 p-4 sm:p-6 md:p-8 flex flex-col items-center" style={{ backgroundColor: bgColor }}>
-        <header className="w-full max-w-4xl flex items-center justify-between mb-8 sm:mb-12 gap-3 flex-wrap">
-          <button 
-            onClick={handleGoHome}
-            className="text-slate-600 hover:text-slate-950 transition-colors p-2 -ml-2 rounded-full hover:bg-black/5 cursor-pointer flex items-center gap-1.5 text-xs font-semibold"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            <span>Voltar</span>
-          </button>
+      <div
+        className="min-h-screen text-slate-800 p-4 sm:p-6 md:p-8 flex flex-col items-center"
+        style={{ backgroundColor: bgColor }}
+      >
+        {/* Top Bar: Brand + Share Action */}
+        <header className="w-full max-w-5xl flex items-center justify-between mb-8 sm:mb-10 gap-3 flex-wrap">
+          <div className="flex items-center gap-3">
+            {company.logoEmpresaUrl ? (
+              <div className="flex items-center gap-2.5 bg-white px-4 py-2 rounded-2xl shadow-xs border border-slate-200/90">
+                <img
+                  src={company.logoEmpresaUrl}
+                  alt={company.razaoSocial || formattedName}
+                  className="h-8 max-w-[130px] object-contain"
+                />
+                {company.razaoSocial && (
+                  <span className="text-xs font-bold text-slate-800">
+                    {company.razaoSocial}
+                  </span>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 text-xs font-bold px-3.5 py-2 rounded-xl bg-white border border-slate-200/90 text-slate-800 shadow-xs">
+                <span
+                  className="w-2 h-2 rounded-full shrink-0"
+                  style={{ backgroundColor: primaryColor }}
+                />
+                <span>{company.razaoSocial || formattedName}</span>
+              </div>
+            )}
+          </div>
 
-          {company.logoEmpresaUrl ? (
-            <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-2xl shadow-xs border border-slate-200">
-              <img src={company.logoEmpresaUrl} alt={company.razaoSocial || prof.name} className="h-8 max-w-[120px] object-contain" />
-              {company.razaoSocial && <span className="text-xs font-bold text-slate-700">{company.razaoSocial}</span>}
-            </div>
-          ) : (
-            <div className="text-xs font-bold px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-slate-800 shadow-xs">
-              {company.razaoSocial || formatProfessionalName(prof.name)}
-            </div>
-          )}
+          <button
+            type="button"
+            onClick={() => setShareModalOpen(true)}
+            className="px-4 py-2.5 rounded-xl bg-white hover:bg-slate-50 text-slate-800 border border-slate-200/90 shadow-xs hover:shadow-sm transition-all flex items-center gap-2 text-xs font-bold cursor-pointer"
+          >
+            <Share2 className="w-4 h-4" style={{ color: primaryColor }} />
+            <span>Compartilhar Página</span>
+            <QrCode className="w-3.5 h-3.5 text-slate-400 hidden sm:inline" />
+          </button>
         </header>
 
-        <main className="w-full max-w-4xl grid grid-cols-1 md:grid-cols-3 gap-8">
-          <div className="md:col-span-1 bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-200 shadow-sm flex flex-col items-center text-center gap-6 h-fit">
-            <div className="w-40 h-40 sm:w-48 sm:h-48 rounded-full overflow-hidden border-4 shadow-md relative bg-slate-100 flex-shrink-0 flex items-center justify-center" style={{ borderColor: primaryColor }}>
+        {/* Two-Column Main Layout */}
+        <main className="w-full max-w-5xl grid grid-cols-1 md:grid-cols-12 gap-7 items-start">
+          {/* LEFT COLUMN: 1. Foto -> 2. Credenciais -> 3. Bio -> 4. WhatsApp -> 5. Redes Sociais -> 6. Endereço + Mapa */}
+          <aside className="md:col-span-5 lg:col-span-4 bg-white p-6 sm:p-7 rounded-[2rem] border border-slate-200/90 shadow-sm flex flex-col items-center text-center gap-5">
+            {/* 1. FOTO */}
+            <div
+              className="w-40 h-40 sm:w-44 sm:h-44 rounded-full overflow-hidden border-4 shadow-md relative bg-slate-100 flex-shrink-0 flex items-center justify-center"
+              style={{ borderColor: primaryColor }}
+            >
               {prof.photoUrl ? (
-                <img src={prof.photoUrl} alt={formatProfessionalName(prof.name)} className="w-full h-full object-cover" />
+                <img
+                  src={prof.photoUrl}
+                  alt={formattedName}
+                  className="w-full h-full object-cover"
+                />
               ) : (
                 <User className="w-20 h-20 text-slate-400" />
               )}
             </div>
 
-            <div className="flex flex-col gap-1 items-center w-full">
-              <h1 className="font-serif text-2xl font-semibold text-slate-900 leading-tight">{formatProfessionalName(prof.name)}</h1>
-              <span className="text-xs uppercase tracking-wider font-bold mt-1" style={{ color: primaryColor }}>
-                {prof.profissao || prof.especialidade || "Profissional Especializado"}
+            {/* 2. CREDENCIAIS */}
+            <div className="flex flex-col gap-1.5 items-center w-full">
+              <h1 className="font-serif text-2xl font-semibold text-slate-900 leading-tight">
+                {formattedName}
+              </h1>
+              <span
+                className="text-xs uppercase tracking-wider font-bold"
+                style={{ color: primaryColor }}
+              >
+                {profissaoTitulo}
               </span>
 
-              {company.cnpj && (
-                <span className="text-[10px] font-mono text-slate-500 mt-1">
-                  CNPJ: {company.cnpj}
-                </span>
-              )}
-
-              {prof.bioCurta && (
-                <p className="text-sm text-slate-600 italic mt-3 px-2 text-center">"{prof.bioCurta}"</p>
-              )}
-
-              <div className="flex gap-3 mt-4 items-center justify-center">
-                {prof.instagramUrl && (
-                  <a href={prof.instagramUrl.startsWith('http') ? prof.instagramUrl : `https://${prof.instagramUrl}`} target="_blank" rel="noopener noreferrer" className="p-2 bg-slate-100 rounded-full text-slate-700 hover:bg-slate-200 transition-colors shadow-xs" title="Instagram">
-                    <Instagram className="w-4 h-4" />
-                  </a>
+              {prof.especialidade &&
+                prof.profissao &&
+                prof.especialidade !== prof.profissao && (
+                  <span className="text-xs text-slate-600 font-medium">
+                    {prof.especialidade}
+                  </span>
                 )}
-                {prof.linkedinUrl && (
-                  <a href={prof.linkedinUrl.startsWith('http') ? prof.linkedinUrl : `https://${prof.linkedinUrl}`} target="_blank" rel="noopener noreferrer" className="p-2 bg-slate-100 rounded-full text-slate-700 hover:bg-slate-200 transition-colors shadow-xs" title="LinkedIn">
-                    <Linkedin className="w-4 h-4" />
-                  </a>
+
+              <div className="flex flex-wrap items-center justify-center gap-1.5 mt-1.5">
+                {prof.crp && (
+                  <span className="text-[11px] font-mono px-2.5 py-1 bg-slate-100 rounded-lg text-slate-700 border border-slate-200 font-medium">
+                    Registro: {prof.crp}
+                  </span>
                 )}
-                {prof.siteUrl && (
-                  <a href={prof.siteUrl.startsWith('http') ? prof.siteUrl : `https://${prof.siteUrl}`} target="_blank" rel="noopener noreferrer" className="p-2 bg-slate-100 rounded-full text-slate-700 hover:bg-slate-200 transition-colors shadow-xs" title="Website">
-                    <Globe className="w-4 h-4" />
-                  </a>
+                {company.cnpj && (
+                  <span className="text-[11px] font-mono px-2.5 py-1 bg-slate-50 rounded-lg text-slate-600 border border-slate-200">
+                    CNPJ: {company.cnpj}
+                  </span>
                 )}
               </div>
 
-              {prof.crp && (
-                <span className="text-[10px] tracking-wide font-mono px-2.5 py-1 bg-slate-100 rounded-md text-slate-600 border border-slate-200 mt-3">
-                  Registro: {prof.crp}
-                </span>
-              )}
+              <div className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-600 bg-slate-50 border border-slate-200/80 px-3 py-1 rounded-lg mt-1">
+                {modalidade === "presencial" ? (
+                  <Building2 className="w-3.5 h-3.5" style={{ color: primaryColor }} />
+                ) : (
+                  <Video className="w-3.5 h-3.5" style={{ color: primaryColor }} />
+                )}
+                <span>{modalidadeLabel}</span>
+              </div>
             </div>
 
-            {whatsAppUrl && (
-              <a 
-                href={whatsAppUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-full py-4 px-2 text-white rounded-xl font-bold uppercase tracking-wider text-[11px] shadow-md hover:opacity-95 transition-all flex items-center justify-center gap-2 mt-4 text-center leading-tight cursor-pointer"
-                style={{ backgroundColor: primaryColor }}
-              >
-                <Phone className="w-5 h-5 shrink-0" /> Agendar Consulta / Atendimento
-              </a>
+            {/* 3. BIO CURTA */}
+            {prof.bioCurta && (
+              <div className="w-full border-t border-slate-100 pt-4">
+                <p className="text-sm text-slate-600 leading-relaxed italic px-1">
+                  "{prof.bioCurta}"
+                </p>
+              </div>
             )}
-          </div>
 
-          <div className="md:col-span-2 flex flex-col gap-6">
-            <div className="bg-white p-6 sm:p-10 rounded-[2rem] border border-slate-200 shadow-sm flex flex-col gap-6">
-              <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
-                <Heart className="w-6 h-6 shrink-0" style={{ color: primaryColor }} />
-                <h2 className="font-serif text-xl sm:text-2xl font-semibold text-slate-900">Sobre Mim & Abordagem</h2>
+            {/* 4. BOTÃO DO WHATSAPP OTIMIZADO (+ COMPARTILHAR) */}
+            <div className="w-full flex flex-col gap-2.5 pt-1">
+              {whatsAppWhiteLabelUrl && (
+                <a
+                  href={whatsAppWhiteLabelUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="group w-full py-3.5 px-4 bg-[#1FAF5A] hover:bg-[#19964B] text-white rounded-2xl shadow-md hover:shadow-lg hover:-translate-y-0.5 active:translate-y-0 transition-all flex items-center justify-center gap-3 cursor-pointer ring-4 ring-[#1FAF5A]/15"
+                >
+                  <span className="w-9 h-9 rounded-xl bg-white/15 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                    <WhatsAppBrandIcon className="w-5 h-5 text-white" />
+                  </span>
+                  <span className="flex flex-col items-start text-left leading-tight">
+                    <span className="font-bold text-sm tracking-tight">
+                      {whatsAppCtaLabel}
+                    </span>
+                    <span className="text-[11px] text-white/85 font-medium">
+                      Falar diretamente no WhatsApp
+                    </span>
+                  </span>
+                </a>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setShareModalOpen(true)}
+                className="w-full py-2.5 px-3 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl text-xs font-semibold transition-colors flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Share2 className="w-3.5 h-3.5 text-slate-500" />
+                <span>Compartilhar Cartão / QR Code</span>
+              </button>
+            </div>
+
+            {/* 5. REDES SOCIAIS & CURRÍCULO LATTES */}
+            {activeSocialLinks.length > 0 && (
+              <div className="w-full border-t border-slate-100 pt-4 flex flex-col gap-2.5">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                  Redes & Currículo
+                </span>
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  {activeSocialLinks.map(({ key, shortLabel, label, url, Icon }) => (
+                    <a
+                      key={key}
+                      href={url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title={label}
+                      className="px-3 py-2 rounded-xl bg-slate-50 hover:bg-white border border-slate-200/90 hover:border-slate-300 shadow-2xs hover:shadow-sm hover:-translate-y-0.5 transition-all inline-flex items-center gap-2 text-xs font-semibold text-slate-700 hover:text-slate-950"
+                    >
+                      <Icon className="w-4 h-4 shrink-0" />
+                      <span>{shortLabel}</span>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 6. ENDEREÇO PRESENCIAL + MAPA INCORPORADO */}
+            {showPresencialAddress && (endereco.logradouro || endereco.cidade) && (
+              <div className="w-full border-t border-slate-100 pt-5 flex flex-col gap-3 text-left">
+                <div className="flex items-start gap-2.5">
+                  <div
+                    className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5"
+                    style={{
+                      backgroundColor: `${primaryColor}15`,
+                      color: primaryColor,
+                    }}
+                  >
+                    <MapPin className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                      Atendimento Presencial
+                    </span>
+                    {endereco.nomeEspaco && (
+                      <h3 className="text-xs font-bold text-slate-900 mt-0.5 leading-snug">
+                        {endereco.nomeEspaco}
+                      </h3>
+                    )}
+                    <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                      {[
+                        endereco.logradouro,
+                        endereco.numero ? `, ${endereco.numero}` : "",
+                        endereco.complemento ? ` — ${endereco.complemento}` : "",
+                      ].join("")}
+                      {(endereco.bairro || endereco.cidade || endereco.uf) && (
+                        <span className="block text-slate-500 mt-0.5">
+                          {[
+                            endereco.bairro,
+                            [endereco.cidade, endereco.uf]
+                              .filter(Boolean)
+                              .join("/"),
+                          ]
+                            .filter(Boolean)
+                            .join(" • ")}
+                          {endereco.cep ? ` • CEP ${endereco.cep}` : ""}
+                        </span>
+                      )}
+                    </p>
+                    {endereco.referencia && (
+                      <p className="text-[11px] text-slate-500 italic mt-1">
+                        {endereco.referencia}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {mapsInfo.embedUrl && (
+                  <>
+                    <div className="w-full h-48 rounded-2xl overflow-hidden border border-slate-200 shadow-2xs bg-slate-100">
+                      <iframe
+                        title={`Localização de atendimento de ${formattedName}`}
+                        src={mapsInfo.embedUrl}
+                        className="w-full h-full border-0"
+                        loading="lazy"
+                        referrerPolicy="no-referrer-when-downgrade"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <a
+                        href={mapsInfo.googleMapsUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="py-2 px-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-[11px] font-bold text-slate-700 hover:text-slate-950 transition-colors flex items-center justify-center gap-1.5"
+                      >
+                        <GoogleMapsBrandIcon className="w-3.5 h-3.5 shrink-0" />
+                        <span>Google Maps</span>
+                      </a>
+                      <a
+                        href={mapsInfo.wazeUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="py-2 px-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-[11px] font-bold text-slate-700 hover:text-slate-950 transition-colors flex items-center justify-center gap-1.5"
+                      >
+                        <WazeBrandIcon className="w-3.5 h-3.5 shrink-0" />
+                        <span>Ir com Waze</span>
+                      </a>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </aside>
+
+          {/* RIGHT COLUMN: Sobre Mim, Serviços Particulares & Artigos */}
+          <div className="md:col-span-7 lg:col-span-8 flex flex-col gap-6">
+            <section className="bg-white p-6 sm:p-9 rounded-[2rem] border border-slate-200/90 shadow-sm flex flex-col gap-5">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-4 flex-wrap gap-2">
+                <div className="flex items-center gap-3">
+                  <Heart
+                    className="w-6 h-6 shrink-0"
+                    style={{ color: primaryColor }}
+                  />
+                  <h2 className="font-serif text-xl sm:text-2xl font-semibold text-slate-900">
+                    Sobre Mim & Abordagem
+                  </h2>
+                </div>
+                {prof.abordagem && (
+                  <span
+                    className="text-xs font-semibold px-3 py-1 rounded-lg border"
+                    style={{
+                      borderColor: `${secondaryColor}40`,
+                      backgroundColor: `${secondaryColor}12`,
+                      color: primaryColor,
+                    }}
+                  >
+                    {prof.abordagem}
+                  </span>
+                )}
               </div>
 
               {prof.biografia ? (
-                <div className="text-sm sm:text-base leading-relaxed text-slate-700 whitespace-pre-line space-y-4">
+                <div className="text-sm sm:text-base leading-relaxed text-slate-700 whitespace-pre-line">
                   {prof.biografia}
                 </div>
               ) : (
-                <p className="text-sm text-slate-400 italic py-6">Apresentação profissional em atualização.</p>
+                <p className="text-sm text-slate-400 italic py-4">
+                  Apresentação profissional em atualização.
+                </p>
               )}
-            </div>
+            </section>
 
-            <div className="bg-white p-6 sm:p-10 rounded-[2rem] border border-slate-200 shadow-sm flex flex-col gap-6">
+            <section className="bg-white p-6 sm:p-9 rounded-[2rem] border border-slate-200/90 shadow-sm flex flex-col gap-5">
               <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
-                <Award className="w-6 h-6 shrink-0" style={{ color: primaryColor }} />
-                <h2 className="font-serif text-xl sm:text-2xl font-semibold text-slate-900">Serviços & Consultas Particulares</h2>
+                <Award
+                  className="w-6 h-6 shrink-0"
+                  style={{ color: primaryColor }}
+                />
+                <h2 className="font-serif text-xl sm:text-2xl font-semibold text-slate-900">
+                  Serviços & Consultas Particulares
+                </h2>
               </div>
 
-              {customServices.length === 0 && (!prof.servicosOferecidos || prof.servicosOferecidos.length === 0) ? (
-                <p className="text-sm text-slate-400 italic py-4">Nenhum serviço cadastrado no momento.</p>
+              {customServices.length === 0 &&
+              (!prof.servicosOferecidos ||
+                prof.servicosOferecidos.length === 0) ? (
+                <p className="text-sm text-slate-400 italic py-4">
+                  Entre em contato pelo WhatsApp para consultar modalidades e disponibilidade de horários.
+                </p>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {customServices.map((srv: any, idx: number) => (
-                    <div key={`cust-srv-${idx}`} className="p-5 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col justify-between gap-3 hover:shadow-sm transition-all">
-                      <div>
-                        <h4 className="font-serif text-base font-bold text-slate-900">{srv.title || srv.titulo}</h4>
-                        {srv.description && <p className="text-xs text-slate-600 mt-1 leading-relaxed">{srv.description}</p>}
+                  {customServices.map((srv: any, idx: number) => {
+                    const srvTitle = srv.title || srv.titulo || "Atendimento";
+                    const srvWaUrl = whatsAppNumber
+                      ? `https://api.whatsapp.com/send?phone=${whatsAppNumber}&text=${encodeURIComponent(
+                          `Olá ${formattedName}! Gostaria de agendar / saber mais sobre: ${srvTitle}.`,
+                        )}`
+                      : "";
+                    return (
+                      <div
+                        key={`cust-srv-${idx}`}
+                        className="p-5 rounded-2xl bg-slate-50/80 border border-slate-200/90 flex flex-col justify-between gap-3 hover:bg-white hover:shadow-sm transition-all"
+                      >
+                        <div>
+                          <h4 className="font-serif text-base font-bold text-slate-900">
+                            {srvTitle}
+                          </h4>
+                          {srv.description && (
+                            <p className="text-xs text-slate-600 mt-1.5 leading-relaxed">
+                              {srv.description}
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex items-center justify-between pt-3 border-t border-slate-200/70 text-xs gap-2 flex-wrap">
+                          <div className="flex items-center gap-2">
+                            {srv.duration && (
+                              <span className="text-slate-500 font-medium">
+                                {srv.duration}
+                              </span>
+                            )}
+                            {srv.price && (
+                              <span className="font-bold px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                R$ {srv.price}
+                              </span>
+                            )}
+                          </div>
+                          {srvWaUrl && (
+                            <a
+                              href={srvWaUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[11px] font-bold text-[#19964B] hover:underline inline-flex items-center gap-1"
+                            >
+                              <WhatsAppBrandIcon className="w-3.5 h-3.5" />
+                              Agendar
+                            </a>
+                          )}
+                        </div>
                       </div>
-                      <div className="flex items-center justify-between pt-2 border-t border-slate-200/60 text-xs">
-                        {srv.duration && <span className="text-slate-500 font-medium">⏱️ {srv.duration}</span>}
-                        {srv.price && <span className="font-bold px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200">R$ {srv.price}</span>}
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
 
-                  {prof.servicosOferecidos && prof.servicosOferecidos.map((srv: string, idx: number) => (
-                    <div key={`std-srv-${idx}`} className="p-5 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-between">
-                      <h4 className="font-serif text-base font-bold text-slate-900">{srv}</h4>
-                      <span className="text-xs font-semibold text-slate-600">Particular</span>
-                    </div>
-                  ))}
+                  {customServices.length === 0 &&
+                    prof.servicosOferecidos &&
+                    prof.servicosOferecidos.map((srv: string, idx: number) => (
+                      <div
+                        key={`std-srv-${idx}`}
+                        className="p-5 rounded-2xl bg-slate-50/80 border border-slate-200/90 flex items-center justify-between gap-2"
+                      >
+                        <h4 className="font-serif text-base font-bold text-slate-900">
+                          {srv === "Outros"
+                            ? prof.outrosServicos || "Atendimento Especializado"
+                            : srv}
+                        </h4>
+                        <span className="text-xs font-semibold text-slate-500 shrink-0">
+                          Particular
+                        </span>
+                      </div>
+                    ))}
                 </div>
               )}
-            </div>
+            </section>
+
+            {artigosProfissional.length > 0 && (
+              <section className="bg-white p-6 sm:p-9 rounded-[2rem] border border-slate-200/90 shadow-sm flex flex-col gap-5">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-4 flex-wrap gap-2">
+                  <div className="flex items-center gap-3">
+                    <BookOpen
+                      className="w-6 h-6 shrink-0"
+                      style={{ color: primaryColor }}
+                    />
+                    <div>
+                      <h2 className="font-serif text-xl sm:text-2xl font-semibold text-slate-900">
+                        Artigos & Publicações
+                      </h2>
+                      <p className="text-xs text-slate-500">
+                        Conteúdos e reflexões escritas por {formattedName}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {artigosProfissional.map((artigo) => (
+                    <BlogCard
+                      key={artigo.id || artigo.titulo}
+                      artigo={artigo}
+                      onRead={(art) => {
+                        try {
+                          const url = new URL(window.location.href);
+                          url.searchParams.set("artigo", art.id || "");
+                          url.searchParams.delete("prof");
+                          window.history.pushState({}, "", url.toString());
+                        } catch (e) {
+                          console.error(e);
+                        }
+                        if (onReadArtigo && art.id) {
+                          onReadArtigo(art.id);
+                        } else {
+                          window.location.href = `${window.location.origin}?artigo=${art.id}`;
+                        }
+                      }}
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
           </div>
         </main>
 
-        <footer className="w-full max-w-4xl text-center py-12 text-slate-500 text-xs flex flex-col items-center gap-1.5">
-          <p>{company.razaoSocial || formatProfessionalName(prof.name)} {company.cnpj ? `• CNPJ: ${company.cnpj}` : ""}</p>
+        <footer className="w-full max-w-5xl text-center py-10 text-slate-500 text-xs flex flex-col items-center gap-1.5 mt-4">
+          <p className="font-medium text-slate-600">
+            {company.razaoSocial || formattedName}
+            {company.cnpj ? ` • CNPJ: ${company.cnpj}` : ""}
+            {prof.crp ? ` • Registro: ${prof.crp}` : ""}
+          </p>
           {company.enderecoEmpresa && <p>{company.enderecoEmpresa}</p>}
-          {company.telefoneEmpresa && <p>Tel / WhatsApp: {company.telefoneEmpresa}</p>}
+          {company.telefoneEmpresa && <p>Contato: {company.telefoneEmpresa}</p>}
         </footer>
+
+        {/* Share & QR Code Modal */}
+        {shareModalOpen && (
+          <div
+            className="fixed inset-0 z-50 bg-slate-950/50 backdrop-blur-xs flex items-center justify-center p-4"
+            onClick={() => setShareModalOpen(false)}
+          >
+            <div
+              className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-7 shadow-2xl border border-slate-200 space-y-5 relative"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                type="button"
+                onClick={() => setShareModalOpen(false)}
+                className="absolute top-4 right-4 p-2 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                aria-label="Fechar janela de compartilhamento"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              <div className="text-center space-y-1 pr-6 sm:pr-0">
+                <h3 className="font-serif text-xl font-bold text-slate-900">
+                  Compartilhar Página Profissional
+                </h3>
+                <p className="text-xs text-slate-500">
+                  {formattedName} • {profissaoTitulo}
+                </p>
+              </div>
+
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-col items-center gap-2.5">
+                <div className="bg-white p-2.5 rounded-2xl border border-slate-200 shadow-2xs">
+                  <img
+                    src={qrCodeUrl}
+                    alt={`QR Code da página de ${formattedName}`}
+                    className="w-44 h-44 object-contain"
+                  />
+                </div>
+                <span className="text-[11px] text-slate-500 text-center">
+                  Aponte a câmera do celular para abrir esta página diretamente
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
+                <span className="text-xs font-mono text-slate-600 truncate flex-1 select-all">
+                  {pageUrl}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleCopyPageLink}
+                  className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold inline-flex items-center gap-1.5 shrink-0 cursor-pointer transition-colors"
+                >
+                  {copySuccess ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      Copiado!
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" />
+                      Copiar
+                    </>
+                  )}
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <a
+                  href={`https://api.whatsapp.com/send?text=${encodeURIComponent(
+                    `${shareDescription}\n${pageUrl}`,
+                  )}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="py-3 px-4 rounded-xl bg-[#1FAF5A] hover:bg-[#19964B] text-white text-xs font-bold flex items-center justify-center gap-2 transition-colors shadow-xs"
+                >
+                  <WhatsAppBrandIcon className="w-4 h-4" />
+                  Enviar no WhatsApp
+                </a>
+
+                {typeof navigator !== "undefined" && !!navigator.share ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator
+                        .share({
+                          title: shareTitle,
+                          text: shareDescription,
+                          url: pageUrl,
+                        })
+                        .catch(() => {});
+                    }}
+                    className="py-3 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                  >
+                    <Share2 className="w-4 h-4" />
+                    Mais Opções
+                  </button>
+                ) : (
+                  <a
+                    href={qrCodeUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="py-3 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold flex items-center justify-center gap-2 transition-colors"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    Abrir QR Code
+                  </a>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -418,26 +933,7 @@ export function PublicProfProfileView({
               {prof.profissao || "Profissional de Saúde"}
             </span>
             
-            {prof.bioCurta && (
-              <p className="text-sm text-forest/80 italic mt-3 px-2 text-center">"{prof.bioCurta}"</p>
-            )}
-
             <div className="flex gap-4 mt-4 items-center justify-center">
-              {prof.instagramUrl && (
-                <a href={prof.instagramUrl.startsWith('http') ? prof.instagramUrl : `https://${prof.instagramUrl}`} target="_blank" rel="noopener noreferrer" className="p-2 bg-warm rounded-full text-forest/70 hover:text-forest hover:bg-soft transition-colors shadow-sm" title="Instagram">
-                  <Instagram className="w-4 h-4" />
-                </a>
-              )}
-              {prof.linkedinUrl && (
-                <a href={prof.linkedinUrl.startsWith('http') ? prof.linkedinUrl : `https://${prof.linkedinUrl}`} target="_blank" rel="noopener noreferrer" className="p-2 bg-warm rounded-full text-forest/70 hover:text-forest hover:bg-soft transition-colors shadow-sm" title="LinkedIn">
-                  <Linkedin className="w-4 h-4" />
-                </a>
-              )}
-              {prof.siteUrl && (
-                <a href={prof.siteUrl.startsWith('http') ? prof.siteUrl : `https://${prof.siteUrl}`} target="_blank" rel="noopener noreferrer" className="p-2 bg-warm rounded-full text-forest/70 hover:text-forest hover:bg-soft transition-colors shadow-sm" title="Website Pessoal">
-                  <Globe className="w-4 h-4" />
-                </a>
-              )}
               <button 
                 onClick={() => {
                   const url = `${window.location.origin}?prof=${profUid}`;
@@ -522,7 +1018,6 @@ export function PublicProfProfileView({
           ) : (
             <button
               onClick={() => {
-                alert("Para agendar com este profissional ou iniciar o acolhimento, conheça o fluxo principal do projeto.");
                 handleGoHome();
               }}
               className="w-full py-3.5 px-2 bg-forest text-white rounded-xl font-bold uppercase tracking-wider text-[11px] shadow-md hover:bg-forest/90 transition-all flex items-center justify-center gap-2 mt-4 text-center leading-tight cursor-pointer"

@@ -2,6 +2,19 @@
 
 export function registerServiceWorker() {
   if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+    // Em ambiente de desenvolvimento (Vite), nunca registrar SW e limpar registros antigos para evitar mistura de hashes do React
+    if ((import.meta as any).env?.DEV) {
+      navigator.serviceWorker
+        .getRegistrations()
+        .then((registrations) => {
+          for (const registration of registrations) {
+            registration.unregister();
+          }
+        })
+        .catch(() => {});
+      return;
+    }
+
     // Em ambientes de iframe/sandbox ou preview do AI Studio, o navegador bloqueia Service Workers
     const isInsideIframe = (() => {
       try {

@@ -2,16 +2,13 @@ import React, { useState, useRef, useEffect } from "react";
 import {
   User,
   Phone,
-  Mail,
   Edit3,
   XCircle,
-  FileText,
   CreditCard,
   BookOpen,
   Calendar,
   Clock,
   CheckCircle2,
-  AlertTriangle,
   FileSignature,
   UserX,
   Compass,
@@ -22,21 +19,23 @@ import {
   Plus,
   Send,
   Save,
-  Trash2,
   DollarSign,
-  Briefcase,
   AlertCircle,
   Sparkles,
-  Link2,
   Copy,
   ExternalLink,
   RefreshCw,
+  Building2,
+  Lock,
+  RotateCcw,
+  Check,
 } from "lucide-react";
-import { doc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { doc, getDoc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { PacienteProntuarioModal, ProntuarioRegistroItem } from "./PacienteProntuarioModal";
 import { PacienteFaturamentoSpreadsheet, SessaoFaturamentoItem } from "./PacienteFaturamentoSpreadsheet";
 import { ContratoGeradorModal } from "./ContratoGeradorModal";
+import { extractLegacySyncFields } from "../types/faturamento";
 
 interface FichaPacienteExternoModalProps {
   paciente: any;
@@ -46,6 +45,10 @@ interface FichaPacienteExternoModalProps {
   user?: any;
   showToast: (msg: string, type?: "success" | "error" | "info" | "warning") => void;
   onNavigateToAgenda?: (pacienteId?: string) => void;
+  collectionName?: "pacientes" | "triagem_corporativa";
+  modoFicha?: "externo" | "corporativo";
+  currentRole?: "master" | "triagem" | "profissional";
+  allUsers?: any[];
 }
 
 export function FichaPacienteExternoModal({
@@ -56,14 +59,43 @@ export function FichaPacienteExternoModal({
   user,
   showToast,
   onNavigateToAgenda,
+  collectionName,
+  modoFicha,
+  currentRole,
+  allUsers = [],
 }: FichaPacienteExternoModalProps) {
   const [currentPaciente, setCurrentPaciente] = useState<any>(paciente);
   const [isEditing, setIsEditing] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  const isCorporativo =
+    modoFicha === "corporativo" ||
+    collectionName === "triagem_corporativa" ||
+    currentPaciente?.tipoAcolhimento === "corporativo" ||
+    !!currentPaciente?.colaboradorNome ||
+    !!currentPaciente?.empresaId;
+
+  const targetCollection: "pacientes" | "triagem_corporativa" = isCorporativo
+    ? "triagem_corporativa"
+    : collectionName || "pacientes";
+
+  const effectiveRole: "master" | "triagem" | "profissional" =
+    currentRole ||
+    (profile?.role === "master" || profile?.role === "triagem" ? profile.role : "profissional");
+
+  const loggedUid = profile?.uid || user?.uid || "";
+  // Sigilo Clínico CFP: Prontuário acessível apenas pelo psicólogo responsável
+  const canAccessProntuario =
+    !isCorporativo ||
+    effectiveRole === "profissional" ||
+    (!!loggedUid && loggedUid === currentPaciente?.profissionalId);
+
   const latestPacienteRef = useRef<any>(paciente);
+  const targetCollectionRef = useRef<"pacientes" | "triagem_corporativa">(targetCollection);
   const pendingPatchRef = useRef<Record<string, any>>({});
   const saveTimeoutRef = useRef<any>(null);
+
+  targetCollectionRef.current = targetCollection;
 
   useEffect(() => {
     setCurrentPaciente(paciente);
@@ -74,6 +106,15 @@ export function FichaPacienteExternoModal({
   const [showProntuarioModal, setShowProntuarioModal] = useState(false);
   const [showFaturamentoModal, setShowFaturamentoModal] = useState(false);
   const [showContratoModal, setShowContratoModal] = useState(false);
+  const [modalDesfechoCorp, setModalDesfechoCorp] = useState<{
+    isOpen: boolean;
+    tipo: "alta" | "interrupcao";
+    motivo: string;
+  }>({
+    isOpen: false,
+    tipo: "alta",
+    motivo: "",
+  });
 
   // Evolução rápida
   const [novaEvolucaoTexto, setNovaEvolucaoTexto] = useState("");
@@ -113,7 +154,7 @@ export function FichaPacienteExternoModal({
       return true;
     }
     try {
-      await updateDoc(doc(db, "pacientes", targetId), {
+      await updateDoc(doc(db, targetCollectionRef.current, targetId), {
         ...patchToSave,
         updatedAt: serverTimestamp(),
       });
@@ -135,7 +176,7 @@ export function FichaPacienteExternoModal({
       pendingPatchRef.current = {};
       const targetId = latestPacienteRef.current?.id;
       if (targetId && Object.keys(patch).length > 0) {
-        updateDoc(doc(db, "pacientes", targetId), {
+        updateDoc(doc(db, targetCollectionRef.current, targetId), {
           ...patch,
           updatedAt: serverTimestamp(),
         }).catch((e) => console.error("Erro ao gravar alterações pendentes ao fechar:", e));
@@ -210,13 +251,144 @@ export function FichaPacienteExternoModal({
     });
   };
 
+  // Sincronização reversa: ao atualizar sessões na planilha, reflete status/data/valor em "agendamentos" caso a sessão tenha origem na Agenda
+  const syncSessoesToAgendamentos = async (novasSessoes: SessaoFaturamentoItem[]) => {
+    const mapToAgendaStatus: Record<string, string> = {
+      agendada: "agendada",
+      realizada: "realizada",
+      desmarcada_antecedencia: "remarcada",
+      falta_sem_aviso: "cancelada",
+    };
+
+    await Promise.all(
+      novasSessoes.map(async (s) => {
+        if (!s.id || s.id.startsWith("sessao_") || s.id.startsWith("lote_")) return;
+        try {
+          const agRef = doc(db, "agendamentos", s.id);
+          const agSnap = await getDoc(agRef);
+          if (agSnap.exists()) {
+            await updateDoc(agRef, {
+              data: s.data,
+              ...(s.horario ? { horario: s.horario } : {}),
+              modalidade: s.modalidade,
+              valor: Number(s.valor) || 0,
+              status: mapToAgendaStatus[s.statusAtendimento] || "agendada",
+              ...(s.observacoes !== undefined ? { observacoes: s.observacoes } : {}),
+              updatedAt: serverTimestamp(),
+            });
+          }
+        } catch {
+          // Ignora silenciosamente sessões manuais que não pertencem à coleção agendamentos
+        }
+      })
+    );
+  };
+
   const handleCloseModal = async () => {
     await flushPendingUpdates();
     onClose();
   };
 
+  // Ações de Status do Fluxo Corporativo (Sincronizadas com o Kanban Corporativo)
+  const autorAcao =
+    profile?.nome || profile?.name || user?.displayName || user?.email || "Profissional";
+
+  const handleAceitarSolicitacaoCorp = async () => {
+    setSaving(true);
+    try {
+      const novoHistorico = [
+        ...(Array.isArray(currentPaciente.historico) ? currentPaciente.historico : []),
+        {
+          data: new Date().toISOString(),
+          autor: autorAcao,
+          acao: "Solicitação Aceita",
+          detalhes: "Movido para Em Atendimento pela Ficha de Bordo.",
+        },
+      ];
+      await handlePatchFields(
+        {
+          status: "paciente",
+          dataAceite: new Date().toISOString(),
+          aceitoPor: autorAcao,
+          historico: novoHistorico,
+        },
+        true
+      );
+      showToast("Solicitação corporativa aceita! Paciente em atendimento.", "success");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleConfirmarDesfechoCorporativo = async () => {
+    if (!modalDesfechoCorp.motivo.trim()) {
+      showToast("Por favor, informe o motivo ou parecer resumido para registrar o desfecho.", "warning");
+      return;
+    }
+    setSaving(true);
+    try {
+      const isAlta = modalDesfechoCorp.tipo === "alta";
+      const novoHistorico = [
+        ...(Array.isArray(currentPaciente.historico) ? currentPaciente.historico : []),
+        {
+          data: new Date().toISOString(),
+          autor: autorAcao,
+          acao: isAlta ? "Alta Clínica Registrada" : "Interrupção de Atendimento",
+          detalhes: modalDesfechoCorp.motivo.trim(),
+        },
+      ];
+      await handlePatchFields(
+        {
+          status: modalDesfechoCorp.tipo,
+          dataDesfecho: new Date().toISOString(),
+          motivoDesfecho: modalDesfechoCorp.motivo.trim(),
+          historico: novoHistorico,
+        },
+        true
+      );
+      setModalDesfechoCorp({ isOpen: false, tipo: "alta", motivo: "" });
+      showToast(
+        isAlta
+          ? "Alta clínica registrada com sucesso no fluxo corporativo!"
+          : "Interrupção de atendimento registrada com sucesso!",
+        "success"
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleReativarAtendimentoCorp = async () => {
+    setSaving(true);
+    try {
+      const novoHistorico = [
+        ...(Array.isArray(currentPaciente.historico) ? currentPaciente.historico : []),
+        {
+          data: new Date().toISOString(),
+          autor: autorAcao,
+          acao: "Atendimento Reativado",
+          detalhes: "Retornado para Em Atendimento pela Ficha de Bordo.",
+        },
+      ];
+      await handlePatchFields(
+        {
+          status: "paciente",
+          historico: novoHistorico,
+        },
+        true
+      );
+      showToast("Atendimento corporativo reativado com sucesso!", "success");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   // Salvar nova evolução rápida
   const handleAddQuickEvolucao = async () => {
+    if (!canAccessProntuario) {
+      showToast("Acesso restrito ao psicólogo responsável pelo atendimento (Sigilo CFP).", "warning");
+      return;
+    }
     if (!novaEvolucaoTexto.trim()) {
       showToast("Escreva as anotações da evolução antes de salvar.", "warning");
       return;
@@ -235,9 +407,10 @@ export function FichaPacienteExternoModal({
         titulo: novaEvolucaoTitulo.trim() || "Evolução de Sessão",
         conteudo: novaEvolucaoTexto.trim(),
         humorOuEstadoGeral: "Estável / Colaborativo",
-        profissionalId: profile?.uid || user?.uid,
-        profissionalNome: profile?.name || profile?.nome || "Psicólogo(a)",
-        profissionalCrp: profile?.crp || "",
+        profissionalId: profile?.uid || user?.uid || currentPaciente.profissionalId,
+        profissionalNome:
+          profile?.name || profile?.nome || currentPaciente.profissionalNome || "Psicólogo(a)",
+        profissionalCrp: profile?.crp || currentPaciente.profissionalCrp || "",
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
@@ -247,7 +420,7 @@ export function FichaPacienteExternoModal({
         : [];
       const novaLista = [novoRegistro, ...listaExistente];
 
-      await updateDoc(doc(db, "pacientes", currentPaciente.id), {
+      await updateDoc(doc(db, targetCollection, currentPaciente.id), {
         prontuarioClinico: novaLista,
         updatedAt: serverTimestamp(),
       });
@@ -266,18 +439,76 @@ export function FichaPacienteExternoModal({
     }
   };
 
+  // Campos Normalizados (Compatibilidade Transparente entre Carteira Externa e Corporativo)
+  const nomeDisplay =
+    currentPaciente.nomeCivil ||
+    currentPaciente.pacienteNomeCompleto ||
+    currentPaciente.nome ||
+    (currentPaciente.beneficiarioTipo === "dependente" && currentPaciente.dependenteInfo
+      ? currentPaciente.dependenteInfo
+      : currentPaciente.colaboradorNome) ||
+    currentPaciente.colaboradorNome ||
+    "Paciente";
+
+  const cpfDisplay =
+    currentPaciente.cpf ||
+    currentPaciente.pacienteCpf ||
+    currentPaciente.dadosContrato?.pacienteCpf ||
+    "";
+
+  const dataNascimentoDisplay =
+    currentPaciente.dataNascimento ||
+    currentPaciente.pacienteDataNascimento ||
+    currentPaciente.colaboradorDataNascimento ||
+    "";
+
+  const telDisplay =
+    currentPaciente.telefone ||
+    currentPaciente.pacienteTelefone ||
+    currentPaciente.colaboradorWhatsapp ||
+    currentPaciente.colaboradorTelefone ||
+    "";
+
+  const emailDisplay =
+    currentPaciente.email ||
+    currentPaciente.pacienteEmail ||
+    currentPaciente.colaboradorEmail ||
+    "";
+
+  const queixaDisplay =
+    currentPaciente.queixaPrincipal ??
+    currentPaciente.queixa ??
+    currentPaciente.motivo ??
+    "";
+
+  const disponibilidadeDisplay =
+    currentPaciente.disponibilidade ??
+    currentPaciente.turnoPreferencia ??
+    "";
+
+  const frequenciaDisplay =
+    currentPaciente.frequenciaSessoes ||
+    currentPaciente.frequenciaRecomendada ||
+    "Semanal";
+
   // WhatsApp
-  const telRaw = (currentPaciente.telefone || "").replace(/\D/g, "");
-  const nomeDisplay = currentPaciente.nomeCivil || currentPaciente.nome || "Paciente";
+  const telRaw = telDisplay.replace(/\D/g, "");
   const openWhatsApp = (msgPersonalizada?: string) => {
     if (!telRaw) {
       showToast("Este paciente não possui telefone/WhatsApp cadastrado.", "warning");
       return;
     }
-    const msg = msgPersonalizada || `Olá ${nomeDisplay}! Tudo bem? Gostaria de alinhar nosso próximo atendimento.`;
+    const msg =
+      msgPersonalizada ||
+      `Olá ${nomeDisplay}! Tudo bem? Gostaria de alinhar nosso próximo atendimento.`;
     const cleanNum = telRaw.startsWith("55") ? telRaw : `55${telRaw}`;
     window.open(`https://wa.me/${cleanNum}?text=${encodeURIComponent(msg)}`, "_blank");
   };
+
+  // URL de Atualização Cadastral (Suporta Externo & Corporativo)
+  const profUidForLink = currentPaciente.profissionalId || profile?.uid || user?.uid || "";
+  const tipoLinkCadastro = isCorporativo ? "corporativo" : "externo";
+  const urlAtualizacaoCadastro = `${window.location.origin}/?view=cadastro_externo&prof=${profUidForLink}&paciente=${currentPaciente.id}&tipo=${tipoLinkCadastro}`;
 
   // Cálculos de Sessões & Faturamento
   const sessoes: SessaoFaturamentoItem[] = Array.isArray(currentPaciente.historicoSessoes)
@@ -293,19 +524,35 @@ export function FichaPacienteExternoModal({
 
   // Status de Atendimento
   const statusAtual = currentPaciente.statusTratamento || currentPaciente.status || "Em Atendimento";
+  const statusCorp = currentPaciente.status || "paciente";
+
+  const canEditTabelaConvenio = !isCorporativo || effectiveRole !== "profissional";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center px-1 sm:px-4 bg-forest/25 backdrop-blur-sm animate-in fade-in py-1 sm:py-3">
       <div className="bg-white rounded-2xl sm:rounded-3xl w-full max-w-[98vw] 2xl:max-w-[1550px] h-[96vh] sm:h-[95vh] flex flex-col shadow-2xl border border-soft overflow-hidden animate-in zoom-in-95">
-        
         {/* =========================================================================
-            HEADER DA FICHA DE BORDO (Idêntico ao estilo do Acolhimento)
+            HEADER DA FICHA DE BORDO UNIFICADA (EXTERNO & CORPORATIVO)
         ========================================================================== */}
-        <div className="px-3 sm:px-6 py-2 sm:py-3 flex flex-col border-b border-soft bg-gradient-to-r from-emerald-50/50 via-white to-warm/40 gap-1.5 sm:gap-2 shrink-0">
+        <div
+          className={`px-3 sm:px-6 py-2 sm:py-3 flex flex-col border-b border-soft gap-1.5 sm:gap-2 shrink-0 ${
+            isCorporativo
+              ? "bg-gradient-to-r from-blue-50/60 via-white to-warm/40"
+              : "bg-gradient-to-r from-emerald-50/50 via-white to-warm/40"
+          }`}
+        >
           <div className="flex justify-between items-center gap-2">
             <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
-              <div className="p-1.5 sm:p-2.5 rounded-xl shadow-xs shrink-0 flex items-center justify-center bg-forest text-white">
-                <User className="w-4 h-4 sm:w-5 sm:h-5" />
+              <div
+                className={`p-1.5 sm:p-2.5 rounded-xl shadow-xs shrink-0 flex items-center justify-center text-white ${
+                  isCorporativo ? "bg-forest" : "bg-forest"
+                }`}
+              >
+                {isCorporativo ? (
+                  <Building2 className="w-4 h-4 sm:w-5 sm:h-5 text-sun" />
+                ) : (
+                  <User className="w-4 h-4 sm:w-5 sm:h-5" />
+                )}
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-wrap">
@@ -316,62 +563,143 @@ export function FichaPacienteExternoModal({
                     {nomeDisplay}
                   </h3>
 
-                  {/* Badges de Identificação */}
-                  <span className="text-[9px] sm:text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-2xs shrink-0 flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" />
-                    Carteira Particular
-                  </span>
+                  {/* Identificação de Origem (Respeitando Sigilo Corporativo para o Psicólogo) */}
+                  {isCorporativo ? (
+                    <span className="text-[9px] sm:text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md bg-blue-50 text-blue-900 border border-blue-200 shrink-0 flex items-center gap-1">
+                      <Building2 className="w-3 h-3 text-blue-700" />
+                      Convênio Corporativo
+                    </span>
+                  ) : (
+                    <span className="text-[9px] sm:text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-200 shrink-0">
+                      Carteira Particular
+                    </span>
+                  )}
 
                   {/* Status do Tratamento */}
-                  <select
-                    value={statusAtual}
-                    onChange={(e) => {
-                      handlePatchFields(
-                        { statusTratamento: e.target.value, status: e.target.value },
-                        true
-                      );
-                    }}
-                    className={`text-[9px] sm:text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full border shrink-0 cursor-pointer focus:outline-none transition-colors ${
-                      statusAtual === "Em Atendimento" || statusAtual === "Ativo"
-                        ? "bg-emerald-100 text-emerald-800 border-emerald-200"
-                        : statusAtual === "Em Pausa" || statusAtual === "Standby"
-                        ? "bg-amber-100 text-amber-900 border-amber-300"
-                        : statusAtual === "Concluído" || statusAtual === "Alta"
-                        ? "bg-blue-100 text-blue-800 border-blue-200"
-                        : "bg-slate-100 text-slate-700 border-slate-200"
-                    }`}
-                  >
-                    <option value="Em Atendimento">Em Atendimento</option>
-                    <option value="Em Pausa">Em Pausa</option>
-                    <option value="Concluído">Concluído (Alta)</option>
-                    <option value="Inativo">Inativo / Desligado</option>
-                  </select>
+                  {isCorporativo ? (
+                    <span
+                      className={`text-[9px] sm:text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md border shrink-0 ${
+                        statusCorp === "paciente"
+                          ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                          : statusCorp === "solicitacao_servico"
+                            ? "bg-amber-50 text-amber-900 border-amber-300"
+                            : statusCorp === "alta"
+                              ? "bg-blue-50 text-blue-800 border-blue-200"
+                              : "bg-rose-50 text-rose-800 border-rose-200"
+                      }`}
+                    >
+                      {statusCorp === "paciente"
+                        ? "Em Atendimento"
+                        : statusCorp === "solicitacao_servico"
+                          ? "Solicitação Pendente"
+                          : statusCorp === "alta"
+                            ? "Alta Clínica"
+                            : "Atendimento Interrompido"}
+                    </span>
+                  ) : (
+                    <select
+                      value={statusAtual}
+                      onChange={(e) => {
+                        handlePatchFields(
+                          { statusTratamento: e.target.value, status: e.target.value },
+                          true
+                        );
+                      }}
+                      className={`text-[9px] sm:text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full border shrink-0 cursor-pointer focus:outline-none transition-colors ${
+                        statusAtual === "Em Atendimento" || statusAtual === "Ativo"
+                          ? "bg-emerald-100 text-emerald-800 border-emerald-200"
+                          : statusAtual === "Em Pausa" || statusAtual === "Standby"
+                            ? "bg-amber-100 text-amber-900 border-amber-300"
+                            : statusAtual === "Concluído" || statusAtual === "Alta"
+                              ? "bg-blue-100 text-blue-800 border-blue-200"
+                              : "bg-slate-100 text-slate-700 border-slate-200"
+                      }`}
+                    >
+                      <option value="Em Atendimento">Em Atendimento</option>
+                      <option value="Em Pausa">Em Pausa</option>
+                      <option value="Concluído">Concluído (Alta)</option>
+                      <option value="Inativo">Inativo / Desligado</option>
+                    </select>
+                  )}
                 </div>
 
-                {/* Linha 2: Metadados */}
-                <div className="flex flex-wrap items-center gap-1.5 sm:gap-2.5 text-[10px] sm:text-[11px] font-medium text-forest/70 mt-0.5">
+                {/* Linha 2: Metadados Limpos com Separadores Tipográficos */}
+                <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 text-[10px] sm:text-[11px] font-medium text-forest/70 mt-0.5 tabular-nums">
                   <span className="font-mono text-forest/60 shrink-0">
                     #{currentPaciente.id?.slice(0, 6)}
                   </span>
-                  {currentPaciente.cpf && (
-                    <span className="font-mono text-forest/60">
-                      CPF: {currentPaciente.cpf}
-                    </span>
+
+                  {cpfDisplay ? (
+                    <>
+                      <span aria-hidden="true" className="text-forest/30">·</span>
+                      <span className="font-mono text-forest/70">CPF: {cpfDisplay}</span>
+                    </>
+                  ) : (
+                    <>
+                      <span aria-hidden="true" className="text-forest/30">·</span>
+                      <span className="text-amber-700 font-semibold">CPF pendente</span>
+                    </>
                   )}
-                  {currentPaciente.origem && (
-                    <span className="text-[9px] sm:text-[10px] font-bold uppercase px-1.5 py-0.2 rounded-md bg-sun/30 text-forest border border-sun/50 truncate">
-                      Origem: {currentPaciente.origem === "formulario_externo" ? "Link do Formulário" : currentPaciente.origem === "importacao_excel" ? "Planilha Excel" : currentPaciente.origem}
-                    </span>
+
+                  {isCorporativo ? (
+                    <>
+                      {effectiveRole !== "profissional" && currentPaciente.empresaNome && (
+                        <>
+                          <span aria-hidden="true" className="text-forest/30">·</span>
+                          <span className="font-semibold text-forest/80">
+                            {currentPaciente.empresaNome}
+                          </span>
+                        </>
+                      )}
+                      {currentPaciente.servicoNome && (
+                        <>
+                          <span aria-hidden="true" className="text-forest/30">·</span>
+                          <span className="text-forest/75 truncate max-w-[220px]">
+                            {currentPaciente.servicoNome}
+                          </span>
+                        </>
+                      )}
+                      {currentPaciente.beneficiarioTipo === "dependente" && (
+                        <>
+                          <span aria-hidden="true" className="text-forest/30">·</span>
+                          <span className="text-forest/75">
+                            Dependente ({currentPaciente.dependenteParentesco || "Familiar"})
+                          </span>
+                        </>
+                      )}
+                    </>
+                  ) : (
+                    currentPaciente.origem && (
+                      <>
+                        <span aria-hidden="true" className="text-forest/30">·</span>
+                        <span className="text-forest/75 truncate">
+                          Origem:{" "}
+                          {currentPaciente.origem === "formulario_externo"
+                            ? "Link do Formulário"
+                            : currentPaciente.origem === "importacao_excel"
+                              ? "Planilha Excel"
+                              : currentPaciente.origem}
+                        </span>
+                      </>
+                    )
                   )}
+
                   {currentPaciente.valorSessao && (
-                    <span className="font-bold text-emerald-800 bg-emerald-50 px-2 py-0.2 rounded-md border border-emerald-200">
-                      R$ {currentPaciente.valorSessao} / sessão
-                    </span>
+                    <>
+                      <span aria-hidden="true" className="text-forest/30">·</span>
+                      <span className="font-bold text-emerald-800">
+                        R$ {currentPaciente.valorSessao}/sessão
+                      </span>
+                    </>
                   )}
+
                   {currentPaciente.modalidade && (
-                    <span className="capitalize text-forest/70 bg-warm px-1.5 py-0.2 rounded border border-soft">
-                      {currentPaciente.modalidade}
-                    </span>
+                    <>
+                      <span aria-hidden="true" className="text-forest/30">·</span>
+                      <span className="capitalize text-forest/70">
+                        {currentPaciente.modalidade}
+                      </span>
+                    </>
                   )}
                 </div>
               </div>
@@ -383,10 +711,10 @@ export function FichaPacienteExternoModal({
                 <button
                   type="button"
                   onClick={() => openWhatsApp()}
-                  className="flex items-center justify-center gap-1 font-bold text-[10px] sm:text-xs p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl bg-[#25D366] hover:bg-[#20b858] text-white shadow-2xs transition-all shrink-0 cursor-pointer"
+                  className="flex items-center justify-center gap-1 font-bold text-[10px] sm:text-xs p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl bg-[#25D366] hover:bg-[#20b858] text-white shadow-2xs transition-all shrink-0 cursor-pointer whitespace-nowrap"
                   title="Enviar WhatsApp para o paciente"
                 >
-                  <Phone className="w-3.5 h-3.5 text-white" />
+                  <Phone className="w-3.5 h-3.5 text-white shrink-0" />
                   <span className="hidden sm:inline">WhatsApp</span>
                 </button>
               )}
@@ -407,14 +735,14 @@ export function FichaPacienteExternoModal({
                     setIsEditing(true);
                   }
                 }}
-                className={`flex items-center justify-center gap-1 font-bold text-[10px] sm:text-xs p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl border transition-all shadow-2xs shrink-0 cursor-pointer disabled:opacity-60 ${
+                className={`flex items-center justify-center gap-1 font-bold text-[10px] sm:text-xs p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl border transition-all shadow-2xs shrink-0 cursor-pointer disabled:opacity-60 whitespace-nowrap ${
                   isEditing
                     ? "bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700"
                     : "bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100"
                 }`}
                 title={isEditing ? "Concluir e salvar edição" : "Editar campos da ficha"}
               >
-                {isEditing ? <Save className="w-3.5 h-3.5" /> : <Edit3 className="w-3.5 h-3.5" />}
+                {isEditing ? <Save className="w-3.5 h-3.5 shrink-0" /> : <Edit3 className="w-3.5 h-3.5 shrink-0" />}
                 <span className="hidden sm:inline">
                   {saving ? "Salvando..." : isEditing ? "Salvar" : "Editar"}
                 </span>
@@ -437,21 +765,32 @@ export function FichaPacienteExternoModal({
         ========================================================================== */}
         <div className="flex items-center justify-between gap-1.5 sm:gap-2 px-2.5 sm:px-6 py-1.5 sm:py-2 bg-white border-b border-soft shrink-0 overflow-x-auto scrollbar-none">
           <div className="flex items-center gap-1 sm:gap-2 shrink-0">
-            {/* Prontuário Clínico & Evoluções */}
-            <button
-              type="button"
-              onClick={() => setShowProntuarioModal(true)}
-              className="flex items-center gap-1 sm:gap-1.5 text-[10px] sm:text-xs font-bold text-forest bg-warm/60 hover:bg-emerald-50 hover:text-emerald-900 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg sm:rounded-xl border border-soft hover:border-emerald-300 transition-colors whitespace-nowrap shadow-2xs cursor-pointer"
-              title="Abrir Prontuário Clínico Completo"
-            >
-              <BookOpen className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
-              <span>Prontuário Clínico</span>
-              {Array.isArray(currentPaciente.prontuarioClinico) && currentPaciente.prontuarioClinico.length > 0 && (
-                <span className="ml-0.5 px-1.5 py-0.2 text-[9px] font-bold rounded-full bg-emerald-100 text-emerald-800">
-                  {currentPaciente.prontuarioClinico.length}
-                </span>
-              )}
-            </button>
+            {/* Prontuário Clínico & Evoluções (Protegido por Sigilo CFP) */}
+            {canAccessProntuario ? (
+              <button
+                type="button"
+                onClick={() => setShowProntuarioModal(true)}
+                className="flex items-center gap-1 sm:gap-1.5 text-[10px] sm:text-xs font-bold text-forest bg-warm/60 hover:bg-emerald-50 hover:text-emerald-900 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg sm:rounded-xl border border-soft hover:border-emerald-300 transition-colors whitespace-nowrap shadow-2xs cursor-pointer"
+                title="Abrir Prontuário Clínico Completo"
+              >
+                <BookOpen className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+                <span>Prontuário Clínico</span>
+                {Array.isArray(currentPaciente.prontuarioClinico) &&
+                  currentPaciente.prontuarioClinico.length > 0 && (
+                    <span className="ml-0.5 px-1.5 py-0.2 text-[9px] font-bold rounded-full bg-emerald-100 text-emerald-800 tabular-nums">
+                      {currentPaciente.prontuarioClinico.length}
+                    </span>
+                  )}
+              </button>
+            ) : (
+              <span
+                className="flex items-center gap-1.5 text-[10px] sm:text-xs font-semibold text-forest/60 bg-warm/40 px-2.5 py-1.5 rounded-lg sm:rounded-xl border border-soft whitespace-nowrap"
+                title="Sigilo Profissional CFP: O prontuário clínico é exclusivo do psicólogo responsável pelo atendimento."
+              >
+                <Lock className="w-3.5 h-3.5 text-forest/50 shrink-0" />
+                <span>Prontuário (Sigilo CFP)</span>
+              </span>
+            )}
 
             {/* Sessões & Faturamento */}
             <button
@@ -463,22 +802,27 @@ export function FichaPacienteExternoModal({
               <CreditCard className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
               <span>Sessões & Faturamento</span>
               {sessoesPendentes.length > 0 && (
-                <span className="ml-0.5 px-1.5 py-0.2 text-[9px] font-bold rounded-full bg-amber-100 text-amber-900">
+                <span className="ml-0.5 px-1.5 py-0.2 text-[9px] font-bold rounded-full bg-amber-100 text-amber-900 tabular-nums">
                   {sessoesPendentes.length} pend.
                 </span>
               )}
             </button>
 
-            {/* Contrato Terapêutico Particular */}
+            {/* Contrato Terapêutico */}
             <button
               type="button"
               onClick={() => setShowContratoModal(true)}
               className="flex items-center gap-1 sm:gap-1.5 text-[10px] sm:text-xs font-bold text-forest bg-warm/60 hover:bg-emerald-50 hover:text-emerald-900 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg sm:rounded-xl border border-soft hover:border-emerald-300 transition-colors whitespace-nowrap shadow-2xs cursor-pointer"
-              title="Gerenciar Contrato Terapêutico Particular"
+              title="Gerenciar Contrato Terapêutico"
             >
               <FileSignature className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
-              <span>{currentPaciente.contratoAssinado ? "Contrato Assinado" : "Contrato"}</span>
-              <span className={`w-2 h-2 rounded-full shrink-0 ml-0.5 ${currentPaciente.contratoAssinado ? "bg-emerald-500" : "bg-amber-500"}`} />
+              <span>
+                {currentPaciente.contratoAssinado
+                  ? "Contrato Assinado"
+                  : currentPaciente.contratoText
+                    ? "Contrato Pendente"
+                    : "Contrato"}
+              </span>
             </button>
 
             {/* Link de Atualização Cadastral para o Paciente */}
@@ -486,8 +830,7 @@ export function FichaPacienteExternoModal({
               <button
                 type="button"
                 onClick={() => {
-                  const url = `${window.location.origin}/?view=cadastro_externo&prof=${profile?.uid || user?.uid}&paciente=${currentPaciente.id}&tipo=externo`;
-                  navigator.clipboard.writeText(url);
+                  navigator.clipboard.writeText(urlAtualizacaoCadastro);
                   showToast("Link de atualização cadastral copiado para a área de transferência!", "success");
                 }}
                 className="flex items-center gap-1 sm:gap-1.5 text-[10px] sm:text-xs font-bold text-emerald-900 hover:bg-emerald-100/80 px-2 sm:px-2.5 py-1 rounded-md sm:rounded-lg transition-colors whitespace-nowrap cursor-pointer"
@@ -499,8 +842,7 @@ export function FichaPacienteExternoModal({
               <button
                 type="button"
                 onClick={() => {
-                  const url = `${window.location.origin}/?view=cadastro_externo&prof=${profile?.uid || user?.uid}&paciente=${currentPaciente.id}&tipo=externo`;
-                  const msg = `Olá ${nomeDisplay}! Tudo bem? Para mantermos seus dados cadastrais e seu prontuário clínico sempre atualizados e em total conformidade, por favor acesse este link seguro para conferir e atualizar seu cadastro quando puder:\n\n${url}\n\nQualquer dúvida estou à disposição!`;
+                  const msg = `Olá ${nomeDisplay}! Tudo bem? Para mantermos seus dados cadastrais e fiscais sempre atualizados para emissão de recibos e contrato terapêutico, por favor acesse este link seguro para conferir e atualizar seu cadastro quando puder:\n\n${urlAtualizacaoCadastro}\n\nQualquer dúvida estou à disposição!`;
                   openWhatsApp(msg);
                 }}
                 className="p-1 sm:p-1.5 text-emerald-700 hover:text-emerald-950 hover:bg-emerald-100/80 rounded-md sm:rounded-lg transition-colors cursor-pointer"
@@ -511,8 +853,7 @@ export function FichaPacienteExternoModal({
               <button
                 type="button"
                 onClick={() => {
-                  const url = `${window.location.origin}/?view=cadastro_externo&prof=${profile?.uid || user?.uid}&paciente=${currentPaciente.id}&tipo=externo`;
-                  window.open(url, "_blank");
+                  window.open(urlAtualizacaoCadastro, "_blank");
                 }}
                 className="p-1 sm:p-1.5 text-emerald-700 hover:text-emerald-950 hover:bg-emerald-100/80 rounded-md sm:rounded-lg transition-colors cursor-pointer"
                 title="Abrir formulário de atualização em nova aba"
@@ -520,6 +861,7 @@ export function FichaPacienteExternoModal({
                 <ExternalLink className="w-3.5 h-3.5 text-emerald-700" />
               </button>
             </div>
+
             {onNavigateToAgenda && (
               <button
                 type="button"
@@ -537,20 +879,73 @@ export function FichaPacienteExternoModal({
             )}
           </div>
 
-          {/* Lado Direito: Ações de Status */}
+          {/* Lado Direito: Ações de Status Sincronizadas (Carteira Externa vs Kanban Corporativo) */}
           <div className="flex items-center gap-1 sm:gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={() => {
-                const novo = statusAtual === "Inativo" ? "Em Atendimento" : "Inativo";
-                handlePatchFields({ statusTratamento: novo, status: novo }, true);
-                showToast(`Status alterado para: ${novo}`, "info");
-              }}
-              className="flex items-center gap-1 font-bold text-[10px] sm:text-xs px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg sm:rounded-xl border border-soft bg-warm/50 text-forest/70 hover:text-forest transition-colors shadow-2xs cursor-pointer"
-            >
-              <UserX className="w-3.5 h-3.5 text-forest/50" />
-              <span>{statusAtual === "Inativo" ? "Reativar Paciente" : "Arquivar"}</span>
-            </button>
+            {isCorporativo ? (
+              <>
+                {statusCorp === "solicitacao_servico" && (
+                  <button
+                    type="button"
+                    disabled={saving}
+                    onClick={handleAceitarSolicitacaoCorp}
+                    className="flex items-center gap-1 font-bold text-[10px] sm:text-xs px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg sm:rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white transition-colors shadow-2xs cursor-pointer whitespace-nowrap disabled:opacity-50"
+                  >
+                    <Check className="w-3.5 h-3.5 shrink-0" />
+                    <span>Aceitar Solicitação</span>
+                  </button>
+                )}
+
+                {statusCorp === "paciente" && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setModalDesfechoCorp({ isOpen: true, tipo: "alta", motivo: "" })
+                      }
+                      className="flex items-center gap-1 font-bold text-[10px] sm:text-xs px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg sm:rounded-xl border border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100 transition-colors shadow-2xs cursor-pointer whitespace-nowrap"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                      <span>Alta Clínica</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setModalDesfechoCorp({ isOpen: true, tipo: "interrupcao", motivo: "" })
+                      }
+                      className="flex items-center gap-1 font-bold text-[10px] sm:text-xs px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg sm:rounded-xl border border-rose-200 bg-rose-50 text-rose-800 hover:bg-rose-100 transition-colors shadow-2xs cursor-pointer whitespace-nowrap"
+                    >
+                      <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                      <span>Interromper</span>
+                    </button>
+                  </>
+                )}
+
+                {(statusCorp === "alta" || statusCorp === "interrupcao") && (
+                  <button
+                    type="button"
+                    disabled={saving}
+                    onClick={handleReativarAtendimentoCorp}
+                    className="flex items-center gap-1 font-bold text-[10px] sm:text-xs px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg sm:rounded-xl bg-forest hover:bg-forest/90 text-white transition-colors shadow-2xs cursor-pointer whitespace-nowrap disabled:opacity-50"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5 shrink-0" />
+                    <span>Reativar Atendimento</span>
+                  </button>
+                )}
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  const novo = statusAtual === "Inativo" ? "Em Atendimento" : "Inativo";
+                  handlePatchFields({ statusTratamento: novo, status: novo }, true);
+                  showToast(`Status alterado para: ${novo}`, "info");
+                }}
+                className="flex items-center gap-1 font-bold text-[10px] sm:text-xs px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg sm:rounded-xl border border-soft bg-warm/50 text-forest/70 hover:text-forest transition-colors shadow-2xs cursor-pointer whitespace-nowrap"
+              >
+                <UserX className="w-3.5 h-3.5 text-forest/50 shrink-0" />
+                <span>{statusAtual === "Inativo" ? "Reativar Paciente" : "Arquivar"}</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -561,20 +956,112 @@ export function FichaPacienteExternoModal({
           <span className="text-[9px] font-bold uppercase text-forest/50 shrink-0 flex items-center gap-1 pr-1">
             <Compass className="w-3 h-3 text-forest/60" /> Seções:
           </span>
-          <button type="button" onClick={() => document.getElementById("sec-ext-1-pessoais")?.scrollIntoView({ behavior: "smooth" })} className="px-2 py-0.5 sm:py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-white hover:bg-warm border border-soft rounded-md sm:rounded-lg shrink-0 transition-colors whitespace-nowrap shadow-2xs cursor-pointer">1. Pessoais</button>
-          <button type="button" onClick={() => document.getElementById("sec-ext-2-responsavel")?.scrollIntoView({ behavior: "smooth" })} className="px-2 py-0.5 sm:py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-white hover:bg-warm border border-soft rounded-md sm:rounded-lg shrink-0 transition-colors whitespace-nowrap shadow-2xs cursor-pointer">2. Responsável</button>
-          <button type="button" onClick={() => document.getElementById("sec-ext-3-contato")?.scrollIntoView({ behavior: "smooth" })} className="px-2 py-0.5 sm:py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-white hover:bg-warm border border-soft rounded-md sm:rounded-lg shrink-0 transition-colors whitespace-nowrap shadow-2xs cursor-pointer">3. Contato & Endereço</button>
-          <button type="button" onClick={() => document.getElementById("sec-ext-4-clinico")?.scrollIntoView({ behavior: "smooth" })} className="px-2 py-0.5 sm:py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-white hover:bg-warm border border-soft rounded-md sm:rounded-lg shrink-0 transition-colors whitespace-nowrap shadow-2xs cursor-pointer">4. Queixa & Clínico</button>
-          <button type="button" onClick={() => document.getElementById("sec-ext-5-acordo")?.scrollIntoView({ behavior: "smooth" })} className="px-2 py-0.5 sm:py-1 text-[10px] sm:text-[11px] font-bold text-emerald-800 hover:text-emerald-950 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-md sm:rounded-lg shrink-0 transition-colors whitespace-nowrap shadow-2xs cursor-pointer">5. Honorários & Acordo</button>
-          <button type="button" onClick={() => document.getElementById("sec-ext-6-faturamento")?.scrollIntoView({ behavior: "smooth" })} className="px-2 py-0.5 sm:py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-white hover:bg-warm border border-soft rounded-md sm:rounded-lg shrink-0 transition-colors whitespace-nowrap shadow-2xs cursor-pointer">6. Sessões & Finanças</button>
-          <button type="button" onClick={() => document.getElementById("sec-ext-7-prontuario")?.scrollIntoView({ behavior: "smooth" })} className="px-2 py-0.5 sm:py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-white hover:bg-warm border border-soft rounded-md sm:rounded-lg shrink-0 transition-colors whitespace-nowrap shadow-2xs cursor-pointer">7. Prontuário & Evoluções</button>
-          <button type="button" onClick={() => document.getElementById("sec-ext-8-alertas")?.scrollIntoView({ behavior: "smooth" })} className="px-2 py-0.5 sm:py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-white hover:bg-warm border border-soft rounded-md sm:rounded-lg shrink-0 transition-colors whitespace-nowrap shadow-2xs cursor-pointer">8. Alertas & WhatsApp</button>
+          <button
+            type="button"
+            onClick={() => document.getElementById("sec-ext-1-pessoais")?.scrollIntoView({ behavior: "smooth" })}
+            className="px-2 py-0.5 sm:py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-white hover:bg-warm border border-soft rounded-md sm:rounded-lg shrink-0 transition-colors whitespace-nowrap shadow-2xs cursor-pointer"
+          >
+            1. Pessoais
+          </button>
+          <button
+            type="button"
+            onClick={() => document.getElementById("sec-ext-2-responsavel")?.scrollIntoView({ behavior: "smooth" })}
+            className="px-2 py-0.5 sm:py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-white hover:bg-warm border border-soft rounded-md sm:rounded-lg shrink-0 transition-colors whitespace-nowrap shadow-2xs cursor-pointer"
+          >
+            {isCorporativo ? "2. Vínculo & Responsável" : "2. Responsável"}
+          </button>
+          <button
+            type="button"
+            onClick={() => document.getElementById("sec-ext-3-contato")?.scrollIntoView({ behavior: "smooth" })}
+            className="px-2 py-0.5 sm:py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-white hover:bg-warm border border-soft rounded-md sm:rounded-lg shrink-0 transition-colors whitespace-nowrap shadow-2xs cursor-pointer"
+          >
+            3. Contato & Endereço
+          </button>
+          <button
+            type="button"
+            onClick={() => document.getElementById("sec-ext-4-clinico")?.scrollIntoView({ behavior: "smooth" })}
+            className="px-2 py-0.5 sm:py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-white hover:bg-warm border border-soft rounded-md sm:rounded-lg shrink-0 transition-colors whitespace-nowrap shadow-2xs cursor-pointer"
+          >
+            4. Queixa & Clínico
+          </button>
+          <button
+            type="button"
+            onClick={() => document.getElementById("sec-ext-5-acordo")?.scrollIntoView({ behavior: "smooth" })}
+            className="px-2 py-0.5 sm:py-1 text-[10px] sm:text-[11px] font-bold text-emerald-800 hover:text-emerald-950 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-md sm:rounded-lg shrink-0 transition-colors whitespace-nowrap shadow-2xs cursor-pointer"
+          >
+            5. Honorários & Acordo
+          </button>
+          <button
+            type="button"
+            onClick={() => document.getElementById("sec-ext-6-faturamento")?.scrollIntoView({ behavior: "smooth" })}
+            className="px-2 py-0.5 sm:py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-white hover:bg-warm border border-soft rounded-md sm:rounded-lg shrink-0 transition-colors whitespace-nowrap shadow-2xs cursor-pointer"
+          >
+            6. Sessões & Finanças
+          </button>
+          <button
+            type="button"
+            onClick={() => document.getElementById("sec-ext-7-prontuario")?.scrollIntoView({ behavior: "smooth" })}
+            className="px-2 py-0.5 sm:py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-white hover:bg-warm border border-soft rounded-md sm:rounded-lg shrink-0 transition-colors whitespace-nowrap shadow-2xs cursor-pointer"
+          >
+            7. Prontuário & Evoluções
+          </button>
+          <button
+            type="button"
+            onClick={() => document.getElementById("sec-ext-8-alertas")?.scrollIntoView({ behavior: "smooth" })}
+            className="px-2 py-0.5 sm:py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-white hover:bg-warm border border-soft rounded-md sm:rounded-lg shrink-0 transition-colors whitespace-nowrap shadow-2xs cursor-pointer"
+          >
+            8. Alertas & WhatsApp
+          </button>
+          {isCorporativo && (
+            <button
+              type="button"
+              onClick={() => document.getElementById("sec-ext-9-historico-corp")?.scrollIntoView({ behavior: "smooth" })}
+              className="px-2 py-0.5 sm:py-1 text-[10px] sm:text-[11px] font-bold text-forest/80 hover:text-forest bg-white hover:bg-warm border border-soft rounded-md sm:rounded-lg shrink-0 transition-colors whitespace-nowrap shadow-2xs cursor-pointer"
+            >
+              9. Histórico Corporativo
+            </button>
+          )}
         </div>
 
         {/* =========================================================================
             CORPO SCROLLÁVEL DA FICHA
         ========================================================================== */}
         <div className="flex-1 overflow-y-auto p-3 sm:p-6 lg:p-8 space-y-4 sm:space-y-6 bg-warm/10 custom-scrollbar">
+          {/* ALERTA DE CPF PENDENTE (Útil para emissão de Recibo/NF contra o paciente) */}
+          {!cpfDisplay && (
+            <div className="bg-amber-50/90 border border-amber-200 rounded-2xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-start gap-2.5">
+                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <div className="text-xs text-amber-950">
+                  <span className="font-bold block">CPF e Dados Fiscais Pendentes para Emissão de Recibo / NF</span>
+                  <span className="text-amber-900/80">
+                    {isCorporativo
+                      ? "Como o pagamento das sessões com desconto conveniado é realizado diretamente pelo paciente ao profissional, preencha o CPF ou envie o link de atualização cadastral."
+                      : "Preencha o CPF abaixo ou envie o link de atualização cadastral ao paciente para habilitar recibos completos."}
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setIsEditing(true)}
+                  className="px-3 py-1.5 bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-xl text-[11px] font-bold transition-colors cursor-pointer whitespace-nowrap"
+                >
+                  Preencher Agora
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(urlAtualizacaoCadastro);
+                    showToast("Link de atualização cadastral copiado!", "success");
+                  }}
+                  className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-[11px] font-bold transition-colors cursor-pointer whitespace-nowrap"
+                >
+                  Copiar Link
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* 1. DADOS PESSOAIS */}
           <div id="sec-ext-1-pessoais" className="bg-white p-4 sm:p-6 rounded-2xl border border-soft shadow-2xs space-y-4">
@@ -595,15 +1082,24 @@ export function FichaPacienteExternoModal({
                 {isEditing ? (
                   <input
                     type="text"
-                    value={currentPaciente.nomeCivil ?? currentPaciente.nome ?? ""}
+                    value={nomeDisplay === "Paciente" ? "" : nomeDisplay}
                     onChange={(e) => {
-                      handlePatchFields({ nomeCivil: e.target.value, nome: e.target.value });
+                      const val = e.target.value;
+                      const extraCorp: Record<string, any> = isCorporativo
+                        ? {
+                            pacienteNomeCompleto: val,
+                            ...(currentPaciente.beneficiarioTipo === "dependente"
+                              ? { dependenteInfo: val }
+                              : { colaboradorNome: val }),
+                          }
+                        : {};
+                      handlePatchFields({ nomeCivil: val, nome: val, ...extraCorp });
                     }}
                     className="text-xs sm:text-sm font-semibold text-forest border border-emerald-500/80 bg-emerald-50/50 rounded-lg px-2.5 py-1.5 w-full focus:outline-none"
                   />
                 ) : (
                   <span className="text-xs sm:text-sm font-semibold text-forest">
-                    {currentPaciente.nomeCivil || currentPaciente.nome || "-"}
+                    {nomeDisplay || "-"}
                   </span>
                 )}
               </div>
@@ -622,6 +1118,7 @@ export function FichaPacienteExternoModal({
                         nomeDesejado:
                           e.target.value.trim() ||
                           latestPacienteRef.current?.nomeCivil ||
+                          latestPacienteRef.current?.pacienteNomeCompleto ||
                           latestPacienteRef.current?.nome ||
                           "",
                       })
@@ -643,14 +1140,20 @@ export function FichaPacienteExternoModal({
                 {isEditing ? (
                   <input
                     type="text"
-                    value={currentPaciente.cpf || ""}
-                    onChange={(e) => handleUpdateField("cpf", e.target.value)}
+                    value={cpfDisplay}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      handlePatchFields({
+                        cpf: val,
+                        ...(isCorporativo ? { pacienteCpf: val } : {}),
+                      });
+                    }}
                     placeholder="000.000.000-00"
-                    className="text-xs sm:text-sm font-semibold text-forest border border-emerald-500/80 bg-emerald-50/50 rounded-lg px-2.5 py-1.5 w-full focus:outline-none"
+                    className="text-xs sm:text-sm font-semibold text-forest font-mono border border-emerald-500/80 bg-emerald-50/50 rounded-lg px-2.5 py-1.5 w-full focus:outline-none"
                   />
                 ) : (
-                  <span className="text-xs sm:text-sm font-semibold text-forest font-mono">
-                    {currentPaciente.cpf || "-"}
+                  <span className="text-xs sm:text-sm font-semibold text-forest font-mono tabular-nums">
+                    {cpfDisplay || "-"}
                   </span>
                 )}
               </div>
@@ -662,13 +1165,23 @@ export function FichaPacienteExternoModal({
                 {isEditing ? (
                   <input
                     type="date"
-                    value={currentPaciente.dataNascimento || ""}
-                    onChange={(e) => handleUpdateField("dataNascimento", e.target.value)}
+                    value={dataNascimentoDisplay}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      handlePatchFields({
+                        dataNascimento: val,
+                        ...(isCorporativo ? { pacienteDataNascimento: val } : {}),
+                      });
+                    }}
                     className="text-xs sm:text-sm font-semibold text-forest border border-emerald-500/80 bg-emerald-50/50 rounded-lg px-2.5 py-1.5 w-full focus:outline-none"
                   />
                 ) : (
-                  <span className="text-xs sm:text-sm font-semibold text-forest">
-                    {currentPaciente.dataNascimento ? new Date(currentPaciente.dataNascimento).toLocaleDateString("pt-BR") : "-"}
+                  <span className="text-xs sm:text-sm font-semibold text-forest tabular-nums">
+                    {dataNascimentoDisplay
+                      ? dataNascimentoDisplay.includes("-")
+                        ? dataNascimentoDisplay.split("-").reverse().join("/")
+                        : new Date(dataNascimentoDisplay).toLocaleDateString("pt-BR")
+                      : "-"}
                   </span>
                 )}
               </div>
@@ -706,7 +1219,10 @@ export function FichaPacienteExternoModal({
                   />
                 ) : (
                   <span className="text-xs sm:text-sm font-semibold text-forest">
-                    {currentPaciente.profissao || "-"}
+                    {currentPaciente.profissao ||
+                      (!isCorporativo || effectiveRole !== "profissional"
+                        ? currentPaciente.cargoNome || "-"
+                        : "-")}
                   </span>
                 )}
               </div>
@@ -732,9 +1248,15 @@ export function FichaPacienteExternoModal({
 
               <div className="flex flex-col gap-1 min-w-0">
                 <span className="block text-[10px] font-bold uppercase text-forest/70 tracking-wider">
-                  Fonte de Indicação
+                  Via de Acesso / Origem
                 </span>
-                {isEditing ? (
+                {isCorporativo ? (
+                  <span className="text-xs sm:text-sm font-semibold text-blue-900">
+                    {effectiveRole === "profissional"
+                      ? "Convênio Corporativo"
+                      : `Convênio Corporativo (${currentPaciente.empresaNome || "Empresa"})`}
+                  </span>
+                ) : isEditing ? (
                   <input
                     type="text"
                     value={currentPaciente.fonteIndicacao || currentPaciente.origem || ""}
@@ -751,21 +1273,115 @@ export function FichaPacienteExternoModal({
             </div>
           </div>
 
-          {/* 2. RESPONSÁVEL LEGAL (Caso menor de idade ou dependente) */}
+          {/* 2. VÍNCULO DO BENEFICIÁRIO (CORPORATIVO) & RESPONSÁVEL LEGAL */}
           <div id="sec-ext-2-responsavel" className="bg-white p-4 sm:p-6 rounded-2xl border border-soft shadow-2xs space-y-4">
             <div className="flex items-center justify-between border-b border-soft pb-3">
               <h4 className="text-xs font-bold uppercase tracking-wider text-forest/80 flex items-center gap-2">
-                <ShieldCheck className="w-4 h-4 text-forest" /> 2. Responsável Legal (Para menores ou dependentes)
+                <ShieldCheck className="w-4 h-4 text-forest" />{" "}
+                {isCorporativo
+                  ? "2. Vínculo do Beneficiário (Titular / Dependente) & Responsável Legal"
+                  : "2. Responsável Legal (Para menores ou dependentes)"}
               </h4>
               <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md bg-warm text-forest/70 border border-soft">
-                Guarda & Contato
+                {isCorporativo ? "Vínculo & Guarda" : "Guarda & Contato"}
               </span>
             </div>
+
+            {/* Bloco de Vínculo Titular/Dependente quando Corporativo */}
+            {isCorporativo && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 pb-4 border-b border-soft/60">
+                <div className="flex flex-col gap-1 min-w-0">
+                  <span className="block text-[10px] font-bold uppercase text-forest/70 tracking-wider">
+                    Tipo de Beneficiário
+                  </span>
+                  {isEditing && effectiveRole !== "profissional" ? (
+                    <select
+                      value={currentPaciente.beneficiarioTipo || "titular"}
+                      onChange={(e) => handleUpdateField("beneficiarioTipo", e.target.value)}
+                      className="text-xs sm:text-sm font-semibold text-forest border border-emerald-500/80 bg-emerald-50/50 rounded-lg px-2.5 py-1.5 w-full focus:outline-none"
+                    >
+                      <option value="titular">Titular</option>
+                      <option value="dependente">Dependente</option>
+                    </select>
+                  ) : (
+                    <span className="text-xs sm:text-sm font-semibold text-forest">
+                      {currentPaciente.beneficiarioTipo === "dependente"
+                        ? "Dependente de Colaborador"
+                        : "Colaborador Titular"}
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex flex-col gap-1 min-w-0">
+                  <span className="block text-[10px] font-bold uppercase text-forest/70 tracking-wider">
+                    Nome do Titular do Benefício
+                  </span>
+                  {isEditing && effectiveRole !== "profissional" ? (
+                    <input
+                      type="text"
+                      value={currentPaciente.colaboradorNome || ""}
+                      onChange={(e) => handleUpdateField("colaboradorNome", e.target.value)}
+                      className="text-xs sm:text-sm font-semibold text-forest border border-emerald-500/80 bg-emerald-50/50 rounded-lg px-2.5 py-1.5 w-full focus:outline-none"
+                    />
+                  ) : (
+                    <span className="text-xs sm:text-sm font-semibold text-forest">
+                      {currentPaciente.colaboradorNome || "-"}
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex flex-col gap-1 min-w-0">
+                  <span className="block text-[10px] font-bold uppercase text-forest/70 tracking-wider">
+                    Parentesco / Dependente
+                  </span>
+                  {isEditing ? (
+                    <input
+                      type="text"
+                      value={currentPaciente.dependenteParentesco || ""}
+                      onChange={(e) => handleUpdateField("dependenteParentesco", e.target.value)}
+                      placeholder={
+                        currentPaciente.beneficiarioTipo === "dependente"
+                          ? "Ex: Filho(a), Cônjuge..."
+                          : "Titular"
+                      }
+                      className="text-xs sm:text-sm font-semibold text-forest border border-emerald-500/80 bg-emerald-50/50 rounded-lg px-2.5 py-1.5 w-full focus:outline-none"
+                    />
+                  ) : (
+                    <span className="text-xs sm:text-sm font-semibold text-forest">
+                      {currentPaciente.beneficiarioTipo === "dependente"
+                        ? `${currentPaciente.dependenteParentesco || "Familiar"}${
+                            currentPaciente.dependenteInfo ? ` (${currentPaciente.dependenteInfo})` : ""
+                          }`
+                        : "Próprio Titular"}
+                    </span>
+                  )}
+                </div>
+
+                {/* Sigilo Corporativo: Empresa e Cargo visíveis apenas para Master/Triagem */}
+                <div className="flex flex-col gap-1 min-w-0">
+                  <span className="block text-[10px] font-bold uppercase text-forest/70 tracking-wider">
+                    {effectiveRole === "profissional"
+                      ? "Modalidade do Convênio"
+                      : "Empresa & Cargo (Restrito Triagem)"}
+                  </span>
+                  {effectiveRole === "profissional" ? (
+                    <span className="text-xs sm:text-sm font-semibold text-forest/80">
+                      Convênio Corporativo Ativo (Sigilo Empresarial)
+                    </span>
+                  ) : (
+                    <span className="text-xs sm:text-sm font-semibold text-forest">
+                      {currentPaciente.empresaNome || "—"}
+                      {currentPaciente.cargoNome ? ` · ${currentPaciente.cargoNome}` : ""}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
               <div className="flex flex-col gap-1 min-w-0">
                 <span className="block text-[10px] font-bold uppercase text-forest/70 tracking-wider">
-                  Nome do Responsável
+                  Nome do Responsável Legal
                 </span>
                 {isEditing ? (
                   <input
@@ -814,7 +1430,7 @@ export function FichaPacienteExternoModal({
                     className="text-xs sm:text-sm font-semibold text-forest border border-emerald-500/80 bg-emerald-50/50 rounded-lg px-2.5 py-1.5 w-full focus:outline-none"
                   />
                 ) : (
-                  <span className="text-xs sm:text-sm font-semibold text-forest">
+                  <span className="text-xs sm:text-sm font-semibold text-forest tabular-nums">
                     {currentPaciente.responsavel?.telefone || currentPaciente.responsavelTelefone || "-"}
                   </span>
                 )}
@@ -833,7 +1449,7 @@ export function FichaPacienteExternoModal({
                     className="text-xs sm:text-sm font-semibold text-forest border border-emerald-500/80 bg-emerald-50/50 rounded-lg px-2.5 py-1.5 w-full focus:outline-none"
                   />
                 ) : (
-                  <span className="text-xs sm:text-sm font-semibold text-forest font-mono">
+                  <span className="text-xs sm:text-sm font-semibold text-forest font-mono tabular-nums">
                     {currentPaciente.responsavel?.cpf || currentPaciente.responsavelCpf || "-"}
                   </span>
                 )}
@@ -879,15 +1495,23 @@ export function FichaPacienteExternoModal({
                 {isEditing ? (
                   <input
                     type="text"
-                    value={currentPaciente.telefone || ""}
-                    onChange={(e) => handleUpdateField("telefone", e.target.value)}
+                    value={telDisplay}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      handlePatchFields({
+                        telefone: val,
+                        ...(isCorporativo
+                          ? { pacienteTelefone: val, colaboradorWhatsapp: val }
+                          : {}),
+                      });
+                    }}
                     placeholder="(00) 00000-0000"
                     className="text-xs sm:text-sm font-semibold text-forest border border-emerald-500/80 bg-emerald-50/50 rounded-lg px-2.5 py-1.5 w-full focus:outline-none"
                   />
                 ) : (
                   <div className="flex items-center gap-2">
-                    <span className="text-xs sm:text-sm font-semibold text-forest">
-                      {currentPaciente.telefone || "-"}
+                    <span className="text-xs sm:text-sm font-semibold text-forest tabular-nums">
+                      {telDisplay || "-"}
                     </span>
                     {telRaw && (
                       <button
@@ -910,14 +1534,22 @@ export function FichaPacienteExternoModal({
                 {isEditing ? (
                   <input
                     type="email"
-                    value={currentPaciente.email || ""}
-                    onChange={(e) => handleUpdateField("email", e.target.value)}
+                    value={emailDisplay}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      handlePatchFields({
+                        email: val,
+                        ...(isCorporativo
+                          ? { pacienteEmail: val, colaboradorEmail: val }
+                          : {}),
+                      });
+                    }}
                     placeholder="paciente@exemplo.com"
                     className="text-xs sm:text-sm font-semibold text-forest border border-emerald-500/80 bg-emerald-50/50 rounded-lg px-2.5 py-1.5 w-full focus:outline-none"
                   />
                 ) : (
                   <span className="text-xs sm:text-sm font-semibold text-forest truncate">
-                    {currentPaciente.email || "-"}
+                    {emailDisplay || "-"}
                   </span>
                 )}
               </div>
@@ -967,7 +1599,7 @@ export function FichaPacienteExternoModal({
                     className="text-xs sm:text-sm font-semibold text-forest border border-emerald-500/80 bg-emerald-50/50 rounded-lg px-2.5 py-1.5 w-full focus:outline-none"
                   />
                 ) : (
-                  <span className="text-xs sm:text-sm font-semibold text-forest font-mono">
+                  <span className="text-xs sm:text-sm font-semibold text-forest font-mono tabular-nums">
                     {currentPaciente.endereco?.cep || currentPaciente.cep || "-"}
                   </span>
                 )}
@@ -1080,7 +1712,11 @@ export function FichaPacienteExternoModal({
                   <span className="text-xs sm:text-sm font-semibold text-forest">
                     {currentPaciente.cidadeEstado ||
                       (currentPaciente.endereco?.cidade || currentPaciente.cidade
-                        ? `${currentPaciente.endereco?.cidade || currentPaciente.cidade}${(currentPaciente.endereco?.uf || currentPaciente.uf) ? ` - ${currentPaciente.endereco?.uf || currentPaciente.uf}` : ""}`
+                        ? `${currentPaciente.endereco?.cidade || currentPaciente.cidade}${
+                            currentPaciente.endereco?.uf || currentPaciente.uf
+                              ? ` - ${currentPaciente.endereco?.uf || currentPaciente.uf}`
+                              : ""
+                          }`
                         : "-")}
                   </span>
                 )}
@@ -1107,19 +1743,21 @@ export function FichaPacienteExternoModal({
                 {isEditing ? (
                   <textarea
                     rows={3}
-                    value={currentPaciente.queixaPrincipal ?? currentPaciente.motivo ?? ""}
+                    value={queixaDisplay}
                     onChange={(e) => {
+                      const val = e.target.value;
                       handlePatchFields({
-                        queixaPrincipal: e.target.value,
-                        motivo: e.target.value,
+                        queixaPrincipal: val,
+                        motivo: val,
+                        ...(isCorporativo ? { queixa: val } : {}),
                       });
                     }}
                     placeholder="Descreva a queixa que motivou a busca pelo acompanhamento psicológico..."
                     className="w-full text-xs sm:text-sm text-forest border border-emerald-500/80 bg-emerald-50/30 rounded-xl p-3 focus:outline-none focus:ring-1 focus:ring-emerald-500"
                   />
                 ) : (
-                  <div className="p-3.5 bg-warm/30 rounded-xl border border-soft text-xs sm:text-sm text-forest/90 leading-relaxed font-serif">
-                    {currentPaciente.queixaPrincipal || currentPaciente.motivo || "Nenhuma queixa inicial registrada ainda."}
+                  <div className="p-3.5 bg-warm/30 rounded-xl border border-soft text-xs sm:text-sm text-forest/90 leading-relaxed font-serif whitespace-pre-line">
+                    {queixaDisplay || "Nenhuma queixa inicial registrada ainda."}
                   </div>
                 )}
               </div>
@@ -1165,19 +1803,25 @@ export function FichaPacienteExternoModal({
 
                 <div className="flex flex-col gap-1 min-w-0">
                   <span className="block text-[10px] font-bold uppercase text-forest/70 tracking-wider">
-                    Disponibilidade de Dias/Horários
+                    Disponibilidade / Turno de Preferência
                   </span>
                   {isEditing ? (
                     <input
                       type="text"
-                      value={currentPaciente.disponibilidade || ""}
-                      onChange={(e) => handleUpdateField("disponibilidade", e.target.value)}
+                      value={disponibilidadeDisplay}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        handlePatchFields({
+                          disponibilidade: val,
+                          ...(isCorporativo ? { turnoPreferencia: val } : {}),
+                        });
+                      }}
                       placeholder="Ex: Terças à tarde, online"
                       className="text-xs sm:text-sm font-semibold text-forest border border-emerald-500/80 bg-emerald-50/50 rounded-lg px-2.5 py-1.5 w-full focus:outline-none"
                     />
                   ) : (
                     <span className="text-xs sm:text-sm font-semibold text-forest">
-                      {currentPaciente.disponibilidade || "-"}
+                      {disponibilidadeDisplay || "-"}
                     </span>
                   )}
                 </div>
@@ -1185,36 +1829,72 @@ export function FichaPacienteExternoModal({
             </div>
           </div>
 
-          {/* 5. ACORDO PARTICULAR & HONORÁRIOS */}
+          {/* 5. HONORÁRIOS & CONDIÇÕES DO ATENDIMENTO */}
           <div id="sec-ext-5-acordo" className="bg-white p-4 sm:p-6 rounded-2xl border border-emerald-200/90 shadow-2xs space-y-4">
-            <div className="flex items-center justify-between border-b border-emerald-100 pb-3">
+            <div className="flex items-center justify-between border-b border-emerald-100 pb-3 flex-wrap gap-2">
               <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-900 flex items-center gap-2">
-                <DollarSign className="w-4 h-4 text-emerald-700" /> 5. Acordo Particular & Honorários Profissionais
+                <DollarSign className="w-4 h-4 text-emerald-700" />{" "}
+                {isCorporativo
+                  ? "5. Condições do Convênio Corporativo & Honorários"
+                  : "5. Acordo Particular & Honorários Profissionais"}
               </h4>
               <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-900 border border-emerald-300">
-                100% Honorários do Psicólogo
+                {isCorporativo
+                  ? "Tabela Conveniada • Pagamento Direto ao Psicólogo"
+                  : "100% Honorários do Psicólogo"}
               </span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+            <div
+              className={`grid grid-cols-1 sm:grid-cols-2 ${
+                isCorporativo ? "md:grid-cols-5" : "md:grid-cols-4"
+              } gap-4`}
+            >
+              {isCorporativo && (
+                <div className="flex flex-col gap-1 min-w-0 p-3 bg-blue-50/40 rounded-xl border border-blue-200/60">
+                  <span className="block text-[10px] font-bold uppercase text-blue-900/80 tracking-wider flex items-center justify-between">
+                    <span>Serviço Conveniado</span>
+                    {!canEditTabelaConvenio && <Lock className="w-3 h-3 text-blue-700/60" />}
+                  </span>
+                  {isEditing && canEditTabelaConvenio ? (
+                    <input
+                      type="text"
+                      value={currentPaciente.servicoNome || ""}
+                      onChange={(e) => handleUpdateField("servicoNome", e.target.value)}
+                      className="text-xs font-semibold text-forest border border-emerald-500 bg-white rounded-lg px-2.5 py-1.5 w-full focus:outline-none"
+                    />
+                  ) : (
+                    <span className="text-sm font-semibold text-forest truncate" title={currentPaciente.servicoNome}>
+                      {currentPaciente.servicoNome || "Psicoterapia Individual"}
+                    </span>
+                  )}
+                  <span className="text-[10px] text-blue-800/75">Benefício ativo na tabela</span>
+                </div>
+              )}
+
               <div className="flex flex-col gap-1 min-w-0 bg-emerald-50/40 p-3 rounded-xl border border-emerald-200/60">
-                <span className="block text-[10px] font-bold uppercase text-emerald-900/80 tracking-wider">
-                  Valor por Sessão (R$)
+                <span className="block text-[10px] font-bold uppercase text-emerald-900/80 tracking-wider flex items-center justify-between">
+                  <span>Valor por Sessão (R$)</span>
+                  {!canEditTabelaConvenio && <Lock className="w-3 h-3 text-emerald-700/60" />}
                 </span>
-                {isEditing ? (
+                {isEditing && canEditTabelaConvenio ? (
                   <input
                     type="text"
                     value={currentPaciente.valorSessao || ""}
                     onChange={(e) => handleUpdateField("valorSessao", e.target.value)}
                     placeholder="150,00"
-                    className="text-base font-bold text-emerald-900 border border-emerald-500 bg-white rounded-lg px-2.5 py-1 w-full focus:outline-none"
+                    className="text-base font-bold text-emerald-900 border border-emerald-500 bg-white rounded-lg px-2.5 py-1 w-full focus:outline-none tabular-nums"
                   />
                 ) : (
-                  <span className="text-lg font-bold text-emerald-900">
+                  <span className="text-lg font-bold text-emerald-900 tabular-nums">
                     R$ {currentPaciente.valorSessao || "A combinar"}
                   </span>
                 )}
-                <span className="text-[10px] text-emerald-700/80">Sem desconto da plataforma</span>
+                <span className="text-[10px] text-emerald-700/80">
+                  {isCorporativo
+                    ? "Valor fixado pelo convênio (pago pelo paciente)"
+                    : "Sem desconto da plataforma"}
+                </span>
               </div>
 
               <div className="flex flex-col gap-1 min-w-0 p-3 bg-warm/30 rounded-xl border border-soft">
@@ -1240,13 +1920,20 @@ export function FichaPacienteExternoModal({
               </div>
 
               <div className="flex flex-col gap-1 min-w-0 p-3 bg-warm/30 rounded-xl border border-soft">
-                <span className="block text-[10px] font-bold uppercase text-forest/70 tracking-wider">
-                  Periodicidade das Sessões
+                <span className="block text-[10px] font-bold uppercase text-forest/70 tracking-wider flex items-center justify-between">
+                  <span>Periodicidade das Sessões</span>
+                  {!canEditTabelaConvenio && <Lock className="w-3 h-3 text-forest/40" />}
                 </span>
-                {isEditing ? (
+                {isEditing && canEditTabelaConvenio ? (
                   <select
-                    value={currentPaciente.frequenciaSessoes || "Semanal"}
-                    onChange={(e) => handleUpdateField("frequenciaSessoes", e.target.value)}
+                    value={frequenciaDisplay}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      handlePatchFields({
+                        frequenciaSessoes: val,
+                        ...(isCorporativo ? { frequenciaRecomendada: val } : {}),
+                      });
+                    }}
                     className="text-xs font-semibold text-forest border border-emerald-500 bg-white rounded-lg px-2 py-1.5 w-full focus:outline-none cursor-pointer"
                   >
                     <option value="Semanal">Semanal (1x por semana)</option>
@@ -1256,10 +1943,12 @@ export function FichaPacienteExternoModal({
                   </select>
                 ) : (
                   <span className="text-sm font-semibold text-forest">
-                    {currentPaciente.frequenciaSessoes || "Semanal"}
+                    {frequenciaDisplay}
                   </span>
                 )}
-                <span className="text-[10px] text-forest/50">Frequência terapêutica</span>
+                <span className="text-[10px] text-forest/50">
+                  {isCorporativo ? "Frequência prevista no convênio" : "Frequência terapêutica"}
+                </span>
               </div>
 
               <div className="flex flex-col gap-1 min-w-0 p-3 bg-warm/30 rounded-xl border border-soft">
@@ -1279,7 +1968,7 @@ export function FichaPacienteExternoModal({
                     {currentPaciente.formaPagamento || "Pix"}
                   </span>
                 )}
-                <span className="text-[10px] text-forest/50">Cobrança direta particular</span>
+                <span className="text-[10px] text-forest/50">Acerto direto com o profissional</span>
               </div>
             </div>
 
@@ -1289,14 +1978,21 @@ export function FichaPacienteExternoModal({
                 <CreditCard className="w-4 h-4 text-emerald-700 shrink-0" />
                 <span className="text-emerald-950 font-medium">
                   Chave Pix cadastrada para cobrança:{" "}
-                  <strong>{profile?.chavePix || profile?.pixKey || "Cadastre sua chave no Perfil"}</strong>
+                  <strong>
+                    {profile?.chavePix ||
+                      profile?.pixKey ||
+                      currentPaciente.chavePix ||
+                      "Cadastre sua chave no Perfil"}
+                  </strong>
                 </span>
               </div>
-              {(profile?.chavePix || profile?.pixKey) && (
+              {(profile?.chavePix || profile?.pixKey || currentPaciente.chavePix) && (
                 <button
                   type="button"
                   onClick={() => {
-                    navigator.clipboard.writeText(profile?.chavePix || profile?.pixKey);
+                    navigator.clipboard.writeText(
+                      profile?.chavePix || profile?.pixKey || currentPaciente.chavePix
+                    );
                     showToast("Chave Pix copiada para a área de transferência!", "success");
                   }}
                   className="px-2.5 py-1 bg-white hover:bg-emerald-100 text-emerald-800 rounded-lg font-bold border border-emerald-300 flex items-center gap-1 transition-colors cursor-pointer shrink-0"
@@ -1310,9 +2006,12 @@ export function FichaPacienteExternoModal({
 
           {/* 6. SESSÕES & FATURAMENTO */}
           <div id="sec-ext-6-faturamento" className="bg-white p-4 sm:p-6 rounded-2xl border border-soft shadow-2xs space-y-4">
-            <div className="flex items-center justify-between border-b border-soft pb-3">
+            <div className="flex items-center justify-between border-b border-soft pb-3 flex-wrap gap-2">
               <h4 className="text-xs font-bold uppercase tracking-wider text-forest/80 flex items-center gap-2">
-                <CreditCard className="w-4 h-4 text-forest" /> 6. Sessões & Faturamento Particular
+                <CreditCard className="w-4 h-4 text-forest" />{" "}
+                {isCorporativo
+                  ? "6. Sessões & Faturamento (Sincronizado com Agenda e Consolidado)"
+                  : "6. Sessões & Faturamento Particular"}
               </h4>
               <button
                 type="button"
@@ -1325,7 +2024,7 @@ export function FichaPacienteExternoModal({
             </div>
 
             {/* Cards de Resumo */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 tabular-nums">
               <div className="p-3 rounded-xl bg-warm/40 border border-soft text-center">
                 <span className="text-[10px] font-bold text-forest/60 uppercase block">Total de Sessões</span>
                 <span className="text-lg font-extrabold text-forest">{sessoes.length}</span>
@@ -1345,107 +2044,137 @@ export function FichaPacienteExternoModal({
             </div>
           </div>
 
-          {/* 7. PRONTUÁRIO CLÍNICO & EVOLUÇÕES RÁPIDAS */}
+          {/* 7. PRONTUÁRIO CLÍNICO & EVOLUÇÕES RÁPIDAS (PROTEGIDO POR SIGILO CFP) */}
           <div id="sec-ext-7-prontuario" className="bg-white p-4 sm:p-6 rounded-2xl border border-soft shadow-2xs space-y-4">
-            <div className="flex items-center justify-between border-b border-soft pb-3">
+            <div className="flex items-center justify-between border-b border-soft pb-3 flex-wrap gap-2">
               <div className="flex items-center gap-2">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-forest/80 flex items-center gap-2">
                   <BookOpen className="w-4 h-4 text-emerald-700" /> 7. Prontuário Clínico & Evoluções
                 </h4>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
-                  {Array.isArray(currentPaciente.prontuarioClinico) ? currentPaciente.prontuarioClinico.length : 0} registros
-                </span>
+                {canAccessProntuario && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 tabular-nums">
+                    {Array.isArray(currentPaciente.prontuarioClinico)
+                      ? currentPaciente.prontuarioClinico.length
+                      : 0}{" "}
+                    registros
+                  </span>
+                )}
               </div>
-              <button
-                type="button"
-                onClick={() => setShowProntuarioModal(true)}
-                className="text-xs font-bold text-forest bg-warm hover:bg-emerald-50 hover:text-emerald-900 border border-soft hover:border-emerald-300 px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer"
-              >
-                <span>Ver Prontuário Completo</span>
-                <span className="text-xs">→</span>
-              </button>
-            </div>
-
-            {/* Caixa de Registro Rápido de Evolução */}
-            <div className="bg-emerald-50/30 p-4 rounded-xl border border-emerald-200/80 flex flex-col gap-3">
-              <div className="flex items-center justify-between flex-wrap gap-2">
-                <span className="text-xs font-bold text-emerald-900 flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
-                  Registrar Nova Evolução Clínica Rápida
-                </span>
-                <div className="flex items-center gap-2">
-                  <select
-                    value={novaEvolucaoModalidade}
-                    onChange={(e) => setNovaEvolucaoModalidade(e.target.value as any)}
-                    className="text-[11px] font-semibold text-forest bg-white border border-emerald-300 rounded-lg px-2 py-1 focus:outline-none"
-                  >
-                    <option value="online">Online</option>
-                    <option value="presencial">Presencial</option>
-                  </select>
-                </div>
-              </div>
-
-              <input
-                type="text"
-                value={novaEvolucaoTitulo}
-                onChange={(e) => setNovaEvolucaoTitulo(e.target.value)}
-                placeholder="Título da sessão / tema principal"
-                className="w-full text-xs font-bold text-forest bg-white border border-soft rounded-lg px-3 py-2 focus:outline-none focus:border-emerald-500"
-              />
-
-              <textarea
-                rows={3}
-                value={novaEvolucaoTexto}
-                onChange={(e) => setNovaEvolucaoTexto(e.target.value)}
-                placeholder="Descreva a evolução da sessão: humor do paciente, tópicos abordados, intervenções realizadas e combinados para a próxima consulta..."
-                className="w-full text-xs text-forest bg-white border border-soft rounded-xl p-3 focus:outline-none focus:border-emerald-500 shadow-2xs leading-relaxed"
-              />
-
-              <div className="flex justify-end">
+              {canAccessProntuario && (
                 <button
                   type="button"
-                  disabled={salvandoEvolucao}
-                  onClick={handleAddQuickEvolucao}
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white text-xs font-bold rounded-xl transition-all shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  onClick={() => setShowProntuarioModal(true)}
+                  className="text-xs font-bold text-forest bg-warm hover:bg-emerald-50 hover:text-emerald-900 border border-soft hover:border-emerald-300 px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer"
                 >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>{salvandoEvolucao ? "Salvando..." : "Salvar no Prontuário"}</span>
+                  <span>Ver Prontuário Completo</span>
+                  <span className="text-xs">→</span>
                 </button>
-              </div>
+              )}
             </div>
 
-            {/* Linha do Tempo Recente */}
-            {Array.isArray(currentPaciente.prontuarioClinico) && currentPaciente.prontuarioClinico.length > 0 ? (
-              <div className="space-y-2.5 pt-2">
-                <span className="text-[11px] font-bold text-forest/70 uppercase tracking-wider block">
-                  Últimos Registros Clínicos
-                </span>
-                {currentPaciente.prontuarioClinico.slice(0, 3).map((reg: ProntuarioRegistroItem) => (
-                  <div
-                    key={reg.id}
-                    className="p-3.5 rounded-xl border border-soft bg-white hover:border-emerald-200 transition-colors shadow-2xs space-y-1.5"
-                  >
-                    <div className="flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-forest">{reg.titulo}</span>
-                        <span className="text-[9px] px-1.5 py-0.2 rounded bg-warm text-forest/70 border border-soft uppercase">
-                          {reg.tipoRegistro}
-                        </span>
-                      </div>
-                      <span className="text-[11px] text-forest/50 flex items-center gap-1">
-                        <Clock className="w-3 h-3 text-forest/40" />
-                        {reg.dataSessao} {reg.horario ? `às ${reg.horario}` : ""}
-                      </span>
+            {canAccessProntuario ? (
+              <>
+                {/* Caixa de Registro Rápido de Evolução */}
+                <div className="bg-emerald-50/30 p-4 rounded-xl border border-emerald-200/80 flex flex-col gap-3">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <span className="text-xs font-bold text-emerald-900 flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                      Registrar Nova Evolução Clínica Rápida
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={novaEvolucaoModalidade}
+                        onChange={(e) => setNovaEvolucaoModalidade(e.target.value as any)}
+                        className="text-[11px] font-semibold text-forest bg-white border border-emerald-300 rounded-lg px-2 py-1 focus:outline-none"
+                      >
+                        <option value="online">Online</option>
+                        <option value="presencial">Presencial</option>
+                      </select>
                     </div>
-                    <p className="text-xs text-forest/80 line-clamp-2 leading-relaxed">
-                      {reg.conteudo}
-                    </p>
                   </div>
-                ))}
-              </div>
+
+                  <input
+                    type="text"
+                    value={novaEvolucaoTitulo}
+                    onChange={(e) => setNovaEvolucaoTitulo(e.target.value)}
+                    placeholder="Título da sessão / tema principal"
+                    className="w-full text-xs font-bold text-forest bg-white border border-soft rounded-lg px-3 py-2 focus:outline-none focus:border-emerald-500"
+                  />
+
+                  <textarea
+                    rows={3}
+                    value={novaEvolucaoTexto}
+                    onChange={(e) => setNovaEvolucaoTexto(e.target.value)}
+                    placeholder="Descreva a evolução da sessão: humor do paciente, tópicos abordados, intervenções realizadas e combinados para a próxima consulta..."
+                    className="w-full text-xs text-forest bg-white border border-soft rounded-xl p-3 focus:outline-none focus:border-emerald-500 shadow-2xs leading-relaxed"
+                  />
+
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      disabled={salvandoEvolucao}
+                      onClick={handleAddQuickEvolucao}
+                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white text-xs font-bold rounded-xl transition-all shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>{salvandoEvolucao ? "Salvando..." : "Salvar no Prontuário"}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Linha do Tempo Recente */}
+                {Array.isArray(currentPaciente.prontuarioClinico) &&
+                currentPaciente.prontuarioClinico.length > 0 ? (
+                  <div className="space-y-2.5 pt-2">
+                    <span className="text-[11px] font-bold text-forest/70 uppercase tracking-wider block">
+                      Últimos Registros Clínicos
+                    </span>
+                    {currentPaciente.prontuarioClinico
+                      .slice(0, 3)
+                      .map((reg: any) => (
+                        <div
+                          key={reg.id}
+                          className="p-3.5 rounded-xl border border-soft bg-white hover:border-emerald-200 transition-colors shadow-2xs space-y-1.5"
+                        >
+                          <div className="flex items-center justify-between text-xs">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-forest">{reg.titulo}</span>
+                              {reg.tipoRegistro && (
+                                <span className="text-[9px] px-1.5 py-0.2 rounded bg-warm text-forest/70 border border-soft uppercase">
+                                  {reg.tipoRegistro}
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[11px] text-forest/50 flex items-center gap-1 tabular-nums">
+                              <Clock className="w-3 h-3 text-forest/40" />
+                              {reg.dataSessao || reg.data || ""}{" "}
+                              {reg.horario ? `às ${reg.horario}` : ""}
+                            </span>
+                          </div>
+                          <p className="text-xs text-forest/80 line-clamp-2 leading-relaxed">
+                            {reg.conteudo}
+                          </p>
+                        </div>
+                      ))}
+                  </div>
+                ) : (
+                  <div className="text-center p-6 bg-warm/20 rounded-xl border border-dashed border-soft text-forest/60 text-xs">
+                    Nenhum registro clínico realizado ainda. Utilize o campo acima para adicionar a primeira evolução.
+                  </div>
+                )}
+              </>
             ) : (
-              <div className="text-center p-6 bg-warm/20 rounded-xl border border-dashed border-soft text-forest/60 text-xs">
-                Nenhum registro clínico realizado ainda. Utilize o campo acima para adicionar a primeira evolução.
+              <div className="p-4 rounded-xl bg-warm/35 border border-soft flex items-start gap-3 text-xs text-forest/80">
+                <Lock className="w-4 h-4 text-forest/60 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-bold text-forest block">
+                    Sigilo Clínico Resguardado (Resoluções CFP nº 01/2009 e 06/2019)
+                  </span>
+                  <span className="text-forest/70 leading-relaxed">
+                    As evoluções e anotações técnicas do prontuário clínico são de acesso exclusivo do(a) psicólogo(a) responsável pelo atendimento (
+                    <strong>{currentPaciente.profissionalNome || "Profissional Responsável"}</strong>).
+                  </span>
+                </div>
               </div>
             )}
           </div>
@@ -1471,7 +2200,11 @@ export function FichaPacienteExternoModal({
                 </div>
                 <button
                   type="button"
-                  onClick={() => openWhatsApp(`Olá ${nomeDisplay}! Passando para confirmar nossa próxima sessão de terapia. Tudo certo para nosso horário?`)}
+                  onClick={() =>
+                    openWhatsApp(
+                      `Olá ${nomeDisplay}! Passando para confirmar nossa próxima sessão de terapia. Tudo certo para nosso horário?`
+                    )
+                  }
                   className="w-full py-2 bg-white hover:bg-emerald-50 text-emerald-800 font-bold text-xs rounded-lg border border-emerald-200 transition-colors flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
                 >
                   <Send className="w-3 h-3 text-emerald-600" />
@@ -1488,7 +2221,16 @@ export function FichaPacienteExternoModal({
                 </div>
                 <button
                   type="button"
-                  onClick={() => openWhatsApp(`Olá ${nomeDisplay}! Segue a chave Pix para acerto dos honorários da sessão: ${profile?.chavePix || profile?.pixKey || "sua_chave_pix"}. Muito obrigado!`)}
+                  onClick={() =>
+                    openWhatsApp(
+                      `Olá ${nomeDisplay}! Segue a chave Pix para acerto dos honorários da sessão: ${
+                        profile?.chavePix ||
+                        profile?.pixKey ||
+                        currentPaciente.chavePix ||
+                        "sua_chave_pix"
+                      }. Muito obrigado!`
+                    )
+                  }
                   className="w-full py-2 bg-white hover:bg-emerald-50 text-emerald-800 font-bold text-xs rounded-lg border border-emerald-200 transition-colors flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
                 >
                   <Send className="w-3 h-3 text-emerald-600" />
@@ -1505,7 +2247,13 @@ export function FichaPacienteExternoModal({
                 </div>
                 <button
                   type="button"
-                  onClick={() => openWhatsApp(`Olá ${nomeDisplay}! Nosso atendimento online está pronto para iniciar. Segue o link de acesso da nossa sala: ${profile?.linkMeet || window.location.origin}`)}
+                  onClick={() =>
+                    openWhatsApp(
+                      `Olá ${nomeDisplay}! Nosso atendimento online está pronto para iniciar. Segue o link de acesso da nossa sala: ${
+                        profile?.linkMeet || window.location.origin
+                      }`
+                    )
+                  }
                   className="w-full py-2 bg-white hover:bg-emerald-50 text-emerald-800 font-bold text-xs rounded-lg border border-emerald-200 transition-colors flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
                 >
                   <Send className="w-3 h-3 text-emerald-600" />
@@ -1514,12 +2262,109 @@ export function FichaPacienteExternoModal({
               </div>
             </div>
           </div>
+
+          {/* 9. HISTÓRICO DE MOVIMENTAÇÕES & DESFECHOS CORPORATIVOS */}
+          {isCorporativo && (
+            <div
+              id="sec-ext-9-historico-corp"
+              className="bg-white p-4 sm:p-6 rounded-2xl border border-soft shadow-2xs space-y-4"
+            >
+              <div className="flex items-center justify-between border-b border-soft pb-3">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-forest/80 flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-forest" /> 9. Movimentações & Observações do Fluxo Corporativo
+                </h4>
+                <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md bg-warm text-forest/70 border border-soft">
+                  Rastreabilidade Kanban
+                </span>
+              </div>
+
+              {(statusCorp === "alta" || statusCorp === "interrupcao") &&
+                currentPaciente.motivoDesfecho && (
+                  <div
+                    className={`rounded-xl p-3.5 border text-xs space-y-1 ${
+                      statusCorp === "alta"
+                        ? "bg-blue-50/60 border-blue-200 text-blue-950"
+                        : "bg-rose-50/60 border-rose-200 text-rose-950"
+                    }`}
+                  >
+                    <span className="font-bold uppercase tracking-wider block text-[11px]">
+                      {statusCorp === "alta"
+                        ? "Parecer de Alta Clínica"
+                        : "Justificativa da Interrupção"}
+                    </span>
+                    <p className="leading-relaxed">{currentPaciente.motivoDesfecho}</p>
+                  </div>
+                )}
+
+              {(effectiveRole !== "profissional" || currentPaciente.observacoesTriagem) && (
+                <div className="space-y-1.5">
+                  <span className="block text-[10px] font-bold uppercase text-forest/70 tracking-wider">
+                    Observações da Triagem
+                  </span>
+                  {isEditing && effectiveRole !== "profissional" ? (
+                    <textarea
+                      rows={2}
+                      value={currentPaciente.observacoesTriagem || ""}
+                      onChange={(e) => handleUpdateField("observacoesTriagem", e.target.value)}
+                      placeholder="Observações administrativas da triagem corporativa..."
+                      className="w-full text-xs text-forest border border-emerald-500/80 bg-emerald-50/30 rounded-xl p-3 focus:outline-none"
+                    />
+                  ) : (
+                    <p className="text-xs text-forest/80 bg-warm/25 p-3 rounded-xl border border-soft">
+                      {currentPaciente.observacoesTriagem || "Sem observações adicionais da triagem."}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <span className="block text-[10px] font-bold uppercase text-forest/70 tracking-wider">
+                  Linha do Tempo do Encaminhamento
+                </span>
+                {Array.isArray(currentPaciente.historico) && currentPaciente.historico.length > 0 ? (
+                  <div className="space-y-2">
+                    {currentPaciente.historico.map((h: any, idx: number) => (
+                      <div
+                        key={idx}
+                        className="flex items-start gap-3 text-xs p-3 rounded-xl bg-warm/30 border border-soft/70"
+                      >
+                        <Clock className="w-3.5 h-3.5 text-forest/40 shrink-0 mt-0.5" />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex flex-wrap items-center justify-between gap-1">
+                            <strong className="text-forest">{h.acao}</strong>
+                            {h.data && (
+                              <span className="text-[11px] text-forest/50 tabular-nums">
+                                {new Date(h.data).toLocaleString("pt-BR", {
+                                  day: "2-digit",
+                                  month: "2-digit",
+                                  year: "2-digit",
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-forest/70 text-[11px]">
+                            Por: {h.autor || "Sistema"} {h.detalhes ? `— ${h.detalhes}` : ""}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-forest/50">Nenhuma movimentação registrada ainda.</p>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Rodapé da Ficha */}
         <div className="px-4 sm:px-6 py-2.5 sm:py-3 bg-white border-t border-soft flex items-center justify-between shrink-0">
           <div className="text-xs text-forest/60">
-            Ficha de Bordo do Paciente Particular • Resguardada por Sigilo Profissional
+            {isCorporativo
+              ? "Ficha de Bordo Unificada (Convênio Corporativo) • Resguardada por Sigilo Profissional CFP"
+              : "Ficha de Bordo do Paciente Particular • Resguardada por Sigilo Profissional"}
           </div>
           <button
             type="button"
@@ -1531,16 +2376,97 @@ export function FichaPacienteExternoModal({
         </div>
       </div>
 
+      {/* SUBMODAL DE DESFECHO CORPORATIVO (ALTA CLÍNICA / INTERRUPÇÃO) */}
+      {isCorporativo && modalDesfechoCorp.isOpen && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-forest/70 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-soft space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-soft">
+              <div className="flex items-center gap-2">
+                {modalDesfechoCorp.tipo === "alta" ? (
+                  <CheckCircle2 className="w-5 h-5 text-blue-600" />
+                ) : (
+                  <AlertCircle className="w-5 h-5 text-rose-600" />
+                )}
+                <h3 className="font-bold font-serif text-forest text-base sm:text-lg">
+                  {modalDesfechoCorp.tipo === "alta"
+                    ? "Registrar Alta Clínica"
+                    : "Registrar Interrupção de Atendimento"}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModalDesfechoCorp({ isOpen: false, tipo: "alta", motivo: "" })}
+                className="text-forest/40 hover:text-forest p-1 rounded-full cursor-pointer"
+              >
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-forest/75 leading-relaxed">
+              Você está registrando o desfecho do acompanhamento de{" "}
+              <strong>{nomeDisplay}</strong> (
+              {effectiveRole === "profissional"
+                ? "Convênio Corporativo"
+                : currentPaciente.empresaNome || "Convênio Corporativo"}
+              ). O status será atualizado automaticamente no Kanban Corporativo.
+            </p>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-forest block">
+                {modalDesfechoCorp.tipo === "alta"
+                  ? "Observações / Parecer de Alta Clínica:"
+                  : "Motivo da Interrupção do Atendimento:"}
+              </label>
+              <textarea
+                rows={3}
+                value={modalDesfechoCorp.motivo}
+                onChange={(e) =>
+                  setModalDesfechoCorp((prev) => ({ ...prev, motivo: e.target.value }))
+                }
+                placeholder={
+                  modalDesfechoCorp.tipo === "alta"
+                    ? "Descreva brevemente a conclusão dos objetivos terapêuticos..."
+                    : "Ex: solicitação de pausa pelo beneficiário, mudança de turno, desligamento..."
+                }
+                className="w-full p-3 bg-warm/30 rounded-xl text-xs text-forest border border-soft focus:border-forest/40 outline-none"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setModalDesfechoCorp({ isOpen: false, tipo: "alta", motivo: "" })}
+                className="px-4 py-2 text-xs font-semibold text-forest/70 hover:text-forest rounded-xl cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={saving}
+                onClick={handleConfirmarDesfechoCorporativo}
+                className={`px-5 py-2.5 text-xs font-bold rounded-xl text-white shadow-xs cursor-pointer disabled:opacity-50 ${
+                  modalDesfechoCorp.tipo === "alta"
+                    ? "bg-blue-600 hover:bg-blue-700"
+                    : "bg-rose-600 hover:bg-rose-700"
+                }`}
+              >
+                {saving ? "Salvando..." : "Confirmar Desfecho"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* MODAL DE PRONTUÁRIO CLÍNICO INTEGRADO */}
-      {showProntuarioModal && (
+      {showProntuarioModal && canAccessProntuario && (
         <PacienteProntuarioModal
           isOpen={showProntuarioModal}
           onClose={() => setShowProntuarioModal(false)}
           pacienteId={currentPaciente.id}
           pacienteNome={nomeDisplay}
-          pacienteCpf={currentPaciente.cpf}
-          pacienteDataNascimento={currentPaciente.dataNascimento}
-          pacienteTelefone={currentPaciente.telefone}
+          pacienteCpf={cpfDisplay}
+          pacienteDataNascimento={dataNascimentoDisplay}
+          pacienteTelefone={telDisplay}
           registros={currentPaciente.prontuarioClinico || []}
           onSaveRegistros={async (novosRegistros) => {
             await handlePatchFields({ prontuarioClinico: novosRegistros }, true);
@@ -1548,16 +2474,17 @@ export function FichaPacienteExternoModal({
           sessoes={sessoes}
           onSaveSessoes={async (novasSessoes) => {
             await handlePatchFields({ historicoSessoes: novasSessoes }, true);
+            await syncSessoesToAgendamentos(novasSessoes);
           }}
           onAbrirFaturamento={() => {
             setShowProntuarioModal(false);
             setShowFaturamentoModal(true);
           }}
           profissionalLogado={{
-            uid: profile?.uid || user?.uid,
-            nome: profile?.name || profile?.nome,
-            name: profile?.name || profile?.nome,
-            crp: profile?.crp,
+            uid: profile?.uid || user?.uid || currentPaciente.profissionalId,
+            nome: profile?.name || profile?.nome || currentPaciente.profissionalNome,
+            name: profile?.name || profile?.nome || currentPaciente.profissionalNome,
+            crp: profile?.crp || currentPaciente.profissionalCrp,
           }}
           showToast={showToast}
         />
@@ -1586,18 +2513,47 @@ export function FichaPacienteExternoModal({
               <PacienteFaturamentoSpreadsheet
                 pacienteId={currentPaciente.id}
                 pacienteNome={nomeDisplay}
-                pacienteCpf={currentPaciente.cpf}
-                pacienteTelefone={currentPaciente.telefone}
-                pacienteEmail={currentPaciente.email}
+                pacienteCpf={cpfDisplay}
+                pacienteTelefone={telDisplay}
+                pacienteEmail={emailDisplay}
                 valorSessaoPadrao={currentPaciente.valorSessao}
-                frequenciaPadrao={currentPaciente.frequenciaSessoes}
+                frequenciaPadrao={frequenciaDisplay}
                 sessoes={sessoes}
                 onSaveSessoes={async (novasSessoes) => {
                   await handlePatchFields({ historicoSessoes: novasSessoes }, true);
+                  await syncSessoesToAgendamentos(novasSessoes);
                 }}
-                perfilFaturamento={currentPaciente.perfilFaturamento || profile?.faturamentoPadrao || "PF"}
+                perfilFaturamento={
+                  currentPaciente.perfilFaturamento || profile?.faturamentoPadrao || "PF"
+                }
+                perfilFaturamentoId={currentPaciente.perfilFaturamentoId}
                 onUpdatePerfilFaturamento={async (novoPerfil) => {
                   await handlePatchFields({ perfilFaturamento: novoPerfil }, true);
+                }}
+                onUpdatePerfilFaturamentoId={async (novoId, via) => {
+                  await handlePatchFields(
+                    { perfilFaturamentoId: novoId, perfilFaturamento: via },
+                    true
+                  );
+                }}
+                onSavePerfisFaturamento={async (novosPerfis) => {
+                  const profId = profile?.uid || user?.uid;
+                  if (!profId) return;
+                  try {
+                    const syncFields = extractLegacySyncFields(
+                      novosPerfis,
+                      profile?.cpf,
+                      profile?.chavePix || profile?.pixKey
+                    );
+                    await updateDoc(doc(db, "users", profId), {
+                      ...syncFields,
+                      updatedAt: serverTimestamp(),
+                    });
+                    showToast("Perfis de faturamento atualizados no seu cadastro!", "success");
+                  } catch (err) {
+                    console.error("Erro ao salvar perfis de faturamento:", err);
+                    showToast("Erro ao salvar perfis de faturamento.", "error");
+                  }
                 }}
                 onSaveDadosPJ={async (dadosPJ) => {
                   const profId = profile?.uid || user?.uid;
@@ -1614,24 +2570,36 @@ export function FichaPacienteExternoModal({
                     }
                   }
                 }}
+                isCorporativo={isCorporativo}
+                empresaNome={
+                  effectiveRole === "profissional"
+                    ? "Convênio Corporativo"
+                    : currentPaciente.empresaNome || "Convênio Corporativo"
+                }
                 registrosProntuario={currentPaciente.prontuarioClinico || []}
                 profissionalLogado={{
-                  uid: profile?.uid || user?.uid,
-                  name: profile?.name || profile?.nome,
-                  nome: profile?.name || profile?.nome,
-                  crp: profile?.crp,
+                  uid: profile?.uid || user?.uid || currentPaciente.profissionalId,
+                  name: profile?.name || profile?.nome || currentPaciente.profissionalNome,
+                  nome: profile?.name || profile?.nome || currentPaciente.profissionalNome,
+                  crp: profile?.crp || currentPaciente.profissionalCrp,
                   cpf: profile?.cpf,
-                  chavePix: profile?.chavePix || profile?.pixKey,
+                  chavePix: profile?.chavePix || profile?.pixKey || currentPaciente.chavePix,
+                  pixKey: profile?.pixKey || profile?.chavePix,
                   email: profile?.email || user?.email,
                   telefone: profile?.telefone,
-                  dadosPJ: profile?.dadosPJ,
+                  dadosPJ: profile?.dadosPJ || profile?.perfilPJ,
                   faturamentoPadrao: profile?.faturamentoPadrao,
+                  perfisFaturamento: profile?.perfisFaturamento,
                 }}
                 showToast={showToast}
-                onAbrirProntuarioModal={() => {
-                  setShowFaturamentoModal(false);
-                  setShowProntuarioModal(true);
-                }}
+                onAbrirProntuarioModal={
+                  canAccessProntuario
+                    ? () => {
+                        setShowFaturamentoModal(false);
+                        setShowProntuarioModal(true);
+                      }
+                    : undefined
+                }
               />
             </div>
           </div>
@@ -1643,6 +2611,7 @@ export function FichaPacienteExternoModal({
         <ContratoGeradorModal
           isOpen={showContratoModal}
           paciente={currentPaciente}
+          allUsers={allUsers}
           onClose={() => setShowContratoModal(false)}
           onContratoSalvo={(updated) => {
             latestPacienteRef.current = updated;
@@ -1650,7 +2619,8 @@ export function FichaPacienteExternoModal({
             onUpdatePaciente(updated);
           }}
           profissionalLogado={profile}
-          collectionName="pacientes"
+          collectionName={targetCollection}
+          tipoAcolhimento={isCorporativo ? "corporativo" : undefined}
           showToast={showToast}
         />
       )}

@@ -1,10 +1,11 @@
 import { Footer } from '../components/Footer';
-import { ArrowLeft, Briefcase, Building2, CheckCircle2, HeartHandshake, TrendingUp, Sparkles, UserCheck, Coins, ArrowRight, MessageCircle, BarChart3, ShieldCheck, Users, CalendarCheck } from "lucide-react";
+import { ArrowLeft, Briefcase, Building2, CheckCircle2, AlertCircle, HeartHandshake, TrendingUp, Sparkles, UserCheck, Coins, ArrowRight, MessageCircle, BarChart3, ShieldCheck, Users, CalendarCheck } from "lucide-react";
 import React, { FormEvent, useState, useEffect } from "react";
 import { collection, addDoc, serverTimestamp, getDocs, query, where, doc, getDoc, onSnapshot } from "firebase/firestore";
 import { db, handleFirestoreError, OperationType } from "../lib/firebase";
 import { sendCompanyLeadEmail } from "../lib/emailService";
 import { Breadcrumbs } from "../components/Breadcrumbs";
+import { formatCnpj, isValidCnpj, getCnpjValidationError } from "../utils/formatters";
 
 import empresaHero from '../assets/images/empresa_hero_photo_1781024092529.png';
 import logoImage from '../assets/images/logo_acolhe.svg';
@@ -27,6 +28,7 @@ export function EmpresaView({ onNavigate }: { onNavigate: (view: 'landing' | 'ac
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [cnpjTouched, setCnpjTouched] = useState(false);
   const [configs, setConfigs] = useState<any>({
     telefoneSuporte: "",
     footerTelefone: "",
@@ -76,7 +78,10 @@ export function EmpresaView({ onNavigate }: { onNavigate: (view: 'landing' | 'ac
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
+    const { name, value } = e.target;
+    const formattedValue = name === "cnpj" ? formatCnpj(value) : value;
+    setFormData(prev => ({ ...prev, [name]: formattedValue }));
+    if (errorMsg) setErrorMsg('');
   };
 
   const handleBack = (e: React.MouseEvent) => {
@@ -91,8 +96,15 @@ export function EmpresaView({ onNavigate }: { onNavigate: (view: 'landing' | 'ac
     e.preventDefault();
 
     if (step === 1) {
-      if (!formData.nomeEmpresa || !formData.cnpj || !formData.ramoAtividade) {
+      if (!formData.nomeEmpresa.trim() || !formData.cnpj.trim() || !formData.ramoAtividade) {
+        setCnpjTouched(true);
         setErrorMsg("Por favor, preencha todos os campos obrigatórios.");
+        return;
+      }
+      const cnpjErr = getCnpjValidationError(formData.cnpj, true);
+      if (cnpjErr) {
+        setCnpjTouched(true);
+        setErrorMsg(cnpjErr);
         return;
       }
       setErrorMsg('');
@@ -115,6 +127,13 @@ export function EmpresaView({ onNavigate }: { onNavigate: (view: 'landing' | 'ac
         setErrorMsg("Por favor, preencha todos os campos obrigatórios.");
         return;
       }
+      const cnpjErrFinal = getCnpjValidationError(formData.cnpj, true);
+      if (cnpjErrFinal) {
+        setCnpjTouched(true);
+        setStep(1);
+        setErrorMsg(cnpjErrFinal);
+        return;
+      }
       setIsSubmitting(true);
       setErrorMsg('');
 
@@ -129,6 +148,7 @@ export function EmpresaView({ onNavigate }: { onNavigate: (view: 'landing' | 'ac
 
         await addDoc(collection(db, "empresa_leads"), {
           ...formData,
+          cnpj: formatCnpj(formData.cnpj),
           notificacao: 'Nova empresa interessada.',
           createdAt: serverTimestamp()
         });
@@ -491,14 +511,47 @@ export function EmpresaView({ onNavigate }: { onNavigate: (view: 'landing' | 'ac
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in duration-500 border-t border-soft pt-6">
                           <div className="flex flex-col gap-1">
                             <label className="text-xs font-bold uppercase tracking-wider text-forest/70 ml-2">CNPJ *</label>
-                            <input 
-                              required 
-                              name="cnpj"
-                              value={formData.cnpj}
-                              onChange={handleChange}
-                              className="px-5 py-4 bg-warm/50 border border-soft rounded-2xl focus:outline-none focus:border-sun-dark focus:bg-white transition-all text-sm text-forest" 
-                              placeholder="00.000.000/0001-00" 
-                            />
+                            {(() => {
+                              const cnpjDigits = formData.cnpj.replace(/\D/g, "");
+                              const cnpjIsValid = isValidCnpj(formData.cnpj);
+                              const inlineCnpjError =
+                                formData.cnpj.length > 0 && (cnpjTouched || cnpjDigits.length === 14)
+                                  ? getCnpjValidationError(formData.cnpj, true)
+                                  : null;
+                              return (
+                                <>
+                                  <input 
+                                    required 
+                                    name="cnpj"
+                                    inputMode="numeric"
+                                    maxLength={18}
+                                    value={formData.cnpj}
+                                    onChange={handleChange}
+                                    onBlur={() => setCnpjTouched(true)}
+                                    aria-invalid={Boolean(inlineCnpjError)}
+                                    className={`px-5 py-4 border rounded-2xl focus:outline-none transition-all text-sm text-forest font-mono tabular-nums ${
+                                      inlineCnpjError
+                                        ? "bg-rose-50/50 border-rose-400 focus:border-rose-500 focus:bg-white"
+                                        : cnpjIsValid
+                                        ? "bg-emerald-50/30 border-emerald-400 focus:border-emerald-600 focus:bg-white"
+                                        : "bg-warm/50 border-soft focus:border-sun-dark focus:bg-white"
+                                    }`}
+                                    placeholder="00.000.000/0001-00" 
+                                  />
+                                  {inlineCnpjError ? (
+                                    <span className="text-xs text-rose-600 font-medium flex items-center gap-1 mt-1 ml-2">
+                                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                                      <span>{inlineCnpjError}</span>
+                                    </span>
+                                  ) : cnpjIsValid ? (
+                                    <span className="text-xs text-emerald-700 font-medium flex items-center gap-1 mt-1 ml-2">
+                                      <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                                      <span>CNPJ válido</span>
+                                    </span>
+                                  ) : null}
+                                </>
+                              );
+                            })()}
                           </div>
 
                           <div className="flex flex-col gap-1">

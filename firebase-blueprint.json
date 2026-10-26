@@ -255,6 +255,42 @@
         "updatedAt": { "type": "timestamp" }
       },
       "required": ["nome", "tipo", "profissionalId"]
+    },
+    "EmpresaProfissionalB2B": {
+      "title": "EmpresaProfissionalB2B",
+      "description": "Carteira privada de empresas clientes B2B do profissional para faturamento e gestão de serviços corporativos.",
+      "type": "object",
+      "properties": {
+        "profissionalId": { "type": "string", "maxLength": 128 },
+        "profissionalNome": { "type": "string", "maxLength": 200 },
+        "nomeFantasia": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "razaoSocial": { "type": "string", "maxLength": 250 },
+        "cnpj": { "type": "string", "maxLength": 30 },
+        "inscricaoMunicipal": { "type": "string", "maxLength": 60 },
+        "inscricaoEstadual": { "type": "string", "maxLength": 60 },
+        "ramoAtividade": { "type": "string", "maxLength": 150 },
+        "cep": { "type": "string", "maxLength": 20 },
+        "enderecoCompleto": { "type": "string", "maxLength": 400 },
+        "cidade": { "type": "string", "maxLength": 120 },
+        "uf": { "type": "string", "maxLength": 10 },
+        "contatoNome": { "type": "string", "maxLength": 200 },
+        "contatoCargo": { "type": "string", "maxLength": 150 },
+        "contatoTelefone": { "type": "string", "maxLength": 40 },
+        "contatoEmail": { "type": "string", "maxLength": 200 },
+        "emailFinanceiroNf": { "type": "string", "maxLength": 200 },
+        "condicaoPagamentoPadrao": { "type": "string", "maxLength": 200 },
+        "valorServicoPadrao": { "type": "number" },
+        "statusComercial": { "type": "string", "enum": ["ativa_recorrente", "projeto_pontual", "prospeccao", "encerrada"] },
+        "perfilFaturamento": { "type": "string", "enum": ["PF", "PJ"] },
+        "perfilFaturamentoId": { "type": "string", "maxLength": 128 },
+        "historicoServicos": { "type": "array" },
+        "registrosBordo": { "type": "array" },
+        "propostaContrato": { "type": "object" },
+        "observacoesGerais": { "type": "string", "maxLength": 5000 },
+        "createdAt": { "type": "timestamp" },
+        "updatedAt": { "type": "timestamp" }
+      },
+      "required": ["profissionalId", "nomeFantasia", "razaoSocial", "cnpj", "contatoNome", "contatoTelefone", "statusComercial"]
     }
   },
   "firestore": {
@@ -301,6 +337,10 @@
     "solicitacoes_orcamentos_corporativos": {
       "schema": { "$ref": "#/entities/SolicitacaoOrcamento" },
       "description": "Pedidos de orçamento enviados por empresas via Portal do RH para serviços de NR-1, GRO/PGR e palestras."
+    },
+    "empresas_profissional": {
+      "schema": { "$ref": "#/entities/EmpresaProfissionalB2B" },
+      "description": "Carteira privada de empresas clientes B2B atendidas diretamente pelo profissional (isolada por profissionalId)."
     }
   }
 }

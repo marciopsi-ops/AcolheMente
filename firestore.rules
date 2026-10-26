@@ -195,5 +195,124 @@ service cloud.firestore {
       allow create: if true;
       allow read, update, delete: if isSignedIn() && (isMaster() || isTriagem());
     }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidEmpresaProfissional(data) {
+      return data.keys().hasAll([
+               'profissionalId',
+               'nomeFantasia',
+               'razaoSocial',
+               'cnpj',
+               'contatoNome',
+               'contatoTelefone',
+               'statusComercial'
+             ]) &&
+             data.keys().hasOnly([
+               'profissionalId',
+               'profissionalNome',
+               'nomeFantasia',
+               'razaoSocial',
+               'cnpj',
+               'inscricaoMunicipal',
+               'inscricaoEstadual',
+               'ramoAtividade',
+               'cep',
+               'enderecoCompleto',
+               'cidade',
+               'uf',
+               'contatoNome',
+               'contatoCargo',
+               'contatoTelefone',
+               'contatoEmail',
+               'emailFinanceiroNf',
+               'condicaoPagamentoPadrao',
+               'valorServicoPadrao',
+               'statusComercial',
+               'perfilFaturamento',
+               'perfilFaturamentoId',
+               'historicoServicos',
+               'registrosBordo',
+               'propostaContrato',
+               'observacoesGerais',
+               'createdAt',
+               'updatedAt'
+             ]) &&
+             data.profissionalId is string && data.profissionalId.size() <= 128 &&
+             data.profissionalId == request.auth.uid &&
+             data.nomeFantasia is string && data.nomeFantasia.size() >= 1 && data.nomeFantasia.size() <= 200 &&
+             data.razaoSocial is string && data.razaoSocial.size() <= 250 &&
+             data.cnpj is string && data.cnpj.size() <= 30 &&
+             data.contatoNome is string && data.contatoNome.size() <= 200 &&
+             data.contatoTelefone is string && data.contatoTelefone.size() <= 40 &&
+             data.statusComercial in ['ativa_recorrente', 'projeto_pontual', 'prospeccao', 'encerrada'] &&
+             (!('profissionalNome' in data) || (data.profissionalNome is string && data.profissionalNome.size() <= 200)) &&
+             (!('inscricaoMunicipal' in data) || (data.inscricaoMunicipal is string && data.inscricaoMunicipal.size() <= 60)) &&
+             (!('inscricaoEstadual' in data) || (data.inscricaoEstadual is string && data.inscricaoEstadual.size() <= 60)) &&
+             (!('ramoAtividade' in data) || (data.ramoAtividade is string && data.ramoAtividade.size() <= 150)) &&
+             (!('cep' in data) || (data.cep is string && data.cep.size() <= 20)) &&
+             (!('enderecoCompleto' in data) || (data.enderecoCompleto is string && data.enderecoCompleto.size() <= 400)) &&
+             (!('cidade' in data) || (data.cidade is string && data.cidade.size() <= 120)) &&
+             (!('uf' in data) || (data.uf is string && data.uf.size() <= 10)) &&
+             (!('contatoCargo' in data) || (data.contatoCargo is string && data.contatoCargo.size() <= 150)) &&
+             (!('contatoEmail' in data) || (data.contatoEmail is string && data.contatoEmail.size() <= 200)) &&
+             (!('emailFinanceiroNf' in data) || (data.emailFinanceiroNf is string && data.emailFinanceiroNf.size() <= 200)) &&
+             (!('condicaoPagamentoPadrao' in data) || (data.condicaoPagamentoPadrao is string && data.condicaoPagamentoPadrao.size() <= 200)) &&
+             (!('valorServicoPadrao' in data) || (data.valorServicoPadrao is number && data.valorServicoPadrao >= 0)) &&
+             (!('perfilFaturamento' in data) || (data.perfilFaturamento in ['PF', 'PJ'])) &&
+             (!('perfilFaturamentoId' in data) || (data.perfilFaturamentoId is string && data.perfilFaturamentoId.size() <= 128)) &&
+             (!('historicoServicos' in data) || (data.historicoServicos is list && data.historicoServicos.size() <= 500)) &&
+             (!('registrosBordo' in data) || (data.registrosBordo is list && data.registrosBordo.size() <= 500)) &&
+             (!('propostaContrato' in data) || (data.propostaContrato is map && data.propostaContrato.keys().size() <= 20)) &&
+             (!('observacoesGerais' in data) || (data.observacoesGerais is string && data.observacoesGerais.size() <= 5000));
+    }
+
+    // Carteira Privada de Empresas Clientes B2B do Profissional (Isolamento estrito por profissionalId)
+    match /empresas_profissional/{empresaId} {
+      allow list: if isSignedIn() && resource.data.profissionalId == request.auth.uid;
+      allow get, delete: if isSignedIn() && isValidId(empresaId) && resource.data.profissionalId == request.auth.uid;
+      allow create: if isSignedIn() &&
+                       isValidId(empresaId) &&
+                       isValidEmpresaProfissional(request.resource.data) &&
+                       request.resource.data.createdAt == request.time &&
+                       request.resource.data.updatedAt == request.time;
+      allow update: if isSignedIn() &&
+                       isValidId(empresaId) &&
+                       isValidEmpresaProfissional(request.resource.data) &&
+                       resource.data.profissionalId == request.auth.uid &&
+                       request.resource.data.profissionalId == resource.data.profissionalId &&
+                       request.resource.data.createdAt == resource.data.createdAt &&
+                       request.resource.data.updatedAt == request.time &&
+                       request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                         'profissionalNome',
+                         'nomeFantasia',
+                         'razaoSocial',
+                         'cnpj',
+                         'inscricaoMunicipal',
+                         'inscricaoEstadual',
+                         'ramoAtividade',
+                         'cep',
+                         'enderecoCompleto',
+                         'cidade',
+                         'uf',
+                         'contatoNome',
+                         'contatoCargo',
+                         'contatoTelefone',
+                         'contatoEmail',
+                         'emailFinanceiroNf',
+                         'condicaoPagamentoPadrao',
+                         'valorServicoPadrao',
+                         'statusComercial',
+                         'perfilFaturamento',
+                         'perfilFaturamentoId',
+                         'historicoServicos',
+                         'registrosBordo',
+                         'propostaContrato',
+                         'observacoesGerais',
+                         'updatedAt'
+                       ]);
+    }
   }
 }

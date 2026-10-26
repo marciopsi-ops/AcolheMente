@@ -199,11 +199,18 @@ import { GestaoCampanhasBanner } from "../components/GestaoCampanhasBanner";
 import { ImportExternalPatients } from "../components/ImportExternalPatients";
 import { GestaoPlanosProfissionais } from "../components/GestaoPlanosProfissionais";
 import { PLANOS_PROFISSIONAIS_PADRAO, PlanoProfissionalItem } from "../types/planosProfissionais";
-import { formatProfessionalName } from "../utils/formatters";
+import { formatProfessionalName, formatCnpj, isValidCnpj, getCnpjValidationError } from "../utils/formatters";
 import { ProfissionalAgendaView } from "../components/ProfissionalAgendaView";
 import { FeatureGate } from "../components/FeatureGate";
 import { FichaPacienteExternoModal } from "../components/FichaPacienteExternoModal";
 import { ParametrizarLinkModal } from "../components/ParametrizarLinkModal";
+import { ProfissionalMeuPerfilView } from "../components/ProfissionalMeuPerfilView";
+import { WhiteLabelProfileConfigPanel } from "../components/WhiteLabelProfileConfigPanel";
+import { PerfisFaturamentoPanel } from "../components/PerfisFaturamentoManagerModal";
+import { ProfissionalEmpresasB2BView } from "../components/ProfissionalEmpresasB2BView";
+import { FichaEmpresaProfissionalModal } from "../components/FichaEmpresaProfissionalModal";
+import { EmpresaClienteB2B } from "../types/empresaB2B";
+import { normalizePerfisFaturamento, extractLegacySyncFields } from "../types/faturamento";
 
 const safeLocalStorage = {
   getItem: (key: string): string | null => {
@@ -1155,6 +1162,7 @@ export function DashboardView({
       compliance: "Compliance Legal & Termos",
       backup: "Backup & Restauração",
       pacientes: "Meus Pacientes",
+      empresasB2B: "Empresas",
       tarefasProfissional: "Alertas e Pendências",
       perfil: "Meu Perfil",
       pagamentosProfissional: "Status / Plano",
@@ -1179,6 +1187,7 @@ export function DashboardView({
     | "tarefas"
     | "acessos"
     | "pacientes"
+    | "empresasB2B"
     | "pacientesAcolhidos"
     | "tarefasProfissional"
     | "perfil"
@@ -1342,14 +1351,21 @@ export function DashboardView({
 
   const handleCriarEmpresaManual = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!novaEmpresaForm.nomeEmpresa || !novaEmpresaForm.cnpj || !novaEmpresaForm.email) {
+    if (!novaEmpresaForm.nomeEmpresa.trim() || !novaEmpresaForm.cnpj.trim() || !novaEmpresaForm.email.trim()) {
       showToast("Preencha os campos obrigatórios da empresa.", "error");
       return;
     }
+    const cnpjErr = getCnpjValidationError(novaEmpresaForm.cnpj, true);
+    if (cnpjErr) {
+      showToast(cnpjErr, "error");
+      return;
+    }
+    const formattedCnpj = formatCnpj(novaEmpresaForm.cnpj);
     setIsSubmittingNovaEmpresa(true);
     try {
       const docRef = await addDoc(collection(db, "empresa_leads"), {
         ...novaEmpresaForm,
+        cnpj: formattedCnpj,
         razaoSocial: novaEmpresaForm.nomeEmpresa,
         categorias: [novaEmpresaForm.categoria],
         categoria: novaEmpresaForm.categoria,
@@ -1362,6 +1378,7 @@ export function DashboardView({
       const novaEmpresaObj: EmpresaLead = {
         id: docRef.id,
         ...novaEmpresaForm,
+        cnpj: formattedCnpj,
         razaoSocial: novaEmpresaForm.nomeEmpresa,
         categorias: [novaEmpresaForm.categoria],
         categoria: novaEmpresaForm.categoria,
@@ -2048,6 +2065,8 @@ export function DashboardView({
   const [pacientesExternos, setPacientesExternos] = useState<Acolhimento[]>([]);
   const [patientSortOrder, setPatientSortOrder] = useState<"fifo" | "recent">("fifo");
   const [pacienteExternoSearchTerm, setPacienteExternoSearchTerm] = useState("");
+  const [filtroStatusExterno, setFiltroStatusExterno] = useState<"ativos" | "inativos">("ativos");
+  const [subFiltroInativo, setSubFiltroInativo] = useState<"todos" | "alta" | "pausa" | "desligado">("todos");
   const [showModalNovoPacienteExterno, setShowModalNovoPacienteExterno] = useState(false);
   const [novoExtNome, setNovoExtNome] = useState("");
   const [novoExtTelefone, setNovoExtTelefone] = useState("");
@@ -2059,7 +2078,12 @@ export function DashboardView({
   const [isSalvandoExternoDashboard, setIsSalvandoExternoDashboard] = useState(false);
   const [copiouLinkExterno, setCopiouLinkExterno] = useState(false);
   const [selectedPacienteExterno, setSelectedPacienteExterno] = useState<any | null>(null);
+  const [selectedFichaCorporativa, setSelectedFichaCorporativa] = useState<any | null>(null);
+  const [empresasProfissionalB2B, setEmpresasProfissionalB2B] = useState<EmpresaClienteB2B[]>([]);
+  const [selectedEmpresaB2B, setSelectedEmpresaB2B] = useState<EmpresaClienteB2B | null>(null);
+  const [agendaPreselectedPacienteId, setAgendaPreselectedPacienteId] = useState<string | null>(null);
   const [showParametrizarLinkModal, setShowParametrizarLinkModal] = useState(false);
+  const [receitaBrutaConsolidada, setReceitaBrutaConsolidada] = useState<number>(0);
 
   // Kanban Drag & Drop Visual State
   const [draggingCardId, setDraggingCardId] = useState<string | null>(null);
@@ -2395,6 +2419,7 @@ export function DashboardView({
     let unsubComplianceMsg: (() => void) | undefined;
     let unsubProfile: (() => void) | undefined;
     let unsubExternos: (() => void) | undefined;
+    let unsubEmpresasB2B: (() => void) | undefined;
 
     const unsub = onAuthStateChanged(auth, async (u) => {
       setUser(u);
@@ -2574,6 +2599,33 @@ export function DashboardView({
           }
         );
 
+        // Listen para Empresas Clientes B2B (Prestação de Serviços pelo Profissional - Isolado por profissionalId)
+        const qEmpresasB2B = query(
+          collection(db, "empresas_profissional"),
+          where("profissionalId", "==", u.uid)
+        );
+        unsubEmpresasB2B = onSnapshot(
+          qEmpresasB2B,
+          (snap) => {
+            const list: EmpresaClienteB2B[] = [];
+            snap.forEach((d) =>
+              list.push({ id: d.id, ...(d.data() as Omit<EmpresaClienteB2B, "id">) })
+            );
+            setEmpresasProfissionalB2B(list);
+            setSelectedEmpresaB2B((prev) => {
+              if (!prev) return null;
+              const updated = list.find((item) => item.id === prev.id);
+              return updated || prev;
+            });
+          },
+          (error) => {
+            console.error("Error loading empresas_profissional:", error);
+            try {
+              handleFirestoreError(error, OperationType.LIST, "empresas_profissional");
+            } catch (e) {}
+          }
+        );
+
         if (hasMaster) {
           unsubDoacoes = onSnapshot(
             query(collection(db, "doacoes")),
@@ -2720,6 +2772,7 @@ export function DashboardView({
         if (unsubComplianceMsg) unsubComplianceMsg();
         if (unsubProfile) unsubProfile();
         if (unsubExternos) unsubExternos();
+        if (unsubEmpresasB2B) unsubEmpresasB2B();
         unsubCards = undefined;
         unsubDoacoes = undefined;
         unsubSol = undefined;
@@ -2730,6 +2783,7 @@ export function DashboardView({
         unsubComplianceMsg = undefined;
         unsubProfile = undefined;
         unsubExternos = undefined;
+        unsubEmpresasB2B = undefined;
         setProfile(null);
         setActiveRoleView(null);
         setAcolhimentos([]);
@@ -2740,6 +2794,8 @@ export function DashboardView({
         setEmpresasLeads([]);
         setMeusPacientes([]);
         setPacientesExternos([]);
+        setEmpresasProfissionalB2B([]);
+        setSelectedEmpresaB2B(null);
         setFichasCorporativas([]);
         setLoadingObj(false);
       }
@@ -2758,6 +2814,7 @@ export function DashboardView({
       if (unsubComplianceMsg) unsubComplianceMsg();
       if (unsubProfile) unsubProfile();
       if (unsubExternos) unsubExternos();
+      if (unsubEmpresasB2B) unsubEmpresasB2B();
     };
   }, []);
 
@@ -6117,7 +6174,7 @@ export function DashboardView({
   };
 
   return (
-    <div className="h-screen flex flex-col bg-warm overflow-hidden">
+    <div className="h-screen h-dvh flex flex-col bg-warm overflow-hidden">
       <AnimatePresence>
         {toast.show && (
           <motion.div
@@ -6506,7 +6563,7 @@ export function DashboardView({
               {/* 1. Agenda (Primeira aba padrão do Profissional) */}
               <button
                 onClick={() => setActiveTab("agenda")}
-                className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 cursor-pointer ${activeTab === "agenda" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70 hover:text-forest"}`}
+                className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap shrink-0 relative flex items-center gap-1.5 cursor-pointer ${activeTab === "agenda" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70 hover:text-forest"}`}
               >
                 <Calendar className="w-3.5 h-3.5 text-forest/70" />
                 <span>Agenda</span>
@@ -6515,71 +6572,80 @@ export function DashboardView({
               {/* 2. Dashboard */}
               <button
                 onClick={() => setActiveTab("estatisticas")}
-                className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 cursor-pointer ${activeTab === "estatisticas" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70 hover:text-forest"}`}
+                className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap shrink-0 relative flex items-center gap-1.5 cursor-pointer ${activeTab === "estatisticas" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70 hover:text-forest"}`}
               >
                 <BarChart2 className="w-3.5 h-3.5 text-forest/70" />
                 <span>Dashboard</span>
               </button>
 
-              {/* 2. Meu Perfil */}
-              <button
-                onClick={() => setActiveTab("perfil")}
-                className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 cursor-pointer ${activeTab === "perfil" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70 hover:text-forest"}`}
-              >
-                <User className="w-3.5 h-3.5 text-forest/70" />
-                <span>Meu Perfil</span>
-              </button>
-
-              {/* 3. Alertas e Pendências */}
-              <button
-                onClick={() => setActiveTab("tarefasProfissional")}
-                className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 cursor-pointer ${activeTab === "tarefasProfissional" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70 hover:text-forest"}`}
-              >
-                <Bell className="w-3.5 h-3.5 text-forest/70" />
-                <span>Alertas e Pendências</span>
-                {pendingProfNotificationsCount > 0 && (
-                  <span className="bg-red-500 text-white text-[10px] w-4.5 h-4.5 flex items-center justify-center rounded-full font-bold ml-1">
-                    {pendingProfNotificationsCount}
-                  </span>
-                )}
-              </button>
-
-              {/* 4. Meus Pacientes */}
+              {/* 3. Meus Pacientes */}
               <button
                 onClick={() => setActiveTab("pacientes")}
-                className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 cursor-pointer ${activeTab === "pacientes" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70 hover:text-forest"}`}
+                className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap shrink-0 relative flex items-center gap-1.5 cursor-pointer ${activeTab === "pacientes" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70 hover:text-forest"}`}
               >
                 <Users className="w-3.5 h-3.5 text-forest/70" />
                 <span>Meus Pacientes</span>
                 {solicitacoesCorpCount > 0 && (
-                  <span className="bg-emerald-600 text-white text-[10px] min-w-4 h-4 px-1 flex items-center justify-center rounded-full font-bold ml-1 animate-pulse">
+                  <span className="bg-emerald-600 text-white text-[10px] min-w-4 h-4 px-1 flex items-center justify-center rounded-full font-bold ml-1 tabular-nums">
                     {solicitacoesCorpCount}
                   </span>
                 )}
               </button>
 
-              {/* 5. Rede Profissional */}
+              {/* 4. Empresas — Prestação de Serviços a Empresas */}
+              <button
+                onClick={() => setActiveTab("empresasB2B")}
+                className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap shrink-0 relative flex items-center gap-1.5 cursor-pointer ${activeTab === "empresasB2B" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70 hover:text-forest"}`}
+              >
+                <Briefcase className="w-3.5 h-3.5 text-forest/70" />
+                <span>Empresas</span>
+              </button>
+
+              {/* 5. Meu Perfil */}
+              <button
+                onClick={() => setActiveTab("perfil")}
+                className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap shrink-0 relative flex items-center gap-1.5 cursor-pointer ${activeTab === "perfil" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70 hover:text-forest"}`}
+              >
+                <User className="w-3.5 h-3.5 text-forest/70" />
+                <span>Meu Perfil</span>
+              </button>
+
+              {/* 6. Alertas e Pendências */}
+              <button
+                onClick={() => setActiveTab("tarefasProfissional")}
+                className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap shrink-0 relative flex items-center gap-1.5 cursor-pointer ${activeTab === "tarefasProfissional" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70 hover:text-forest"}`}
+              >
+                <Bell className="w-3.5 h-3.5 text-forest/70" />
+                <span>Alertas e Pendências</span>
+                {pendingProfNotificationsCount > 0 && (
+                  <span className="bg-red-500 text-white text-[10px] w-4.5 h-4.5 flex items-center justify-center rounded-full font-bold ml-1 tabular-nums">
+                    {pendingProfNotificationsCount}
+                  </span>
+                )}
+              </button>
+
+              {/* 7. Rede Profissional */}
               <button
                 onClick={() => setActiveTab("redeProfissional")}
-                className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 cursor-pointer ${activeTab === "redeProfissional" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70 hover:text-forest"}`}
+                className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap shrink-0 relative flex items-center gap-1.5 cursor-pointer ${activeTab === "redeProfissional" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70 hover:text-forest"}`}
               >
                 <Users className="w-3.5 h-3.5 text-emerald-700" />
                 <span>Rede Profissional</span>
               </button>
 
-              {/* 6. Meus Artigos */}
+              {/* 8. Meus Artigos */}
               <button
                 onClick={() => setActiveTab("artigosProfissional")}
-                className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 cursor-pointer ${activeTab === "artigosProfissional" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70 hover:text-forest"}`}
+                className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap shrink-0 relative flex items-center gap-1.5 cursor-pointer ${activeTab === "artigosProfissional" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70 hover:text-forest"}`}
               >
                 <BookOpen className="w-3.5 h-3.5 text-forest/70" />
                 <span>Meus Artigos</span>
               </button>
 
-              {/* 7. Status / Plano */}
+              {/* 9. Status / Plano */}
               <button
                 onClick={() => setActiveTab("pagamentosProfissional")}
-                className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 cursor-pointer ${activeTab === "pagamentosProfissional" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70 hover:text-forest"}`}
+                className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap shrink-0 relative flex items-center gap-1.5 cursor-pointer ${activeTab === "pagamentosProfissional" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70 hover:text-forest"}`}
               >
                 <CreditCard className="w-3.5 h-3.5 text-forest" />
                 <span>Status / Plano</span>
@@ -6590,19 +6656,19 @@ export function DashboardView({
                 )}
               </button>
 
-              {/* 8. Eventos e Parcerias */}
+              {/* 10. Eventos e Parcerias */}
               <button
                 onClick={() => setActiveTab("eventos")}
-                className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 cursor-pointer ${activeTab === "eventos" || activeTab === "servicos" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70 hover:text-forest"}`}
+                className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap shrink-0 relative flex items-center gap-1.5 cursor-pointer ${activeTab === "eventos" || activeTab === "servicos" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70 hover:text-forest"}`}
               >
                 <Calendar className="w-3.5 h-3.5 text-forest/70" />
                 <span>Eventos e Parcerias</span>
               </button>
 
-              {/* 9. Backup & Custódia */}
+              {/* 11. Backup & Custódia */}
               <button
                 onClick={() => setActiveTab("backup")}
-                className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 cursor-pointer ${activeTab === "backup" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70 hover:text-forest"}`}
+                className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap shrink-0 relative flex items-center gap-1.5 cursor-pointer ${activeTab === "backup" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70 hover:text-forest"}`}
               >
                 <Database className="w-3.5 h-3.5 text-forest/70" />
                 <span>Backup & Custódia</span>
@@ -8775,20 +8841,84 @@ export function DashboardView({
             )}
           </div>
         </div>
+      ) : currentRole === "profissional" && activeTab === "empresasB2B" ? (
+        <div className="flex-1 overflow-auto p-4 sm:p-6 md:p-8 flex flex-col gap-6 slide-up">
+          <div className="max-w-6xl w-full mx-auto">
+            <FeatureGate
+              requiredPlan="avancado"
+              userPlan={profile?.plano}
+              fallback={
+                <div className="p-8 bg-white border border-soft rounded-3xl text-center space-y-4 max-w-xl mx-auto shadow-2xs">
+                  <div className="mx-auto w-12 h-12 bg-warm rounded-2xl border border-soft flex items-center justify-center text-forest">
+                    <Briefcase className="w-6 h-6 text-forest" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <h3 className="font-serif font-bold text-lg text-forest">
+                      Prestação de Serviços a Empresas (B2B)
+                    </h3>
+                    <p className="text-xs sm:text-sm text-forest/70 leading-relaxed">
+                      Gerencie sua carteira externa de empresas clientes, palestras, treinamentos, consultorias NR-1, espelhos de NFS-e PJ e contratos corporativos em um ambiente integrado ao seu faturamento global.
+                    </p>
+                  </div>
+                  <div className="pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab("pagamentosProfissional")}
+                      className="px-5 py-2.5 bg-forest hover:bg-forest/90 text-white text-xs font-bold rounded-xl transition-colors cursor-pointer whitespace-nowrap"
+                    >
+                      Conhecer Plano Avançado
+                    </button>
+                  </div>
+                </div>
+              }
+            >
+              <ProfissionalEmpresasB2BView
+                empresasB2B={empresasProfissionalB2B || []}
+                onSelecionarEmpresa={(emp) => setSelectedEmpresaB2B(emp)}
+                profile={profile}
+                user={user}
+                onUpdateProfileLocal={(patch) =>
+                  setProfile((prev: any) => (prev ? { ...prev, ...patch } : prev))
+                }
+                showToast={showToast}
+              />
+            </FeatureGate>
+          </div>
+        </div>
       ) : currentRole === "profissional" && activeTab === "agenda" ? (
         <ProfissionalAgendaView
           profissionalUid={user?.uid || ""}
           profissionalNome={profile?.name || profile?.nome || "Profissional"}
           pacientesAtivos={meusPacientes || []}
           pacientesExternos={pacientesExternos || []}
+          fichasCorporativas={minhasFichasCorporativas || []}
+          empresasB2B={empresasProfissionalB2B || []}
           plano={profile?.plano}
+          initialPacienteId={agendaPreselectedPacienteId}
+          onClearInitialPacienteId={() => setAgendaPreselectedPacienteId(null)}
           onOpenPacienteDetalhes={(pacienteId) => {
+            const b2bFound = empresasProfissionalB2B.find((e) => e.id === pacienteId);
+            if (b2bFound) {
+              setSelectedEmpresaB2B(b2bFound);
+              return;
+            }
+            const corpFound =
+              minhasFichasCorporativas.find((f) => f.id === pacienteId) ||
+              fichasCorporativas.find((f) => f.id === pacienteId);
+            if (corpFound) {
+              setSelectedFichaCorporativa(corpFound);
+              return;
+            }
+            const extFound = pacientesExternos.find((p) => p.id === pacienteId);
+            if (extFound) {
+              setSelectedPacienteExterno(extFound);
+              return;
+            }
             const found =
               meusPacientes.find((p) => p.id === pacienteId) ||
-              pacientesExternos.find((p) => p.id === pacienteId) ||
               acolhimentos.find((a) => a.id === pacienteId);
             if (found) {
-              setSelectedCard(found);
+              setSelectedCard(found as any);
             }
           }}
         />
@@ -8807,7 +8937,7 @@ export function DashboardView({
                     Meu Desempenho & Controle Clínico
                   </h2>
                   <p className="text-[11px] sm:text-xs text-forest/60 mt-0.5 truncate">
-                    Acompanhamento integrado de atendimentos particulares, fluxo corporativo e cotas
+                    Acompanhamento integrado de pacientes, empresas clientes (B2B), contas de emissão e cotas
                   </p>
                 </div>
               </div>
@@ -8863,50 +8993,58 @@ export function DashboardView({
                 pacientesParticulares={meusPacientes || []}
                 fichasCorporativas={minhasFichasCorporativas || []}
                 pacientesExternos={pacientesExternos || []}
-                isPlanoAvancado={profile?.plano === "avancado"}
+                empresasB2B={empresasProfissionalB2B || []}
+                isPlanoAvancado={(() => {
+                  const norm = String(profile?.plano || "")
+                    .toLowerCase()
+                    .normalize("NFD")
+                    .replace(/[\u0300-\u036f]/g, "")
+                    .trim();
+                  return (
+                    ["ia", "avancado", "premium", "pro"].includes(norm) ||
+                    norm.includes("avanc")
+                  );
+                })()}
                 dadosPJ={profile?.dadosPJ || (profile as any)?.perfilPJ}
+                perfisFaturamento={profile?.perfisFaturamento}
                 profissionalNome={profile?.nome || profile?.name}
-                chavePix={profile?.chavePix}
+                profissionalCpf={profile?.cpf}
+                chavePix={profile?.chavePix || profile?.pixKey}
+                profissionalId={profile?.uid || user?.uid || "prof_default"}
+                despesasProfissionais={profile?.despesasProfissionais}
+                onIrParaDespesas={() => setSubAbaEstatisticas("despesas")}
                 onSelecionarPacienteParticular={(paciente) => {
                   setSelectedCard(paciente);
                   setActiveTab("pacientes");
                 }}
-                onSelecionarFichaCorporativa={(_ficha) => {
-                  setActiveTab("triagemCorporativa");
+                onSelecionarFichaCorporativa={(ficha) => {
+                  setSelectedFichaCorporativa(ficha);
+                }}
+                onSelecionarPacienteExterno={(paciente) => {
+                  setSelectedPacienteExterno(paciente);
+                }}
+                onSelecionarEmpresaB2B={(empresa) => {
+                  setSelectedEmpresaB2B(empresa);
                 }}
                 showToast={showToast}
+                onReceitaBrutaChange={setReceitaBrutaConsolidada}
               />
             ) : subAbaEstatisticas === "despesas" ? (
               <ProfissionalDespesasDashboard
+                mode="consolidado"
                 profissionalId={profile?.uid || user?.uid || "prof_default"}
-                receitaBruta={(() => {
-                  const pacsPartAtivosRev = meusPacientes.filter(
-                    (a) =>
-                      a.atribuicaoStatus === "Aceito" &&
-                      a.status !== "Alta" &&
-                      a.status !== "Rejeitado" &&
-                      a.status !== "Encerrado" &&
-                      a.status !== "Desistência" &&
-                      a.status !== "Cancelado",
-                  );
-                  const pacsPartRegRev = pacsPartAtivosRev.filter((a) => {
-                    const v = parseValorSessaoNumber(a.valorSessao);
-                    return v > 30 && a.viaAcesso !== "Solidário";
-                  });
-                  const valPartRegRev = pacsPartRegRev.reduce(
-                    (sum, a) => sum + parseValorSessaoNumber(a.valorSessao),
-                    0,
-                  );
-                  const fichasCorpAtivasRev = minhasFichasCorporativas.filter(
-                    (f) => f.status === "paciente",
-                  );
-                  const valCorpRev = fichasCorpAtivasRev.reduce(
-                    (sum, f) => sum + (parseValorSessaoNumber(f.valorSessao) || 0),
-                    0,
-                  );
-                  return valPartRegRev + valCorpRev;
-                })()}
-                competenciaSelecionada="todas"
+                receitaBruta={receitaBrutaConsolidada}
+                pacientesParticulares={meusPacientes || []}
+                fichasCorporativas={minhasFichasCorporativas || []}
+                pacientesExternos={pacientesExternos || []}
+                empresasB2B={empresasProfissionalB2B || []}
+                initialExpenses={profile?.despesasProfissionais}
+                onExpensesChange={(nextList) =>
+                  setProfile((prev: any) =>
+                    prev ? { ...prev, despesasProfissionais: nextList } : prev
+                  )
+                }
+                competenciaSelecionada={new Date().toISOString().substring(0, 7)}
                 showToast={showToast}
               />
             ) : (() => {
@@ -9549,7 +9687,9 @@ export function DashboardView({
               <p className="text-xs text-forest/60 hidden sm:block">
                 {subTabPacientes === "acessiveis"
                   ? "Atendimentos clínicos do modelo de valores acessíveis da plataforma"
-                  : "Encaminhamentos e fichas de bordo de convênios corporativos"}
+                  : subTabPacientes === "externos"
+                    ? "Gestão da sua carteira particular de pacientes externos"
+                    : "Encaminhamentos e fichas de bordo de convênios corporativos"}
               </p>
             </div>
 
@@ -9562,6 +9702,10 @@ export function DashboardView({
                   const full = raw.startsWith("55") ? raw : `55${raw}`;
                   const url = `https://wa.me/${full}${text ? `?text=${encodeURIComponent(text)}` : ""}`;
                   window.open(url, "_blank");
+                }}
+                onNavigateToAgenda={(pacId) => {
+                  if (pacId) setAgendaPreselectedPacienteId(pacId);
+                  setActiveTab("agenda");
                 }}
               />
             ) : subTabPacientes === "externos" ? (
@@ -9655,63 +9799,183 @@ export function DashboardView({
                 {/* 2. Importação e Exportação via Planilha */}
                 <ImportExternalPatients profUid={profile?.uid || user?.uid} pacientesExternos={pacientesExternos} />
 
-                {/* 3. Lista de Pacientes da Carteira Externa */}
+                {/* 3. Lista de Pacientes da Carteira Externa com Filtros Ativos/Inativos e Cards Otimizados */}
                 <div className="flex flex-col gap-3">
-                  {/* Barra de Ações & Busca */}
-                  <div className="flex flex-wrap items-center justify-between gap-3 bg-white px-4 sm:px-6 py-3.5 rounded-2xl shadow-xs border border-soft">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-xl bg-forest/5 flex items-center justify-center text-forest shrink-0">
-                        <Users className="w-4 h-4 text-forest" />
+                  {/* Barra de Ações, Busca & Filtros de Status */}
+                  <div className="flex flex-col gap-3 bg-white px-4 sm:px-6 py-3.5 rounded-2xl shadow-xs border border-soft">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-xl bg-forest/5 flex items-center justify-center text-forest shrink-0">
+                          <Users className="w-4 h-4 text-forest" />
+                        </div>
+                        <div>
+                          <h3 className="font-serif text-sm sm:text-base font-bold text-forest">
+                            Pacientes Cadastrados na Carteira
+                          </h3>
+                          <p className="text-[11px] text-forest/60">
+                            {pacienteExternoSearchTerm.trim()
+                              ? "Filtrando resultados da busca"
+                              : `${pacientesExternos.length} paciente(s) no total`}
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <h3 className="font-serif text-sm sm:text-base font-bold text-forest">
-                          Pacientes Cadastrados na Carteira
-                        </h3>
-                        <p className="text-[11px] text-forest/60">
-                          {pacienteExternoSearchTerm.trim()
-                            ? "Filtrando resultados da busca"
-                            : `${pacientesExternos.length} paciente(s) particular(es) vinculado(s)`}
-                        </p>
+
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {/* Busca Contextual */}
+                        <div className="relative">
+                          <Search className="w-3.5 h-3.5 text-forest/50 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                          <input
+                            type="text"
+                            placeholder="Buscar por nome, telefone ou CPF..."
+                            value={pacienteExternoSearchTerm}
+                            onChange={(e) => setPacienteExternoSearchTerm(e.target.value)}
+                            className="pl-8 pr-7 py-1.5 bg-warm/60 border border-soft rounded-xl text-xs text-forest placeholder:text-forest/50 focus:outline-none focus:border-forest/50 focus:bg-white w-48 sm:w-60 transition-all"
+                          />
+                          {pacienteExternoSearchTerm && (
+                            <button
+                              type="button"
+                              onClick={() => setPacienteExternoSearchTerm("")}
+                              className="absolute right-2 top-1/2 -translate-y-1/2 text-forest/40 hover:text-forest p-0.5 cursor-pointer transition-colors"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Botão de Cadastro Manual */}
+                        <button
+                          type="button"
+                          onClick={() => setShowModalNovoPacienteExterno(true)}
+                          className="px-3.5 py-1.5 rounded-xl bg-forest hover:bg-forest/90 text-white text-xs font-semibold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+                        >
+                          <UserPlus className="w-3.5 h-3.5" />
+                          <span>Novo Paciente</span>
+                        </button>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {/* Busca Contextual */}
-                      <div className="relative">
-                        <Search className="w-3.5 h-3.5 text-forest/50 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                        <input
-                          type="text"
-                          placeholder="Buscar por nome, telefone ou CPF..."
-                          value={pacienteExternoSearchTerm}
-                          onChange={(e) => setPacienteExternoSearchTerm(e.target.value)}
-                          className="pl-8 pr-7 py-1.5 bg-warm/60 border border-soft rounded-xl text-xs text-forest placeholder:text-forest/50 focus:outline-none focus:border-forest/50 focus:bg-white w-48 sm:w-60 transition-all"
-                        />
-                        {pacienteExternoSearchTerm && (
-                          <button
-                            type="button"
-                            onClick={() => setPacienteExternoSearchTerm("")}
-                            className="absolute right-2 top-1/2 -translate-y-1/2 text-forest/40 hover:text-forest p-0.5 cursor-pointer transition-colors"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        )}
-                      </div>
+                    {/* Abas de Filtro: Em Atendimento vs Inativos */}
+                    {(() => {
+                      const isPacienteInativo = (p: any) => {
+                        const st = (p.statusTratamento || p.status || "").toLowerCase();
+                        return (
+                          st.includes("alta") ||
+                          st.includes("concluído") ||
+                          st.includes("concluido") ||
+                          st.includes("pausa") ||
+                          st.includes("standby") ||
+                          st.includes("inativo") ||
+                          st.includes("desligado") ||
+                          st.includes("quebra")
+                        );
+                      };
+                      const ativosLen = (pacientesExternos || []).filter((p: any) => !isPacienteInativo(p)).length;
+                      const inativosLen = (pacientesExternos || []).filter((p: any) => isPacienteInativo(p)).length;
 
-                      {/* Botão de Cadastro Manual */}
-                      <button
-                        type="button"
-                        onClick={() => setShowModalNovoPacienteExterno(true)}
-                        className="px-3.5 py-1.5 rounded-xl bg-forest hover:bg-forest/90 text-white text-xs font-semibold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
-                      >
-                        <UserPlus className="w-3.5 h-3.5" />
-                        <span>Novo Paciente</span>
-                      </button>
-                    </div>
+                      return (
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 pt-2 border-t border-soft/80">
+                          <div className="flex items-center gap-1.5 bg-warm/60 p-1 rounded-xl border border-soft">
+                            <button
+                              type="button"
+                              onClick={() => setFiltroStatusExterno("ativos")}
+                              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                                filtroStatusExterno === "ativos"
+                                  ? "bg-emerald-700 text-white shadow-2xs"
+                                  : "text-forest/70 hover:text-forest hover:bg-warm"
+                              }`}
+                            >
+                              <span>Em Atendimento</span>
+                              <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${filtroStatusExterno === "ativos" ? "bg-white/20 text-white" : "bg-emerald-100 text-emerald-800"}`}>
+                                {ativosLen}
+                              </span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => setFiltroStatusExterno("inativos")}
+                              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                                filtroStatusExterno === "inativos"
+                                  ? "bg-forest text-white shadow-2xs"
+                                  : "text-forest/70 hover:text-forest hover:bg-warm"
+                              }`}
+                            >
+                              <span>Inativos</span>
+                              <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${filtroStatusExterno === "inativos" ? "bg-white/20 text-white" : "bg-slate-200 text-slate-800"}`}>
+                                {inativosLen}
+                              </span>
+                            </button>
+                          </div>
+
+                          {/* Subfiltros para Inativos (Alta, Pausa, Desligado / Quebra Contrato) */}
+                          {filtroStatusExterno === "inativos" && (
+                            <div className="flex items-center gap-1 flex-wrap text-xs">
+                              <span className="text-[11px] font-semibold text-forest/60 mr-1">Filtrar inativos:</span>
+                              {[
+                                { id: "todos", label: "Todos" },
+                                { id: "alta", label: "Alta" },
+                                { id: "pausa", label: "Pausa" },
+                                { id: "desligado", label: "Desligado / Quebra" },
+                              ].map((sub) => (
+                                <button
+                                  key={sub.id}
+                                  type="button"
+                                  onClick={() => setSubFiltroInativo(sub.id as any)}
+                                  className={`px-2.5 py-0.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                                    subFiltroInativo === sub.id
+                                      ? "bg-emerald-800 text-white"
+                                      : "bg-warm text-forest/70 hover:bg-emerald-50 hover:text-forest border border-soft"
+                                  }`}
+                                >
+                                  {sub.label}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   {/* Listagem dos Pacientes */}
                   {(() => {
+                    const isPacienteInativo = (p: any) => {
+                      const st = (p.statusTratamento || p.status || "").toLowerCase();
+                      return (
+                        st.includes("alta") ||
+                        st.includes("concluído") ||
+                        st.includes("concluido") ||
+                        st.includes("pausa") ||
+                        st.includes("standby") ||
+                        st.includes("inativo") ||
+                        st.includes("desligado") ||
+                        st.includes("quebra")
+                      );
+                    };
+
+                    const matchesSubFiltro = (p: any) => {
+                      if (subFiltroInativo === "todos") return true;
+                      const st = (p.statusTratamento || p.status || "").toLowerCase();
+                      if (subFiltroInativo === "alta") {
+                        return st.includes("alta") || st.includes("concluído") || st.includes("concluido");
+                      }
+                      if (subFiltroInativo === "pausa") {
+                        return st.includes("pausa") || st.includes("standby");
+                      }
+                      if (subFiltroInativo === "desligado") {
+                        return st.includes("desligado") || st.includes("quebra") || st.includes("inativo");
+                      }
+                      return true;
+                    };
+
                     const filtrados = (pacientesExternos || []).filter((p: any) => {
+                      const inativo = isPacienteInativo(p);
+                      if (filtroStatusExterno === "ativos") {
+                        if (inativo) return false;
+                      } else {
+                        if (!inativo) return false;
+                        if (!matchesSubFiltro(p)) return false;
+                      }
+
                       if (!pacienteExternoSearchTerm.trim()) return true;
                       const term = pacienteExternoSearchTerm.toLowerCase();
                       const nome = (p.nome || p.nomeCivil || "").toLowerCase();
@@ -9730,10 +9994,14 @@ export function DashboardView({
                           <div className="font-bold text-forest">
                             {pacienteExternoSearchTerm.trim()
                               ? "Nenhum paciente encontrado com esta busca."
-                              : "Nenhum paciente particular cadastrado ainda."}
+                              : filtroStatusExterno === "ativos"
+                              ? "Nenhum paciente em atendimento no momento."
+                              : "Nenhum paciente inativo encontrado com os filtros selecionados."}
                           </div>
                           <p className="text-[11px] text-forest/60 max-w-md mx-auto">
-                            Compartilhe seu link exclusivo com seus pacientes, importe sua planilha de contatos ou clique no botão acima para cadastrar manualmente.
+                            {filtroStatusExterno === "ativos"
+                              ? "Cadastre um novo paciente ou verifique a aba de inativos."
+                              : "Altere o subfiltro acima para visualizar outros status (Alta, Pausa, Desligado)."}
                           </p>
                         </div>
                       );
@@ -9745,55 +10013,53 @@ export function DashboardView({
                           const nome = p.nomeCivil || p.nome || "Paciente Sem Nome";
                           const telRaw = (p.telefone || "").replace(/\D/g, "");
                           const waUrl = telRaw ? `https://wa.me/55${telRaw.startsWith("55") ? telRaw.slice(2) : telRaw}?text=Ol%C3%A1%20${encodeURIComponent(nome)}!` : "";
+                          const statusTxt = p.statusTratamento || p.status || (isPacienteInativo(p) ? "Inativo" : "Em Atendimento");
 
                           return (
                             <div
                               key={p.id || `ext-${idx}`}
-                              className="bg-white rounded-xl border border-soft shadow-2xs hover:border-emerald-300 hover:shadow-xs transition-all p-3 sm:p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3"
+                              className="bg-white rounded-xl border border-soft shadow-2xs hover:border-emerald-300 hover:shadow-xs transition-all p-2.5 sm:p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5"
                             >
                               <div
                                 onClick={() => setSelectedPacienteExterno(p)}
-                                className="flex items-center gap-3 min-w-0 cursor-pointer flex-1"
+                                className="flex items-center gap-2.5 min-w-0 cursor-pointer flex-1"
                                 title="Clique para abrir a Ficha de Bordo do Paciente"
                               >
-                                <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-800 font-bold text-xs flex items-center justify-center border border-emerald-200 shrink-0">
+                                <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-800 font-bold text-xs flex items-center justify-center border border-emerald-200 shrink-0">
                                   {nome.charAt(0).toUpperCase()}
                                 </div>
                                 <div className="min-w-0">
-                                  <div className="flex items-center gap-2 flex-wrap">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
                                     <span className="font-bold text-forest text-xs sm:text-sm truncate hover:underline">
                                       {nome}
                                     </span>
-                                    <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-emerald-100 text-emerald-800 font-bold border border-emerald-200">
-                                      Carteira Externa
+                                    <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-extrabold border ${
+                                      statusTxt.includes("Alta") || statusTxt.includes("Concluído")
+                                        ? "bg-blue-50 text-blue-800 border-blue-200"
+                                        : statusTxt.includes("Pausa") || statusTxt.includes("Standby")
+                                        ? "bg-amber-50 text-amber-800 border-amber-200"
+                                        : statusTxt.includes("Desligado") || statusTxt.includes("Quebra") || statusTxt.includes("Inativo")
+                                        ? "bg-rose-50 text-rose-800 border-rose-200"
+                                        : "bg-emerald-50 text-emerald-800 border-emerald-200"
+                                    }`}>
+                                      {statusTxt}
                                     </span>
-                                    {p.origem && (
-                                      <span className="text-[9px] text-forest/50 bg-warm px-1.5 py-0.2 rounded border border-soft">
-                                        {p.origem === "formulario_externo"
-                                          ? "Formulário"
-                                          : p.origem === "importacao_excel"
-                                          ? "Importado"
-                                          : p.origem === "agenda_clinica"
-                                          ? "Agenda"
-                                          : "Manual"}
-                                      </span>
-                                    )}
                                   </div>
-                                  <div className="text-[11px] text-forest/70 flex items-center gap-3 flex-wrap mt-0.5">
+                                  <div className="text-[10px] text-forest/70 flex items-center gap-2.5 flex-wrap mt-0.5">
                                     {p.telefone && (
                                       <span className="flex items-center gap-1">
-                                        <Phone className="w-3 h-3 text-forest/50" />
+                                        <Phone className="w-2.5 h-2.5 text-forest/50" />
                                         {p.telefone}
                                       </span>
                                     )}
                                     {p.email && (
                                       <span className="flex items-center gap-1">
-                                        <Mail className="w-3 h-3 text-forest/50" />
+                                        <Mail className="w-2.5 h-2.5 text-forest/50" />
                                         {p.email}
                                       </span>
                                     )}
                                     {p.cpf && (
-                                      <span className="font-mono text-[10px] text-forest/60">
+                                      <span className="font-mono text-[9px] text-forest/60">
                                         CPF: {p.cpf}
                                       </span>
                                     )}
@@ -9806,15 +10072,15 @@ export function DashboardView({
                                 </div>
                               </div>
 
-                              {/* Ações Rápidas */}
-                              <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                              {/* Ações Rápidas Otimizadas */}
+                              <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
                                 <button
                                   type="button"
                                   onClick={() => setSelectedPacienteExterno(p)}
-                                  className="px-2.5 sm:px-3 py-1.5 bg-warm hover:bg-emerald-50 text-forest hover:text-emerald-900 border border-soft hover:border-emerald-300 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer"
+                                  className="px-2.5 py-1 bg-warm hover:bg-emerald-50 text-forest hover:text-emerald-900 border border-soft hover:border-emerald-300 rounded-lg text-[11px] font-bold flex items-center gap-1 transition-all shadow-2xs cursor-pointer"
                                   title="Abrir Ficha de Bordo Completa"
                                 >
-                                  <FileText className="w-3.5 h-3.5 text-emerald-700" />
+                                  <FileText className="w-3 h-3 text-emerald-700" />
                                   <span>Ficha de Bordo</span>
                                 </button>
 
@@ -9823,10 +10089,10 @@ export function DashboardView({
                                     href={waUrl}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-lg text-xs font-semibold flex items-center gap-1 border border-emerald-200 transition-colors"
+                                    className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-lg text-[11px] font-semibold flex items-center gap-1 border border-emerald-200 transition-colors"
                                     title="Conversar no WhatsApp"
                                   >
-                                    <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
+                                    <MessageCircle className="w-3 h-3 text-emerald-600" />
                                     <span className="hidden sm:inline">WhatsApp</span>
                                   </a>
                                 )}
@@ -9835,11 +10101,11 @@ export function DashboardView({
                                   onClick={() => {
                                     setActiveTab("agenda");
                                   }}
-                                  className="px-3 py-1.5 bg-forest hover:bg-forest/90 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer"
+                                  className="px-2.5 py-1 bg-forest hover:bg-forest/90 text-white rounded-lg text-[11px] font-semibold flex items-center gap-1 transition-all shadow-2xs cursor-pointer"
                                   title="Agendar sessão na Agenda Clínica"
                                 >
-                                  <Calendar className="w-3.5 h-3.5" />
-                                  <span>Agendar Sessão</span>
+                                  <Calendar className="w-3 h-3" />
+                                  <span>Agendar</span>
                                 </button>
                               </div>
                             </div>
@@ -10377,1161 +10643,40 @@ export function DashboardView({
           formatDateTimeSafely={formatDateTimeSafely}
         />
       ) : currentRole === "profissional" && activeTab === "perfil" ? (
-        <div className="flex-1 overflow-auto p-6 md:p-8 flex flex-col gap-8 slide-up font-sans">
-          <div className="max-w-4xl w-full mx-auto">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6 bg-white px-5 py-3 sm:py-3.5 rounded-2xl shadow-xs border border-soft">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-8 h-8 rounded-xl bg-forest/5 flex items-center justify-center text-forest shrink-0">
-                  <User className="w-4 h-4 text-forest" />
-                </div>
-                <div className="min-w-0">
-                  <h2 className="font-serif text-sm sm:text-base text-forest font-bold leading-snug">
-                    Ficha Cadastral de Profissional & Perfil de Apresentação
-                  </h2>
-                  <p className="text-[11px] sm:text-xs text-forest/65">
-                    Mantenha seus dados, abordagens clínicas e biografia profissional sempre atualizados
-                  </p>
-                </div>
-              </div>
-              <a
-                href={`?prof=${profile.uid || profile.id || ""}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 bg-sun-dark text-forest rounded-xl text-xs font-bold transition-all hover:bg-forest hover:text-white shadow-2xs hover:shadow active:scale-95 shrink-0"
-              >
-                <Eye className="w-3.5 h-3.5" />
-                <span>Ver página pessoal</span>
-              </a>
-            </div>
-
-            <div className="bg-white p-8 sm:p-10 rounded-[2rem] shadow-sm border border-soft flex flex-col gap-10">
-              {/* Profile Photo upload component with Auto-Face Centering */}
-              <div className="flex flex-col sm:flex-row items-center gap-6 pb-6 border-b border-soft">
-                <div 
-                  className="w-28 h-28 rounded-full overflow-hidden bg-forest/10 border-4 border-sun flex-shrink-0 flex items-center justify-center relative group shadow-sm cursor-pointer"
-                  onClick={() => {
-                    if (profile.photoUrl) {
-                      setRawPhotoToCrop(profile.photoUrl);
-                      setPhotoCropModalOpen(true);
-                    }
-                  }}
-                  title={profile.photoUrl ? "Clique para ajustar o enquadramento" : "Foto de Perfil"}
-                >
-                  {profile.photoUrl ? (
-                    <img
-                      src={profile.photoUrl}
-                      alt={profile.name}
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <User className="w-14 h-14 text-forest/70" />
-                  )}
-
-                  {profile.photoUrl && (
-                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white text-[10px] font-bold gap-1 text-center p-1">
-                      <Sparkles className="w-4 h-4 text-sun" />
-                      <span>Ajustar Rosto</span>
-                    </div>
-                  )}
-
-                  {isAutoCroppingPhoto && (
-                    <div className="absolute inset-0 bg-forest/80 flex items-center justify-center text-white">
-                      <Loader2 className="w-6 h-6 animate-spin text-sun" />
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex flex-col gap-2.5 items-center sm:items-start flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h4 className="font-serif text-xl font-medium text-forest">
-                      Foto de Perfil & Divulgação
-                    </h4>
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-bold uppercase rounded-full">
-                      <Sparkles className="w-3 h-3 text-emerald-600" />
-                      Auto-Centralização Facial
-                    </span>
-                  </div>
-
-                  <p className="text-xs text-forest/60 max-w-lg text-center sm:text-left">
-                    Selecione sua foto. Nosso sistema detecta e centraliza o rosto no círculo automaticamente para que seu perfil fique sempre perfeito e profissional.
-                  </p>
-
-                  <div className="flex flex-wrap items-center gap-2 pt-1">
-                    <label className="px-4 py-2 bg-forest hover:bg-forest/90 text-white text-xs font-bold uppercase tracking-wider rounded-xl cursor-pointer transition-all shadow-xs hover:shadow flex items-center gap-2">
-                      <Upload className="w-3.5 h-3.5" />
-                      {profile.photoUrl ? "Trocar Foto" : "Fazer Upload de Foto"}
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) {
-                            handlePhotoFileSelected(file);
-                            e.target.value = "";
-                          }
-                        }}
-                      />
-                    </label>
-
-                    {profile.photoUrl && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setRawPhotoToCrop(profile.photoUrl);
-                            setPhotoCropModalOpen(true);
-                          }}
-                          className="px-3.5 py-2 bg-warm hover:bg-soft text-forest text-xs font-bold rounded-xl transition-colors border border-soft flex items-center gap-1.5"
-                          title="Ajustar zoom, rotação e posição manual do círculo"
-                        >
-                          <Sliders className="w-3.5 h-3.5 text-forest/70" />
-                          Ajustar Enquadramento
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={handleAutoCenterCurrentPhoto}
-                          disabled={isAutoCroppingPhoto}
-                          className="px-3.5 py-2 bg-sun/20 hover:bg-sun/30 text-forest text-xs font-bold rounded-xl transition-colors border border-sun-dark/20 flex items-center gap-1.5"
-                          title="Recalcular centralização automática do rosto com IA"
-                        >
-                          <Sparkles className="w-3.5 h-3.5 text-sun-dark" />
-                          Auto-Centralizar com IA
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* SECTION 1: Dados Pessoais e de Contato */}
-              <div className="space-y-6">
-                <h3 className="font-serif text-xl text-forest pb-2 border-b border-soft flex items-center gap-2">
-                  <span className="w-6 h-6 rounded-full bg-forest/10 text-forest text-xs flex items-center justify-center font-bold">
-                    1
-                  </span>
-                  Dados Básicos e Contatos Comerciais
-                </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                  <div>
-                    <label className="text-xs uppercase font-bold tracking-wider text-forest/60">
-                      Nome Completo
-                    </label>
-                    <DebouncedInput
-                      type="text"
-                      value={profile.name || ""}
-                      onChange={(val) => setProfile({ ...profile, name: val })}
-                      onBlur={() => {
-                        if (profile.name) {
-                          setProfile({ ...profile, name: formatProfessionalName(profile.name) });
-                        }
-                      }}
-                      className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors text-sm text-forest"
-                    />
-                  </div>
-                  <div className="bg-warm/40 p-4 rounded-2xl border border-soft/80 flex flex-col justify-between gap-2.5">
-                    <div className="flex items-center justify-between gap-2">
-                      <label className="text-xs uppercase font-bold tracking-wider text-forest/70 flex items-center gap-1.5">
-                        <Mail className="w-3.5 h-3.5 text-forest/60" />
-                        <span>E-mail de Acesso (Login)</span>
-                      </label>
-                      {auth.currentUser?.providerData.some((p) => p.providerId === "google.com") ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200" title="Conta conectada via Google">
-                          <Globe className="w-3 h-3" /> Google
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200" title="Conta com E-mail e Senha">
-                          <Lock className="w-2.5 h-2.5" /> E-mail / Senha
-                        </span>
-                      )}
-                    </div>
-                    <div>
-                      <input
-                        type="email"
-                        value={profile.email || ""}
-                        disabled
-                        className="w-full px-3.5 py-2.5 bg-white border border-soft rounded-xl text-forest font-medium text-sm select-all cursor-default shadow-xs"
-                      />
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2 pt-1">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setNewEmailInput("");
-                          setConfirmEmailInput("");
-                          setCurrentPasswordInput("");
-                          setChangeEmailError("");
-                          setChangeEmailSuccess("");
-                          setShowChangeEmailModal(true);
-                        }}
-                        className="px-3 py-1.5 bg-forest hover:bg-forest/90 text-white text-xs font-semibold rounded-lg shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
-                      >
-                        <Edit3 className="w-3.5 h-3.5" />
-                        <span>Alterar E-mail</span>
-                      </button>
-                      
-                      {auth.currentUser?.providerData.some((p) => p.providerId === "password") ? (
-                        <button
-                          type="button"
-                          onClick={handleUserSelfResetPassword}
-                          className="px-3 py-1.5 bg-white hover:bg-warm text-forest text-xs font-semibold rounded-lg border border-soft transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs"
-                          title="Enviar link de redefinição de senha para seu e-mail"
-                        >
-                          <Key className="w-3.5 h-3.5 text-forest/70" />
-                          <span>Redefinir Senha</span>
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setNewDirectPassword("");
-                            setConfirmDirectPassword("");
-                            setDirectPasswordError("");
-                            setShowCreatePasswordModal(true);
-                          }}
-                          className="px-3 py-1.5 bg-white hover:bg-warm text-forest text-xs font-semibold rounded-lg border border-soft transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs"
-                          title="Criar uma senha para login tradicional na plataforma"
-                        >
-                          <Lock className="w-3.5 h-3.5 text-forest/70" />
-                          <span>Criar Senha Direta</span>
-                        </button>
-                      )}
-                    </div>
-                    <p className="text-[11px] text-forest/55 leading-snug">
-                      Seus atendimentos e prontuários estão salvos sob seu identificador permanente (UID). A troca do e-mail não afeta nenhum dado clínico.
-                    </p>
-                  </div>
-                  <div>
-                    <label className="text-xs uppercase font-bold tracking-wider text-forest/60">
-                      Telefone / WhatsApp Comercial
-                    </label>
-                    <DebouncedInput
-                      type="tel"
-                      value={profile.telefone || ""}
-                      placeholder="Ex: 11999999999"
-                      onChange={(val) =>
-                        setProfile({ ...profile, telefone: val })
-                      }
-                      className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors text-sm text-forest"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs uppercase font-bold tracking-wider text-forest/60">
-                      CPF
-                    </label>
-                    <DebouncedInput
-                      type="text"
-                      value={profile.cpf || ""}
-                      placeholder="Ex: 000.000.000-00"
-                      onChange={(val) => setProfile({ ...profile, cpf: val })}
-                      className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors text-sm text-forest"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs uppercase font-bold tracking-wider text-forest/60">
-                      Chave PIX (Para Recebimento de Serviços)
-                    </label>
-                    <DebouncedInput
-                      type="text"
-                      value={profile.pixKey || (profile as any).chavePix || ""}
-                      placeholder="Ex: CPF, Email, Celular ou Aleatória"
-                      onChange={(val) =>
-                        setProfile({ ...profile, pixKey: val, chavePix: val } as any)
-                      }
-                      className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors text-sm text-forest"
-                    />
-                  </div>
-                  <div className="col-span-1 sm:col-span-2 bg-warm/30 p-4 rounded-xl border border-soft space-y-2">
-                    <label className="text-xs uppercase font-bold tracking-wider text-forest/70 flex items-center justify-between">
-                      <span>Profissão / Atuação Principal *</span>
-                      <span className="text-[10px] text-forest/50 font-normal">Ex: Psicólogo(a), Terapeuta, Psicanalista...</span>
-                    </label>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <select
-                        value={
-                          ["Psicólogo(a)", "Psicólogo(a) Clínico(a)", "Psicanalista", "Terapeuta", "Terapeuta Holístico(a)", "Psicopedagogo(a)"].includes(profile.profissao)
-                            ? profile.profissao
-                            : profile.profissao ? "Outro" : ""
-                        }
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          if (val !== "Outro") {
-                            setProfile({ ...profile, profissao: val });
-                          }
-                        }}
-                        className="w-full px-4 py-3 bg-white border border-soft rounded-xl focus:outline-none focus:border-sun-dark text-sm text-forest"
-                      >
-                        <option value="">Selecione uma profissão...</option>
-                        <option value="Psicólogo(a)">Psicólogo(a)</option>
-                        <option value="Psicólogo(a) Clínico(a)">Psicólogo(a) Clínico(a)</option>
-                        <option value="Psicanalista">Psicanalista</option>
-                        <option value="Terapeuta">Terapeuta</option>
-                        <option value="Terapeuta Holístico(a)">Terapeuta Holístico(a)</option>
-                        <option value="Psicopedagogo(a)">Psicopedagogo(a)</option>
-                        <option value="Outro">Outra opção (digitar ao lado)</option>
-                      </select>
-                      <DebouncedInput
-                        type="text"
-                        value={profile.profissao || ""}
-                        placeholder="Nome exato da profissão..."
-                        onChange={(val) => setProfile({ ...profile, profissao: val })}
-                        className="w-full px-4 py-3 bg-white border border-soft rounded-xl focus:outline-none focus:border-sun-dark text-sm text-forest"
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-xs uppercase font-bold tracking-wider text-forest/60">
-                      CRP / Conselho Profissional (Se houver)
-                    </label>
-                    <DebouncedInput
-                      type="text"
-                      value={profile.crp || ""}
-                      placeholder="Ex: 06/123456"
-                      onChange={(val) => setProfile({ ...profile, crp: val })}
-                      className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors text-sm text-forest"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs uppercase font-bold tracking-wider text-forest/60">
-                      Data de Admissão no Projeto
-                    </label>
-                    <DebouncedInput
-                      type="date"
-                      value={
-                        profile.dataAdmissao
-                          ? String(profile.dataAdmissao).substring(0, 10)
-                          : profile.createdAt
-                            ? parseDateSafely(profile.createdAt).toISOString().substring(0, 10)
-                            : ""
-                      }
-                      onChange={(val) => {
-                        const newVenc = val
-                          ? new Date(new Date(val).getTime() + 7 * 86400000).toISOString()
-                          : profile.vencimentoPagamento;
-                        setProfile({
-                          ...profile,
-                          dataAdmissao: val,
-                          vencimentoPagamento: newVenc,
-                        });
-                      }}
-                      className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors text-sm text-forest"
-                    />
-                    <span className="text-[10px] text-forest/50 mt-1 block">
-                      Data de admissão. Prazo de 7 dias para o 1º pagamento até{" "}
-                      {profile.vencimentoPagamento
-                        ? formatDateSafely(profile.vencimentoPagamento)
-                        : "7 dias após a admissão"}.
-                    </span>
-                  </div>
-                  <div>
-                    <label className="text-xs uppercase font-bold tracking-wider text-forest/60">
-                      Gênero
-                    </label>
-                    <select
-                      value={profile.genero || ""}
-                      onChange={(e) => setProfile({ ...profile, genero: e.target.value })}
-                      className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors text-sm text-forest"
-                    >
-                      <option value="">Selecione...</option>
-                      <option value="Feminino">Feminino</option>
-                      <option value="Masculino">Masculino</option>
-                      <option value="Não-binário">Não-binário</option>
-                      <option value="Prefiro não informar">Prefiro não informar</option>
-                      <option value="Outro">Outro</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-xs uppercase font-bold tracking-wider text-forest/60">
-                      Deficiência ou Necessidade Especial
-                    </label>
-                    <select
-                      value={profile.deficiencia || ""}
-                      onChange={(e) => setProfile({ ...profile, deficiencia: e.target.value })}
-                      className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors text-sm text-forest"
-                    >
-                      <option value="">Selecione...</option>
-                      <option value="Não possuo">Não possuo</option>
-                      <option value="Deficiência física">Deficiência física (motora)</option>
-                      <option value="Deficiência visual">Deficiência visual</option>
-                      <option value="Deficiência auditiva">Deficiência auditiva</option>
-                      <option value="Deficiência intelectual/cognitiva">Deficiência intelectual/cognitiva</option>
-                      <option value="Transtorno do Espectro Autista (TEA)">Transtorno do Espectro Autista (TEA)</option>
-                      <option value="Múltiplas deficiências">Múltiplas deficiências</option>
-                      <option value="Outra necessidade especial">Outra necessidade especial</option>
-                      <option value="Prefiro não responder">Prefiro não responder</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              {/* SECTION 2: Formação e Especialidades */}
-              <div className="space-y-6 pt-4">
-                <h3 className="font-serif text-xl text-forest pb-2 border-b border-soft flex items-center gap-2">
-                  <span className="w-6 h-6 rounded-full bg-forest/10 text-forest text-xs flex items-center justify-center font-bold">
-                    2
-                  </span>
-                  Formação Acadêmica & Prática Clínica
-                </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                  <div>
-                    <label className="text-xs uppercase font-bold tracking-wider text-forest/60">
-                      Ano de Formação / Graduação
-                    </label>
-                    <DebouncedInput
-                      type="number"
-                      value={profile.anoFormacao || ""}
-                      placeholder="Ex: 2018"
-                      onChange={(val) =>
-                        setProfile({ ...profile, anoFormacao: val })
-                      }
-                      className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors text-sm text-forest"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs uppercase font-bold tracking-wider text-forest/60">
-                      Abordagens Psicológicas principais
-                    </label>
-                    <DebouncedInput
-                      type="text"
-                      value={profile.abordagem || ""}
-                      placeholder="Ex: TCC, Psicanálise, Gestalt-terapia, Humanista..."
-                      onChange={(val) =>
-                        setProfile({ ...profile, abordagem: val })
-                      }
-                      className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors text-sm text-forest"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs uppercase font-bold tracking-wider text-forest/60">
-                      Especialidades / Pós-graduações
-                    </label>
-                    <DebouncedInput
-                      type="text"
-                      value={profile.especialidade || ""}
-                      placeholder="Ex: Terapia de Casal, Neuropsicologia, etc"
-                      onChange={(val) =>
-                        setProfile({ ...profile, especialidade: val })
-                      }
-                      className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors text-sm text-forest"
-                    />
-                  </div>
-                  <div className="bg-white p-4 rounded-2xl border border-soft shadow-2xs flex flex-col justify-between gap-3">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs uppercase font-bold tracking-wider text-forest/70 flex items-center gap-1.5">
-                        <Clock className="w-3.5 h-3.5 text-forest" />
-                        Cota de Horas Mensais & Faixas
-                      </label>
-                      <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-200">
-                        Mín. 8h Ativo
-                      </span>
-                    </div>
-
-                    {/* Resumo da decomposição de horas */}
-                    {(() => {
-                      const rawTotal = parseMaxHorasDisponiveis(profile?.horasDisponiveis);
-                      const h30 = profile?.aceitaAtendimento30Reais ? (parseHorasNumber(profile?.horasAtendimento30Reais) || 0) : 0;
-                      const hGratuito = profile?.aceitaAtendimentoGratuito ? (parseHorasNumber(profile?.horasAtendimentoGratuito) || 0) : 0;
-                      let hRegular = profile?.horasRegular ? parseHorasNumber(profile.horasRegular) : 0;
-                      if (hRegular < 8) {
-                        hRegular = Math.max(8, (rawTotal > 0 ? rawTotal : 8) - h30 - hGratuito);
-                        if (hRegular % 2 !== 0) hRegular += 1;
-                      }
-                      const maxHoras = Math.max(8, hRegular + h30 + hGratuito);
-
-                      return (
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between text-xs">
-                            <span className="text-forest/70">Total Ofertado:</span>
-                            <span className="font-extrabold text-forest text-sm">{maxHoras}h/mês</span>
-                          </div>
-                          <div className="grid grid-cols-3 gap-1.5 text-[10px] text-center">
-                            <div className="bg-warm/60 p-1.5 rounded-lg border border-soft">
-                              <span className="block text-forest/60">Regular</span>
-                              <strong className="text-forest font-bold">{hRegular}h</strong>
-                            </div>
-                            <div className="bg-amber-50/70 p-1.5 rounded-lg border border-amber-200">
-                              <span className="block text-amber-800">R$ 30</span>
-                              <strong className="text-amber-900 font-bold">{h30}h</strong>
-                            </div>
-                            <div className="bg-blue-50/70 p-1.5 rounded-lg border border-blue-200">
-                              <span className="block text-blue-800">Gratuito</span>
-                              <strong className="text-blue-900 font-bold">{hGratuito}h</strong>
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={handleOpenGerenciarCotaModal}
-                            className="w-full mt-1 py-2 px-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
-                          >
-                            <Sliders className="w-3.5 h-3.5 text-emerald-200" />
-                            Gerenciar Cota & Faixas
-                          </button>
-                        </div>
-                      );
-                    })()}
-                  </div>
-                  <div>
-                    <label className="text-xs uppercase font-bold tracking-wider text-forest/60">
-                      Cidade de Atendimento
-                    </label>
-                    <DebouncedInput
-                      type="text"
-                      value={profile.cidade || ""}
-                      placeholder="Ex: São Paulo"
-                      onChange={(val) =>
-                        setProfile({ ...profile, cidade: val })
-                      }
-                      className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors text-sm text-forest"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs uppercase font-bold tracking-wider text-forest/60">
-                      Estado (UF)
-                    </label>
-                    <DebouncedInput
-                      type="text"
-                      value={profile.uf || ""}
-                      placeholder="Ex: SP"
-                      maxLength={2}
-                      onChange={(val) =>
-                        setProfile({ ...profile, uf: val.toUpperCase() })
-                      }
-                      className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors text-sm text-forest"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* SECTION 3: Público-Alvo e Preferências (Múltipla escolha) */}
-              <div className="space-y-6 pt-4">
-                <h3 className="font-serif text-xl text-forest pb-2 border-b border-soft flex items-center gap-2">
-                  <span className="w-6 h-6 rounded-full bg-forest/10 text-forest text-xs flex items-center justify-center font-bold">
-                    3
-                  </span>
-                  Público-Alvo & Especialidade em Idades/Dinâmicas
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  {/* Experiência com público */}
-                  <div className="flex flex-col gap-3 bg-warm/30 p-5 rounded-2xl border border-soft/60">
-                    <label className="text-xs font-bold uppercase tracking-wider text-forest/80 leading-relaxed">
-                      Experiência de no mínimo um ano com atendimento clínico
-                      de:
-                    </label>
-                    <div className="grid grid-cols-2 gap-2 mt-1">
-                      {[
-                        "Adulto",
-                        "Idoso",
-                        "Criança",
-                        "Adolescente",
-                        "Casal",
-                        "Família",
-                        "Outros",
-                      ].map((op) => {
-                        const current = Array.isArray(
-                          profile.publicosExperiencia,
-                        )
-                          ? profile.publicosExperiencia
-                          : [];
-                        const isChecked = current.includes(op);
-                        return (
-                          <label
-                            key={`chk-exp-${op}`}
-                            className="flex items-center gap-2 text-sm text-forest cursor-pointer select-none"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={isChecked}
-                              onChange={() => {
-                                let next: string[];
-                                if (isChecked) {
-                                  next = current.filter(
-                                    (v: string) => v !== op,
-                                  );
-                                } else {
-                                  next = [...current, op];
-                                }
-                                setProfile({
-                                  ...profile,
-                                  publicosExperiencia: next,
-                                });
-                              }}
-                              className="accent-forest rounded border-soft w-4 h-4 cursor-pointer"
-                            />
-                            {op}
-                          </label>
-                        );
-                      })}
-                    </div>
-                    {Array.isArray(profile.publicosExperiencia) &&
-                      profile.publicosExperiencia.includes("Outros") && (
-                        <DebouncedInput
-                          type="text"
-                          placeholder="Especifique outros públicos de experiência"
-                          value={profile.outrosPublicosExperiencia || ""}
-                          onChange={(val) =>
-                            setProfile({
-                              ...profile,
-                              outrosPublicosExperiencia: val,
-                            })
-                          }
-                          className="w-full mt-2 px-3 py-2 bg-white border border-soft rounded-lg text-xs focus:outline-none focus:border-sun-dark"
-                        />
-                      )}
-                  </div>
-
-                  {/* Preferência de atendimento */}
-                  <div className="flex flex-col gap-3 bg-warm/30 p-5 rounded-2xl border border-soft/60">
-                    <label className="text-xs font-bold uppercase tracking-wider text-forest/80 leading-relaxed">
-                      Tem maior afinidade / gosto em atender:
-                    </label>
-                    <div className="grid grid-cols-2 gap-2 mt-1">
-                      {[
-                        "Adulto",
-                        "Idoso",
-                        "Criança",
-                        "Adolescente",
-                        "Casal",
-                        "Família",
-                        "Outros",
-                      ].map((op) => {
-                        const current = Array.isArray(profile.publicosGosto)
-                          ? profile.publicosGosto
-                          : [];
-                        const isChecked = current.includes(op);
-                        return (
-                          <label
-                            key={`chk-gosto-${op}`}
-                            className="flex items-center gap-2 text-sm text-forest cursor-pointer select-none"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={isChecked}
-                              onChange={() => {
-                                let next: string[];
-                                if (isChecked) {
-                                  next = current.filter(
-                                    (v: string) => v !== op,
-                                  );
-                                } else {
-                                  next = [...current, op];
-                                }
-                                setProfile({ ...profile, publicosGosto: next });
-                              }}
-                              className="accent-forest rounded border-soft w-4 h-4 cursor-pointer"
-                            />
-                            {op}
-                          </label>
-                        );
-                      })}
-                    </div>
-                    {Array.isArray(profile.publicosGosto) &&
-                      profile.publicosGosto.includes("Outros") && (
-                        <DebouncedInput
-                          type="text"
-                          placeholder="Especifique outros públicos de afinidade"
-                          value={profile.outrosPublicosGosto || ""}
-                          onChange={(val) =>
-                            setProfile({ ...profile, outrosPublicosGosto: val })
-                          }
-                          className="w-full mt-2 px-3 py-2 bg-white border border-soft rounded-lg text-xs focus:outline-none focus:border-sun-dark"
-                        />
-                      )}
-                  </div>
-                </div>
-              </div>
-
-              {/* SECTION 3.5: Serviços profissionais que ofereço */}
-              <div className="space-y-6 pt-4 border-t border-soft">
-                <h3 className="font-serif text-xl text-forest pb-2 border-b border-soft flex items-center gap-2">
-                  <span className="w-6 h-6 rounded-full bg-forest/10 text-forest text-xs flex items-center justify-center font-bold">
-                    3.5
-                  </span>
-                  Serviços profissionais que ofereço
-                </h3>
-                
-                <div className="flex flex-col gap-3 bg-warm/30 p-5 rounded-2xl border border-soft/60">
-                  <label className="text-xs font-bold uppercase tracking-wider text-forest/80 leading-relaxed">
-                    Selecione quais serviços você oferece e, se for o caso, marque se ele está disponível para orçamento acessível:
-                  </label>
-                  
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-2">
-                    {OPCOES_SERVICOS.map(op => {
-                      const currentOferecidos = Array.isArray(profile.servicosOferecidos) ? profile.servicosOferecidos : [];
-                      const currentAcessivel = Array.isArray(profile.servicosOrcamentoAcessivel) ? profile.servicosOrcamentoAcessivel : [];
-                      const isOferecido = currentOferecidos.includes(op);
-                      const isAcessivel = currentAcessivel.includes(op);
-
-                      return (
-                        <div key={`srv-edit-${op}`} className="p-4 bg-white rounded-xl border border-soft shadow-xs flex flex-col gap-2">
-                          <label className="flex items-center gap-2.5 text-sm font-semibold text-forest cursor-pointer select-none">
-                            <input
-                              type="checkbox"
-                              checked={isOferecido}
-                              onChange={() => {
-                                let nextOferecidos: string[];
-                                if (isOferecido) {
-                                  nextOferecidos = currentOferecidos.filter((v: string) => v !== op);
-                                } else {
-                                  nextOferecidos = [...currentOferecidos, op];
-                                }
-                                setProfile({ ...profile, servicosOferecidos: nextOferecidos });
-                              }}
-                              className="accent-forest rounded border-soft w-4.5 h-4.5 cursor-pointer"
-                            />
-                            {op === "Outros" ? "Outros: Especifique" : op}
-                          </label>
-                          {isOferecido && (
-                            <div className="pl-7 flex flex-col gap-2 animate-in fade-in slide-in-from-top-1 duration-200 border-t border-soft/40 pt-2">
-                              {op === "Outros" && (
-                                <DebouncedInput
-                                  type="text"
-                                  placeholder="Especifique outros serviços..."
-                                  value={profile.outrosServicos || ""}
-                                  onChange={(val) => setProfile({ ...profile, outrosServicos: val })}
-                                  className="w-full px-3 py-2 bg-warm/20 border border-soft rounded-lg text-xs focus:outline-none focus:border-sun-dark text-forest"
-                                />
-                              )}
-                              <label className="flex items-center gap-2 text-xs text-forest/70 cursor-pointer select-none font-medium">
-                                <input
-                                  type="checkbox"
-                                  checked={isAcessivel}
-                                  onChange={() => {
-                                    let nextAcessivel: string[];
-                                    if (isAcessivel) {
-                                      nextAcessivel = currentAcessivel.filter((v: string) => v !== op);
-                                    } else {
-                                      nextAcessivel = [...currentAcessivel, op];
-                                    }
-                                    setProfile({ ...profile, servicosOrcamentoAcessivel: nextAcessivel });
-                                  }}
-                                  className="accent-emerald-600 rounded border-soft w-4 h-4 cursor-pointer"
-                                />
-                                Disponibilizar para orçamento acessível
-                              </label>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-
-              {/* SECTION 4: Biografia e Motivação */}
-              <div className="space-y-6 pt-4 border-t border-soft">
-                <h3 className="font-serif text-xl text-forest pb-2 border-b border-soft flex items-center gap-2">
-                  <span className="w-6 h-6 rounded-full bg-forest/10 text-forest text-xs flex items-center justify-center font-bold">
-                    4
-                  </span>
-                  Apresentação, Biografia & Propósito como Associado
-                </h3>
-
-                <div className="flex flex-col gap-2">
-                  <label className="text-xs uppercase font-bold tracking-wider text-forest/60">
-                    Mini-currículo & Biografia clínica pública
-                  </label>
-                  <p className="text-[11px] text-forest/50 -mt-1 leading-relaxed">
-                    Este texto será visível em sua página de apresentação
-                    externa para pacientes interessados na rede.
-                  </p>
-                  <DebouncedTextArea
-                    value={profile.biografia || ""}
-                    onChange={(val) =>
-                      setProfile({ ...profile, biografia: val })
-                    }
-                    placeholder="Escreva um breve resumo da sua jornada, abordagem técnica, nichos principais de estudo e como é o estilo da sua conduta psicoterapêutica..."
-                    className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark resize-none h-44 text-sm leading-relaxed text-forest"
-                  />
-                </div>
-
-                <div className="flex flex-col gap-2 pt-2">
-                  <label className="text-xs uppercase font-bold tracking-wider text-forest/60">
-                    Porque faço parte desse projeto? (Minhas motivações
-                    associadas)
-                  </label>
-                  <DebouncedTextArea
-                    value={profile.motivacaoProjeto || ""}
-                    onChange={(val) =>
-                      setProfile({ ...profile, motivacaoProjeto: val })
-                    }
-                    placeholder="Conte o que impulsiona a sua associação ou parceria com o AcolheMente..."
-                    className="w-full mt-2 px-4 py-3 bg-warm/50 border border-soft rounded-xl focus:outline-none focus:border-sun-dark resize-none h-32 text-sm leading-relaxed text-forest"
-                  />
-                </div>
-              </div>
-
-              {/* SECTION 5: Página White-Label & Cartão Virtual (Plano Avançado) */}
-              <div className="space-y-6 pt-6 border-t border-soft">
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                  <h3 className="font-serif text-xl text-forest flex items-center gap-2">
-                    <span className="w-6 h-6 rounded-full bg-amber-500/10 text-amber-800 text-xs flex items-center justify-center font-bold">
-                      5
-                    </span>
-                    Página White-Label & Cartão Virtual na Internet (Plano Avançado)
-                  </h3>
-                  <span className={`text-[10px] font-extrabold uppercase px-3 py-1 rounded-full border ${profile.plano === 'avancado' ? 'bg-amber-100 text-amber-900 border-amber-300' : 'bg-slate-100 text-slate-700 border-slate-300'}`}>
-                    Plano: {profile.plano === 'avancado' ? 'Avançado 🚀' : profile.plano || 'Básico / Profissional'}
-                  </span>
-                </div>
-
-                {profile.plano !== 'avancado' ? (
-                  <div className="p-6 bg-gradient-to-br from-amber-50 to-warm/60 rounded-3xl border border-amber-200/80 space-y-4 text-center">
-                    <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center mx-auto shadow-xs">
-                      <Sparkles className="w-6 h-6" />
-                    </div>
-                    <h4 className="font-serif text-lg font-bold text-forest">
-                      Desbloqueie sua Página White-Label Exclusiva
-                    </h4>
-                    <p className="text-xs sm:text-sm text-forest/75 max-w-lg mx-auto leading-relaxed">
-                      Profissionais no <strong>Plano Avançado</strong> podem ter sua própria página profissional independente (Cartão Virtual na internet), sem menção ao Acolimente, com cores personalizadas, logotipo da empresa (ou CNPJ) e catálogo próprio de serviços com precificação livre para captação de clientes externos.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setProfile({ ...profile, plano: 'avancado' });
-                        alert("Parabéns! Seu perfil foi atualizado para o Plano Avançado. Agora você pode configurar sua página White-Label.");
-                      }}
-                      className="px-6 py-3 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-all shadow-md cursor-pointer inline-flex items-center gap-2"
-                    >
-                      <Sparkles className="w-4 h-4 text-sun" /> Ativar Plano Avançado / White-Label
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-6 bg-warm/30 p-6 rounded-3xl border border-soft">
-                    <div className="flex items-center justify-between p-4 bg-white rounded-2xl border border-soft shadow-2xs">
-                      <div>
-                        <h4 className="font-bold text-sm text-forest">Ativar Página White-Label Independente</h4>
-                        <p className="text-xs text-forest/60">Oculta o branding do AcolheMente e exibe sua marca/CNPJ e cores personalizadas.</p>
-                      </div>
-                      <label className="relative inline-flex items-center cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={profile.whiteLabelEnabled === true}
-                          onChange={(e) => setProfile({ ...profile, whiteLabelEnabled: e.target.checked })}
-                          className="sr-only peer"
-                        />
-                        <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
-                      </label>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                      <div>
-                        <label className="text-xs font-bold text-forest mb-1 block">Cor de Fundo (Background)</label>
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="color"
-                            value={profile.whiteLabelConfig?.backgroundColor || "#F8FAFC"}
-                            onChange={(e) => setProfile({
-                              ...profile,
-                              whiteLabelConfig: { ...(profile.whiteLabelConfig || {}), backgroundColor: e.target.value }
-                            })}
-                            className="w-10 h-10 rounded-xl border border-soft cursor-pointer"
-                          />
-                          <input
-                            type="text"
-                            value={profile.whiteLabelConfig?.backgroundColor || "#F8FAFC"}
-                            onChange={(e) => setProfile({
-                              ...profile,
-                              whiteLabelConfig: { ...(profile.whiteLabelConfig || {}), backgroundColor: e.target.value }
-                            })}
-                            className="flex-1 text-xs font-mono bg-white border border-soft px-3 py-2 rounded-xl"
-                          />
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="text-xs font-bold text-forest mb-1 block">Cor Primária (Destaques)</label>
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="color"
-                            value={profile.whiteLabelConfig?.primaryColor || "#0F766E"}
-                            onChange={(e) => setProfile({
-                              ...profile,
-                              whiteLabelConfig: { ...(profile.whiteLabelConfig || {}), primaryColor: e.target.value }
-                            })}
-                            className="w-10 h-10 rounded-xl border border-soft cursor-pointer"
-                          />
-                          <input
-                            type="text"
-                            value={profile.whiteLabelConfig?.primaryColor || "#0F766E"}
-                            onChange={(e) => setProfile({
-                              ...profile,
-                              whiteLabelConfig: { ...(profile.whiteLabelConfig || {}), primaryColor: e.target.value }
-                            })}
-                            className="flex-1 text-xs font-mono bg-white border border-soft px-3 py-2 rounded-xl"
-                          />
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="text-xs font-bold text-forest mb-1 block">Cor Secundária</label>
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="color"
-                            value={profile.whiteLabelConfig?.secondaryColor || "#06B6D4"}
-                            onChange={(e) => setProfile({
-                              ...profile,
-                              whiteLabelConfig: { ...(profile.whiteLabelConfig || {}), secondaryColor: e.target.value }
-                            })}
-                            className="w-10 h-10 rounded-xl border border-soft cursor-pointer"
-                          />
-                          <input
-                            type="text"
-                            value={profile.whiteLabelConfig?.secondaryColor || "#06B6D4"}
-                            onChange={(e) => setProfile({
-                              ...profile,
-                              whiteLabelConfig: { ...(profile.whiteLabelConfig || {}), secondaryColor: e.target.value }
-                            })}
-                            className="flex-1 text-xs font-mono bg-white border border-soft px-3 py-2 rounded-xl"
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="space-y-3 pt-2 border-t border-soft/80">
-                      <h4 className="font-bold text-xs uppercase tracking-wider text-forest">Dados Corporativos & CNPJ (Opcional)</h4>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
-                          <label className="text-[11px] font-semibold text-forest block mb-1">Razão Social / Nome da Empresa</label>
-                          <input
-                            type="text"
-                            value={profile.companyData?.razaoSocial || ""}
-                            onChange={(e) => setProfile({
-                              ...profile,
-                              companyData: { ...(profile.companyData || {}), razaoSocial: e.target.value }
-                            })}
-                            placeholder="Ex: Consultório de Psicologia Ltda"
-                            className="w-full text-xs bg-white border border-soft px-3 py-2.5 rounded-xl"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="text-[11px] font-semibold text-forest block mb-1">CNPJ</label>
-                          <input
-                            type="text"
-                            value={profile.companyData?.cnpj || ""}
-                            onChange={(e) => setProfile({
-                              ...profile,
-                              companyData: { ...(profile.companyData || {}), cnpj: e.target.value }
-                            })}
-                            placeholder="00.000.000/0001-00"
-                            className="w-full text-xs bg-white border border-soft px-3 py-2.5 rounded-xl font-mono"
-                          />
-                        </div>
-
-                        <div className="sm:col-span-2">
-                          <label className="text-[11px] font-semibold text-forest block mb-1">URL do Logotipo da Empresa (Logo URL)</label>
-                          <input
-                            type="url"
-                            value={profile.companyData?.logoEmpresaUrl || ""}
-                            onChange={(e) => setProfile({
-                              ...profile,
-                              companyData: { ...(profile.companyData || {}), logoEmpresaUrl: e.target.value }
-                            })}
-                            placeholder="https://exemplo.com/logo.png"
-                            className="w-full text-xs bg-white border border-soft px-3 py-2.5 rounded-xl font-mono"
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="space-y-3 pt-2 border-t border-soft/80">
-                      <div className="flex items-center justify-between">
-                        <h4 className="font-bold text-xs uppercase tracking-wider text-forest">Serviços e Precificação Particular</h4>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const list = Array.isArray(profile.customServices) ? [...profile.customServices] : [];
-                            list.push({ title: "Psicoterapia Individual", description: "Sessão particular de atendimento online ou presencial.", duration: "50 min", price: "150,00" });
-                            setProfile({ ...profile, customServices: list });
-                          }}
-                          className="px-3 py-1 bg-forest text-white text-xs font-bold rounded-lg hover:bg-forest/90 transition-colors cursor-pointer"
-                        >
-                          + Adicionar Serviço
-                        </button>
-                      </div>
-
-                      <div className="space-y-2">
-                        {(!profile.customServices || profile.customServices.length === 0) ? (
-                          <p className="text-xs text-forest/60 italic">Nenhum serviço customizado cadastrado. Clique no botão acima para adicionar.</p>
-                        ) : (
-                          profile.customServices.map((srv: any, idx: number) => (
-                            <div key={`srv-item-${idx}`} className="p-3 bg-white rounded-2xl border border-soft space-y-2 relative">
-                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                                <input
-                                  type="text"
-                                  value={srv.title || ""}
-                                  onChange={(e) => {
-                                    const list = [...profile.customServices];
-                                    list[idx] = { ...list[idx], title: e.target.value };
-                                    setProfile({ ...profile, customServices: list });
-                                  }}
-                                  placeholder="Nome do Serviço"
-                                  className="text-xs bg-warm/40 border border-soft px-3 py-2 rounded-xl font-semibold"
-                                />
-                                <input
-                                  type="text"
-                                  value={srv.duration || ""}
-                                  onChange={(e) => {
-                                    const list = [...profile.customServices];
-                                    list[idx] = { ...list[idx], duration: e.target.value };
-                                    setProfile({ ...profile, customServices: list });
-                                  }}
-                                  placeholder="Duração (ex: 50 min)"
-                                  className="text-xs bg-warm/40 border border-soft px-3 py-2 rounded-xl"
-                                />
-                                <input
-                                  type="text"
-                                  value={srv.price || ""}
-                                  onChange={(e) => {
-                                    const list = [...profile.customServices];
-                                    list[idx] = { ...list[idx], price: e.target.value };
-                                    setProfile({ ...profile, customServices: list });
-                                  }}
-                                  placeholder="Preço (ex: 150,00)"
-                                  className="text-xs bg-warm/40 border border-soft px-3 py-2 rounded-xl font-bold text-emerald-800"
-                                />
-                              </div>
-                              <textarea
-                                rows={2}
-                                value={srv.description || ""}
-                                onChange={(e) => {
-                                  const list = [...profile.customServices];
-                                  list[idx] = { ...list[idx], description: e.target.value };
-                                  setProfile({ ...profile, customServices: list });
-                                }}
-                                placeholder="Descrição detalhada do serviço..."
-                                className="w-full text-xs bg-warm/40 border border-soft px-3 py-2 rounded-xl resize-none"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const list = [...profile.customServices];
-                                  list.splice(idx, 1);
-                                  setProfile({ ...profile, customServices: list });
-                                }}
-                                className="absolute top-3 right-3 text-red-500 hover:text-red-700 p-1"
-                                title="Remover Serviço"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-6 mt-4 border-t border-soft">
-                <button
-                  onClick={() =>
-                    handleUpdateSelfProfile({
-                      name: profile.name,
-                      profissao: profile.profissao || "",
-                      telefone: profile.telefone,
-                      crp: profile.crp,
-                      cpf: profile.cpf,
-                      genero: profile.genero || "",
-                      deficiencia: profile.deficiencia || "",
-                      especialidade: profile.especialidade,
-                      horasDisponiveis: profile.horasDisponiveis,
-                      cidade: profile.cidade,
-                      uf: profile.uf,
-                      biografia: profile.biografia,
-                      motivacaoProjeto: profile.motivacaoProjeto,
-                      photoUrl: profile.photoUrl || "",
-                      pixKey: profile.pixKey,
-                      anoFormacao: profile.anoFormacao || "",
-                      abordagem: profile.abordagem || "",
-                      publicosExperiencia: profile.publicosExperiencia || [],
-                      publicosGosto: profile.publicosGosto || [],
-                      outrosPublicosExperiencia:
-                        profile.outrosPublicosExperiencia || "",
-                      outrosPublicosGosto: profile.outrosPublicosGosto || "",
-                      servicosOferecidos: profile.servicosOferecidos || [],
-                      servicosOrcamentoAcessivel: profile.servicosOrcamentoAcessivel || [],
-                      outrosServicos: profile.outrosServicos || "",
-                      plano: profile.plano || 'basico',
-                      whiteLabelEnabled: profile.whiteLabelEnabled || false,
-                      whiteLabelConfig: profile.whiteLabelConfig || { primaryColor: "#0F766E", secondaryColor: "#06B6D4", backgroundColor: "#F8FAFC" },
-                      companyData: profile.companyData || { razaoSocial: "", cnpj: "", enderecoEmpresa: "", telefoneEmpresa: "", emailEmpresa: "", logoEmpresaUrl: "" },
-                      customServices: profile.customServices || [],
-                    })
-                  }
-                  className="px-6 py-4 bg-forest text-white rounded-2xl font-bold uppercase tracking-wider text-xs hover:bg-forest/90 transition-all shadow-sm shrink-0 hover:shadow"
-                >
-                  Salvar Minha Ficha Cadastral e Perfil
-                </button>
-
-                {/* Share Landingpage Preview Box */}
-                {profile.uid &&
-                  (() => {
-                    const shareLink = `${window.location.origin}?prof=${profile.uid}`;
-                    const profTitulo = profile.profissao || (profile.especialidade ? `Profissional - ${profile.especialidade}` : "Profissional de Saúde");
-                    const shareTitle = `${profile.name} - ${profTitulo}`;
-                    const shareText = `Conheça meu perfil profissional no Projeto AcolheMente Saúde (${profTitulo}): ${shareLink}`;
-
-                    return (
-                      <div className="bg-warm/60 border border-soft rounded-2xl p-4 flex flex-col gap-2.5 text-xs w-full sm:max-w-lg">
-                        <div className="flex items-center justify-between gap-2 border-b border-soft/50 pb-2">
-                          <div>
-                            <span className="font-bold text-forest block text-sm">{profile.name}</span>
-                            <span className="text-[11px] text-forest/70 font-medium">{profTitulo}</span>
-                          </div>
-                          <span className="px-2.5 py-0.5 bg-sun text-forest font-bold text-[10px] rounded-md uppercase tracking-wide">
-                            Perfil Público
-                          </span>
-                        </div>
-
-                        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-1">
-                          <div className="truncate text-forest/70 max-w-[220px] font-mono select-all shrink leading-tight">
-                            {shareLink}
-                          </div>
-                          <div className="flex items-center gap-2 shrink-0">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                navigator.clipboard.writeText(shareLink);
-                                alert(`Link do perfil de ${profile.name} (${profTitulo}) copiado com sucesso!`);
-                              }}
-                              className="px-3 py-2 bg-warm hover:bg-soft text-forest font-bold text-[10px] uppercase rounded-xl transition-colors border border-soft shadow-xs cursor-pointer"
-                            >
-                              Copiar Link
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (navigator.share) {
-                                  navigator.share({
-                                    title: shareTitle,
-                                    text: shareText,
-                                    url: shareLink,
-                                  }).catch(() => {});
-                                } else {
-                                  navigator.clipboard.writeText(`${shareTitle}\n${shareText}`).then(() => {
-                                    alert("Dados do perfil e link copiados com sucesso!");
-                                  });
-                                }
-                              }}
-                              className="px-3 py-2 bg-sun-dark text-forest font-bold text-[10px] uppercase rounded-xl hover:bg-sun-dark/85 transition-colors shadow-xs flex items-center gap-1 cursor-pointer"
-                            >
-                              <Share2 className="w-3.5 h-3.5" />
-                              Compartilhar
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })()}
-              </div>
-            </div>
-          </div>
-        </div>
+        <ProfissionalMeuPerfilView
+          profile={profile}
+          setProfile={setProfile}
+          user={user}
+          isAutoCroppingPhoto={isAutoCroppingPhoto}
+          onSelectPhotoFile={(file) => handlePhotoFileSelected(file)}
+          onOpenPhotoCropModal={(photoUrl) => {
+            setRawPhotoToCrop(photoUrl);
+            setPhotoCropModalOpen(true);
+          }}
+          onAutoCenterCurrentPhoto={handleAutoCenterCurrentPhoto}
+          onOpenChangeEmailModal={() => {
+            setNewEmailInput("");
+            setConfirmEmailInput("");
+            setCurrentPasswordInput("");
+            setChangeEmailError("");
+            setChangeEmailSuccess("");
+            setShowChangeEmailModal(true);
+          }}
+          onResetPassword={handleUserSelfResetPassword}
+          onOpenCreatePasswordModal={() => {
+            setNewDirectPassword("");
+            setConfirmDirectPassword("");
+            setDirectPasswordError("");
+            setShowCreatePasswordModal(true);
+          }}
+          onOpenGerenciarCotaModal={handleOpenGerenciarCotaModal}
+          onSaveProfile={handleUpdateSelfProfile}
+          showToast={showToast}
+          parseMaxHorasDisponiveis={parseMaxHorasDisponiveis}
+          parseHorasNumber={parseHorasNumber}
+          parseDateSafely={parseDateSafely}
+          formatDateSafely={formatDateSafely}
+        />
       ) : currentRole === "profissional" && activeTab === "pagamentosProfissional" ? (
         <div className="flex-1 overflow-auto p-6 md:p-8 flex flex-col gap-8 slide-up font-sans">
           <div className="max-w-4xl w-full mx-auto space-y-8">
@@ -11839,7 +10984,8 @@ export function DashboardView({
                 const url = `https://wa.me/${full}${text ? `?text=${encodeURIComponent(text)}` : ""}`;
                 window.open(url, "_blank");
               }}
-              onNavigateToAgenda={() => {
+              onNavigateToAgenda={(pacId) => {
+                if (pacId) setAgendaPreselectedPacienteId(pacId);
                 setActiveTab("agenda");
               }}
             />
@@ -14615,7 +13761,32 @@ export function DashboardView({
           profile={profile}
           user={user}
           showToast={showToast}
-          onNavigateToAgenda={() => {
+          onNavigateToAgenda={(pacId) => {
+            if (pacId) setAgendaPreselectedPacienteId(pacId);
+            setActiveTab("agenda");
+          }}
+        />
+      )}
+
+      {/* Ficha de Bordo Unificada do Paciente Corporativo (Aberta via Agenda ou Faturamento Consolidado) */}
+      {selectedFichaCorporativa && (
+        <FichaPacienteExternoModal
+          paciente={selectedFichaCorporativa}
+          modoFicha="corporativo"
+          collectionName="triagem_corporativa"
+          currentRole={currentRole}
+          onClose={() => setSelectedFichaCorporativa(null)}
+          onUpdatePaciente={(updated) => {
+            setSelectedFichaCorporativa(updated);
+            setFichasCorporativas((prev) =>
+              prev.map((f) => (f.id === updated.id ? { ...f, ...updated } : f))
+            );
+          }}
+          profile={profile}
+          user={user}
+          showToast={showToast}
+          onNavigateToAgenda={(pacId) => {
+            if (pacId) setAgendaPreselectedPacienteId(pacId);
             setActiveTab("agenda");
           }}
         />
@@ -14652,7 +13823,8 @@ export function DashboardView({
           profile={profile}
           user={user}
           showToast={showToast}
-          onNavigateToAgenda={() => {
+          onNavigateToAgenda={(pacId) => {
+            if (pacId) setAgendaPreselectedPacienteId(pacId);
             setActiveTab("agenda");
           }}
         />
@@ -16311,9 +15483,40 @@ export function DashboardView({
                     await handleUpdateAcolhimentoProperty(selectedCard.id, "historicoSessoes", novasSessoes);
                   }}
                   perfilFaturamento={(selectedCard as any).perfilFaturamento || "PF"}
+                  perfilFaturamentoId={(selectedCard as any).perfilFaturamentoId}
                   onUpdatePerfilFaturamento={async (novoPerfil) => {
                     (selectedCard as any).perfilFaturamento = novoPerfil;
                     await handleUpdateAcolhimentoProperty(selectedCard.id, "perfilFaturamento", novoPerfil);
+                  }}
+                  onUpdatePerfilFaturamentoId={async (novoId, via) => {
+                    (selectedCard as any).perfilFaturamentoId = novoId;
+                    (selectedCard as any).perfilFaturamento = via;
+                    await updateDoc(doc(db, "acolhimentos", selectedCard.id), {
+                      perfilFaturamentoId: novoId,
+                      perfilFaturamento: via,
+                      updatedAt: serverTimestamp(),
+                    });
+                  }}
+                  onSavePerfisFaturamento={async (novosPerfis) => {
+                    const targetUid = currentRole === "profissional" ? user?.uid : (selectedCard.profissionalId || user?.uid);
+                    if (!targetUid) return;
+                    const syncFields = extractLegacySyncFields(
+                      novosPerfis,
+                      profile?.cpf,
+                      profile?.chavePix || profile?.pixKey
+                    );
+                    await updateDoc(doc(db, "users", targetUid), {
+                      ...syncFields,
+                      updatedAt: serverTimestamp(),
+                    });
+                    if (currentRole === "profissional") {
+                      setProfile((prev: any) => ({ ...prev, ...syncFields }));
+                    }
+                    setAllUsers((prev) =>
+                      prev.map((u) =>
+                        u.uid === targetUid || u.id === targetUid ? { ...u, ...syncFields } : u
+                      )
+                    );
                   }}
                   onSaveDadosPJ={async (novosDadosPJ) => {
                     const targetUid = currentRole === "profissional" ? user?.uid : (selectedCard.profissionalId || user?.uid);
@@ -16339,11 +15542,13 @@ export function DashboardView({
                           crp: profile?.crp,
                           cpf: profile?.cpf,
                           especialidade: profile?.especialidade,
-                          chavePix: profile?.chavePix,
+                          chavePix: profile?.chavePix || profile?.pixKey,
+                          pixKey: profile?.pixKey || profile?.chavePix,
                           email: profile?.email || user?.email,
                           telefone: profile?.telefone,
                           dadosPJ: profile?.dadosPJ || (profile as any)?.perfilPJ,
                           faturamentoPadrao: profile?.faturamentoPadrao || "PF",
+                          perfisFaturamento: profile?.perfisFaturamento,
                         };
                       }
                       if (selectedCard.profissionalId) {
@@ -16358,11 +15563,13 @@ export function DashboardView({
                             crp: matchedProf.crp,
                             cpf: matchedProf.cpf,
                             especialidade: matchedProf.especialidade,
-                            chavePix: matchedProf.chavePix,
+                            chavePix: matchedProf.chavePix || (matchedProf as any).pixKey,
+                            pixKey: (matchedProf as any).pixKey || matchedProf.chavePix,
                             email: matchedProf.email,
                             telefone: matchedProf.telefone,
                             dadosPJ: (matchedProf as any).dadosPJ || (matchedProf as any).perfilPJ,
                             faturamentoPadrao: (matchedProf as any).faturamentoPadrao || "PF",
+                            perfisFaturamento: (matchedProf as any).perfisFaturamento,
                           };
                         }
                       }
@@ -16371,8 +15578,9 @@ export function DashboardView({
                         crp: profile?.crp,
                         cpf: profile?.cpf,
                         especialidade: profile?.especialidade,
-                        chavePix: profile?.chavePix,
+                        chavePix: profile?.chavePix || profile?.pixKey,
                         dadosPJ: profile?.dadosPJ || (profile as any)?.perfilPJ,
+                        perfisFaturamento: profile?.perfisFaturamento,
                       };
                     })()
                   }
@@ -23732,14 +22940,36 @@ export function DashboardView({
 
                 <div>
                   <label className="block font-bold text-forest mb-1">CNPJ *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="00.000.000/0001-00"
-                    value={novaEmpresaForm.cnpj}
-                    onChange={(e) => setNovaEmpresaForm({ ...novaEmpresaForm, cnpj: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-warm/40 border border-soft rounded-xl focus:border-forest outline-none text-xs text-forest font-mono"
-                  />
+                  {(() => {
+                    const digits = novaEmpresaForm.cnpj.replace(/\D/g, "");
+                    const valid = isValidCnpj(novaEmpresaForm.cnpj);
+                    const err = digits.length === 14 ? getCnpjValidationError(novaEmpresaForm.cnpj, true) : null;
+                    return (
+                      <>
+                        <input
+                          type="text"
+                          required
+                          inputMode="numeric"
+                          maxLength={18}
+                          placeholder="00.000.000/0001-00"
+                          value={novaEmpresaForm.cnpj}
+                          onChange={(e) => setNovaEmpresaForm({ ...novaEmpresaForm, cnpj: formatCnpj(e.target.value) })}
+                          className={`w-full px-3.5 py-2.5 border rounded-xl outline-none text-xs text-forest font-mono tabular-nums transition-colors ${
+                            err
+                              ? "bg-rose-50/50 border-rose-400 focus:border-rose-500"
+                              : valid
+                              ? "bg-emerald-50/30 border-emerald-400 focus:border-emerald-600"
+                              : "bg-warm/40 border-soft focus:border-forest"
+                          }`}
+                        />
+                        {err ? (
+                          <span className="text-[11px] text-rose-600 font-medium block mt-1">{err}</span>
+                        ) : valid ? (
+                          <span className="text-[11px] text-emerald-700 font-medium block mt-1">CNPJ válido</span>
+                        ) : null}
+                      </>
+                    );
+                  })()}
                 </div>
 
                 <div>
@@ -24529,6 +23759,26 @@ export function DashboardView({
             )}
           </div>
         </div>
+      )}
+
+      {/* Modal: Ficha de Bordo da Empresa Cliente B2B (Prestação de Serviços do Profissional) */}
+      {selectedEmpresaB2B && (
+        <FichaEmpresaProfissionalModal
+          empresa={selectedEmpresaB2B}
+          onClose={() => setSelectedEmpresaB2B(null)}
+          onUpdateEmpresa={(updated) => {
+            setSelectedEmpresaB2B(updated);
+            setEmpresasProfissionalB2B((prev) =>
+              prev.map((item) => (item.id === updated.id ? updated : item))
+            );
+          }}
+          profile={profile}
+          user={user}
+          onUpdateProfileLocal={(patch) =>
+            setProfile((prev: any) => (prev ? { ...prev, ...patch } : prev))
+          }
+          showToast={showToast}
+        />
       )}
     </div>
   );

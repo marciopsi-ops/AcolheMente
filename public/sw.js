@@ -1,4 +1,4 @@
-const CACHE_NAME = 'acolhemente-pwa-v1';
+const CACHE_NAME = 'acolhemente-pwa-v2';
 const PRECACHE_ASSETS = [
   '/',
   '/index.html',
@@ -39,9 +39,13 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // Ignorar requisições não-GET e APIs de terceiros como Firebase/Firestore/Analytics
+  // Ignorar requisições não-GET, rotas de API, módulos de dev do Vite e APIs de terceiros como Firebase/Firestore/Analytics
   if (
     event.request.method !== 'GET' ||
+    url.pathname.startsWith('/api/') ||
+    url.pathname.startsWith('/src/') ||
+    url.pathname.startsWith('/node_modules/') ||
+    url.pathname.startsWith('/@') ||
     url.hostname.includes('firestore.googleapis.com') ||
     url.hostname.includes('identitytoolkit.googleapis.com') ||
     url.hostname.includes('google')

@@ -90,3 +90,69 @@ export function formatProfessionalName(name: string | null | undefined): string 
 
   return formattedWords.join(" ");
 }
+
+/**
+ * Aplica máscara progressiva de CNPJ no padrão oficial 00.000.000/0000-00.
+ */
+export function formatCnpj(value: string | null | undefined): string {
+  if (!value) return "";
+  const digits = String(value).replace(/\D/g, "").slice(0, 14);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 5) return `${digits.slice(0, 2)}.${digits.slice(2)}`;
+  if (digits.length <= 8) {
+    return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5)}`;
+  }
+  if (digits.length <= 12) {
+    return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8)}`;
+  }
+  return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8, 12)}-${digits.slice(12)}`;
+}
+
+/**
+ * Valida formato (14 dígitos), sequências repetidas inválidas e os dois dígitos verificadores (Módulo 11) do CNPJ.
+ */
+export function isValidCnpj(value: string | null | undefined): boolean {
+  if (!value) return false;
+  const digits = String(value).replace(/\D/g, "");
+  if (digits.length !== 14) return false;
+  if (/^(\d)\1{13}$/.test(digits)) return false;
+
+  const weights1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+  let sum1 = 0;
+  for (let i = 0; i < 12; i++) {
+    sum1 += Number(digits[i]) * weights1[i];
+  }
+  const rem1 = sum1 % 11;
+  const checkDigit1 = rem1 < 2 ? 0 : 11 - rem1;
+  if (checkDigit1 !== Number(digits[12])) return false;
+
+  const weights2 = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+  let sum2 = 0;
+  for (let i = 0; i < 13; i++) {
+    sum2 += Number(digits[i]) * weights2[i];
+  }
+  const rem2 = sum2 % 11;
+  const checkDigit2 = rem2 < 2 ? 0 : 11 - rem2;
+  return checkDigit2 === Number(digits[13]);
+}
+
+/**
+ * Retorna mensagem de erro amigável para validação de CNPJ ou null quando válido.
+ */
+export function getCnpjValidationError(
+  value: string | null | undefined,
+  required = true
+): string | null {
+  const digits = String(value || "").replace(/\D/g, "");
+  if (digits.length === 0) {
+    return required ? "Informe o CNPJ da empresa." : null;
+  }
+  if (digits.length < 14) {
+    return "Formato incompleto: digite os 14 números do CNPJ (00.000.000/0000-00).";
+  }
+  if (!isValidCnpj(digits)) {
+    return "CNPJ inválido: verifique os dígitos informados.";
+  }
+  return null;
+}
+

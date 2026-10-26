@@ -14,10 +14,22 @@ export default defineConfig(({mode}) => {
       alias: {
         '@': path.resolve(__dirname, '.'),
       },
-      dedupe: ['react', 'react-dom'],
+      dedupe: ['react', 'react-dom', 'react/jsx-runtime', 'react/jsx-dev-runtime'],
     },
     optimizeDeps: {
-      include: ['react', 'react-dom', 'firebase/app', 'firebase/auth', 'firebase/firestore'],
+      include: [
+        'react',
+        'react-dom',
+        'react-dom/client',
+        'react/jsx-runtime',
+        'react/jsx-dev-runtime',
+        'lucide-react',
+        'motion/react',
+        'firebase/app',
+        'firebase/auth',
+        'firebase/firestore',
+        'xlsx',
+      ],
     },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
