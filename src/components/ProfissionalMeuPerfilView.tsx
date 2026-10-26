@@ -384,7 +384,7 @@ export function ProfissionalMeuPerfilView({
     {
       id: "faturamento",
       label: "Faturamento & PIX",
-      shortDesc: "Chave PIX padrão e múltiplas contas de recebimento (CPF, Caixa e CNPJ)",
+      shortDesc: "Perfis PF e PJ integrados em Pacientes (Acessíveis, Corporativos, Externos) e Empresas",
       Icon: Wallet,
       missingCount: missingFaturamento,
     },
@@ -415,13 +415,58 @@ export function ProfissionalMeuPerfilView({
     setIsSaving(true);
     try {
       const pixResolved = merged.pixKey ?? merged.chavePix ?? "";
+      const formattedWlCnpj = merged.companyData?.cnpj?.trim()
+        ? formatCnpj(merged.companyData.cnpj)
+        : "";
+      const companyDataNormalized = merged.companyData
+        ? {
+            ...merged.companyData,
+            cnpj: formattedWlCnpj,
+          }
+        : {
+            razaoSocial: "",
+            cnpj: "",
+            enderecoEmpresa: "",
+            telefoneEmpresa: "",
+            emailEmpresa: "",
+            logoEmpresaUrl: "",
+          };
+
+      const normalizedPerfis = normalizePerfisFaturamento({
+        ...merged,
+        chavePix: pixResolved,
+        pixKey: pixResolved,
+        companyData: companyDataNormalized,
+      });
+
+      const primaryPfIdx = normalizedPerfis.findIndex(
+        (p) => p.via === "PF" && p.subtipo === "conta_cpf"
+      );
+      const syncedPerfis = normalizedPerfis.map((p, idx) => {
+        if (idx === primaryPfIdx) {
+          return {
+            ...p,
+            cpf: merged.cpf?.trim() ? merged.cpf.trim() : p.cpf || "",
+            chavePix: pixResolved?.trim() ? pixResolved.trim() : p.chavePix || "",
+            titularNome: merged.name?.trim() || p.titularNome || "",
+          };
+        }
+        return p;
+      });
+
+      const syncFields = extractLegacySyncFields(
+        syncedPerfis,
+        merged.cpf,
+        pixResolved
+      );
+      updateProfileField(syncFields);
 
       await onSaveProfile({
         name: merged.name,
         profissao: merged.profissao || "",
         telefone: merged.telefone,
         crp: merged.crp,
-        cpf: merged.cpf,
+        cpf: syncFields.cpf,
         dataAdmissao: merged.dataAdmissao,
         vencimentoPagamento: merged.vencimentoPagamento,
         genero: merged.genero || "",
@@ -433,11 +478,11 @@ export function ProfissionalMeuPerfilView({
         biografia: merged.biografia,
         motivacaoProjeto: merged.motivacaoProjeto,
         photoUrl: merged.photoUrl || "",
-        pixKey: pixResolved,
-        chavePix: pixResolved,
-        perfisFaturamento: merged.perfisFaturamento || [],
-        dadosPJ: merged.dadosPJ || {},
-        faturamentoPadrao: merged.faturamentoPadrao || "PF",
+        pixKey: syncFields.pixKey,
+        chavePix: syncFields.chavePix,
+        perfisFaturamento: syncFields.perfisFaturamento,
+        dadosPJ: syncFields.dadosPJ,
+        faturamentoPadrao: syncFields.faturamentoPadrao,
         anoFormacao: merged.anoFormacao || "",
         abordagem: merged.abordagem || "",
         publicosExperiencia: merged.publicosExperiencia || [],
@@ -454,21 +499,7 @@ export function ProfissionalMeuPerfilView({
           secondaryColor: "#06B6D4",
           backgroundColor: "#F8FAFC",
         },
-        companyData: merged.companyData
-          ? {
-              ...merged.companyData,
-              cnpj: merged.companyData.cnpj?.trim()
-                ? formatCnpj(merged.companyData.cnpj)
-                : "",
-            }
-          : {
-              razaoSocial: "",
-              cnpj: "",
-              enderecoEmpresa: "",
-              telefoneEmpresa: "",
-              emailEmpresa: "",
-              logoEmpresaUrl: "",
-            },
+        companyData: companyDataNormalized,
         customServices: merged.customServices || [],
         bioCurta: merged.bioCurta || "",
         modalidadeAtendimento: merged.modalidadeAtendimento || "online",
@@ -1641,7 +1672,7 @@ export function ProfissionalMeuPerfilView({
                     Carteira de Perfis de Faturamento & Contas de Recebimento
                   </h3>
                   <p className="text-xs text-forest/65 mt-0.5 leading-relaxed">
-                    Cadastre quantos perfis desejar por via — múltiplas contas <strong>CPF</strong>, <strong>Caixa em Dinheiro Físico</strong> (com opção de não declarar no IRPF) e múltiplas empresas <strong>CNPJ</strong>. Todos ficam disponíveis na Ficha de Bordo dos Pacientes, Empresas e no Dashboard Financeiro.
+                    Cadastre quantos perfis desejar por via — múltiplas contas <strong>CPF (PF)</strong>, <strong>Caixa em Dinheiro Físico</strong> (com opção de não declarar no IRPF) e múltiplas empresas <strong>CNPJ (PJ)</strong>. Todos ficam integrados automaticamente em <strong>Meus Pacientes</strong> (Valores Acessíveis, Corporativos e Externos), <strong>Contratos Terapêuticos</strong>, <strong>Empresas (B2B)</strong> e <strong>Faturamento Consolidado</strong>.
                   </p>
                 </div>
 

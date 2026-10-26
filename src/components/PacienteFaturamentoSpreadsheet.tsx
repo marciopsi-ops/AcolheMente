@@ -75,6 +75,7 @@ export interface ProfissionalLogadoFaturamento {
   email?: string;
   telefone?: string;
   dadosPJ?: DadosPessoaJuridica;
+  companyData?: any;
   faturamentoPadrao?: "PF" | "PJ";
   perfisFaturamento?: PerfilFaturamentoItem[];
 }
@@ -176,7 +177,13 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
 
   useEffect(() => {
     setPerfisLocaisOverride(null);
-  }, [profissionalLogado?.perfisFaturamento, profissionalLogado?.dadosPJ, profissionalLogado?.cpf, profissionalLogado?.chavePix]);
+  }, [
+    profissionalLogado?.perfisFaturamento,
+    profissionalLogado?.dadosPJ,
+    profissionalLogado?.companyData,
+    profissionalLogado?.cpf,
+    profissionalLogado?.chavePix,
+  ]);
 
   const listaPerfis = useMemo(() => {
     if (perfisLocaisOverride && perfisLocaisOverride.length > 0) {

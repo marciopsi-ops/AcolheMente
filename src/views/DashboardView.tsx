@@ -210,7 +210,14 @@ import { PerfisFaturamentoPanel } from "../components/PerfisFaturamentoManagerMo
 import { ProfissionalEmpresasB2BView } from "../components/ProfissionalEmpresasB2BView";
 import { FichaEmpresaProfissionalModal } from "../components/FichaEmpresaProfissionalModal";
 import { EmpresaClienteB2B } from "../types/empresaB2B";
-import { normalizePerfisFaturamento, extractLegacySyncFields } from "../types/faturamento";
+import {
+  normalizePerfisFaturamento,
+  extractLegacySyncFields,
+  resolvePerfilFaturamentoAtivo,
+  formatPerfilCurtoLabel,
+  formatPerfilSelectOption,
+  getPerfilDocumentoCurto,
+} from "../types/faturamento";
 
 const safeLocalStorage = {
   getItem: (key: string): string | null => {
@@ -1306,6 +1313,7 @@ export function DashboardView({
 
   // Estados de Expansão/Minimização para Cards de Pacientes (Opção 1)
   const [pacienteSearchTerm, setPacienteSearchTerm] = useState("");
+  const [filtroPerfilAcessiveis, setFiltroPerfilAcessiveis] = useState<string>("todos");
   const [expandedPacientes, setExpandedPacientes] = useState<Record<string, boolean>>({});
   const toggleExpandPaciente = (id: string) => {
     setExpandedPacientes((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -2067,6 +2075,7 @@ export function DashboardView({
   const [pacienteExternoSearchTerm, setPacienteExternoSearchTerm] = useState("");
   const [filtroStatusExterno, setFiltroStatusExterno] = useState<"ativos" | "inativos">("ativos");
   const [subFiltroInativo, setSubFiltroInativo] = useState<"todos" | "alta" | "pausa" | "desligado">("todos");
+  const [filtroPerfilExternos, setFiltroPerfilExternos] = useState<string>("todos");
   const [showModalNovoPacienteExterno, setShowModalNovoPacienteExterno] = useState(false);
   const [novoExtNome, setNovoExtNome] = useState("");
   const [novoExtTelefone, setNovoExtTelefone] = useState("");
@@ -2074,6 +2083,7 @@ export function DashboardView({
   const [novoExtCpf, setNovoExtCpf] = useState("");
   const [novoExtDataNasc, setNovoExtDataNasc] = useState("");
   const [novoExtValor, setNovoExtValor] = useState("120");
+  const [novoExtPerfilId, setNovoExtPerfilId] = useState<string>("");
   const [novoExtObs, setNovoExtObs] = useState("");
   const [isSalvandoExternoDashboard, setIsSalvandoExternoDashboard] = useState(false);
   const [copiouLinkExterno, setCopiouLinkExterno] = useState(false);
@@ -9006,6 +9016,8 @@ export function DashboardView({
                   );
                 })()}
                 dadosPJ={profile?.dadosPJ || (profile as any)?.perfilPJ}
+                companyData={profile?.companyData}
+                faturamentoPadrao={profile?.faturamentoPadrao}
                 perfisFaturamento={profile?.perfisFaturamento}
                 profissionalNome={profile?.nome || profile?.name}
                 profissionalCpf={profile?.cpf}
@@ -9697,6 +9709,9 @@ export function DashboardView({
               <TriagemCorporativaKanban
                 currentRole={currentRole}
                 currentUserProfile={profile}
+                onUpdateProfileLocal={(patch) =>
+                  setProfile((prev: any) => (prev ? { ...prev, ...patch } : prev))
+                }
                 onOpenWhatsApp={(phone, text) => {
                   const raw = phone.replace(/\D/g, "");
                   const full = raw.startsWith("55") ? raw : `55${raw}`;
@@ -9872,38 +9887,62 @@ export function DashboardView({
                       const ativosLen = (pacientesExternos || []).filter((p: any) => !isPacienteInativo(p)).length;
                       const inativosLen = (pacientesExternos || []).filter((p: any) => isPacienteInativo(p)).length;
 
-                      return (
+                       return (
                         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 pt-2 border-t border-soft/80">
-                          <div className="flex items-center gap-1.5 bg-warm/60 p-1 rounded-xl border border-soft">
-                            <button
-                              type="button"
-                              onClick={() => setFiltroStatusExterno("ativos")}
-                              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                                filtroStatusExterno === "ativos"
-                                  ? "bg-emerald-700 text-white shadow-2xs"
-                                  : "text-forest/70 hover:text-forest hover:bg-warm"
-                              }`}
-                            >
-                              <span>Em Atendimento</span>
-                              <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${filtroStatusExterno === "ativos" ? "bg-white/20 text-white" : "bg-emerald-100 text-emerald-800"}`}>
-                                {ativosLen}
-                              </span>
-                            </button>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <div className="flex items-center gap-1.5 bg-warm/60 p-1 rounded-xl border border-soft">
+                              <button
+                                type="button"
+                                onClick={() => setFiltroStatusExterno("ativos")}
+                                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
+                                  filtroStatusExterno === "ativos"
+                                    ? "bg-emerald-700 text-white shadow-2xs"
+                                    : "text-forest/70 hover:text-forest hover:bg-warm"
+                                }`}
+                              >
+                                <span>Em Atendimento</span>
+                                <span className={`text-[10px] px-1.5 py-0.2 rounded-full tabular-nums ${filtroStatusExterno === "ativos" ? "bg-white/20 text-white" : "bg-emerald-100 text-emerald-800"}`}>
+                                  {ativosLen}
+                                </span>
+                              </button>
 
-                            <button
-                              type="button"
-                              onClick={() => setFiltroStatusExterno("inativos")}
-                              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                                filtroStatusExterno === "inativos"
-                                  ? "bg-forest text-white shadow-2xs"
-                                  : "text-forest/70 hover:text-forest hover:bg-warm"
-                              }`}
-                            >
-                              <span>Inativos</span>
-                              <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${filtroStatusExterno === "inativos" ? "bg-white/20 text-white" : "bg-slate-200 text-slate-800"}`}>
-                                {inativosLen}
-                              </span>
-                            </button>
+                              <button
+                                type="button"
+                                onClick={() => setFiltroStatusExterno("inativos")}
+                                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
+                                  filtroStatusExterno === "inativos"
+                                    ? "bg-forest text-white shadow-2xs"
+                                    : "text-forest/70 hover:text-forest hover:bg-warm"
+                                }`}
+                              >
+                                <span>Inativos</span>
+                                <span className={`text-[10px] px-1.5 py-0.2 rounded-full tabular-nums ${filtroStatusExterno === "inativos" ? "bg-white/20 text-white" : "bg-slate-200 text-slate-800"}`}>
+                                  {inativosLen}
+                                </span>
+                              </button>
+                            </div>
+
+                            {/* Filtro por Perfil de Faturamento PF / PJ */}
+                            {(() => {
+                              const perfisProfExtBar = normalizePerfisFaturamento(profile);
+                              return (
+                                <select
+                                  value={filtroPerfilExternos}
+                                  onChange={(e) => setFiltroPerfilExternos(e.target.value)}
+                                  aria-label="Filtrar pacientes externos por perfil PF ou PJ"
+                                  className="px-2.5 py-1.5 bg-warm/60 border border-soft rounded-xl text-xs font-medium text-forest focus:outline-none focus:border-forest/50 focus:bg-white cursor-pointer"
+                                >
+                                  <option value="todos">Todos os Perfis (PF + PJ)</option>
+                                  <option value="PF">Somente PF (CPF / Caixa)</option>
+                                  <option value="PJ">Somente PJ (CNPJ)</option>
+                                  {perfisProfExtBar.map((pfItem) => (
+                                    <option key={pfItem.id} value={pfItem.id}>
+                                      {formatPerfilSelectOption(pfItem)}
+                                    </option>
+                                  ))}
+                                </select>
+                              );
+                            })()}
                           </div>
 
                           {/* Subfiltros para Inativos (Alta, Pausa, Desligado / Quebra Contrato) */}
@@ -9920,7 +9959,7 @@ export function DashboardView({
                                   key={sub.id}
                                   type="button"
                                   onClick={() => setSubFiltroInativo(sub.id as any)}
-                                  className={`px-2.5 py-0.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                                  className={`px-2.5 py-0.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
                                     subFiltroInativo === sub.id
                                       ? "bg-emerald-800 text-white"
                                       : "bg-warm text-forest/70 hover:bg-emerald-50 hover:text-forest border border-soft"
@@ -9938,6 +9977,7 @@ export function DashboardView({
 
                   {/* Listagem dos Pacientes */}
                   {(() => {
+                    const perfisProfExternos = normalizePerfisFaturamento(profile);
                     const isPacienteInativo = (p: any) => {
                       const st = (p.statusTratamento || p.status || "").toLowerCase();
                       return (
@@ -9976,6 +10016,17 @@ export function DashboardView({
                         if (!matchesSubFiltro(p)) return false;
                       }
 
+                      if (filtroPerfilExternos !== "todos") {
+                        const pAtivo = resolvePerfilFaturamentoAtivo(
+                          perfisProfExternos,
+                          p.perfilFaturamentoId,
+                          p.perfilFaturamento || profile?.faturamentoPadrao || "PF"
+                        );
+                        if (pAtivo.via !== filtroPerfilExternos && pAtivo.id !== filtroPerfilExternos) {
+                          return false;
+                        }
+                      }
+
                       if (!pacienteExternoSearchTerm.trim()) return true;
                       const term = pacienteExternoSearchTerm.toLowerCase();
                       const nome = (p.nome || p.nomeCivil || "").toLowerCase();
@@ -9992,14 +10043,16 @@ export function DashboardView({
                             <Users className="w-5 h-5" />
                           </div>
                           <div className="font-bold text-forest">
-                            {pacienteExternoSearchTerm.trim()
-                              ? "Nenhum paciente encontrado com esta busca."
+                            {pacienteExternoSearchTerm.trim() || filtroPerfilExternos !== "todos"
+                              ? "Nenhum paciente encontrado com os filtros aplicados."
                               : filtroStatusExterno === "ativos"
                               ? "Nenhum paciente em atendimento no momento."
                               : "Nenhum paciente inativo encontrado com os filtros selecionados."}
                           </div>
                           <p className="text-[11px] text-forest/60 max-w-md mx-auto">
-                            {filtroStatusExterno === "ativos"
+                            {filtroPerfilExternos !== "todos"
+                              ? "Altere o filtro de Perfil PF/PJ acima para visualizar todos os pacientes externos."
+                              : filtroStatusExterno === "ativos"
                               ? "Cadastre um novo paciente ou verifique a aba de inativos."
                               : "Altere o subfiltro acima para visualizar outros status (Alta, Pausa, Desligado)."}
                           </p>
@@ -10014,6 +10067,11 @@ export function DashboardView({
                           const telRaw = (p.telefone || "").replace(/\D/g, "");
                           const waUrl = telRaw ? `https://wa.me/55${telRaw.startsWith("55") ? telRaw.slice(2) : telRaw}?text=Ol%C3%A1%20${encodeURIComponent(nome)}!` : "";
                           const statusTxt = p.statusTratamento || p.status || (isPacienteInativo(p) ? "Inativo" : "Em Atendimento");
+                          const perfilAtivoRow = resolvePerfilFaturamentoAtivo(
+                            perfisProfExternos,
+                            p.perfilFaturamentoId,
+                            p.perfilFaturamento || profile?.faturamentoPadrao || "PF"
+                          );
 
                           return (
                             <div
@@ -10033,41 +10091,51 @@ export function DashboardView({
                                     <span className="font-bold text-forest text-xs sm:text-sm truncate hover:underline">
                                       {nome}
                                     </span>
-                                    <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-extrabold border ${
+                                    <span aria-hidden="true" className="text-forest/35 text-xs">·</span>
+                                    <span className={`text-[11px] font-semibold ${
                                       statusTxt.includes("Alta") || statusTxt.includes("Concluído")
-                                        ? "bg-blue-50 text-blue-800 border-blue-200"
+                                        ? "text-blue-700"
                                         : statusTxt.includes("Pausa") || statusTxt.includes("Standby")
-                                        ? "bg-amber-50 text-amber-800 border-amber-200"
+                                        ? "text-amber-700"
                                         : statusTxt.includes("Desligado") || statusTxt.includes("Quebra") || statusTxt.includes("Inativo")
-                                        ? "bg-rose-50 text-rose-800 border-rose-200"
-                                        : "bg-emerald-50 text-emerald-800 border-emerald-200"
+                                        ? "text-rose-700"
+                                        : "text-emerald-700"
                                     }`}>
                                       {statusTxt}
                                     </span>
                                   </div>
-                                  <div className="text-[10px] text-forest/70 flex items-center gap-2.5 flex-wrap mt-0.5">
+                                  <div className="text-[11px] text-forest/70 flex items-center gap-2 flex-wrap mt-0.5">
                                     {p.telefone && (
-                                      <span className="flex items-center gap-1">
-                                        <Phone className="w-2.5 h-2.5 text-forest/50" />
+                                      <span className="font-mono tabular-nums">
                                         {p.telefone}
                                       </span>
                                     )}
                                     {p.email && (
-                                      <span className="flex items-center gap-1">
-                                        <Mail className="w-2.5 h-2.5 text-forest/50" />
-                                        {p.email}
-                                      </span>
+                                      <>
+                                        {p.telefone && <span aria-hidden="true" className="text-forest/35">·</span>}
+                                        <span>{p.email}</span>
+                                      </>
                                     )}
                                     {p.cpf && (
-                                      <span className="font-mono text-[9px] text-forest/60">
-                                        CPF: {p.cpf}
-                                      </span>
+                                      <>
+                                        <span aria-hidden="true" className="text-forest/35">·</span>
+                                        <span className="font-mono tabular-nums text-forest/65">
+                                          CPF {p.cpf}
+                                        </span>
+                                      </>
                                     )}
                                     {p.valorSessao && (
-                                      <span className="font-semibold text-emerald-800">
-                                        R$ {p.valorSessao}
-                                      </span>
+                                      <>
+                                        <span aria-hidden="true" className="text-forest/35">·</span>
+                                        <span className="font-mono tabular-nums font-semibold text-emerald-800">
+                                          R$ {p.valorSessao}
+                                        </span>
+                                      </>
                                     )}
+                                    <span aria-hidden="true" className="text-forest/35">·</span>
+                                    <span className="font-mono tabular-nums text-forest/75">
+                                      {perfilAtivoRow.via} · {formatPerfilCurtoLabel(perfilAtivoRow)}
+                                    </span>
                                   </div>
                                 </div>
                               </div>
@@ -10157,6 +10225,12 @@ export function DashboardView({
                           setIsSalvandoExternoDashboard(true);
                           try {
                             const valNum = parseFloat(novoExtValor.replace(",", ".")) || 100;
+                            const perfisNovoExt = normalizePerfisFaturamento(profile);
+                            const perfilEscolhidoExt = resolvePerfilFaturamentoAtivo(
+                              perfisNovoExt,
+                              novoExtPerfilId || undefined,
+                              profile?.faturamentoPadrao || "PF"
+                            );
                             await addDoc(collection(db, "pacientes"), {
                               nome: novoExtNome.trim(),
                               nomeCivil: novoExtNome.trim(),
@@ -10166,6 +10240,8 @@ export function DashboardView({
                               cpf: novoExtCpf.trim(),
                               dataNascimento: novoExtDataNasc || "",
                               valorSessao: String(valNum),
+                              perfilFaturamento: perfilEscolhidoExt.via,
+                              perfilFaturamentoId: perfilEscolhidoExt.id,
                               queixaPrincipal: novoExtObs.trim(),
                               motivo: novoExtObs.trim(),
                               observacoes: novoExtObs.trim(),
@@ -10190,12 +10266,16 @@ export function DashboardView({
                             setNovoExtCpf("");
                             setNovoExtDataNasc("");
                             setNovoExtValor("120");
+                            setNovoExtPerfilId("");
                             setNovoExtObs("");
                             setShowModalNovoPacienteExterno(false);
                             showToast("Paciente particular cadastrado com sucesso!", "success");
                           } catch (err: any) {
                             console.error("Erro ao salvar paciente externo:", err);
                             showToast("Erro ao cadastrar paciente: " + (err.message || "Tente novamente"), "error");
+                            if (String(err?.message || "").toLowerCase().includes("permission")) {
+                              handleFirestoreError(err, OperationType.CREATE, "pacientes");
+                            }
                           } finally {
                             setIsSalvandoExternoDashboard(false);
                           }
@@ -10232,7 +10312,7 @@ export function DashboardView({
                                 else if (digits.length <= 7) setNovoExtTelefone(`(${digits.slice(0, 2)}) ${digits.slice(2)}`);
                                 else setNovoExtTelefone(`(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`);
                               }}
-                              className="w-full px-3 py-2 bg-warm/30 border border-soft rounded-xl text-forest focus:outline-none focus:ring-2 focus:ring-forest/30 font-mono"
+                              className="w-full px-3 py-2 bg-warm/30 border border-soft rounded-xl text-forest focus:outline-none focus:ring-2 focus:ring-forest/30 font-mono tabular-nums"
                             />
                           </div>
 
@@ -10266,7 +10346,7 @@ export function DashboardView({
                                 else if (digits.length <= 9) setNovoExtCpf(`${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6)}`);
                                 else setNovoExtCpf(`${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`);
                               }}
-                              className="w-full px-3 py-2 bg-warm/30 border border-soft rounded-xl text-forest focus:outline-none focus:ring-2 focus:ring-forest/30 font-mono text-xs"
+                              className="w-full px-3 py-2 bg-warm/30 border border-soft rounded-xl text-forest focus:outline-none focus:ring-2 focus:ring-forest/30 font-mono tabular-nums text-xs"
                             />
                           </div>
 
@@ -10292,9 +10372,36 @@ export function DashboardView({
                               step="0.01"
                               value={novoExtValor}
                               onChange={(e) => setNovoExtValor(e.target.value)}
-                              className="w-full px-3 py-2 bg-warm/30 border border-soft rounded-xl text-forest focus:outline-none focus:ring-2 focus:ring-forest/30 font-bold"
+                              className="w-full px-3 py-2 bg-warm/30 border border-soft rounded-xl text-forest focus:outline-none focus:ring-2 focus:ring-forest/30 font-bold font-mono tabular-nums"
                             />
                           </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-forest mb-1">
+                            Perfil de Faturamento / Emissor (PF ou PJ do Meu Perfil)
+                          </label>
+                          {(() => {
+                            const perfisModalExt = normalizePerfisFaturamento(profile);
+                            const padraoExt = resolvePerfilFaturamentoAtivo(
+                              perfisModalExt,
+                              novoExtPerfilId || undefined,
+                              profile?.faturamentoPadrao || "PF"
+                            );
+                            return (
+                              <select
+                                value={padraoExt.id}
+                                onChange={(e) => setNovoExtPerfilId(e.target.value)}
+                                className="w-full px-3 py-2 bg-warm/30 border border-soft rounded-xl text-forest focus:outline-none focus:ring-2 focus:ring-forest/30 text-xs font-medium cursor-pointer"
+                              >
+                                {perfisModalExt.map((pfItem) => (
+                                  <option key={pfItem.id} value={pfItem.id}>
+                                    {formatPerfilSelectOption(pfItem)}
+                                  </option>
+                                ))}
+                              </select>
+                            );
+                          })()}
                         </div>
 
                         <div>
@@ -10379,6 +10486,28 @@ export function DashboardView({
                   )}
                 </div>
 
+                {/* Filtro por Perfil de Faturamento PF / PJ */}
+                {(() => {
+                  const perfisProfAcessBar = normalizePerfisFaturamento(profile);
+                  return (
+                    <select
+                      value={filtroPerfilAcessiveis}
+                      onChange={(e) => setFiltroPerfilAcessiveis(e.target.value)}
+                      aria-label="Filtrar pacientes acessíveis por perfil PF ou PJ"
+                      className="px-2.5 py-1.5 bg-warm/60 border border-soft rounded-xl text-xs font-medium text-forest focus:outline-none focus:border-forest/50 focus:bg-white cursor-pointer"
+                    >
+                      <option value="todos">Todos os Perfis (PF + PJ)</option>
+                      <option value="PF">Somente PF (CPF / Caixa)</option>
+                      <option value="PJ">Somente PJ (CNPJ)</option>
+                      {perfisProfAcessBar.map((pfItem) => (
+                        <option key={pfItem.id} value={pfItem.id}>
+                          {formatPerfilSelectOption(pfItem)}
+                        </option>
+                      ))}
+                    </select>
+                  );
+                })()}
+
                 {/* Alternar Expandir/Recolher Todos */}
                 <button
                   type="button"
@@ -10394,7 +10523,7 @@ export function DashboardView({
                       setExpandedPacientes(all);
                     }
                   }}
-                  className="px-2.5 py-1.5 text-forest/70 hover:text-forest hover:bg-warm rounded-xl text-xs font-semibold flex items-center gap-1 border border-soft transition-colors cursor-pointer"
+                  className="px-2.5 py-1.5 text-forest/70 hover:text-forest hover:bg-warm rounded-xl text-xs font-semibold flex items-center gap-1 border border-soft transition-colors cursor-pointer whitespace-nowrap shrink-0"
                   title="Expandir ou recolher todos os cards"
                 >
                   {Object.values(expandedPacientes).filter(Boolean).length > 0 ? (
@@ -10414,7 +10543,18 @@ export function DashboardView({
 
             {/* Lista em Barras Compactas e Expansíveis (Opção 1) */}
             {(() => {
+              const perfisProfAcessList = normalizePerfisFaturamento(profile);
               const pacientesFiltrados = filteredMeusPacientes.filter((p) => {
+                if (filtroPerfilAcessiveis !== "todos") {
+                  const pAtivo = resolvePerfilFaturamentoAtivo(
+                    perfisProfAcessList,
+                    (p as any).perfilFaturamentoId,
+                    (p as any).perfilFaturamento || profile?.faturamentoPadrao || "PF"
+                  );
+                  if (pAtivo.via !== filtroPerfilAcessiveis && pAtivo.id !== filtroPerfilAcessiveis) {
+                    return false;
+                  }
+                }
                 if (pacienteSearchTerm.trim()) {
                   const term = pacienteSearchTerm.toLowerCase();
                   const nome = (p.nomeDesejado || p.nomeCivil || p.nome || "").toLowerCase();
@@ -10428,8 +10568,8 @@ export function DashboardView({
               if (pacientesFiltrados.length === 0) {
                 return (
                   <div className="w-full text-center p-8 bg-white/70 border border-dashed border-soft rounded-2xl text-forest/70 text-sm">
-                    {pacienteSearchTerm.trim()
-                      ? "Nenhum paciente encontrado com a busca informada."
+                    {pacienteSearchTerm.trim() || filtroPerfilAcessiveis !== "todos"
+                      ? "Nenhum paciente encontrado com os filtros aplicados."
                       : "Nenhum paciente encaminhado no momento."}
                   </div>
                 );
@@ -10442,6 +10582,11 @@ export function DashboardView({
                     const entryDate = p.createdAt
                       ? formatDateTimeSafely(p.createdAt, "Desconhecida")
                       : "Desconhecida";
+                    const perfilAtivoAcess = resolvePerfilFaturamentoAtivo(
+                      perfisProfAcessList,
+                      (p as any).perfilFaturamentoId,
+                      (p as any).perfilFaturamento || profile?.faturamentoPadrao || "PF"
+                    );
 
                     return (
                       <div
@@ -10453,25 +10598,27 @@ export function DashboardView({
                           onClick={() => toggleExpandPaciente(p.id)}
                           className="px-3.5 sm:px-4 py-2.5 flex items-center justify-between gap-3 cursor-pointer hover:bg-warm/30 transition-colors select-none"
                         >
-                          {/* Lado Esquerdo: Tag de Status, Nome e Dados Primordiais */}
+                          {/* Lado Esquerdo: Número, Status, Nome e Metadados Limpos */}
                           <div className="flex items-center gap-2.5 min-w-0 flex-1">
                             {/* Número da Fila */}
-                            <span className="text-[10px] font-bold text-forest/60 bg-warm px-1.5 py-0.5 rounded border border-soft shrink-0">
+                            <span className="text-[11px] font-mono tabular-nums font-bold text-forest/55 shrink-0">
                               #{pIdx + 1}
                             </span>
 
                             {/* Status da Atribuição */}
                             <span
-                              className={`px-2 py-0.5 rounded-full font-bold text-[9px] uppercase tracking-wide shrink-0 border ${
+                              className={`font-semibold text-[11px] shrink-0 ${
                                 p.atribuicaoStatus === "Aceito"
-                                  ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                                  ? "text-emerald-700"
                                   : p.atribuicaoStatus === "Rejeitado"
-                                    ? "bg-rose-50 text-rose-800 border-rose-200"
-                                    : "bg-amber-50 text-amber-800 border-amber-200"
+                                    ? "text-rose-700"
+                                    : "text-amber-700"
                               }`}
                             >
                               {p.atribuicaoStatus || "Pendente"}
                             </span>
+
+                            <span aria-hidden="true" className="text-forest/30 text-xs shrink-0">·</span>
 
                             {/* Nome do Paciente */}
                             <div className="flex items-baseline gap-2 min-w-0 flex-1">
@@ -10479,32 +10626,41 @@ export function DashboardView({
                                 {p.nomeDesejado || p.nomeCivil || p.nome || "Paciente sem nome"}
                               </h4>
                               {p.viaAcesso && p.viaAcesso !== "Particular" && (
-                                <span className="text-[10px] text-forest/50 hidden sm:inline shrink-0 font-medium">
-                                  • {p.viaAcesso}
+                                <span className="text-[11px] text-forest/50 hidden sm:inline shrink-0">
+                                  · {p.viaAcesso}
                                 </span>
                               )}
                             </div>
 
-                            {/* Detalhes Rápidos Primordiais (Idade / Gênero / Valor) */}
+                            {/* Detalhes Rápidos Primordiais (Idade · Gênero · Valor · Perfil PF/PJ) */}
                             <div className="hidden lg:flex items-center gap-2 text-xs text-forest/70 shrink-0">
                               {p.idade && (
-                                <span className="px-2 py-0.5 rounded-md bg-warm text-forest/80 text-[10px] font-semibold border border-soft flex items-center gap-1">
-                                  <User className="w-3 h-3 text-forest/50" />
+                                <span className="text-[11px] font-mono tabular-nums text-forest/75">
                                   {p.idade}
                                 </span>
                               )}
                               {p.identidadeGenero && (
-                                <span className="px-2 py-0.5 rounded-md bg-warm text-forest/80 text-[10px] font-semibold border border-soft flex items-center gap-1">
-                                  <Circle className="w-3 h-3 text-forest/50" />
-                                  {p.identidadeGenero}
-                                </span>
+                                <>
+                                  {p.idade && <span aria-hidden="true" className="text-forest/35">·</span>}
+                                  <span className="text-[11px] text-forest/70">
+                                    {p.identidadeGenero}
+                                  </span>
+                                </>
                               )}
                               {p.valorSessao && (
-                                <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-800 text-[10px] font-semibold border border-emerald-200/60 flex items-center gap-1">
-                                  <DollarSign className="w-3 h-3 text-emerald-600" />
-                                  R$ {p.valorSessao}
-                                </span>
+                                <>
+                                  {(p.idade || p.identidadeGenero) && (
+                                    <span aria-hidden="true" className="text-forest/35">·</span>
+                                  )}
+                                  <span className="text-[11px] font-mono tabular-nums font-semibold text-emerald-800">
+                                    R$ {p.valorSessao}
+                                  </span>
+                                </>
                               )}
+                              <span aria-hidden="true" className="text-forest/35">·</span>
+                              <span className="text-[11px] font-mono tabular-nums text-forest/75">
+                                {perfilAtivoAcess.via} · {formatPerfilCurtoLabel(perfilAtivoAcess)}
+                              </span>
                             </div>
                           </div>
 
@@ -10515,7 +10671,7 @@ export function DashboardView({
                                 href={`https://wa.me/55${p.telefone.replace(/\D/g, "")}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="hidden sm:flex px-2 py-1.5 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 rounded-xl text-xs font-semibold items-center gap-1 border border-emerald-200 transition-colors shadow-2xs"
+                                className="hidden sm:flex px-2 py-1.5 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 rounded-xl text-xs font-semibold items-center gap-1 border border-emerald-200 transition-colors shadow-2xs whitespace-nowrap shrink-0"
                                 title="Conversar no WhatsApp"
                               >
                                 <Phone className="w-3.5 h-3.5 text-emerald-600" />
@@ -10526,7 +10682,7 @@ export function DashboardView({
                             <button
                               type="button"
                               onClick={() => setSelectedCard(p)}
-                              className="px-2.5 py-1.5 bg-forest text-white font-semibold text-xs rounded-xl hover:bg-forest/90 transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                              className="px-2.5 py-1.5 bg-forest text-white font-semibold text-xs rounded-xl hover:bg-forest/90 transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs whitespace-nowrap shrink-0"
                               title="Abrir Ficha do Paciente"
                             >
                               <FileText className="w-3.5 h-3.5 text-sun" />
@@ -10547,23 +10703,21 @@ export function DashboardView({
                         {/* Painel Expandido com Detalhes Complementares */}
                         {isExpanded && (
                           <div className="px-4 py-3 bg-warm/25 border-t border-soft/80 flex flex-col gap-2.5 text-xs animate-in fade-in duration-150">
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-forest/85">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-forest/85">
                               <div className="flex flex-col gap-0.5">
-                                <span className="text-[10px] uppercase font-bold text-forest/50">Data de Entrada</span>
-                                <span className="flex items-center gap-1.5 font-medium">
-                                  <Calendar className="w-3.5 h-3.5 text-forest/50 shrink-0" />
+                                <span className="text-[11px] font-semibold text-forest/55">Data de Entrada</span>
+                                <span className="font-mono tabular-nums font-medium">
                                   {entryDate}
                                 </span>
                               </div>
 
                               <div className="flex flex-col gap-0.5">
-                                <span className="text-[10px] uppercase font-bold text-forest/50">Telefone / Contato</span>
-                                <span className="flex items-center gap-1.5 font-medium">
-                                  <Phone className="w-3.5 h-3.5 text-forest/50 shrink-0" />
+                                <span className="text-[11px] font-semibold text-forest/55">Telefone / Contato</span>
+                                <span className="font-mono tabular-nums font-medium">
                                   {p.atribuicaoStatus === "Aceito" ? (
                                     p.telefone || "Não informado"
                                   ) : (
-                                    <span className="text-amber-800 text-[11px] bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200 flex items-center gap-1 font-medium">
+                                    <span className="font-sans text-amber-800 text-[11px] flex items-center gap-1 font-medium">
                                       <Lock className="w-3 h-3 text-amber-600" />
                                       Oculto até o aceite
                                     </span>
@@ -10572,17 +10726,22 @@ export function DashboardView({
                               </div>
 
                               <div className="flex flex-col gap-0.5">
-                                <span className="text-[10px] uppercase font-bold text-forest/50">Condições de Sessão</span>
-                                <span className="flex items-center gap-1.5 font-medium">
-                                  <DollarSign className="w-3.5 h-3.5 text-forest/50 shrink-0" />
-                                  {p.valorSessao ? `R$ ${p.valorSessao}/sessão` : "A definir"} {p.frequenciaSessoes ? `(${p.frequenciaSessoes})` : ""}
+                                <span className="text-[11px] font-semibold text-forest/55">Condições de Sessão</span>
+                                <span className="font-mono tabular-nums font-medium">
+                                  {p.valorSessao ? `R$ ${p.valorSessao}/sessão` : "A definir"} {p.frequenciaSessoes ? `· ${p.frequenciaSessoes}` : ""}
                                 </span>
                               </div>
 
                               <div className="flex flex-col gap-0.5">
-                                <span className="text-[10px] uppercase font-bold text-forest/50">Etapa Atual</span>
-                                <span className="flex items-center gap-1.5 font-medium">
-                                  <CheckCircle2 className="w-3.5 h-3.5 text-forest/50 shrink-0" />
+                                <span className="text-[11px] font-semibold text-forest/55">Emissor Vinculado (PF/PJ)</span>
+                                <span className="font-mono tabular-nums font-medium text-forest">
+                                  {perfilAtivoAcess.via} · {formatPerfilCurtoLabel(perfilAtivoAcess)} ({getPerfilDocumentoCurto(perfilAtivoAcess)})
+                                </span>
+                              </div>
+
+                              <div className="flex flex-col gap-0.5">
+                                <span className="text-[11px] font-semibold text-forest/55">Etapa Atual</span>
+                                <span className="font-medium">
                                   {p.status || "Em Acompanhamento"}
                                 </span>
                               </div>
@@ -10978,6 +11137,9 @@ export function DashboardView({
             <TriagemCorporativaKanban
               currentRole={currentRole}
               currentUserProfile={profile}
+              onUpdateProfileLocal={(patch) =>
+                setProfile((prev: any) => (prev ? { ...prev, ...patch } : prev))
+              }
               onOpenWhatsApp={(phone, text) => {
                 const raw = phone.replace(/\D/g, "");
                 const full = raw.startsWith("55") ? raw : `55${raw}`;
@@ -13760,6 +13922,10 @@ export function DashboardView({
           }}
           profile={profile}
           user={user}
+          allUsers={allUsers}
+          onUpdateProfileLocal={(patch) =>
+            setProfile((prev: any) => (prev ? { ...prev, ...patch } : prev))
+          }
           showToast={showToast}
           onNavigateToAgenda={(pacId) => {
             if (pacId) setAgendaPreselectedPacienteId(pacId);
@@ -13784,6 +13950,10 @@ export function DashboardView({
           }}
           profile={profile}
           user={user}
+          allUsers={allUsers}
+          onUpdateProfileLocal={(patch) =>
+            setProfile((prev: any) => (prev ? { ...prev, ...patch } : prev))
+          }
           showToast={showToast}
           onNavigateToAgenda={(pacId) => {
             if (pacId) setAgendaPreselectedPacienteId(pacId);
@@ -13822,6 +13992,10 @@ export function DashboardView({
           }}
           profile={profile}
           user={user}
+          allUsers={allUsers}
+          onUpdateProfileLocal={(patch) =>
+            setProfile((prev: any) => (prev ? { ...prev, ...patch } : prev))
+          }
           showToast={showToast}
           onNavigateToAgenda={(pacId) => {
             if (pacId) setAgendaPreselectedPacienteId(pacId);
@@ -15482,20 +15656,51 @@ export function DashboardView({
                     selectedCard.historicoSessoes = novasSessoes;
                     await handleUpdateAcolhimentoProperty(selectedCard.id, "historicoSessoes", novasSessoes);
                   }}
-                  perfilFaturamento={(selectedCard as any).perfilFaturamento || "PF"}
+                  perfilFaturamento={(selectedCard as any).perfilFaturamento || profile?.faturamentoPadrao || "PF"}
                   perfilFaturamentoId={(selectedCard as any).perfilFaturamentoId}
                   onUpdatePerfilFaturamento={async (novoPerfil) => {
-                    (selectedCard as any).perfilFaturamento = novoPerfil;
+                    setSelectedCard((prev: any) =>
+                      prev ? { ...prev, perfilFaturamento: novoPerfil } : prev
+                    );
+                    setAcolhimentos((prev) =>
+                      prev.map((a) =>
+                        a.id === selectedCard.id ? ({ ...a, perfilFaturamento: novoPerfil } as any) : a
+                      )
+                    );
+                    setMeusPacientes((prev) =>
+                      prev.map((a) =>
+                        a.id === selectedCard.id ? ({ ...a, perfilFaturamento: novoPerfil } as any) : a
+                      )
+                    );
                     await handleUpdateAcolhimentoProperty(selectedCard.id, "perfilFaturamento", novoPerfil);
                   }}
                   onUpdatePerfilFaturamentoId={async (novoId, via) => {
-                    (selectedCard as any).perfilFaturamentoId = novoId;
-                    (selectedCard as any).perfilFaturamento = via;
-                    await updateDoc(doc(db, "acolhimentos", selectedCard.id), {
-                      perfilFaturamentoId: novoId,
-                      perfilFaturamento: via,
-                      updatedAt: serverTimestamp(),
-                    });
+                    setSelectedCard((prev: any) =>
+                      prev ? { ...prev, perfilFaturamentoId: novoId, perfilFaturamento: via } : prev
+                    );
+                    setAcolhimentos((prev) =>
+                      prev.map((a) =>
+                        a.id === selectedCard.id
+                          ? ({ ...a, perfilFaturamentoId: novoId, perfilFaturamento: via } as any)
+                          : a
+                      )
+                    );
+                    setMeusPacientes((prev) =>
+                      prev.map((a) =>
+                        a.id === selectedCard.id
+                          ? ({ ...a, perfilFaturamentoId: novoId, perfilFaturamento: via } as any)
+                          : a
+                      )
+                    );
+                    try {
+                      await updateDoc(doc(db, "acolhimentos", selectedCard.id), {
+                        perfilFaturamentoId: novoId,
+                        perfilFaturamento: via,
+                        updatedAt: serverTimestamp(),
+                      });
+                    } catch (err) {
+                      handleFirestoreError(err, OperationType.UPDATE, `acolhimentos/${selectedCard.id}`);
+                    }
                   }}
                   onSavePerfisFaturamento={async (novosPerfis) => {
                     const targetUid = currentRole === "profissional" ? user?.uid : (selectedCard.profissionalId || user?.uid);
@@ -15505,10 +15710,14 @@ export function DashboardView({
                       profile?.cpf,
                       profile?.chavePix || profile?.pixKey
                     );
-                    await updateDoc(doc(db, "users", targetUid), {
-                      ...syncFields,
-                      updatedAt: serverTimestamp(),
-                    });
+                    try {
+                      await updateDoc(doc(db, "users", targetUid), {
+                        ...syncFields,
+                        updatedAt: serverTimestamp(),
+                      });
+                    } catch (err) {
+                      handleFirestoreError(err, OperationType.UPDATE, `users/${targetUid}`);
+                    }
                     if (currentRole === "profissional") {
                       setProfile((prev: any) => ({ ...prev, ...syncFields }));
                     }
@@ -15521,10 +15730,14 @@ export function DashboardView({
                   onSaveDadosPJ={async (novosDadosPJ) => {
                     const targetUid = currentRole === "profissional" ? user?.uid : (selectedCard.profissionalId || user?.uid);
                     if (!targetUid) return;
-                    await updateDoc(doc(db, "users", targetUid), {
-                      dadosPJ: novosDadosPJ,
-                      updatedAt: serverTimestamp(),
-                    });
+                    try {
+                      await updateDoc(doc(db, "users", targetUid), {
+                        dadosPJ: novosDadosPJ,
+                        updatedAt: serverTimestamp(),
+                      });
+                    } catch (err) {
+                      handleFirestoreError(err, OperationType.UPDATE, `users/${targetUid}`);
+                    }
                     if (currentRole === "profissional") {
                       setProfile((prev: any) => ({ ...prev, dadosPJ: novosDadosPJ }));
                     }
@@ -15547,6 +15760,7 @@ export function DashboardView({
                           email: profile?.email || user?.email,
                           telefone: profile?.telefone,
                           dadosPJ: profile?.dadosPJ || (profile as any)?.perfilPJ,
+                          companyData: profile?.companyData,
                           faturamentoPadrao: profile?.faturamentoPadrao || "PF",
                           perfisFaturamento: profile?.perfisFaturamento,
                         };
@@ -15568,6 +15782,7 @@ export function DashboardView({
                             email: matchedProf.email,
                             telefone: matchedProf.telefone,
                             dadosPJ: (matchedProf as any).dadosPJ || (matchedProf as any).perfilPJ,
+                            companyData: (matchedProf as any).companyData,
                             faturamentoPadrao: (matchedProf as any).faturamentoPadrao || "PF",
                             perfisFaturamento: (matchedProf as any).perfisFaturamento,
                           };
@@ -15579,7 +15794,10 @@ export function DashboardView({
                         cpf: profile?.cpf,
                         especialidade: profile?.especialidade,
                         chavePix: profile?.chavePix || profile?.pixKey,
+                        pixKey: profile?.pixKey || profile?.chavePix,
                         dadosPJ: profile?.dadosPJ || (profile as any)?.perfilPJ,
+                        companyData: profile?.companyData,
+                        faturamentoPadrao: profile?.faturamentoPadrao || "PF",
                         perfisFaturamento: profile?.perfisFaturamento,
                       };
                     })()
@@ -16453,18 +16671,88 @@ export function DashboardView({
                   selectedCard.historicoSessoes = novasSessoes;
                   await handleUpdateAcolhimentoProperty(selectedCard.id, "historicoSessoes", novasSessoes);
                 }}
-                perfilFaturamento={(selectedCard as any).perfilFaturamento || "PF"}
+                perfilFaturamento={(selectedCard as any).perfilFaturamento || profile?.faturamentoPadrao || "PF"}
+                perfilFaturamentoId={(selectedCard as any).perfilFaturamentoId}
                 onUpdatePerfilFaturamento={async (novoPerfil) => {
-                  (selectedCard as any).perfilFaturamento = novoPerfil;
+                  setSelectedCard((prev: any) =>
+                    prev ? { ...prev, perfilFaturamento: novoPerfil } : prev
+                  );
+                  setAcolhimentos((prev) =>
+                    prev.map((a) =>
+                      a.id === selectedCard.id ? ({ ...a, perfilFaturamento: novoPerfil } as any) : a
+                    )
+                  );
+                  setMeusPacientes((prev) =>
+                    prev.map((a) =>
+                      a.id === selectedCard.id ? ({ ...a, perfilFaturamento: novoPerfil } as any) : a
+                    )
+                  );
                   await handleUpdateAcolhimentoProperty(selectedCard.id, "perfilFaturamento", novoPerfil);
+                }}
+                onUpdatePerfilFaturamentoId={async (novoId, via) => {
+                  setSelectedCard((prev: any) =>
+                    prev ? { ...prev, perfilFaturamentoId: novoId, perfilFaturamento: via } : prev
+                  );
+                  setAcolhimentos((prev) =>
+                    prev.map((a) =>
+                      a.id === selectedCard.id
+                        ? ({ ...a, perfilFaturamentoId: novoId, perfilFaturamento: via } as any)
+                        : a
+                    )
+                  );
+                  setMeusPacientes((prev) =>
+                    prev.map((a) =>
+                      a.id === selectedCard.id
+                        ? ({ ...a, perfilFaturamentoId: novoId, perfilFaturamento: via } as any)
+                        : a
+                    )
+                  );
+                  try {
+                    await updateDoc(doc(db, "acolhimentos", selectedCard.id), {
+                      perfilFaturamentoId: novoId,
+                      perfilFaturamento: via,
+                      updatedAt: serverTimestamp(),
+                    });
+                  } catch (err) {
+                    handleFirestoreError(err, OperationType.UPDATE, `acolhimentos/${selectedCard.id}`);
+                  }
+                }}
+                onSavePerfisFaturamento={async (novosPerfis) => {
+                  const targetUid = currentRole === "profissional" ? user?.uid : (selectedCard.profissionalId || user?.uid);
+                  if (!targetUid) return;
+                  const syncFields = extractLegacySyncFields(
+                    novosPerfis,
+                    profile?.cpf,
+                    profile?.chavePix || profile?.pixKey
+                  );
+                  try {
+                    await updateDoc(doc(db, "users", targetUid), {
+                      ...syncFields,
+                      updatedAt: serverTimestamp(),
+                    });
+                  } catch (err) {
+                    handleFirestoreError(err, OperationType.UPDATE, `users/${targetUid}`);
+                  }
+                  if (currentRole === "profissional") {
+                    setProfile((prev: any) => ({ ...prev, ...syncFields }));
+                  }
+                  setAllUsers((prev) =>
+                    prev.map((u) =>
+                      u.uid === targetUid || u.id === targetUid ? { ...u, ...syncFields } : u
+                    )
+                  );
                 }}
                 onSaveDadosPJ={async (novosDadosPJ) => {
                   const targetUid = currentRole === "profissional" ? user?.uid : (selectedCard.profissionalId || user?.uid);
                   if (!targetUid) return;
-                  await updateDoc(doc(db, "users", targetUid), {
-                    dadosPJ: novosDadosPJ,
-                    updatedAt: serverTimestamp(),
-                  });
+                  try {
+                    await updateDoc(doc(db, "users", targetUid), {
+                      dadosPJ: novosDadosPJ,
+                      updatedAt: serverTimestamp(),
+                    });
+                  } catch (err) {
+                    handleFirestoreError(err, OperationType.UPDATE, `users/${targetUid}`);
+                  }
                   if (currentRole === "profissional") {
                     setProfile((prev: any) => ({ ...prev, dadosPJ: novosDadosPJ }));
                   }
@@ -16482,10 +16770,14 @@ export function DashboardView({
                         crp: profile?.crp,
                         cpf: profile?.cpf,
                         especialidade: profile?.especialidade,
-                        chavePix: profile?.chavePix,
+                        chavePix: profile?.chavePix || profile?.pixKey,
+                        pixKey: profile?.pixKey || profile?.chavePix,
                         email: profile?.email || user?.email,
                         telefone: profile?.telefone,
-                        dadosPJ: profile?.dadosPJ,
+                        dadosPJ: profile?.dadosPJ || (profile as any)?.perfilPJ,
+                        companyData: profile?.companyData,
+                        faturamentoPadrao: profile?.faturamentoPadrao || "PF",
+                        perfisFaturamento: profile?.perfisFaturamento,
                       };
                     }
                     const matchedProf = allUsers.find(
@@ -16498,10 +16790,14 @@ export function DashboardView({
                       crp: matchedProf?.crp || profile?.crp,
                       cpf: matchedProf?.cpf || profile?.cpf,
                       especialidade: matchedProf?.especialidade || profile?.especialidade,
-                      chavePix: matchedProf?.chavePix || profile?.chavePix,
+                      chavePix: matchedProf?.chavePix || (matchedProf as any)?.pixKey || profile?.chavePix || profile?.pixKey,
+                      pixKey: (matchedProf as any)?.pixKey || matchedProf?.chavePix || profile?.pixKey || profile?.chavePix,
                       email: matchedProf?.email || profile?.email,
                       telefone: matchedProf?.telefone || profile?.telefone,
-                      dadosPJ: matchedProf?.dadosPJ,
+                      dadosPJ: (matchedProf as any)?.dadosPJ || (matchedProf as any)?.perfilPJ || profile?.dadosPJ,
+                      companyData: (matchedProf as any)?.companyData || profile?.companyData,
+                      faturamentoPadrao: (matchedProf as any)?.faturamentoPadrao || profile?.faturamentoPadrao || "PF",
+                      perfisFaturamento: (matchedProf as any)?.perfisFaturamento || profile?.perfisFaturamento,
                     };
                   })()
                 }

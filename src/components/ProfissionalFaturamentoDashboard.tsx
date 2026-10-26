@@ -58,6 +58,8 @@ interface ProfissionalFaturamentoDashboardProps {
   empresasB2B?: EmpresaClienteB2B[];
   isPlanoAvancado?: boolean;
   dadosPJ?: DadosPessoaJuridica;
+  companyData?: any;
+  faturamentoPadrao?: "PF" | "PJ";
   perfisFaturamento?: PerfilFaturamentoItem[];
   profissionalNome?: string;
   profissionalCpf?: string;
@@ -80,6 +82,8 @@ export function ProfissionalFaturamentoDashboard({
   empresasB2B,
   isPlanoAvancado,
   dadosPJ,
+  companyData,
+  faturamentoPadrao,
   perfisFaturamento,
   profissionalNome,
   profissionalCpf,
@@ -116,16 +120,20 @@ export function ProfissionalFaturamentoDashboard({
   );
   const [ordemDirecao, setOrdemDirecao] = useState<"asc" | "desc">("desc");
 
+  const padraoViaClinica: "PF" | "PJ" = faturamentoPadrao === "PJ" ? "PJ" : "PF";
+
   const listaPerfis = useMemo(
     () =>
       normalizePerfisFaturamento({
         perfisFaturamento,
         dadosPJ,
+        companyData,
+        faturamentoPadrao: padraoViaClinica,
         cpf: profissionalCpf,
         chavePix,
         name: profissionalNome,
       }),
-    [perfisFaturamento, dadosPJ, profissionalCpf, chavePix, profissionalNome]
+    [perfisFaturamento, dadosPJ, companyData, padraoViaClinica, profissionalCpf, chavePix, profissionalNome]
   );
 
   // Normalização unificada: Triagem Acessível + Convênio Corporativo + Carteira Externa + Empresas B2B
@@ -145,7 +153,7 @@ export function ProfissionalFaturamentoDashboard({
         telefone: p.telefone || p.whatsapp || "",
         origemTipo: "particular",
         origemNome: "Triagem Acessível",
-        perfilFaturamento: (p.perfilFaturamento as "PF" | "PJ") || "PF",
+        perfilFaturamento: (p.perfilFaturamento as "PF" | "PJ") || padraoViaClinica,
         perfilFaturamentoId: p.perfilFaturamentoId,
         valorSessaoPadrao: Number(p.valorSessao || 100),
         sessoes,
@@ -182,7 +190,7 @@ export function ProfissionalFaturamentoDashboard({
           "",
         origemTipo: "corporativo",
         origemNome: "Convênio Corporativo",
-        perfilFaturamento: (f.perfilFaturamento as "PF" | "PJ") || "PF",
+        perfilFaturamento: (f.perfilFaturamento as "PF" | "PJ") || padraoViaClinica,
         perfilFaturamentoId: f.perfilFaturamentoId,
         valorSessaoPadrao: Number(f.valorSessao || 80),
         sessoes,
@@ -207,7 +215,7 @@ export function ProfissionalFaturamentoDashboard({
           telefone: p.telefone || p.whatsapp || "",
           origemTipo: "externo",
           origemNome: "Carteira Externa",
-          perfilFaturamento: (p.perfilFaturamento as "PF" | "PJ") || "PF",
+          perfilFaturamento: (p.perfilFaturamento as "PF" | "PJ") || padraoViaClinica,
           perfilFaturamentoId: p.perfilFaturamentoId,
           valorSessaoPadrao: Number(p.valorSessao || 100),
           sessoes,

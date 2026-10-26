@@ -31,16 +31,27 @@ import {
   Check,
 } from "lucide-react";
 import { doc, getDoc, updateDoc, serverTimestamp } from "firebase/firestore";
-import { db } from "../lib/firebase";
+import { db, handleFirestoreError, OperationType } from "../lib/firebase";
 import { PacienteProntuarioModal, ProntuarioRegistroItem } from "./PacienteProntuarioModal";
 import { PacienteFaturamentoSpreadsheet, SessaoFaturamentoItem } from "./PacienteFaturamentoSpreadsheet";
 import { ContratoGeradorModal } from "./ContratoGeradorModal";
-import { extractLegacySyncFields } from "../types/faturamento";
+import { PerfisFaturamentoManagerModal } from "./PerfisFaturamentoManagerModal";
+import {
+  extractLegacySyncFields,
+  normalizePerfisFaturamento,
+  resolvePerfilFaturamentoAtivo,
+  formatPerfilCurtoLabel,
+  formatPerfilSelectOption,
+  getPerfilDocumentoCurto,
+  getPerfilChavePixEfetiva,
+  getPerfilFavorecidoEfetivo,
+} from "../types/faturamento";
 
 interface FichaPacienteExternoModalProps {
   paciente: any;
   onClose: () => void;
   onUpdatePaciente: (updatedPaciente: any) => void;
+  onUpdateProfileLocal?: (patch: Record<string, any>) => void;
   profile?: any;
   user?: any;
   showToast: (msg: string, type?: "success" | "error" | "info" | "warning") => void;
@@ -55,6 +66,7 @@ export function FichaPacienteExternoModal({
   paciente,
   onClose,
   onUpdatePaciente,
+  onUpdateProfileLocal,
   profile,
   user,
   showToast,
@@ -106,6 +118,7 @@ export function FichaPacienteExternoModal({
   const [showProntuarioModal, setShowProntuarioModal] = useState(false);
   const [showFaturamentoModal, setShowFaturamentoModal] = useState(false);
   const [showContratoModal, setShowContratoModal] = useState(false);
+  const [showGerenciarPerfisModal, setShowGerenciarPerfisModal] = useState(false);
   const [modalDesfechoCorp, setModalDesfechoCorp] = useState<{
     isOpen: boolean;
     tipo: "alta" | "interrupcao";
@@ -115,6 +128,30 @@ export function FichaPacienteExternoModal({
     tipo: "alta",
     motivo: "",
   });
+
+  const profReferencia =
+    effectiveRole === "profissional"
+      ? profile
+      : allUsers.find(
+          (u: any) =>
+            u.uid === currentPaciente?.profissionalId ||
+            u.id === currentPaciente?.profissionalId
+        ) || profile;
+
+  const listaPerfisProf = normalizePerfisFaturamento(profReferencia);
+  const perfilAtivoFicha = resolvePerfilFaturamentoAtivo(
+    listaPerfisProf,
+    currentPaciente?.perfilFaturamentoId,
+    currentPaciente?.perfilFaturamento || profReferencia?.faturamentoPadrao || "PF"
+  );
+  const pixEfetivoFicha = getPerfilChavePixEfetiva(
+    perfilAtivoFicha,
+    profReferencia?.chavePix || profReferencia?.pixKey || currentPaciente?.chavePix
+  );
+  const favorecidoEfetivoFicha = getPerfilFavorecidoEfetivo(
+    perfilAtivoFicha,
+    profReferencia?.name || profReferencia?.nome || currentPaciente?.profissionalNome
+  );
 
   // Evolução rápida
   const [novaEvolucaoTexto, setNovaEvolucaoTexto] = useState("");
@@ -1972,30 +2009,90 @@ export function FichaPacienteExternoModal({
               </div>
             </div>
 
+            {/* Perfil de Faturamento Vinculado (PF / PJ de Meu Perfil) */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 p-3.5 bg-warm/35 rounded-xl border border-soft text-xs">
+              <div className="flex flex-col gap-0.5 min-w-0">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-forest/70">
+                  Perfil de Faturamento / Emissor Vinculado (Meu Perfil)
+                </span>
+                <div className="flex flex-wrap items-center gap-1.5 text-forest/75">
+                  <strong className="text-forest">
+                    [{perfilAtivoFicha.via}] {formatPerfilCurtoLabel(perfilAtivoFicha)}
+                  </strong>
+                  <span aria-hidden="true">·</span>
+                  <span className="font-mono tabular-nums">
+                    {getPerfilDocumentoCurto(perfilAtivoFicha)}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <select
+                  value={perfilAtivoFicha.id}
+                  onChange={(e) => {
+                    const escolhido = listaPerfisProf.find((x) => x.id === e.target.value);
+                    if (escolhido) {
+                      handlePatchFields(
+                        {
+                          perfilFaturamentoId: escolhido.id,
+                          perfilFaturamento: escolhido.via,
+                        },
+                        true
+                      );
+                      showToast(
+                        `Perfil de faturamento vinculado: [${escolhido.via}] ${formatPerfilCurtoLabel(escolhido)}`,
+                        "success"
+                      );
+                    }
+                  }}
+                  className="bg-white border border-soft rounded-xl px-3 py-1.5 text-xs font-semibold text-forest focus:outline-none focus:border-emerald-600 cursor-pointer max-w-[300px]"
+                >
+                  {listaPerfisProf.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {formatPerfilSelectOption(p)}
+                    </option>
+                  ))}
+                </select>
+
+                {effectiveRole === "profissional" && (
+                  <button
+                    type="button"
+                    onClick={() => setShowGerenciarPerfisModal(true)}
+                    className="px-3 py-1.5 bg-white hover:bg-warm text-forest border border-soft rounded-xl text-xs font-bold transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                  >
+                    Gerenciar Perfis PF/PJ
+                  </button>
+                )}
+              </div>
+            </div>
+
             {/* Chave Pix para envio ao paciente */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-emerald-50/60 rounded-xl border border-emerald-200 text-xs">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 min-w-0">
                 <CreditCard className="w-4 h-4 text-emerald-700 shrink-0" />
-                <span className="text-emerald-950 font-medium">
-                  Chave Pix cadastrada para cobrança:{" "}
-                  <strong>
-                    {profile?.chavePix ||
-                      profile?.pixKey ||
-                      currentPaciente.chavePix ||
-                      "Cadastre sua chave no Perfil"}
+                <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-emerald-950 font-medium min-w-0">
+                  <span>Chave Pix do perfil ({perfilAtivoFicha.via}):</span>
+                  <strong className="font-mono break-all">
+                    {pixEfetivoFicha || "Cadastre sua chave em Meu Perfil"}
                   </strong>
-                </span>
+                  {favorecidoEfetivoFicha && (
+                    <>
+                      <span aria-hidden="true">·</span>
+                      <span className="text-emerald-900/80">
+                        Favorecido: {favorecidoEfetivoFicha}
+                      </span>
+                    </>
+                  )}
+                </div>
               </div>
-              {(profile?.chavePix || profile?.pixKey || currentPaciente.chavePix) && (
+              {pixEfetivoFicha && (
                 <button
                   type="button"
                   onClick={() => {
-                    navigator.clipboard.writeText(
-                      profile?.chavePix || profile?.pixKey || currentPaciente.chavePix
-                    );
+                    navigator.clipboard.writeText(pixEfetivoFicha);
                     showToast("Chave Pix copiada para a área de transferência!", "success");
                   }}
-                  className="px-2.5 py-1 bg-white hover:bg-emerald-100 text-emerald-800 rounded-lg font-bold border border-emerald-300 flex items-center gap-1 transition-colors cursor-pointer shrink-0"
+                  className="px-2.5 py-1 bg-white hover:bg-emerald-100 text-emerald-800 rounded-lg font-bold border border-emerald-300 flex items-center gap-1 transition-colors cursor-pointer shrink-0 whitespace-nowrap"
                 >
                   <Copy className="w-3 h-3 text-emerald-600" />
                   Copiar Pix
@@ -2007,16 +2104,28 @@ export function FichaPacienteExternoModal({
           {/* 6. SESSÕES & FATURAMENTO */}
           <div id="sec-ext-6-faturamento" className="bg-white p-4 sm:p-6 rounded-2xl border border-soft shadow-2xs space-y-4">
             <div className="flex items-center justify-between border-b border-soft pb-3 flex-wrap gap-2">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-forest/80 flex items-center gap-2">
-                <CreditCard className="w-4 h-4 text-forest" />{" "}
-                {isCorporativo
-                  ? "6. Sessões & Faturamento (Sincronizado com Agenda e Consolidado)"
-                  : "6. Sessões & Faturamento Particular"}
-              </h4>
+              <div className="space-y-0.5">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-forest/80 flex items-center gap-2">
+                  <CreditCard className="w-4 h-4 text-forest" />{" "}
+                  {isCorporativo
+                    ? "6. Sessões & Faturamento (Sincronizado com Agenda e Consolidado)"
+                    : "6. Sessões & Faturamento Particular"}
+                </h4>
+                <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-forest/60">
+                  <span>Emissor vinculado:</span>
+                  <strong className="text-forest/85">
+                    [{perfilAtivoFicha.via}] {formatPerfilCurtoLabel(perfilAtivoFicha)}
+                  </strong>
+                  <span aria-hidden="true">·</span>
+                  <span className="font-mono tabular-nums">
+                    {getPerfilDocumentoCurto(perfilAtivoFicha)}
+                  </span>
+                </div>
+              </div>
               <button
                 type="button"
                 onClick={() => setShowFaturamentoModal(true)}
-                className="text-xs font-bold text-forest bg-warm hover:bg-emerald-50 hover:text-emerald-900 border border-soft hover:border-emerald-300 px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                className="text-xs font-bold text-forest bg-warm hover:bg-emerald-50 hover:text-emerald-900 border border-soft hover:border-emerald-300 px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer whitespace-nowrap shrink-0"
               >
                 <span>Abrir Planilha de Faturamento</span>
                 <span className="text-xs">→</span>
@@ -2214,7 +2323,7 @@ export function FichaPacienteExternoModal({
 
               <div className="p-3.5 rounded-xl border border-soft bg-warm/30 flex flex-col justify-between gap-3">
                 <div>
-                  <span className="font-bold text-xs text-forest block">Dados de Pagamento (Pix)</span>
+                  <span className="font-bold text-xs text-forest block">Dados de Pagamento (Pix • {perfilAtivoFicha.via})</span>
                   <p className="text-[11px] text-forest/70 mt-1 leading-relaxed">
                     "Olá {nomeDisplay}! Seguem as informações para o pagamento da sessão via Pix..."
                   </p>
@@ -2224,11 +2333,8 @@ export function FichaPacienteExternoModal({
                   onClick={() =>
                     openWhatsApp(
                       `Olá ${nomeDisplay}! Segue a chave Pix para acerto dos honorários da sessão: ${
-                        profile?.chavePix ||
-                        profile?.pixKey ||
-                        currentPaciente.chavePix ||
-                        "sua_chave_pix"
-                      }. Muito obrigado!`
+                        pixEfetivoFicha || "sua_chave_pix"
+                      }${favorecidoEfetivoFicha ? ` (Favorecido: ${favorecidoEfetivoFicha})` : ""}. Muito obrigado!`
                     )
                   }
                   className="w-full py-2 bg-white hover:bg-emerald-50 text-emerald-800 font-bold text-xs rounded-lg border border-emerald-200 transition-colors flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
@@ -2524,7 +2630,7 @@ export function FichaPacienteExternoModal({
                   await syncSessoesToAgendamentos(novasSessoes);
                 }}
                 perfilFaturamento={
-                  currentPaciente.perfilFaturamento || profile?.faturamentoPadrao || "PF"
+                  currentPaciente.perfilFaturamento || profReferencia?.faturamentoPadrao || "PF"
                 }
                 perfilFaturamentoId={currentPaciente.perfilFaturamentoId}
                 onUpdatePerfilFaturamento={async (novoPerfil) => {
@@ -2537,35 +2643,47 @@ export function FichaPacienteExternoModal({
                   );
                 }}
                 onSavePerfisFaturamento={async (novosPerfis) => {
-                  const profId = profile?.uid || user?.uid;
+                  const profId = profReferencia?.uid || profile?.uid || user?.uid;
                   if (!profId) return;
                   try {
                     const syncFields = extractLegacySyncFields(
                       novosPerfis,
-                      profile?.cpf,
-                      profile?.chavePix || profile?.pixKey
+                      profReferencia?.cpf,
+                      profReferencia?.chavePix || profReferencia?.pixKey
                     );
                     await updateDoc(doc(db, "users", profId), {
                       ...syncFields,
                       updatedAt: serverTimestamp(),
                     });
+                    if (profId === (profile?.uid || user?.uid)) {
+                      onUpdateProfileLocal?.(syncFields);
+                    }
                     showToast("Perfis de faturamento atualizados no seu cadastro!", "success");
                   } catch (err) {
                     console.error("Erro ao salvar perfis de faturamento:", err);
+                    try {
+                      handleFirestoreError(err, OperationType.UPDATE, `users/${profId}`);
+                    } catch {}
                     showToast("Erro ao salvar perfis de faturamento.", "error");
                   }
                 }}
                 onSaveDadosPJ={async (dadosPJ) => {
-                  const profId = profile?.uid || user?.uid;
+                  const profId = profReferencia?.uid || profile?.uid || user?.uid;
                   if (profId) {
                     try {
                       await updateDoc(doc(db, "users", profId), {
                         dadosPJ,
                         updatedAt: serverTimestamp(),
                       });
+                      if (profId === (profile?.uid || user?.uid)) {
+                        onUpdateProfileLocal?.({ dadosPJ });
+                      }
                       showToast("Dados de Pessoa Jurídica salvos no seu perfil!", "success");
                     } catch (err) {
                       console.error("Erro ao salvar dados PJ:", err);
+                      try {
+                        handleFirestoreError(err, OperationType.UPDATE, `users/${profId}`);
+                      } catch {}
                       showToast("Erro ao salvar dados PJ no perfil.", "error");
                     }
                   }
@@ -2578,18 +2696,19 @@ export function FichaPacienteExternoModal({
                 }
                 registrosProntuario={currentPaciente.prontuarioClinico || []}
                 profissionalLogado={{
-                  uid: profile?.uid || user?.uid || currentPaciente.profissionalId,
-                  name: profile?.name || profile?.nome || currentPaciente.profissionalNome,
-                  nome: profile?.name || profile?.nome || currentPaciente.profissionalNome,
-                  crp: profile?.crp || currentPaciente.profissionalCrp,
-                  cpf: profile?.cpf,
-                  chavePix: profile?.chavePix || profile?.pixKey || currentPaciente.chavePix,
-                  pixKey: profile?.pixKey || profile?.chavePix,
-                  email: profile?.email || user?.email,
-                  telefone: profile?.telefone,
-                  dadosPJ: profile?.dadosPJ || profile?.perfilPJ,
-                  faturamentoPadrao: profile?.faturamentoPadrao,
-                  perfisFaturamento: profile?.perfisFaturamento,
+                  uid: profReferencia?.uid || user?.uid || currentPaciente.profissionalId,
+                  name: profReferencia?.name || profReferencia?.nome || currentPaciente.profissionalNome,
+                  nome: profReferencia?.name || profReferencia?.nome || currentPaciente.profissionalNome,
+                  crp: profReferencia?.crp || currentPaciente.profissionalCrp,
+                  cpf: profReferencia?.cpf,
+                  chavePix: profReferencia?.chavePix || profReferencia?.pixKey || currentPaciente.chavePix,
+                  pixKey: profReferencia?.pixKey || profReferencia?.chavePix,
+                  email: profReferencia?.email || user?.email,
+                  telefone: profReferencia?.telefone,
+                  dadosPJ: profReferencia?.dadosPJ || profReferencia?.perfilPJ,
+                  companyData: profReferencia?.companyData,
+                  faturamentoPadrao: profReferencia?.faturamentoPadrao,
+                  perfisFaturamento: profReferencia?.perfisFaturamento,
                 }}
                 showToast={showToast}
                 onAbrirProntuarioModal={
@@ -2606,6 +2725,44 @@ export function FichaPacienteExternoModal({
         </div>
       )}
 
+      {/* MODAL DE GERENCIAMENTO DIRETO DOS PERFIS PF/PJ (MEU PERFIL) */}
+      {showGerenciarPerfisModal && (
+        <PerfisFaturamentoManagerModal
+          isOpen={showGerenciarPerfisModal}
+          onClose={() => setShowGerenciarPerfisModal(false)}
+          perfis={listaPerfisProf}
+          profissionalNomePadrao={
+            profReferencia?.name || profReferencia?.nome || currentPaciente.profissionalNome || ""
+          }
+          showToast={showToast}
+          onSavePerfis={async (novosPerfis) => {
+            const profId = profReferencia?.uid || profile?.uid || user?.uid;
+            if (!profId) return;
+            try {
+              const syncFields = extractLegacySyncFields(
+                novosPerfis,
+                profReferencia?.cpf,
+                profReferencia?.chavePix || profReferencia?.pixKey
+              );
+              await updateDoc(doc(db, "users", profId), {
+                ...syncFields,
+                updatedAt: serverTimestamp(),
+              });
+              if (profId === (profile?.uid || user?.uid)) {
+                onUpdateProfileLocal?.(syncFields);
+              }
+              showToast("Perfis de faturamento atualizados em Meu Perfil!", "success");
+            } catch (err) {
+              console.error("Erro ao salvar perfis de faturamento:", err);
+              try {
+                handleFirestoreError(err, OperationType.UPDATE, `users/${profId}`);
+              } catch {}
+              showToast("Erro ao salvar perfis de faturamento.", "error");
+            }
+          }}
+        />
+      )}
+
       {/* MODAL DE CONTRATO TERAPÊUTICO */}
       {showContratoModal && (
         <ContratoGeradorModal
@@ -2618,7 +2775,7 @@ export function FichaPacienteExternoModal({
             setCurrentPaciente(updated);
             onUpdatePaciente(updated);
           }}
-          profissionalLogado={profile}
+          profissionalLogado={profReferencia}
           collectionName={targetCollection}
           tipoAcolhimento={isCorporativo ? "corporativo" : undefined}
           showToast={showToast}

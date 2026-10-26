@@ -52,6 +52,9 @@ import {
   normalizePerfisFaturamento,
   resolvePerfilFaturamentoAtivo,
   formatPerfilCurtoLabel,
+  formatPerfilSelectOption,
+  getPerfilDocumentoCurto,
+  getPerfilChavePixEfetiva,
   extractLegacySyncFields,
 } from "../types/faturamento";
 import { PerfisFaturamentoManagerModal } from "./PerfisFaturamentoManagerModal";
@@ -825,6 +828,10 @@ ${
                       emailFinanceiroNf: currentEmpresa.emailFinanceiroNf,
                       condicaoPagamentoPadrao: currentEmpresa.condicaoPagamentoPadrao,
                       valorServicoPadrao: currentEmpresa.valorServicoPadrao,
+                      perfilFaturamentoId:
+                        currentEmpresa.perfilFaturamentoId || perfilEmpresaAtivo.id,
+                      perfilFaturamento:
+                        currentEmpresa.perfilFaturamento || perfilEmpresaAtivo.via,
                       observacoesGerais: currentEmpresa.observacoesGerais,
                     });
                     setIsEditing(false);
@@ -1153,7 +1160,7 @@ ${
                     className="w-full px-3 py-2 bg-warm/30 border border-soft rounded-xl text-forest font-mono tabular-nums outline-none focus:border-forest"
                   />
                 </div>
-                <div className="sm:col-span-3">
+                <div className="sm:col-span-2">
                   <label className="block text-[11px] font-bold text-forest/70 mb-1">
                     Condição de Pagamento Padrão / Regras de Faturamento da Empresa
                   </label>
@@ -1169,6 +1176,42 @@ ${
                     placeholder="Ex: Pagamento em 15 dias úteis após envio da NFS-e até o dia 25 de cada mês"
                     className="w-full px-3 py-2 bg-warm/30 border border-soft rounded-xl text-forest outline-none focus:border-forest"
                   />
+                </div>
+                <div>
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <label className="block text-[11px] font-bold text-forest/70">
+                      Perfil Emissor Vinculado (PF / PJ)
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setShowGerenciarPerfisModal(true)}
+                      className="text-[11px] font-bold text-emerald-800 hover:underline cursor-pointer"
+                    >
+                      Gerenciar
+                    </button>
+                  </div>
+                  <select
+                    value={perfilEmpresaAtivo.id}
+                    onChange={(e) => {
+                      const escolhido = perfisFaturamento.find(
+                        (p) => p.id === e.target.value
+                      );
+                      if (escolhido) {
+                        setCurrentEmpresa({
+                          ...currentEmpresa,
+                          perfilFaturamentoId: escolhido.id,
+                          perfilFaturamento: escolhido.via,
+                        });
+                      }
+                    }}
+                    className="w-full px-3 py-2 bg-warm/30 border border-soft rounded-xl text-forest font-semibold outline-none focus:border-forest cursor-pointer"
+                  >
+                    {perfisFaturamento.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {formatPerfilSelectOption(p)}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
             ) : (
@@ -1224,15 +1267,52 @@ ${
                       currentEmpresa.enderecoCompleto ||
                       "Local não informado"}
                   </p>
-                  <p className="text-forest/65">
-                    {currentEmpresa.ramoAtividade || "Empresa Cliente"} · Base{" "}
-                    <span className="font-mono font-bold text-emerald-800 tabular-nums">
-                      {fmtMoeda(currentEmpresa.valorServicoPadrao || 0)}
-                    </span>
-                  </p>
+                    <p className="text-forest/65">
+                      {currentEmpresa.ramoAtividade || "Empresa Cliente"} · Base{" "}
+                      <span className="font-mono font-bold text-emerald-800 tabular-nums">
+                        {fmtMoeda(currentEmpresa.valorServicoPadrao || 0)}
+                      </span>
+                    </p>
+                  </div>
+
+                  <div className="sm:col-span-2 lg:col-span-4 pt-3 border-t border-soft/70 flex flex-wrap items-center justify-between gap-2 text-xs text-forest/75">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-forest/55">
+                        Perfil Emissor (Meu Perfil):
+                      </span>
+                      <strong className="text-forest">
+                        [{perfilEmpresaAtivo.via}] {formatPerfilCurtoLabel(perfilEmpresaAtivo)}
+                      </strong>
+                      <span aria-hidden="true">·</span>
+                      <span className="font-mono tabular-nums">
+                        {getPerfilDocumentoCurto(perfilEmpresaAtivo)}
+                      </span>
+                      {getPerfilChavePixEfetiva(
+                        perfilEmpresaAtivo,
+                        profile?.chavePix || profile?.pixKey
+                      ) && (
+                        <>
+                          <span aria-hidden="true">·</span>
+                          <span className="font-mono text-forest/70">
+                            PIX:{" "}
+                            {getPerfilChavePixEfetiva(
+                              perfilEmpresaAtivo,
+                              profile?.chavePix || profile?.pixKey
+                            )}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowGerenciarPerfisModal(true)}
+                      className="text-[11px] font-bold text-emerald-800 hover:underline cursor-pointer"
+                    >
+                      Gerenciar Perfis PF/PJ
+                    </button>
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
           </div>
 
           {/* SEÇÃO 2: PLANILHA EM LINHAS DE SERVIÇOS VENDIDOS & FATURAMENTO B2B */}
@@ -1272,8 +1352,7 @@ ${
                   >
                     {perfisFaturamento.map((p) => (
                       <option key={p.id} value={p.id}>
-                        [{p.via}] {formatPerfilCurtoLabel(p)}
-                        {p.via === "PJ" && p.cnpj ? ` (${p.cnpj})` : ""}
+                        {formatPerfilSelectOption(p)}
                       </option>
                     ))}
                   </select>

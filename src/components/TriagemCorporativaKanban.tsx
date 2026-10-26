@@ -48,16 +48,17 @@ import {
 import { db } from "../lib/firebase";
 import { FichaBordoCorporativa, StatusFichaCorporativa } from "../types/corporativo";
 import { FichaPacienteExternoModal } from "./FichaPacienteExternoModal";
+import {
+  normalizePerfisFaturamento,
+  resolvePerfilFaturamentoAtivo,
+  formatPerfilCurtoLabel,
+  formatPerfilSelectOption,
+} from "../types/faturamento";
 
 interface TriagemCorporativaKanbanProps {
   currentRole: "master" | "triagem" | "profissional";
-  currentUserProfile?: {
-    uid?: string;
-    nome?: string;
-    name?: string;
-    email?: string;
-    crp?: string;
-  } | null;
+  currentUserProfile?: Record<string, any> | null;
+  onUpdateProfileLocal?: (patch: Record<string, any>) => void;
   onOpenWhatsApp?: (phone: string, text?: string) => void;
   onNavigateToAgenda?: (pacienteId?: string) => void;
 }
@@ -65,6 +66,7 @@ interface TriagemCorporativaKanbanProps {
 export const TriagemCorporativaKanban: React.FC<TriagemCorporativaKanbanProps> = ({
   currentRole,
   currentUserProfile,
+  onUpdateProfileLocal,
   onOpenWhatsApp,
   onNavigateToAgenda,
 }) => {
@@ -78,6 +80,7 @@ export const TriagemCorporativaKanban: React.FC<TriagemCorporativaKanbanProps> =
   const [busca, setBusca] = useState("");
   const [filtroEmpresa, setFiltroEmpresa] = useState<string>("todas");
   const [filtroProfissional, setFiltroProfissional] = useState<string>("todos");
+  const [filtroPerfilFaturamento, setFiltroPerfilFaturamento] = useState<string>("todos");
 
   // Estado de Expansão/Minimização dos Cards de Pacientes Corporativos
   const [expandedFichas, setExpandedFichas] = useState<Record<string, boolean>>({});
@@ -144,6 +147,18 @@ export const TriagemCorporativaKanban: React.FC<TriagemCorporativaKanbanProps> =
     return Array.from(new Set(fichas.map((f) => f.profissionalNome).filter(Boolean)));
   }, [fichas]);
 
+  const perfisProfissional = useMemo(
+    () => normalizePerfisFaturamento(currentUserProfile),
+    [currentUserProfile]
+  );
+
+  const resolverPerfilFicha = (f: FichaBordoCorporativa) =>
+    resolvePerfilFaturamentoAtivo(
+      perfisProfissional,
+      (f as any).perfilFaturamentoId,
+      (f as any).perfilFaturamento || currentUserProfile?.faturamentoPadrao || "PF"
+    );
+
   // Filtragem
   const fichasFiltradas = fichas.filter((f) => {
     // Para profissionais, SÓ podem aparecer os pacientes que chamaram esse profissional pelo WhatsApp
@@ -164,6 +179,16 @@ export const TriagemCorporativaKanban: React.FC<TriagemCorporativaKanbanProps> =
 
       if (!matchProfLogado) {
         return false;
+      }
+
+      if (filtroPerfilFaturamento !== "todos") {
+        const pResolvido = resolverPerfilFicha(f);
+        if (
+          pResolvido.via !== filtroPerfilFaturamento &&
+          pResolvido.id !== filtroPerfilFaturamento
+        ) {
+          return false;
+        }
       }
     }
 
@@ -487,13 +512,24 @@ export const TriagemCorporativaKanban: React.FC<TriagemCorporativaKanbanProps> =
           </div>
         )}
 
-        {/* Indicador de visualização para o profissional */}
+        {/* Filtro de Perfil de Faturamento PF/PJ + Indicador para o profissional */}
         {isProfissional && (
-          <div className="flex items-center gap-1.5 shrink-0">
-            <span className="px-2.5 py-1 bg-emerald-50 text-emerald-800 text-[10px] sm:text-xs font-bold rounded-xl border border-emerald-200/80 flex items-center gap-1.5 shadow-2xs">
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-              Pacientes que chamaram você
-            </span>
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <select
+              value={filtroPerfilFaturamento}
+              onChange={(e) => setFiltroPerfilFaturamento(e.target.value)}
+              className="px-2.5 py-1.5 bg-warm/50 border border-soft rounded-xl text-[11px] sm:text-xs font-semibold text-forest focus:outline-none focus:border-emerald-600 cursor-pointer max-w-[230px]"
+              title="Filtrar por Perfil de Faturamento (PF / PJ)"
+            >
+              <option value="todos">Todos os Perfis (PF + PJ)</option>
+              <option value="PF">Somente Pessoa Física (PF)</option>
+              <option value="PJ">Somente Pessoa Jurídica (PJ)</option>
+              {perfisProfissional.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {formatPerfilSelectOption(p)}
+                </option>
+              ))}
+            </select>
           </div>
         )}
 
@@ -562,20 +598,26 @@ export const TriagemCorporativaKanban: React.FC<TriagemCorporativaKanbanProps> =
             </div>
           ) : (
             <div className="space-y-2.5">
-              {solicitacoes.map((ficha, idx) => (
-                <CardFichaCorporativa
-                  key={ficha.id}
-                  ficha={ficha}
-                  index={idx}
-                  currentRole={currentRole}
-                  isExpanded={!!expandedFichas[ficha.id]}
-                  onToggleExpand={() => toggleExpandFicha(ficha.id)}
-                  onVerDetalhes={() => setFichaDetalhes(ficha)}
-                  onAceitar={() => handleAceitarFicha(ficha)}
-                  onWhatsApp={() => handleAbrirWhatsApp(ficha)}
-                  saving={savingAction}
-                />
-              ))}
+              {solicitacoes.map((ficha, idx) => {
+                const pRes = isProfissional ? resolverPerfilFicha(ficha) : null;
+                return (
+                  <CardFichaCorporativa
+                    key={ficha.id}
+                    ficha={ficha}
+                    index={idx}
+                    currentRole={currentRole}
+                    perfilResumoLabel={
+                      pRes ? `${pRes.via} · ${formatPerfilCurtoLabel(pRes)}` : undefined
+                    }
+                    isExpanded={!!expandedFichas[ficha.id]}
+                    onToggleExpand={() => toggleExpandFicha(ficha.id)}
+                    onVerDetalhes={() => setFichaDetalhes(ficha)}
+                    onAceitar={() => handleAceitarFicha(ficha)}
+                    onWhatsApp={() => handleAbrirWhatsApp(ficha)}
+                    saving={savingAction}
+                  />
+                );
+              })}
             </div>
           )}
         </div>
@@ -606,30 +648,36 @@ export const TriagemCorporativaKanban: React.FC<TriagemCorporativaKanbanProps> =
             </div>
           ) : (
             <div className="space-y-2.5">
-              {pacientesAtivos.map((ficha, idx) => (
-                <CardFichaCorporativa
-                  key={ficha.id}
-                  ficha={ficha}
-                  index={idx}
-                  currentRole={currentRole}
-                  isExpanded={!!expandedFichas[ficha.id]}
-                  onToggleExpand={() => toggleExpandFicha(ficha.id)}
-                  onVerDetalhes={() => setFichaDetalhes(ficha)}
-                  onAlta={() =>
-                    setModalDesfecho({ isOpen: true, ficha, tipo: "alta", motivo: "" })
-                  }
-                  onInterrupcao={() =>
-                    setModalDesfecho({ isOpen: true, ficha, tipo: "interrupcao", motivo: "" })
-                  }
-                  onWhatsApp={() => handleAbrirWhatsApp(ficha)}
-                  onAgendarSessao={
-                    onNavigateToAgenda
-                      ? () => onNavigateToAgenda(ficha.id)
-                      : undefined
-                  }
-                  saving={savingAction}
-                />
-              ))}
+              {pacientesAtivos.map((ficha, idx) => {
+                const pRes = isProfissional ? resolverPerfilFicha(ficha) : null;
+                return (
+                  <CardFichaCorporativa
+                    key={ficha.id}
+                    ficha={ficha}
+                    index={idx}
+                    currentRole={currentRole}
+                    perfilResumoLabel={
+                      pRes ? `${pRes.via} · ${formatPerfilCurtoLabel(pRes)}` : undefined
+                    }
+                    isExpanded={!!expandedFichas[ficha.id]}
+                    onToggleExpand={() => toggleExpandFicha(ficha.id)}
+                    onVerDetalhes={() => setFichaDetalhes(ficha)}
+                    onAlta={() =>
+                      setModalDesfecho({ isOpen: true, ficha, tipo: "alta", motivo: "" })
+                    }
+                    onInterrupcao={() =>
+                      setModalDesfecho({ isOpen: true, ficha, tipo: "interrupcao", motivo: "" })
+                    }
+                    onWhatsApp={() => handleAbrirWhatsApp(ficha)}
+                    onAgendarSessao={
+                      onNavigateToAgenda
+                        ? () => onNavigateToAgenda(ficha.id)
+                        : undefined
+                    }
+                    saving={savingAction}
+                  />
+                );
+              })}
             </div>
           )}
         </div>
@@ -658,20 +706,26 @@ export const TriagemCorporativaKanban: React.FC<TriagemCorporativaKanbanProps> =
               </div>
             ) : (
               <div className="space-y-2.5">
-                {altas.map((ficha, idx) => (
-                  <CardFichaCorporativa
-                    key={ficha.id}
-                    ficha={ficha}
-                    index={idx}
-                    currentRole={currentRole}
-                    isExpanded={!!expandedFichas[ficha.id]}
-                    onToggleExpand={() => toggleExpandFicha(ficha.id)}
-                    onVerDetalhes={() => setFichaDetalhes(ficha)}
-                    onReativar={() => handleReativarPaciente(ficha)}
-                    onWhatsApp={() => handleAbrirWhatsApp(ficha)}
-                    saving={savingAction}
-                  />
-                ))}
+                {altas.map((ficha, idx) => {
+                  const pRes = isProfissional ? resolverPerfilFicha(ficha) : null;
+                  return (
+                    <CardFichaCorporativa
+                      key={ficha.id}
+                      ficha={ficha}
+                      index={idx}
+                      currentRole={currentRole}
+                      perfilResumoLabel={
+                        pRes ? `${pRes.via} · ${formatPerfilCurtoLabel(pRes)}` : undefined
+                      }
+                      isExpanded={!!expandedFichas[ficha.id]}
+                      onToggleExpand={() => toggleExpandFicha(ficha.id)}
+                      onVerDetalhes={() => setFichaDetalhes(ficha)}
+                      onReativar={() => handleReativarPaciente(ficha)}
+                      onWhatsApp={() => handleAbrirWhatsApp(ficha)}
+                      saving={savingAction}
+                    />
+                  );
+                })}
               </div>
             )}
           </div>
@@ -699,20 +753,26 @@ export const TriagemCorporativaKanban: React.FC<TriagemCorporativaKanbanProps> =
               </div>
             ) : (
               <div className="space-y-2.5">
-                {interrupcoes.map((ficha, idx) => (
-                  <CardFichaCorporativa
-                    key={ficha.id}
-                    ficha={ficha}
-                    index={idx}
-                    currentRole={currentRole}
-                    isExpanded={!!expandedFichas[ficha.id]}
-                    onToggleExpand={() => toggleExpandFicha(ficha.id)}
-                    onVerDetalhes={() => setFichaDetalhes(ficha)}
-                    onReativar={() => handleReativarPaciente(ficha)}
-                    onWhatsApp={() => handleAbrirWhatsApp(ficha)}
-                    saving={savingAction}
-                  />
-                ))}
+                {interrupcoes.map((ficha, idx) => {
+                  const pRes = isProfissional ? resolverPerfilFicha(ficha) : null;
+                  return (
+                    <CardFichaCorporativa
+                      key={ficha.id}
+                      ficha={ficha}
+                      index={idx}
+                      currentRole={currentRole}
+                      perfilResumoLabel={
+                        pRes ? `${pRes.via} · ${formatPerfilCurtoLabel(pRes)}` : undefined
+                      }
+                      isExpanded={!!expandedFichas[ficha.id]}
+                      onToggleExpand={() => toggleExpandFicha(ficha.id)}
+                      onVerDetalhes={() => setFichaDetalhes(ficha)}
+                      onReativar={() => handleReativarPaciente(ficha)}
+                      onWhatsApp={() => handleAbrirWhatsApp(ficha)}
+                      saving={savingAction}
+                    />
+                  );
+                })}
               </div>
             )}
           </div>
@@ -727,6 +787,7 @@ export const TriagemCorporativaKanban: React.FC<TriagemCorporativaKanbanProps> =
           collectionName="triagem_corporativa"
           currentRole={currentRole}
           profile={currentUserProfile}
+          onUpdateProfileLocal={onUpdateProfileLocal}
           onClose={() => setFichaDetalhes(null)}
           onUpdatePaciente={(updatedFicha) => {
             setFichas((prev) =>
@@ -831,6 +892,7 @@ interface CardFichaProps {
   ficha: FichaBordoCorporativa;
   index?: number;
   currentRole?: "master" | "triagem" | "profissional";
+  perfilResumoLabel?: string;
   isExpanded?: boolean;
   onToggleExpand?: () => void;
   onVerDetalhes: () => void;
@@ -847,6 +909,7 @@ const CardFichaCorporativa: React.FC<CardFichaProps> = ({
   ficha,
   index,
   currentRole,
+  perfilResumoLabel,
   isExpanded = false,
   onToggleExpand,
   onVerDetalhes,
@@ -1040,6 +1103,12 @@ const CardFichaCorporativa: React.FC<CardFichaProps> = ({
             {!isProfissional && ficha.profissionalNome && (
               <span className="text-forest/70 before:content-['•'] before:mr-2.5 before:text-forest/30">
                 Prof.: {ficha.profissionalNome}
+              </span>
+            )}
+
+            {perfilResumoLabel && (
+              <span className="text-forest/75 font-medium truncate max-w-[220px] before:content-['•'] before:mr-2.5 before:text-forest/30">
+                {perfilResumoLabel}
               </span>
             )}
           </div>

@@ -15,8 +15,16 @@ import {
   AlertTriangle
 } from "lucide-react";
 import { doc, updateDoc, serverTimestamp } from "firebase/firestore";
-import { db } from "../lib/firebase";
+import { db, handleFirestoreError, OperationType } from "../lib/firebase";
 import { MODELO_CONTRATO_PADRAO } from "../types/contrato";
+import {
+  normalizePerfisFaturamento,
+  resolvePerfilFaturamentoAtivo,
+  formatPerfilSelectOption,
+  getPerfilChavePixEfetiva,
+  getPerfilFavorecidoEfetivo,
+  PerfilFaturamentoItem,
+} from "../types/faturamento";
 
 interface ContratoGeradorModalProps {
   isOpen: boolean;
@@ -128,15 +136,35 @@ export const ContratoGeradorModal: React.FC<ContratoGeradorModalProps> = ({
     return `R$ ${total.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / mês (aprox. ${mult} sessões)`;
   };
 
+  const perfisDisponiveis = normalizePerfisFaturamento(profVinculado);
+  const perfilInicial = resolvePerfilFaturamentoAtivo(
+    perfisDisponiveis,
+    paciente.perfilFaturamentoId,
+    paciente.perfilFaturamento || profVinculado.faturamentoPadrao || "PF"
+  );
+
+  const [selectedPerfilId, setSelectedPerfilId] = useState<string>(perfilInicial.id);
+  const perfilSelecionado = resolvePerfilFaturamentoAtivo(
+    perfisDisponiveis,
+    selectedPerfilId,
+    paciente.perfilFaturamento || profVinculado.faturamentoPadrao || "PF"
+  );
+
   const [valorSessao, setValorSessao] = useState<string>(
     String(valorSessaoBase).replace("R$", "").trim()
   );
   const [frequencia, setFrequencia] = useState<string>(freqSessaoBase);
   const [chavePix, setChavePix] = useState<string>(
-    profVinculado.chavePix || profVinculado.pixKey || paciente.chavePix || ""
+    getPerfilChavePixEfetiva(
+      perfilInicial,
+      profVinculado.chavePix || profVinculado.pixKey || paciente.chavePix || ""
+    )
   );
   const [favorecidoPix, setFavorecidoPix] = useState<string>(
-    profVinculado.favorecidoPix || paciente.favorecidoPix || nomeProf
+    getPerfilFavorecidoEfetivo(
+      perfilInicial,
+      profVinculado.favorecidoPix || paciente.favorecidoPix || nomeProf
+    )
   );
   const [textoContrato, setTextoContrato] = useState<string>("");
   const [isSaving, setIsSaving] = useState(false);
@@ -147,7 +175,8 @@ export const ContratoGeradorModal: React.FC<ContratoGeradorModalProps> = ({
     val: string,
     freq: string,
     pixKey: string,
-    pixFav: string
+    pixFav: string,
+    perfilEscolhido: PerfilFaturamentoItem = perfilSelecionado
   ) => {
     const dataHoje = new Date().toLocaleDateString("pt-BR", {
       day: "2-digit",
@@ -165,8 +194,24 @@ export const ContratoGeradorModal: React.FC<ContratoGeradorModalProps> = ({
 
     const estMensal = calcularEstimativa(val, freq);
 
+    const identificacaoContratada =
+      perfilEscolhido.via === "PJ"
+        ? `${
+            perfilEscolhido.razaoSocial?.trim() ||
+            perfilEscolhido.nomeFantasia?.trim() ||
+            perfilEscolhido.apelido?.trim() ||
+            nomeProf
+          }${
+            perfilEscolhido.cnpj?.trim()
+              ? `, CNPJ ${perfilEscolhido.cnpj.trim()}`
+              : ""
+          } (Responsável Técnico(a): ${nomeProf})`
+        : `${nomeProf}${
+            perfilEscolhido.cpf?.trim() ? ` (CPF ${perfilEscolhido.cpf.trim()})` : ""
+          }`;
+
     let compiled = MODELO_CONTRATO_PADRAO
-      .replace(/{NOME_PROFISSIONAL}/g, nomeProf)
+      .replace(/{NOME_PROFISSIONAL}/g, identificacaoContratada)
       .replace(/{CRP_PROFISSIONAL}/g, crpProf)
       .replace(/{EMAIL_PROFISSIONAL}/g, emailProf || "Informado em sessão")
       .replace(/{TELEFONE_PROFISSIONAL}/g, telProf || "Informado em sessão")
@@ -204,13 +249,13 @@ export const ContratoGeradorModal: React.FC<ContratoGeradorModalProps> = ({
         : paciente.contratoText;
       setTextoContrato(baseText);
     } else {
-      const compilado = gerarTextoCompilado(valorSessao, frequencia, chavePix, favorecidoPix);
+      const compilado = gerarTextoCompilado(valorSessao, frequencia, chavePix, favorecidoPix, perfilSelecionado);
       setTextoContrato(compilado);
     }
   }, [paciente.id]);
 
   const handleRegerarModelo = () => {
-    const compilado = gerarTextoCompilado(valorSessao, frequencia, chavePix, favorecidoPix);
+    const compilado = gerarTextoCompilado(valorSessao, frequencia, chavePix, favorecidoPix, perfilSelecionado);
     setTextoContrato(compilado);
     showToast("Texto do contrato restaurado com os dados atuais!", "success");
   };
@@ -233,6 +278,8 @@ export const ContratoGeradorModal: React.FC<ContratoGeradorModalProps> = ({
         frequenciaSessoes: frequencia,
         chavePix: chavePix,
         favorecidoPix: favorecidoPix,
+        perfilFaturamento: perfilSelecionado.via,
+        perfilFaturamentoId: perfilSelecionado.id,
         statusContrato: paciente.contratoAssinado ? "assinado" : "aguardando_assinatura",
         updatedAt: serverTimestamp(),
       };
@@ -245,7 +292,7 @@ export const ContratoGeradorModal: React.FC<ContratoGeradorModalProps> = ({
             data: agora,
             autor: profVinculado.name || profissionalLogado?.name || "Profissional",
             acao: "Contrato Terapêutico Gerado / Disponibilizado",
-            detalhes: `Contrato formalizado com valor de R$ ${valorSessao}/sessão (${frequencia}). Link seguro gerado para assinatura digital.`,
+            detalhes: `Contrato formalizado (${perfilSelecionado.via}) com valor de R$ ${valorSessao}/sessão (${frequencia}). Link seguro gerado para assinatura digital.`,
           },
         ];
         updates.historico = novoHistorico;
@@ -262,6 +309,9 @@ export const ContratoGeradorModal: React.FC<ContratoGeradorModalProps> = ({
       onClose();
     } catch (err: any) {
       console.error("Erro ao salvar contrato:", err);
+      try {
+        handleFirestoreError(err, OperationType.UPDATE, `${targetCollection}/${paciente.id}`);
+      } catch {}
       showToast("Erro ao gravar contrato no banco de dados.", "error");
     } finally {
       setIsSaving(false);
@@ -394,72 +444,116 @@ export const ContratoGeradorModal: React.FC<ContratoGeradorModalProps> = ({
               <ShieldCheck className="w-4 h-4 text-emerald-600" /> Parâmetros Puxados da Ficha de Bordo
             </h4>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+            <div className="space-y-3 text-xs">
               <div>
                 <label className="block text-[10px] font-bold uppercase text-forest/60 mb-1">
-                  Valor por Sessão (R$)
-                </label>
-                <input
-                  type="text"
-                  value={valorSessao}
-                  onChange={(e) => setValorSessao(e.target.value)}
-                  className="w-full bg-warm/30 border border-soft rounded-xl px-3 py-2 text-forest font-bold focus:outline-none focus:border-emerald-600"
-                  placeholder="Ex: 120,00"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-bold uppercase text-forest/60 mb-1">
-                  Frequência Acordada
+                  Perfil de Faturamento / Contratada (Meu Perfil • PF ou PJ)
                 </label>
                 <select
-                  value={frequencia}
-                  onChange={(e) => setFrequencia(e.target.value)}
-                  className="w-full bg-warm/30 border border-soft rounded-xl px-3 py-2 text-forest font-semibold focus:outline-none focus:border-emerald-600"
+                  value={perfilSelecionado.id}
+                  onChange={(e) => {
+                    const novoId = e.target.value;
+                    const novoPerfil = perfisDisponiveis.find((x) => x.id === novoId);
+                    setSelectedPerfilId(novoId);
+                    if (novoPerfil) {
+                      const novoPix = getPerfilChavePixEfetiva(
+                        novoPerfil,
+                        profVinculado.chavePix || profVinculado.pixKey || paciente.chavePix || ""
+                      );
+                      const novoFav = getPerfilFavorecidoEfetivo(novoPerfil, nomeProf);
+                      setChavePix(novoPix);
+                      setFavorecidoPix(novoFav);
+                      const atualizado = gerarTextoCompilado(
+                        valorSessao,
+                        frequencia,
+                        novoPix,
+                        novoFav,
+                        novoPerfil
+                      );
+                      setTextoContrato(atualizado);
+                      showToast(
+                        `Dados do contrato atualizados para [${novoPerfil.via}] ${novoPerfil.apelido}`,
+                        "info"
+                      );
+                    }
+                  }}
+                  className="w-full bg-warm/30 border border-soft rounded-xl px-3 py-2 text-forest font-semibold focus:outline-none focus:border-emerald-600 cursor-pointer"
                 >
-                  <option value="Semanal (1x por semana)">Semanal (1x por semana)</option>
-                  <option value="Quinzenal (a cada 15 dias)">Quinzenal (a cada 15 dias)</option>
-                  <option value="Bisemanal (2x por semana)">Bisemanal (2x por semana)</option>
-                  <option value="Mensal (1x por mês)">Mensal (1x por mês)</option>
-                  <option value="Sob Demanda / Conforme evolução">Sob Demanda / Conforme evolução</option>
+                  {perfisDisponiveis.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {formatPerfilSelectOption(p)}
+                    </option>
+                  ))}
                 </select>
               </div>
 
-              <div>
-                <label className="block text-[10px] font-bold uppercase text-forest/60 mb-1">
-                  Chave Pix (Para Honorários)
-                </label>
-                <input
-                  type="text"
-                  value={chavePix}
-                  onChange={(e) => setChavePix(e.target.value)}
-                  className="w-full bg-warm/30 border border-soft rounded-xl px-3 py-2 text-forest font-semibold focus:outline-none focus:border-emerald-600"
-                  placeholder="CPF, E-mail ou Celular"
-                />
-              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-forest/60 mb-1">
+                    Valor por Sessão (R$)
+                  </label>
+                  <input
+                    type="text"
+                    value={valorSessao}
+                    onChange={(e) => setValorSessao(e.target.value)}
+                    className="w-full bg-warm/30 border border-soft rounded-xl px-3 py-2 text-forest font-bold tabular-nums focus:outline-none focus:border-emerald-600"
+                    placeholder="Ex: 120,00"
+                  />
+                </div>
 
-              <div>
-                <label className="block text-[10px] font-bold uppercase text-forest/60 mb-1">
-                  Favorecido da Chave Pix
-                </label>
-                <input
-                  type="text"
-                  value={favorecidoPix}
-                  onChange={(e) => setFavorecidoPix(e.target.value)}
-                  className="w-full bg-warm/30 border border-soft rounded-xl px-3 py-2 text-forest font-semibold focus:outline-none focus:border-emerald-600"
-                  placeholder="Nome do titular"
-                />
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-forest/60 mb-1">
+                    Frequência Acordada
+                  </label>
+                  <select
+                    value={frequencia}
+                    onChange={(e) => setFrequencia(e.target.value)}
+                    className="w-full bg-warm/30 border border-soft rounded-xl px-3 py-2 text-forest font-semibold focus:outline-none focus:border-emerald-600"
+                  >
+                    <option value="Semanal (1x por semana)">Semanal (1x por semana)</option>
+                    <option value="Quinzenal (a cada 15 dias)">Quinzenal (a cada 15 dias)</option>
+                    <option value="Bisemanal (2x por semana)">Bisemanal (2x por semana)</option>
+                    <option value="Mensal (1x por mês)">Mensal (1x por mês)</option>
+                    <option value="Sob Demanda / Conforme evolução">Sob Demanda / Conforme evolução</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-forest/60 mb-1">
+                    Chave Pix ({perfilSelecionado.via})
+                  </label>
+                  <input
+                    type="text"
+                    value={chavePix}
+                    onChange={(e) => setChavePix(e.target.value)}
+                    className="w-full bg-warm/30 border border-soft rounded-xl px-3 py-2 text-forest font-semibold font-mono focus:outline-none focus:border-emerald-600"
+                    placeholder="CPF, CNPJ, E-mail ou Celular"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-forest/60 mb-1">
+                    Favorecido da Chave Pix
+                  </label>
+                  <input
+                    type="text"
+                    value={favorecidoPix}
+                    onChange={(e) => setFavorecidoPix(e.target.value)}
+                    className="w-full bg-warm/30 border border-soft rounded-xl px-3 py-2 text-forest font-semibold focus:outline-none focus:border-emerald-600"
+                    placeholder="Nome ou Razão Social"
+                  />
+                </div>
               </div>
             </div>
 
-            <div className="pt-2 flex items-center justify-between text-[11px] text-forest/70">
-              <span>
+            <div className="pt-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-forest/70">
+              <span className="tabular-nums">
                 Estimativa mensal calculada: <strong className="text-emerald-800 font-bold">{calcularEstimativa(valorSessao, frequencia)}</strong>
               </span>
               <button
                 type="button"
                 onClick={() => {
-                  const novoTexto = gerarTextoCompilado(valorSessao, frequencia, chavePix, favorecidoPix);
+                  const novoTexto = gerarTextoCompilado(valorSessao, frequencia, chavePix, favorecidoPix, perfilSelecionado);
                   setTextoContrato(novoTexto);
                   showToast("Valores e termos atualizados no corpo do contrato!", "success");
                 }}
@@ -534,7 +628,7 @@ export const ContratoGeradorModal: React.FC<ContratoGeradorModalProps> = ({
             </div>
 
             {activeTab === "previa" ? (
-              <div className="p-6 bg-white border border-soft rounded-2xl text-xs sm:text-sm text-forest/90 leading-relaxed font-serif whitespace-pre-wrap select-text max-h-[380px] overflow-y-auto shadow-inner custom-scrollbar border-l-4 border-l-emerald-600">
+              <div className="p-6 bg-white border border-soft rounded-2xl text-xs sm:text-sm text-forest/90 leading-relaxed font-serif whitespace-pre-wrap select-text max-h-[380px] overflow-y-auto shadow-inner custom-scrollbar">
                 {textoContrato}
               </div>
             ) : (

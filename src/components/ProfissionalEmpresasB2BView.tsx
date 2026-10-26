@@ -43,6 +43,8 @@ import {
   normalizePerfisFaturamento,
   resolvePerfilFaturamentoAtivo,
   formatPerfilCurtoLabel,
+  formatPerfilSelectOption,
+  getPerfilDocumentoCurto,
   extractLegacySyncFields,
 } from "../types/faturamento";
 import { PerfisFaturamentoManagerModal } from "./PerfisFaturamentoManagerModal";
@@ -79,6 +81,7 @@ export const ProfissionalEmpresasB2BView: React.FC<ProfissionalEmpresasB2BViewPr
   const [filtroStatusComercial, setFiltroStatusComercial] = useState<
     "todas" | StatusEmpresaB2B
   >("todas");
+  const [filtroEmissorCarteira, setFiltroEmissorCarteira] = useState<string>("todos");
 
   // Filtros do Dashboard B2B Próprio
   const hoje = new Date();
@@ -326,6 +329,19 @@ export const ProfissionalEmpresasB2BView: React.FC<ProfissionalEmpresasB2BViewPr
       ) {
         return false;
       }
+      if (filtroEmissorCarteira !== "todos") {
+        const pEmissor = resolvePerfilFaturamentoAtivo(
+          perfisFaturamento,
+          emp.perfilFaturamentoId,
+          emp.perfilFaturamento || "PJ"
+        );
+        if (
+          pEmissor.via !== filtroEmissorCarteira &&
+          pEmissor.id !== filtroEmissorCarteira
+        ) {
+          return false;
+        }
+      }
       if (!buscaCarteira.trim()) return true;
       const t = buscaCarteira.toLowerCase();
       return (
@@ -335,7 +351,7 @@ export const ProfissionalEmpresasB2BView: React.FC<ProfissionalEmpresasB2BViewPr
         (emp.contatoNome || "").toLowerCase().includes(t)
       );
     });
-  }, [empresasB2B, filtroStatusComercial, buscaCarteira]);
+  }, [empresasB2B, filtroStatusComercial, filtroEmissorCarteira, perfisFaturamento, buscaCarteira]);
 
   const handleSavePerfisNoPerfil = async (novosPerfis: PerfilFaturamentoItem[]) => {
     const profId = profile?.uid || user?.uid;
@@ -668,15 +684,33 @@ export const ProfissionalEmpresasB2BView: React.FC<ProfissionalEmpresasB2BViewPr
                 ))}
               </div>
 
-              <div className="relative flex items-center">
-                <Search className="w-3.5 h-3.5 text-forest/45 absolute left-3 pointer-events-none" />
-                <input
-                  type="text"
-                  value={buscaCarteira}
-                  onChange={(e) => setBuscaCarteira(e.target.value)}
-                  placeholder="Buscar por empresa, CNPJ ou contato..."
-                  className="pl-8 pr-3 py-2 bg-warm/35 border border-soft rounded-xl text-xs text-forest outline-none focus:border-forest w-full sm:w-64"
-                />
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  value={filtroEmissorCarteira}
+                  onChange={(e) => setFiltroEmissorCarteira(e.target.value)}
+                  className="px-3 py-2 bg-warm/35 border border-soft rounded-xl text-xs font-semibold text-forest outline-none focus:border-forest cursor-pointer max-w-[230px]"
+                  title="Filtrar por Perfil Emissor (PF / PJ)"
+                >
+                  <option value="todos">Todos os Perfis (PF + PJ)</option>
+                  <option value="PF">Somente Pessoa Física (PF)</option>
+                  <option value="PJ">Somente Pessoa Jurídica (PJ)</option>
+                  {perfisFaturamento.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {formatPerfilSelectOption(p)}
+                    </option>
+                  ))}
+                </select>
+
+                <div className="relative flex items-center flex-1 sm:flex-initial">
+                  <Search className="w-3.5 h-3.5 text-forest/45 absolute left-3 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={buscaCarteira}
+                    onChange={(e) => setBuscaCarteira(e.target.value)}
+                    placeholder="Buscar por empresa, CNPJ ou contato..."
+                    className="pl-8 pr-3 py-2 bg-warm/35 border border-soft rounded-xl text-xs text-forest outline-none focus:border-forest w-full sm:w-60"
+                  />
+                </div>
               </div>
             </div>
 
@@ -775,7 +809,10 @@ export const ProfissionalEmpresasB2BView: React.FC<ProfissionalEmpresasB2BViewPr
                             <span aria-hidden="true">·</span>
                             <span>
                               Emissor: <strong>[{pEmissor.via}]</strong>{" "}
-                              {formatPerfilCurtoLabel(pEmissor)}
+                              {formatPerfilCurtoLabel(pEmissor)} ·{" "}
+                              <span className="font-mono">
+                                {getPerfilDocumentoCurto(pEmissor)}
+                              </span>
                             </span>
                           </div>
                         </div>
@@ -1388,9 +1425,18 @@ export const ProfissionalEmpresasB2BView: React.FC<ProfissionalEmpresasB2BViewPr
                 </div>
 
                 <div>
-                  <label className="block font-bold text-forest mb-1">
-                    Perfil de Faturamento Padrão
-                  </label>
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <label className="block font-bold text-forest">
+                      Perfil de Faturamento Padrão (PF / PJ)
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setShowGerenciarPerfisModal(true)}
+                      className="text-[11px] font-bold text-emerald-800 hover:underline cursor-pointer"
+                    >
+                      Gerenciar Perfis
+                    </button>
+                  </div>
                   <select
                     value={formNova.perfilFaturamentoId || perfilPadraoInicial?.id || ""}
                     onChange={(e) =>
@@ -1399,11 +1445,11 @@ export const ProfissionalEmpresasB2BView: React.FC<ProfissionalEmpresasB2BViewPr
                         perfilFaturamentoId: e.target.value,
                       })
                     }
-                    className="w-full px-3 py-2 bg-warm/30 border border-soft rounded-xl text-forest font-semibold outline-none focus:border-forest"
+                    className="w-full px-3 py-2 bg-warm/30 border border-soft rounded-xl text-forest font-semibold outline-none focus:border-forest cursor-pointer"
                   >
                     {perfisFaturamento.map((p) => (
                       <option key={p.id} value={p.id}>
-                        [{p.via}] {formatPerfilCurtoLabel(p)}
+                        {formatPerfilSelectOption(p)}
                       </option>
                     ))}
                   </select>
