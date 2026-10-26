@@ -91,7 +91,7 @@ export function WhiteLabelProfileConfigPanel({
   const mapsPreview = buildMapsUrls(endereco);
   const publicPageUrl = profile?.uid ? `${window.location.origin}?prof=${profile.uid}` : "";
 
-  if (profile.plano !== "avancado") {
+  if (profile.isCortesia || profile.plano !== "avancado") {
     return (
       <div className="p-6 sm:p-8 bg-gradient-to-br from-amber-50 to-warm/60 rounded-3xl border border-amber-200/80 space-y-5 text-center">
         <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center mx-auto shadow-xs">

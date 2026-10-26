@@ -8857,6 +8857,7 @@ export function DashboardView({
             <FeatureGate
               requiredPlan="avancado"
               userPlan={profile?.plano}
+              isCortesia={profile?.isCortesia === true}
               fallback={
                 <div className="p-8 bg-white border border-soft rounded-3xl text-center space-y-4 max-w-xl mx-auto shadow-2xs">
                   <div className="mx-auto w-12 h-12 bg-warm rounded-2xl border border-soft flex items-center justify-center text-forest">
@@ -9670,7 +9671,7 @@ export function DashboardView({
                     ) : null}
                   </button>
 
-                  <FeatureGate userPlan={profile?.plano} requiredPlan="avancado" fallback={
+                  <FeatureGate userPlan={profile?.plano} isCortesia={profile?.isCortesia === true} requiredPlan="avancado" fallback={
                     <button
                       type="button"
                       className="px-3.5 py-1.5 rounded-lg text-forest/40 flex items-center gap-1.5 cursor-not-allowed text-xs font-semibold"
@@ -11028,6 +11029,112 @@ export function DashboardView({
                       </p>
                     </div>
                   </div>
+
+                   {/* Planos de Adesão da Rede & Status do Plano Avançado (Com Trava de Gestão Master) */}
+                   <div className="bg-white p-8 rounded-[2rem] border border-soft shadow-xs space-y-6">
+                     <div className="border-b border-soft pb-4">
+                       <h4 className="font-serif text-xl font-bold text-forest flex items-center gap-2">
+                         <Layers className="w-5 h-5 text-forest/70" />
+                         Planos de Adesão da Rede & Status do Seu Plano
+                       </h4>
+                       <p className="text-xs text-forest/70 mt-1">
+                         Conheça os planos disponíveis. O acesso ao Plano Avançado é exclusivo mediante liberação e autorização prévia da Gestão Master.
+                       </p>
+                     </div>
+
+                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                       {(globalConfigs.planosProfissionais || PLANOS_PROFISSIONAIS_PADRAO).map((pItem: any, idx: number) => {
+                         const isAvancado = String(pItem.nome || "").toLowerCase().includes("avançado") || String(pItem.id || "").toLowerCase().includes("avancado");
+                         const isLiberadoPelaGestao = profile?.planoAvancadoLiberado === true || profile?.plano === "avancado";
+                         const isPlanoAtual = (profile?.plano || "essencial").toLowerCase().includes(isAvancado ? "avanc" : "essencial");
+
+                         return (
+                           <div key={pItem.id || idx} className={`p-6 rounded-3xl border flex flex-col justify-between gap-4 ${
+                             isAvancado && !isLiberadoPelaGestao
+                               ? "bg-warm/40 border-amber-300/60 opacity-90"
+                               : isPlanoAtual
+                                 ? "bg-emerald-500/10 border-emerald-500/40 ring-2 ring-emerald-500/20"
+                                 : "bg-warm/20 border-soft"
+                           }`}>
+                             <div className="space-y-3">
+                               <div className="flex justify-between items-start">
+                                 <span className="text-[10px] font-bold uppercase tracking-wider text-forest/60">
+                                   Plano {idx + 1}
+                                 </span>
+                                 {isAvancado && !isLiberadoPelaGestao && (
+                                   <span className="px-2.5 py-0.5 bg-amber-100 text-amber-900 text-[10px] font-bold rounded-full flex items-center gap-1 border border-amber-300">
+                                     <Lock className="w-3 h-3 text-amber-800" />
+                                     Bloqueado (Requer Master)
+                                   </span>
+                                 )}
+                                 {isPlanoAtual && (
+                                   <span className="px-2.5 py-0.5 bg-emerald-100 text-emerald-800 text-[10px] font-bold rounded-full">
+                                     Seu Plano Atual
+                                   </span>
+                                 )}
+                               </div>
+
+                               <div>
+                                 <h5 className="font-serif font-bold text-lg text-forest">
+                                   {pItem.nome}
+                                 </h5>
+                                 <p className="text-xs text-forest/65 mt-0.5">
+                                   {pItem.subtitulo || pItem.descricao}
+                                 </p>
+                               </div>
+
+                               <div className="flex items-baseline gap-1">
+                                 <span className="text-xs font-bold text-forest/70">R$</span>
+                                 <span className="text-2xl font-extrabold text-forest font-serif">{pItem.valorMensal}</span>
+                                 <span className="text-[11px] text-forest/60">/mês</span>
+                               </div>
+
+                               <ul className="space-y-1.5 text-xs text-forest/80 pt-2 border-t border-soft/50">
+                                 {(pItem.recursos || []).slice(0, 4).map((rec: string, rIdx: number) => (
+                                   <li key={rIdx} className="flex items-center gap-2">
+                                     <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                     <span>{rec}</span>
+                                   </li>
+                                 ))}
+                               </ul>
+                             </div>
+
+                             <div className="pt-4 border-t border-soft/50">
+                               {isAvancado && !isLiberadoPelaGestao ? (
+                                 <button
+                                   type="button"
+                                   onClick={async () => {
+                                     try {
+                                       await updateDoc(doc(db, "users", profile.uid || user?.uid), {
+                                         solicitacaoPlanoAvancado: true,
+                                         dataSolicitacaoPlanoAvancado: new Date().toISOString(),
+                                       });
+                                       showToast("Solicitação de liberação do Plano Avançado enviada à Gestão Master com sucesso!", "success");
+                                     } catch (err) {
+                                       showToast("Erro ao enviar solicitação.", "error");
+                                     }
+                                   }}
+                                   className="w-full py-2.5 px-4 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer flex items-center justify-center gap-1.5"
+                                 >
+                                   <Lock className="w-3.5 h-3.5" />
+                                   <span>Solicitar Liberação à Gestão</span>
+                                 </button>
+                               ) : (
+                                 <button
+                                   type="button"
+                                   onClick={() => setShowCheckoutModal(true)}
+                                   className="w-full py-2.5 px-4 bg-forest hover:bg-forest/90 text-white rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer flex items-center justify-center gap-1.5"
+                                 >
+                                   <CreditCard className="w-3.5 h-3.5 text-sun" />
+                                   <span>Contratar / Pagar via Stripe</span>
+                                 </button>
+                               )}
+                             </div>
+                           </div>
+                         );
+                       })}
+                     </div>
+                   </div>
 
                   {/* Offboarding Request Section */}
                   <div className="bg-white p-8 rounded-[2rem] border border-soft shadow-xs space-y-6">
