@@ -211,11 +211,18 @@ export function EmpresaBeneficioManager({ empresa, onUpdateSuccess }: EmpresaBen
 
     try {
       const cleanCode = codigoAcesso.trim().toUpperCase();
+      const reservedInvalid = ["EMP-2026", "DEMO", "TESTE", "NOME-CORP", "SEU-CODIGO", "SOLICITAR-AO-RH"];
+      if (cleanCode && (cleanCode.length < 4 || reservedInvalid.includes(cleanCode))) {
+        setFeedback("Código reservado ou muito curto. Clique em 'Gerar Automático' para criar um código válido.");
+        setIsSaving(false);
+        return;
+      }
       const updates = {
         codigoAcesso: cleanCode,
+        ...(cleanCode ? { codigoGeradoPor: "gestao", codigoAtualizadoEm: new Date().toISOString() } : {}),
         logoUrl: logoUrl.trim(),
         slogan: slogan.trim(),
-        beneficioCorporativoAtivo: true,
+        beneficioCorporativoAtivo: Boolean(cleanCode),
         beneficioConfig: {
           cargos,
           servicos,
@@ -314,7 +321,7 @@ export function EmpresaBeneficioManager({ empresa, onUpdateSuccess }: EmpresaBen
               type="text"
               value={codigoAcesso}
               onChange={(e) => setCodigoAcesso(e.target.value.toUpperCase())}
-              placeholder="Ex: EMP-1234 ou NOME-CORP"
+              placeholder="Clique em Gerar Automático"
               className="flex-1 font-mono font-bold text-sm tracking-wider uppercase px-4 py-2.5 bg-white border border-soft rounded-xl focus:outline-none focus:border-sun-dark text-forest"
             />
             <button

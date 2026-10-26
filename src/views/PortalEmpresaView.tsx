@@ -299,10 +299,62 @@ export function PortalEmpresaView({
   const [copiedLinkColab, setCopiedLinkColab] = useState(false);
   const [copiedMsgColab, setCopiedMsgColab] = useState(false);
   const [showModalMensagemColaborador, setShowModalMensagemColaborador] = useState(false);
+  const [isGeneratingCodigoColab, setIsGeneratingCodigoColab] = useState(false);
 
   // Helper para obter o Código de Acesso do Colaborador ativo
   const getCodigoColaborador = () => {
     return (empresaAtiva?.codigoAcesso || empresaPrincipal?.codigoAcesso || "").trim().toUpperCase();
+  };
+
+  // Gera código oficial e exclusivo dos colaboradores diretamente no Portal do RH e grava em empresa_leads
+  const handleGerarCodigoColaboradorRH = async () => {
+    const target = empresaAtiva || empresaPrincipal;
+    if (!target?.id || isGeneratingCodigoColab) return;
+
+    setIsGeneratingCodigoColab(true);
+    try {
+      const baseName = target.nomeEmpresa || target.razaoSocial || "CORP";
+      let prefix = baseName
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-zA-Z]/g, "")
+        .slice(0, 4)
+        .toUpperCase();
+      if (!prefix || prefix.length < 2) prefix = "CORP";
+
+      let candidate = "";
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const randomNum = Math.floor(1000 + Math.random() * 9000);
+        const testCode = `${prefix}-${randomNum}`;
+        const existingSnap = await getDocs(
+          query(collection(db, "empresa_leads"), where("codigoAcesso", "==", testCode))
+        );
+        if (existingSnap.empty) {
+          candidate = testCode;
+          break;
+        }
+      }
+      if (!candidate) {
+        candidate = `${prefix}-${Math.floor(10000 + Math.random() * 90000)}`;
+      }
+
+      const patch = {
+        codigoAcesso: candidate,
+        beneficioCorporativoAtivo: true,
+        codigoGeradoPor: "portal_rh",
+        codigoGeradoEm: new Date().toISOString(),
+      };
+
+      await updateDoc(doc(db, "empresa_leads", target.id), patch);
+      setEmpresaAtiva((prev: any) => (prev && prev.id === target.id ? { ...prev, ...patch } : prev));
+      setEmpresaPrincipal((prev: any) => (prev && prev.id === target.id ? { ...prev, ...patch } : prev));
+      showToast(`Código oficial dos colaboradores "${candidate}" gerado com sucesso!`, "success");
+    } catch (err) {
+      console.error("Erro ao gerar código de colaborador no Portal RH:", err);
+      showToast("Erro ao gerar o código dos colaboradores. Tente novamente.", "error");
+    } finally {
+      setIsGeneratingCodigoColab(false);
+    }
   };
 
   const getNomeEmpresaAtiva = () => {
@@ -327,7 +379,7 @@ export function PortalEmpresaView({
 
   const handleCopiarCodigoColaborador = (codigo: string) => {
     if (!codigo) {
-      showToast("Nenhum código configurado no momento pela Gestão AcolheMente.", "info");
+      showToast("Gere primeiro o código oficial dos colaboradores neste Portal de RH.", "info");
       return;
     }
     navigator.clipboard.writeText(codigo);
@@ -2238,10 +2290,16 @@ export function PortalEmpresaView({
                 </button>
               </div>
             ) : (
-              <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2 py-1 text-[11px] text-slate-600 shadow-2xs">
-                <KeyRound className="w-3 h-3 text-slate-400 shrink-0" />
-                <span>Código: <span className="text-slate-500 font-medium">Aguardando Gestão</span></span>
-              </div>
+              <button
+                type="button"
+                onClick={handleGerarCodigoColaboradorRH}
+                disabled={isGeneratingCodigoColab}
+                className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl px-2.5 py-1.5 text-[11px] font-bold shadow-2xs transition-colors cursor-pointer disabled:opacity-50"
+                title="Gerar Código Oficial de Acesso para os Colaboradores"
+              >
+                <KeyRound className="w-3.5 h-3.5 text-sun shrink-0" />
+                <span>{isGeneratingCodigoColab ? "Gerando..." : "+ Gerar Código Colaborador"}</span>
+              </button>
             )}
 
             <button
@@ -3203,7 +3261,25 @@ export function PortalEmpresaView({
                   </button>
                 </div>
               </div>
-            ) : null}
+            ) : (
+              <div className="bg-amber-50/80 border border-amber-200 rounded-xl px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2.5 shadow-2xs">
+                <div className="flex items-center gap-2.5 text-xs text-amber-950">
+                  <KeyRound className="w-4 h-4 text-amber-700 shrink-0" />
+                  <span>
+                    <strong>Código dos Colaboradores ainda não gerado:</strong> gere agora a chave exclusiva desta empresa para liberar o acesso dos seus colaboradores ao catálogo.
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleGerarCodigoColaboradorRH}
+                  disabled={isGeneratingCodigoColab}
+                  className="px-3 py-1.5 bg-forest hover:bg-forest/90 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 text-sun ${isGeneratingCodigoColab ? "animate-spin" : ""}`} />
+                  <span>{isGeneratingCodigoColab ? "Gerando..." : "Gerar Código dos Colaboradores"}</span>
+                </button>
+              </div>
+            )}
 
             {/* Header da Gestão de Colaboradores & Ações em Massa */}
             <div className="bg-white p-3 sm:p-3.5 rounded-xl border border-soft shadow-xs flex flex-col lg:flex-row items-start lg:items-center justify-between gap-2.5">
@@ -4325,9 +4401,15 @@ export function PortalEmpresaView({
                     </button>
                   </div>
                 ) : (
-                  <span className="text-xs text-amber-800 font-semibold italic">
-                    Aguardando configuração pela Gestão AcolheMente
-                  </span>
+                  <button
+                    type="button"
+                    onClick={handleGerarCodigoColaboradorRH}
+                    disabled={isGeneratingCodigoColab}
+                    className="px-3.5 py-1.5 bg-forest hover:bg-forest/90 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 text-sun ${isGeneratingCodigoColab ? "animate-spin" : ""}`} />
+                    <span>{isGeneratingCodigoColab ? "Gerando código..." : "Gerar Código dos Colaboradores"}</span>
+                  </button>
                 )}
               </div>
             </div>

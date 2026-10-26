@@ -22,6 +22,8 @@ interface GestaoPlanosProfissionaisProps {
   planos: PlanoProfissionalItem[];
   exibirPlanos?: boolean;
   onToggleExibirPlanos?: (novoValor: boolean) => Promise<void> | void;
+  exibirPlanosPainel?: boolean;
+  onToggleExibirPlanosPainel?: (novoValor: boolean) => Promise<void> | void;
   onSavePlanos: (novosPlanos: PlanoProfissionalItem[]) => Promise<void> | void;
   showToast: (msg: string, type?: "success" | "error" | "info") => void;
 }
@@ -30,12 +32,15 @@ export function GestaoPlanosProfissionais({
   planos = PLANOS_PROFISSIONAIS_PADRAO,
   exibirPlanos = false,
   onToggleExibirPlanos,
+  exibirPlanosPainel = true,
+  onToggleExibirPlanosPainel,
   onSavePlanos,
   showToast,
 }: GestaoPlanosProfissionaisProps) {
   const currentPlanos = planos && planos.length > 0 ? planos : PLANOS_PROFISSIONAIS_PADRAO;
   const [listaPlanos, setListaPlanos] = useState<PlanoProfissionalItem[]>(currentPlanos);
   const [isTogglingExibir, setIsTogglingExibir] = useState(false);
+  const [isTogglingExibirPainel, setIsTogglingExibirPainel] = useState(false);
   const [planoAtivoAba, setPlanoAtivoAba] = useState<number>(0);
   const [isSaving, setIsSaving] = useState(false);
   const [novoRecursoTexto, setNovoRecursoTexto] = useState("");
@@ -274,6 +279,82 @@ export function GestaoPlanosProfissionais({
             <>
               <ToggleLeft className="w-5 h-5 text-amber-200" />
               <span>{isTogglingExibir ? "Alterando..." : "Habilitar Planos na Página"}</span>
+            </>
+          )}
+        </button>
+      </div>
+
+      {/* Chave Seletora 2: Exibição dos Planos no Painel do Profissional */}
+      <div className={`p-4 sm:p-5 rounded-2xl border transition-all ${
+        exibirPlanosPainel !== false 
+          ? "bg-emerald-500/10 border-emerald-500/30" 
+          : "bg-amber-500/10 border-amber-500/30"
+      } flex flex-col sm:flex-row sm:items-center justify-between gap-4`}>
+        <div className="flex items-start gap-3.5">
+          <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+            exibirPlanosPainel !== false ? "bg-emerald-600 text-white" : "bg-amber-600 text-white"
+          }`}>
+            <CreditCard className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-bold text-sm text-forest">
+                Chave Seletora: Exibição dos Planos no Painel do Profissional
+              </span>
+              <span className={`text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full ${
+                exibirPlanosPainel !== false 
+                  ? "bg-emerald-100 text-emerald-800 border border-emerald-300" 
+                  : "bg-amber-100 text-amber-900 border border-amber-300"
+              }`}>
+                {exibirPlanosPainel !== false ? "Planos Visíveis no Painel" : "Planos Ocultos no Painel"}
+              </span>
+            </div>
+            <p className="text-xs text-forest/80 leading-relaxed mt-1 max-w-2xl">
+              {exibirPlanosPainel !== false 
+                ? "Os profissionais visualizam os planos de adesão disponíveis em seu painel de pagamentos (com exceção de cortesia que exibe apenas o plano Acolher)."
+                : "Os planos de adesão estão ocultos no painel dos profissionais. Profissionais em cortesia mantêm acesso ao Plano Acolher."}
+            </p>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          disabled={isTogglingExibirPainel}
+          onClick={async () => {
+            if (onToggleExibirPlanosPainel) {
+              setIsTogglingExibirPainel(true);
+              try {
+                const novoVal = exibirPlanosPainel === false ? true : false;
+                await onToggleExibirPlanosPainel(novoVal);
+                showToast(
+                  novoVal 
+                    ? "Planos habilitados no painel dos profissionais!" 
+                    : "Planos ocultados no painel dos profissionais.",
+                  "success"
+                );
+              } catch (e) {
+                console.error(e);
+                showToast("Erro ao alterar visibilidade no painel.", "error");
+              } finally {
+                setIsTogglingExibirPainel(false);
+              }
+            }
+          }}
+          className={`px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 shrink-0 transition-all cursor-pointer shadow-sm ${
+            exibirPlanosPainel !== false
+              ? "bg-emerald-700 hover:bg-emerald-800 text-white"
+              : "bg-amber-700 hover:bg-amber-800 text-white"
+          }`}
+        >
+          {exibirPlanosPainel !== false ? (
+            <>
+              <ToggleRight className="w-5 h-5 text-emerald-200" />
+              <span>{isTogglingExibirPainel ? "Alterando..." : "Desabilitar no Painel"}</span>
+            </>
+          ) : (
+            <>
+              <ToggleLeft className="w-5 h-5 text-amber-200" />
+              <span>{isTogglingExibirPainel ? "Alterando..." : "Habilitar no Painel"}</span>
             </>
           )}
         </button>

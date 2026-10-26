@@ -361,37 +361,35 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
 
   const handleVerificarCpfColaborador = () => {
     const cleanCpf = colaboradorCpf.replace(/\D/g, "");
-    if (!cleanCpf || cleanCpf.length < 11) {
+    if (!cleanCpf || cleanCpf.length !== 11) {
       setCpfErro("Por favor, digite um CPF válido com 11 dígitos.");
       setCpfVerificado(false);
       return;
     }
 
-    const colaboradores = empresaValidated?.colaboradoresList || [];
-    // Se for empresa demo e o usuário digitar o CPF de exemplo ou qualquer CPF válido, simulamos o colaborador
-    const isDemo = empresaValidated?.id === "empresa-demo" || colaboradores.length === 0;
-    
-    let titularEncontrado = colaboradores.find((c: any) => {
+    const colaboradores = Array.isArray(empresaValidated?.colaboradoresList)
+      ? empresaValidated.colaboradoresList
+      : [];
+    const colaboradoresAtivos = colaboradores.filter(
+      (c: any) =>
+        c &&
+        c.status !== "desligado" &&
+        c.status !== "inativo" &&
+        c.desligado !== true &&
+        c.ativo !== false
+    );
+
+    if (colaboradoresAtivos.length === 0) {
+      setCpfVerificado(true);
+      setCpfErro("");
+      return;
+    }
+
+    const titularEncontrado = colaboradoresAtivos.find((c: any) => {
       const cCpf = (c.cpf || "").replace(/\D/g, "");
       const isTitular = !c.tipo || c.tipo === "titular";
       return cCpf === cleanCpf && isTitular;
     });
-
-    if (!titularEncontrado && isDemo) {
-      titularEncontrado = {
-        nomeCompleto: "João da Silva (Colaborador Exemplo)",
-        cpf: cleanCpf,
-        cargo: "analista",
-        telefone: "(11) 99999-9999"
-      };
-      // Adicionar dependentes demo se não houver
-      if (dependentesCadastrados.length === 0) {
-        setDependentesCadastrados([
-          { nomeCompleto: "Maria da Silva", parentesco: "Cônjuge / Parceiro(a)" },
-          { nomeCompleto: "Pedrinho da Silva (12 anos)", parentesco: "Filho(a) / Criança" }
-        ]);
-      }
-    }
 
     if (titularEncontrado) {
       setColaboradorNome(titularEncontrado.nomeCompleto || titularEncontrado.nome || "");
@@ -402,22 +400,21 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
         setColaboradorWhatsapp(titularEncontrado.telefone || titularEncontrado.whatsapp || "");
       }
 
-      // Buscar dependentes cadastrados para este titular
-      const deps = colaboradores.filter((c: any) => {
+      // Buscar dependentes ativos cadastrados para este titular
+      const deps = colaboradoresAtivos.filter((c: any) => {
         const isDep = c.tipo === "dependente";
         const vinculo = (c.titularVinculado || "").replace(/\D/g, "");
         const nomeVinculo = (c.titularVinculado || "").toLowerCase();
         const nomeTitular = (titularEncontrado.nomeCompleto || titularEncontrado.nome || "").toLowerCase();
         return isDep && (vinculo === cleanCpf || (nomeVinculo && nomeVinculo === nomeTitular));
       });
-      if (deps.length > 0) {
-        setDependentesCadastrados(deps);
-      }
+      setDependentesCadastrados(deps);
 
       setCpfVerificado(true);
       setCpfErro("");
     } else {
       setCpfVerificado(false);
+      setDependentesCadastrados([]);
       setCpfErro(`CPF "${colaboradorCpf}" não consta na base ativa da empresa ${empresaValidated?.nomeEmpresa || ""}. Por favor, procure o RH de sua empresa para averiguar o cadastro e inclusão.`);
     }
   };
@@ -589,20 +586,51 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
     return () => unsub();
   }, []);
 
-  // Validação do Código da Empresa
+  // Validação estrita do Código Corporativo gerado na Gestão ou Portal de RH
   const handleValidateCompanyCode = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanCode = inputCode.trim().toUpperCase();
     if (!cleanCode) {
-      setCodeError("Por favor, digite o código da sua empresa.");
+      setCodeError("Por favor, digite o código de acesso fornecido pelo RH da sua empresa.");
+      return;
+    }
+
+    const codigosReservadosInvalidos = new Set([
+      "EMP-2026",
+      "DEMO",
+      "TESTE",
+      "NOME-CORP",
+      "SEU-CODIGO",
+      "SOLICITAR-AO-RH",
+    ]);
+
+    if (cleanCode.length < 4 || codigosReservadosInvalidos.has(cleanCode)) {
+      setCodeError(
+        "Código de acesso inválido ou não autorizado. Solicite o código oficial de colaborador gerado pelo RH da sua empresa."
+      );
       return;
     }
 
     setIsValidatingCode(true);
     setCodeError("");
 
+    const isEmpresaElegivelComCodigo = (data: any, targetCode: string) => {
+      if (!data || typeof data.codigoAcesso !== "string") return false;
+      const storedCode = data.codigoAcesso.trim().toUpperCase();
+      if (!storedCode || storedCode.length < 4 || codigosReservadosInvalidos.has(storedCode)) {
+        return false;
+      }
+      if (storedCode !== targetCode) return false;
+      if (data.ativo === false || data.inativado === true || data.desligado === true) return false;
+      const st = String(data.status || "").trim().toLowerCase();
+      if (st === "inativo" || st === "rejeitado" || st === "cancelado" || st === "arquivado") {
+        return false;
+      }
+      return true;
+    };
+
     try {
-      // 1. Busca no Firestore em 'empresa_leads'
+      // 1. Busca direta no Firestore em 'empresa_leads' pelo campo codigoAcesso exato
       const q = query(
         collection(db, "empresa_leads"),
         where("codigoAcesso", "==", cleanCode)
@@ -612,63 +640,51 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
       let matchedData: EmpresaData | null = null;
 
       if (!snapshot.empty) {
-        const docSnap = snapshot.docs[0];
-        const data = docSnap.data() as any;
-        matchedData = {
-          id: docSnap.id,
-          nomeEmpresa: data.nomeEmpresa || "Empresa Parceira",
-          cnpj: data.cnpj,
-          codigoAcesso: data.codigoAcesso || cleanCode,
-          logoUrl: data.logoUrl || "",
-          slogan: data.slogan || "Cuidando do bem-estar e da saúde mental da nossa equipe em parceria com a AcolheMente.",
-          email: data.email,
-          colaboradoresList: data.colaboradoresList || [],
-          beneficioConfig: data.beneficioConfig,
-        };
-      } else {
-        // Fallback: varre todas as empresas
+        const validDoc = snapshot.docs.find((d) => isEmpresaElegivelComCodigo(d.data(), cleanCode));
+        if (validDoc) {
+          const data = validDoc.data() as any;
+          matchedData = {
+            id: validDoc.id,
+            nomeEmpresa: data.nomeEmpresa || data.razaoSocial || "Empresa Parceira",
+            cnpj: data.cnpj,
+            codigoAcesso: data.codigoAcesso.trim().toUpperCase(),
+            logoUrl: data.logoUrl || "",
+            slogan: data.slogan || "Cuidando do bem-estar e da saúde mental da nossa equipe em parceria com a AcolheMente.",
+            email: data.email,
+            colaboradoresList: Array.isArray(data.colaboradoresList) ? data.colaboradoresList : [],
+            beneficioConfig: data.beneficioConfig,
+          };
+        }
+      }
+
+      // 2. Fallback apenas para normalização de caixa/espaços no próprio campo codigoAcesso (nunca por nome da empresa ou prefixo aleatório)
+      if (!matchedData) {
         const allDocs = await getDocs(collection(db, "empresa_leads"));
         allDocs.forEach((docSnap) => {
+          if (matchedData) return;
           const data = docSnap.data() as any;
-          if (
-            (data.codigoAcesso && data.codigoAcesso.trim().toUpperCase() === cleanCode) ||
-            (data.nomeEmpresa && data.nomeEmpresa.trim().toUpperCase() === cleanCode)
-          ) {
+          if (isEmpresaElegivelComCodigo(data, cleanCode)) {
             matchedData = {
               id: docSnap.id,
-              nomeEmpresa: data.nomeEmpresa,
+              nomeEmpresa: data.nomeEmpresa || data.razaoSocial || "Empresa Parceira",
               cnpj: data.cnpj,
-              codigoAcesso: data.codigoAcesso || cleanCode,
+              codigoAcesso: data.codigoAcesso.trim().toUpperCase(),
               logoUrl: data.logoUrl || "",
               slogan: data.slogan || "Cuidando do bem-estar e da saúde mental da nossa equipe em parceria com a AcolheMente.",
               email: data.email,
-              colaboradoresList: data.colaboradoresList || [],
+              colaboradoresList: Array.isArray(data.colaboradoresList) ? data.colaboradoresList : [],
               beneficioConfig: data.beneficioConfig,
             };
           }
         });
       }
 
-      // Se for código de teste comum ou se não encontrou, criamos empresa demonstrativa para permitir teste imediato
-      if (!matchedData) {
-        if (cleanCode.startsWith("EMP") || cleanCode.startsWith("CORP") || cleanCode === "DEMO" || cleanCode === "TESTE") {
-          matchedData = {
-            id: "empresa-demo",
-            nomeEmpresa: "Empresa Parceira Corporativa",
-            codigoAcesso: cleanCode,
-            logoUrl: "",
-            slogan: "Cuidando da saúde emocional e mental da nossa equipe através do benefício AcolheMente.",
-            beneficioConfig: {
-              cargos: DEFAULT_CARGOS_EMPRESA,
-              servicos: DEFAULT_SERVICOS_CORPORATIVOS
-            }
-          };
-        }
-      }
-
       if (matchedData) {
         setEmpresaValidated(matchedData);
-        
+        setCpfVerificado(false);
+        setCpfErro("");
+        setDependentesCadastrados([]);
+
         // Aplica configurações de cargos e serviços da empresa
         const cargos = matchedData.beneficioConfig?.cargos && matchedData.beneficioConfig.cargos.length > 0
           ? matchedData.beneficioConfig.cargos
@@ -682,11 +698,14 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
         setSelectedCargoId(cargos[0]?.id || "analista");
         setEtapaAtual("identificacao");
       } else {
-        setCodeError("Código corporativo não encontrado. Verifique com o RH da sua empresa ou utilize o código de teste 'EMP-2026'.");
+        setEmpresaValidated(null);
+        setCodeError(
+          "Código corporativo inválido ou não encontrado. Somente códigos oficiais gerados para colaboradores pela Gestão ou pelo Portal do RH da sua empresa autorizam o acesso."
+        );
       }
     } catch (err) {
       console.error("Erro ao validar código da empresa:", err);
-      setCodeError("Erro momentâneo de conexão. Tente novamente.");
+      setCodeError("Erro momentâneo de conexão ao validar o código. Tente novamente.");
     } finally {
       setIsValidatingCode(false);
     }
@@ -717,6 +736,40 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
   // Quando o colaborador confirma os dados de identificação e avança para a Triagem de Motivação & Riscos
   const handleAvancarParaTriagem = (servicoPreselecionado?: string) => {
     setFormError("");
+    if (!empresaValidated?.id || !empresaValidated?.codigoAcesso) {
+      setEmpresaValidated(null);
+      setCodeError("Sessão corporativa inválida. Insira novamente o código oficial fornecido pelo seu RH.");
+      return;
+    }
+
+    // Se a empresa possui quadro ativo de colaboradores cadastrados pelo RH, exige validação do CPF na base ativa
+    const colaboradores = Array.isArray(empresaValidated.colaboradoresList)
+      ? empresaValidated.colaboradoresList
+      : [];
+    const titularesAtivos = colaboradores.filter(
+      (c: any) =>
+        c &&
+        (!c.tipo || c.tipo === "titular") &&
+        c.status !== "desligado" &&
+        c.status !== "inativo" &&
+        c.desligado !== true &&
+        c.ativo !== false
+    );
+
+    if (titularesAtivos.length > 0) {
+      const cleanCpf = colaboradorCpf.replace(/\D/g, "");
+      const titularValido = titularesAtivos.find(
+        (c: any) => (c.cpf || "").replace(/\D/g, "") === cleanCpf && cleanCpf.length === 11
+      );
+      if (!titularValido) {
+        setCpfVerificado(false);
+        setFormError(
+          "Confirme seu CPF cadastrado pelo RH antes de avançar. Somente colaboradores ativos da empresa possuem acesso autorizado."
+        );
+        return;
+      }
+    }
+
     if (!colaboradorNome.trim()) {
       setFormError("Por favor, digite seu nome completo.");
       return;
@@ -757,6 +810,11 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
   const handleConcluirTriagemEAvancarParaVitrine = async () => {
     setTriagemErro("");
 
+    if (!empresaValidated?.id || !empresaValidated?.codigoAcesso) {
+      setEmpresaValidated(null);
+      return;
+    }
+
     if (!triagemOrigem) {
       setTriagemErro("Por favor, selecione se a motivação principal da sua busca é por Questões Pessoais ou Questões Relacionadas ao Trabalho.");
       return;
@@ -792,9 +850,9 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
 
       // Gravação imediata nos logs de acesso para contabilização nos indicadores de RH da empresa
       await addDoc(collection(db, "beneficio_acessos"), {
-        empresaId: empresaValidated?.id || "empresa-demo",
-        empresaNome: empresaValidated?.nomeEmpresa || "Empresa Parceira",
-        codigoAcesso: empresaValidated?.codigoAcesso || "",
+        empresaId: empresaValidated.id,
+        empresaNome: empresaValidated.nomeEmpresa || "Empresa Parceira",
+        codigoAcesso: empresaValidated.codigoAcesso,
         colaboradorNome: colaboradorNome.trim(),
         colaboradorWhatsapp: colaboradorWhatsapp.trim(),
         cargoId: selectedCargoId,
@@ -950,6 +1008,10 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
   const handleConfirmarEAbrirWhatsApp = async () => {
     const { prof, servicoId, turno, queixa, temasSelecionados } = modalConfigurarContato;
     if (!prof) return;
+    if (!empresaValidated?.id || !empresaValidated?.codigoAcesso) {
+      setEmpresaValidated(null);
+      return;
+    }
 
     if (!servicoId) {
       setModalConfigurarContato((prev) => ({
@@ -999,9 +1061,9 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
       await addDoc(collection(db, "triagem_corporativa"), {
         status: "solicitacao_servico",
         tipoAcolhimento: "corporativo",
-        empresaId: empresaValidated?.id || "empresa-demo",
-        empresaNome: empresaValidated?.nomeEmpresa || "Empresa Parceira",
-        codigoAcesso: empresaValidated?.codigoAcesso || "",
+        empresaId: empresaValidated.id,
+        empresaNome: empresaValidated.nomeEmpresa || "Empresa Parceira",
+        codigoAcesso: empresaValidated.codigoAcesso,
         colaboradorNome: colaboradorNome.trim(),
         colaboradorWhatsapp: colaboradorWhatsapp.trim(),
         cargoId: selectedCargoId,
@@ -1039,9 +1101,9 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
 
       // 2. Gravação na coleção de acessos corporativos (para métricas e auditoria do RH)
       await addDoc(collection(db, "beneficio_acessos"), {
-        empresaId: empresaValidated?.id || "empresa-demo",
-        empresaNome: empresaValidated?.nomeEmpresa || "Empresa Parceira",
-        codigoAcesso: empresaValidated?.codigoAcesso || "",
+        empresaId: empresaValidated.id,
+        empresaNome: empresaValidated.nomeEmpresa || "Empresa Parceira",
+        codigoAcesso: empresaValidated.codigoAcesso,
         colaboradorNome: colaboradorNome.trim(),
         colaboradorWhatsapp: colaboradorWhatsapp.trim(),
         cargoId: selectedCargoId,
@@ -1142,7 +1204,7 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
                   setInputCode(e.target.value.toUpperCase());
                   setCodeError("");
                 }}
-                placeholder="Ex: EMP-2026 ou NOME-CORP"
+                placeholder="Digite o código oficial fornecido pelo seu RH"
                 className="w-full font-mono font-bold text-center tracking-widest text-base uppercase px-4 py-3 bg-warm/30 border border-soft rounded-xl focus:outline-none focus:border-forest text-forest placeholder:font-sans placeholder:normal-case placeholder:tracking-normal placeholder:text-forest/40"
               />
             </div>

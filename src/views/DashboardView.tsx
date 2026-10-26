@@ -7301,7 +7301,7 @@ export function DashboardView({
                 Links de Cadastros e Formulários
               </h2>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
                 {[
                   {
                     title: "Formulário de Acolhimento",
@@ -7310,7 +7310,7 @@ export function DashboardView({
                   },
                   {
                     title: "Acolhimento Corporativo",
-                    desc: "Link direto para acolhimento de colaboradores parceiros (sem seletor de vias).",
+                    desc: "Link direto para acolhimento de colaboradores (exige código oficial gerado para a empresa).",
                     path: "?view=acolhimento&via=corporativo",
                   },
                   {
@@ -7322,11 +7322,6 @@ export function DashboardView({
                     title: "Formulário para Empresas",
                     desc: "Link para registro de empresas e leads (NR1).",
                     path: "?view=empresa",
-                  },
-                  {
-                    title: "Acesso Demo Protegido",
-                    desc: "Link corporativo pré-configurado de demonstração (Código: EMP-2026).",
-                    path: "?view=acolhimento&via=corporativo&codigo=EMP-2026",
                   },
                 ].map((item, idx) => {
                   const url = `${window.location.origin}${item.path}`;
@@ -7351,9 +7346,9 @@ export function DashboardView({
                         <button
                           onClick={() => {
                             navigator.clipboard.writeText(url);
-                            alert("Link copiado com sucesso!");
+                            showToast("Link copiado com sucesso!", "success");
                           }}
-                          className="p-1.5 bg-sun-light text-sun-dark rounded-lg hover:bg-sun transition-colors shrink-0"
+                          className="p-1.5 bg-sun-light text-sun-dark rounded-lg hover:bg-sun transition-colors shrink-0 cursor-pointer"
                           title="Copiar Link"
                         >
                           <Copy className="w-4 h-4" />
@@ -7607,6 +7602,10 @@ export function DashboardView({
                     exibirPlanos={Boolean((globalConfigs as any).exibirPlanosProfissionais)}
                     onToggleExibirPlanos={async (novoValor) => {
                       await handleUpdateConfiguracoesProperty("exibirPlanosProfissionais", novoValor, true);
+                    }}
+                    exibirPlanosPainel={(globalConfigs as any).exibirPlanosPainel !== false}
+                    onToggleExibirPlanosPainel={async (novoValor) => {
+                      await handleUpdateConfiguracoesProperty("exibirPlanosPainel", novoValor, true);
                     }}
                     onSavePlanos={async (novosPlanos) => {
                       await handleUpdateConfiguracoesProperty("planosProfissionais", novosPlanos, true);
@@ -11030,111 +11029,195 @@ export function DashboardView({
                     </div>
                   </div>
 
-                   {/* Planos de Adesão da Rede & Status do Plano Avançado (Com Trava de Gestão Master) */}
-                   <div className="bg-white p-8 rounded-[2rem] border border-soft shadow-xs space-y-6">
-                     <div className="border-b border-soft pb-4">
-                       <h4 className="font-serif text-xl font-bold text-forest flex items-center gap-2">
-                         <Layers className="w-5 h-5 text-forest/70" />
-                         Planos de Adesão da Rede & Status do Seu Plano
-                       </h4>
-                       <p className="text-xs text-forest/70 mt-1">
-                         Conheça os planos disponíveis. O acesso ao Plano Avançado é exclusivo mediante liberação e autorização prévia da Gestão Master.
-                       </p>
-                     </div>
+                   {/* Planos de Adesão da Rede & Status do Plano (Sincronizado com Gestão Master e Regra de Cortesia) */}
+                   {(globalConfigs as any).exibirPlanosPainel !== false && (() => {
+                     const todosPlanos = globalConfigs.planosProfissionais || PLANOS_PROFISSIONAIS_PADRAO;
+                     const planosAtivosControle = todosPlanos.filter((pItem: any, idx: number) => {
+                       const isBasico =
+                         idx === 0 ||
+                         pItem.id === "plano_1" ||
+                         String(pItem.nome || "").toLowerCase().includes("acolher") ||
+                         String(pItem.nome || "").toLowerCase().includes("básico") ||
+                         String(pItem.nome || "").toLowerCase().includes("basico");
+                       // Quem está em cortesia sempre vê o Plano Acolher (Básico) liberado; demais planos só aparecem se ativos no Controle da Gestão Master
+                       if (isCortesia && isBasico) return true;
+                       return pItem.ativo !== false;
+                     });
 
-                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                       {(globalConfigs.planosProfissionais || PLANOS_PROFISSIONAIS_PADRAO).map((pItem: any, idx: number) => {
-                         const isAvancado = String(pItem.nome || "").toLowerCase().includes("avançado") || String(pItem.id || "").toLowerCase().includes("avancado");
-                         const isLiberadoPelaGestao = profile?.planoAvancadoLiberado === true || profile?.plano === "avancado";
-                         const isPlanoAtual = (profile?.plano || "essencial").toLowerCase().includes(isAvancado ? "avanc" : "essencial");
+                     if (planosAtivosControle.length === 0) return null;
 
-                         return (
-                           <div key={pItem.id || idx} className={`p-6 rounded-3xl border flex flex-col justify-between gap-4 ${
-                             isAvancado && !isLiberadoPelaGestao
-                               ? "bg-warm/40 border-amber-300/60 opacity-90"
-                               : isPlanoAtual
-                                 ? "bg-emerald-500/10 border-emerald-500/40 ring-2 ring-emerald-500/20"
-                                 : "bg-warm/20 border-soft"
-                           }`}>
-                             <div className="space-y-3">
-                               <div className="flex justify-between items-start">
-                                 <span className="text-[10px] font-bold uppercase tracking-wider text-forest/60">
-                                   Plano {idx + 1}
-                                 </span>
-                                 {isAvancado && !isLiberadoPelaGestao && (
-                                   <span className="px-2.5 py-0.5 bg-amber-100 text-amber-900 text-[10px] font-bold rounded-full flex items-center gap-1 border border-amber-300">
-                                     <Lock className="w-3 h-3 text-amber-800" />
-                                     Bloqueado (Requer Master)
-                                   </span>
-                                 )}
-                                 {isPlanoAtual && (
-                                   <span className="px-2.5 py-0.5 bg-emerald-100 text-emerald-800 text-[10px] font-bold rounded-full">
-                                     Seu Plano Atual
-                                   </span>
-                                 )}
-                               </div>
+                     const userPlanNorm = String(profile?.plano || "essencial")
+                       .toLowerCase()
+                       .normalize("NFD")
+                       .replace(/[\u0300-\u036f]/g, "")
+                       .trim();
 
-                               <div>
-                                 <h5 className="font-serif font-bold text-lg text-forest">
-                                   {pItem.nome}
-                                 </h5>
-                                 <p className="text-xs text-forest/65 mt-0.5">
-                                   {pItem.subtitulo || pItem.descricao}
-                                 </p>
-                               </div>
-
-                               <div className="flex items-baseline gap-1">
-                                 <span className="text-xs font-bold text-forest/70">R$</span>
-                                 <span className="text-2xl font-extrabold text-forest font-serif">{pItem.valorMensal}</span>
-                                 <span className="text-[11px] text-forest/60">/mês</span>
-                               </div>
-
-                               <ul className="space-y-1.5 text-xs text-forest/80 pt-2 border-t border-soft/50">
-                                 {(pItem.recursos || []).slice(0, 4).map((rec: string, rIdx: number) => (
-                                   <li key={rIdx} className="flex items-center gap-2">
-                                     <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                                     <span>{rec}</span>
-                                   </li>
-                                 ))}
-                               </ul>
-                             </div>
-
-                             <div className="pt-4 border-t border-soft/50">
-                               {isAvancado && !isLiberadoPelaGestao ? (
-                                 <button
-                                   type="button"
-                                   onClick={async () => {
-                                     try {
-                                       await updateDoc(doc(db, "users", profile.uid || user?.uid), {
-                                         solicitacaoPlanoAvancado: true,
-                                         dataSolicitacaoPlanoAvancado: new Date().toISOString(),
-                                       });
-                                       showToast("Solicitação de liberação do Plano Avançado enviada à Gestão Master com sucesso!", "success");
-                                     } catch (err) {
-                                       showToast("Erro ao enviar solicitação.", "error");
-                                     }
-                                   }}
-                                   className="w-full py-2.5 px-4 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer flex items-center justify-center gap-1.5"
-                                 >
-                                   <Lock className="w-3.5 h-3.5" />
-                                   <span>Solicitar Liberação à Gestão</span>
-                                 </button>
-                               ) : (
-                                 <button
-                                   type="button"
-                                   onClick={() => setShowCheckoutModal(true)}
-                                   className="w-full py-2.5 px-4 bg-forest hover:bg-forest/90 text-white rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer flex items-center justify-center gap-1.5"
-                                 >
-                                   <CreditCard className="w-3.5 h-3.5 text-sun" />
-                                   <span>Contratar / Pagar via Stripe</span>
-                                 </button>
-                               )}
-                             </div>
+                     return (
+                       <div className="bg-white p-8 rounded-[2rem] border border-soft shadow-xs space-y-6">
+                         <div className="border-b border-soft pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                           <div>
+                             <h4 className="font-serif text-xl font-bold text-forest flex items-center gap-2">
+                               <Layers className="w-5 h-5 text-forest/70" />
+                               Planos de Adesão da Rede & Status do Seu Plano
+                             </h4>
+                             <p className="text-xs text-forest/70 mt-1">
+                               {isCortesia
+                                 ? "Você possui Cortesia ativa com o Plano Acolher (Básico) liberado. Outros planos aparecem abaixo apenas quando habilitados pela Gestão Master."
+                                 : "Planos habilitados pela Gestão Master para contratação ou upgrade na plataforma."}
+                             </p>
                            </div>
-                         );
-                       })}
-                     </div>
-                   </div>
+                           {isCortesia && (
+                             <span className="px-3 py-1.5 bg-purple-50 text-purple-900 border border-purple-200 rounded-xl text-xs font-bold flex items-center gap-1.5 shrink-0">
+                               <Gift className="w-4 h-4 text-purple-700" />
+                               Cortesia Ativa • Plano Acolher Liberado
+                             </span>
+                           )}
+                         </div>
+
+                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                           {planosAtivosControle.map((pItem: any, idx: number) => {
+                             const nomeLower = String(pItem.nome || "")
+                               .toLowerCase()
+                               .normalize("NFD")
+                               .replace(/[\u0300-\u036f]/g, "");
+                             const idLower = String(pItem.id || "").toLowerCase();
+
+                             const isBasico =
+                               idLower === "plano_1" ||
+                               nomeLower.includes("acolher") ||
+                               nomeLower.includes("basico") ||
+                               nomeLower.includes("essencial");
+                             const isIntermediario =
+                               idLower === "plano_2" ||
+                               nomeLower.includes("integrar") ||
+                               nomeLower.includes("intermediario");
+                             const isAvancado =
+                               idLower === "plano_3" ||
+                               nomeLower.includes("pleno") ||
+                               nomeLower.includes("avancado");
+
+                             const isLiberadoPelaGestao =
+                               profile?.planoAvancadoLiberado === true ||
+                               userPlanNorm.includes("avanc") ||
+                               userPlanNorm === "plano_3" ||
+                               userPlanNorm.includes("pleno");
+
+                             const isPlanoAtual = isCortesia
+                               ? isBasico
+                               : isAvancado
+                                 ? userPlanNorm.includes("avanc") || userPlanNorm.includes("pleno") || userPlanNorm === "plano_3"
+                                 : isIntermediario
+                                   ? userPlanNorm.includes("intermed") || userPlanNorm.includes("integrar") || userPlanNorm === "plano_2"
+                                   : isBasico && (userPlanNorm === "essencial" || userPlanNorm.includes("acolher") || userPlanNorm.includes("basico") || userPlanNorm === "plano_1");
+
+                             const isCortesiaBasico = isCortesia && isBasico;
+
+                             return (
+                               <div
+                                 key={pItem.id || idx}
+                                 className={`p-6 rounded-3xl border flex flex-col justify-between gap-4 ${
+                                   isAvancado && !isLiberadoPelaGestao
+                                     ? "bg-warm/40 border-amber-300/60 opacity-90"
+                                     : isCortesiaBasico
+                                       ? "bg-purple-50/50 border-purple-300 ring-2 ring-purple-200/50"
+                                       : isPlanoAtual
+                                         ? "bg-emerald-500/10 border-emerald-500/40 ring-2 ring-emerald-500/20"
+                                         : "bg-warm/20 border-soft"
+                                 }`}
+                               >
+                                 <div className="space-y-3">
+                                   <div className="flex justify-between items-start gap-2">
+                                     <span className="text-[10px] font-bold uppercase tracking-wider text-forest/60">
+                                       Plano {idx + 1}
+                                     </span>
+                                     {isCortesiaBasico ? (
+                                       <span className="px-2.5 py-0.5 bg-purple-100 text-purple-900 text-[10px] font-bold rounded-full border border-purple-200">
+                                         Liberado (Cortesia)
+                                       </span>
+                                     ) : isAvancado && !isLiberadoPelaGestao ? (
+                                       <span className="px-2.5 py-0.5 bg-amber-100 text-amber-900 text-[10px] font-bold rounded-full flex items-center gap-1 border border-amber-300">
+                                         <Lock className="w-3 h-3 text-amber-800" />
+                                         Bloqueado (Requer Master)
+                                       </span>
+                                     ) : isPlanoAtual ? (
+                                       <span className="px-2.5 py-0.5 bg-emerald-100 text-emerald-800 text-[10px] font-bold rounded-full">
+                                         Seu Plano Atual
+                                       </span>
+                                     ) : null}
+                                   </div>
+
+                                   <div>
+                                     <h5 className="font-serif font-bold text-lg text-forest">
+                                       {pItem.nome}
+                                     </h5>
+                                     <p className="text-xs text-forest/65 mt-0.5">
+                                       {pItem.subtitulo || pItem.descricao}
+                                     </p>
+                                   </div>
+
+                                   <div className="flex items-baseline gap-1">
+                                     <span className="text-xs font-bold text-forest/70">R$</span>
+                                     <span className="text-2xl font-extrabold text-forest font-serif">
+                                       {isCortesiaBasico ? "0,00" : pItem.valorMensal}
+                                     </span>
+                                     <span className="text-[11px] text-forest/60">
+                                       {isCortesiaBasico ? "/mês (isento)" : "/mês"}
+                                     </span>
+                                   </div>
+
+                                   <ul className="space-y-1.5 text-xs text-forest/80 pt-2 border-t border-soft/50">
+                                     {(pItem.recursos || []).slice(0, 4).map((rec: string, rIdx: number) => (
+                                       <li key={rIdx} className="flex items-center gap-2">
+                                         <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                         <span>{rec}</span>
+                                       </li>
+                                     ))}
+                                   </ul>
+                                 </div>
+
+                                 <div className="pt-4 border-t border-soft/50">
+                                   {isCortesiaBasico ? (
+                                     <div className="w-full py-2.5 px-4 bg-purple-100 text-purple-900 border border-purple-200 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5">
+                                       <Gift className="w-3.5 h-3.5 text-purple-700" />
+                                       <span>Plano Acolher Ativo na Cortesia</span>
+                                     </div>
+                                   ) : isAvancado && !isLiberadoPelaGestao ? (
+                                     <button
+                                       type="button"
+                                       onClick={async () => {
+                                         try {
+                                           await updateDoc(doc(db, "users", profile.uid || user?.uid), {
+                                             solicitacaoPlanoAvancado: true,
+                                             dataSolicitacaoPlanoAvancado: new Date().toISOString(),
+                                           });
+                                           showToast("Solicitação de liberação do Plano Avançado enviada à Gestão Master com sucesso!", "success");
+                                         } catch (err) {
+                                           showToast("Erro ao enviar solicitação.", "error");
+                                         }
+                                       }}
+                                       className="w-full py-2.5 px-4 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer flex items-center justify-center gap-1.5"
+                                     >
+                                       <Lock className="w-3.5 h-3.5" />
+                                       <span>Solicitar Liberação à Gestão</span>
+                                     </button>
+                                   ) : (
+                                     <button
+                                       type="button"
+                                       onClick={() => setShowCheckoutModal(true)}
+                                       className="w-full py-2.5 px-4 bg-forest hover:bg-forest/90 text-white rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer flex items-center justify-center gap-1.5"
+                                     >
+                                       <CreditCard className="w-3.5 h-3.5 text-sun" />
+                                       <span>Contratar / Pagar via Stripe</span>
+                                     </button>
+                                   )}
+                                 </div>
+                               </div>
+                             );
+                           })}
+                         </div>
+                       </div>
+                     );
+                   })()}
 
                   {/* Offboarding Request Section */}
                   <div className="bg-white p-8 rounded-[2rem] border border-soft shadow-xs space-y-6">
