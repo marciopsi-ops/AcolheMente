@@ -40,6 +40,7 @@ import {
 } from "firebase/firestore";
 import { db, handleFirestoreError, OperationType } from "../lib/firebase";
 import { formatProfessionalName } from "../utils/formatters";
+import { isTestUserCredential } from "../types/planosProfissionais";
 
 // Normalizador para busca insensível a acentos, maiúsculas e caracteres especiais
 export function normalizeText(str: string): string {
@@ -385,7 +386,7 @@ export function RedeProfissionalView({
             const roles = Array.isArray(data.roles) ? data.roles : [];
             const isProf = data.role === "profissional" || roles.includes("profissional");
 
-            if (isProf && data.ativo !== false) {
+            if (isProf && data.ativo !== false && !isTestUserCredential(data)) {
               // Foto que o profissional insere no perfil
               const foto =
                 data.photoUrl ||

@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { User, HeartHandshake, X, Quote } from "lucide-react";
+import { User, HeartHandshake, X, Quote, ShieldCheck } from "lucide-react";
 import { collection, doc, onSnapshot, query } from "firebase/firestore";
 import { db, handleFirestoreError, OperationType } from "../lib/firebase";
 import { formatProfessionalName } from "../utils/formatters";
+import { isTestUserCredential } from "../types/planosProfissionais";
 
 export interface ProfissionalCard {
   id: string;
@@ -106,7 +107,7 @@ export function ProfissionaisCarousel() {
             const isProfissional =
               data.role === "profissional" || rolesArray.includes("profissional");
 
-            if (isProfissional && data.ativo !== false) {
+            if (isProfissional && data.ativo !== false && !isTestUserCredential(data)) {
               // Foto que o profissional insere no 'Meu perfil' (photoUrl, foto ou photoURL)
               const foto =
                 data.photoUrl ||
@@ -278,12 +279,18 @@ export function ProfissionaisCarousel() {
                     {prof.profissao}
                   </p>
 
-                  {/* 4. Registro com Efeito Vidro translúcido */}
-                  {prof.crp ? (
-                    <span className="mt-1 text-[10px] sm:text-[11px] font-semibold text-forest/80 bg-forest/5 backdrop-blur-md px-3.5 py-0.5 rounded-full border border-forest/10 shadow-2xs max-w-full truncate shrink-0">
-                      {prof.crp}
+                  {/* 4. Registro + Selo Sênior */}
+                  <div className="mt-1 flex flex-wrap items-center justify-center gap-1.5 max-w-full">
+                    {prof.crp ? (
+                      <span className="text-[10px] sm:text-[11px] font-semibold text-forest/80 bg-forest/5 backdrop-blur-md px-3 py-0.5 rounded-full border border-forest/10 shadow-2xs truncate shrink-0">
+                        {prof.crp}
+                      </span>
+                    ) : null}
+                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-forest bg-sun-light/85 px-2.5 py-0.5 rounded-full border border-sun-dark/30 shadow-2xs shrink-0">
+                      <ShieldCheck className="w-3 h-3 text-sun-dark" />
+                      Selo Sênior
                     </span>
-                  ) : null}
+                  </div>
                 </div>
 
                 {/* 5. Frase editada em "Por que faço parte desse projeto" com card de vidro interno */}

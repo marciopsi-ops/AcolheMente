@@ -48,6 +48,7 @@ import {
 import { db, handleFirestoreError, OperationType } from "../lib/firebase";
 import { formatProfessionalName } from "../utils/formatters";
 import { Acolhimento } from "./ProfissionalEsteiraTarefas";
+import { hasIntegrarFeatures } from "../types/planosProfissionais";
 
 export interface AgendamentoSessao {
   id: string;
@@ -83,10 +84,12 @@ interface ProfissionalAgendaViewProps {
   fichasCorporativas?: any[];
   empresasB2B?: any[];
   plano?: string;
+  userProfile?: any;
   onOpenPacienteDetalhes?: (pacienteId: string) => void;
   onNovoPacienteExternoCadastrado?: (paciente: any) => void;
   initialPacienteId?: string | null;
   onClearInitialPacienteId?: () => void;
+  onGoToPlanos?: () => void;
 }
 
 type ViewMode = "dia" | "semana" | "mes" | "lista";
@@ -131,26 +134,17 @@ export function ProfissionalAgendaView({
   fichasCorporativas = [],
   empresasB2B = [],
   plano = "",
+  userProfile,
   onOpenPacienteDetalhes,
   onNovoPacienteExternoCadastrado,
   initialPacienteId,
   onClearInitialPacienteId,
+  onGoToPlanos,
 }: ProfissionalAgendaViewProps) {
-  // Verificação de Plano Avançado (libera carteira de pacientes externos)
+  // Verificação de Plano Integrar / Credenciais com Acesso Total (libera carteira de pacientes externos)
   const isPlanoAvancado = useMemo(() => {
-    const norm = (plano || "")
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .trim();
-    return (
-      norm === "ia" ||
-      norm === "avancado" ||
-      norm === "premium" ||
-      norm === "pro" ||
-      norm.includes("avanc")
-    );
-  }, [plano]);
+    return hasIntegrarFeatures(userProfile || { plano });
+  }, [userProfile, plano]);
 
   // Estado principal de agendamentos
   const [agendamentos, setAgendamentos] = useState<AgendamentoSessao[]>([]);
@@ -2820,49 +2814,45 @@ export function ProfissionalAgendaView({
 
               <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-400/20 border border-amber-300/40 text-amber-200 text-xs font-bold mb-3">
                 <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                <span>Recurso do Plano Avançado</span>
+                <span>Recurso do Plano Integrar</span>
               </div>
 
               <h3 className="text-xl font-bold font-serif text-white leading-tight">
-                Importação de Pacientes Externos
+                Carteira Particular de Pacientes Externos
               </h3>
               <p className="text-xs text-emerald-100/80 mt-1">
-                Centralize 100% da sua clínica particular em um único lugar.
+                Centralize 100% da sua clínica particular e convênios em um único lugar.
               </p>
             </div>
 
             {/* Conteúdo Explicativo */}
             <div className="p-6 flex flex-col gap-4 text-xs sm:text-sm text-forest/80">
               <p className="leading-relaxed">
-                Em breve, você poderá cadastrar seus pacientes particulares atendidos fora do AcolheMente diretamente pela sua agenda clínica!
+                Com o <strong>Plano Integrar</strong>, você cadastra e acompanha seus pacientes particulares externos diretamente na agenda clínica da plataforma:
               </p>
 
               <div className="bg-emerald-50/70 border border-emerald-100 p-4 rounded-2xl flex flex-col gap-2.5">
                 <span className="font-bold text-forest text-xs uppercase tracking-wider">
-                  O que estará disponível no Plano Avançado:
+                  O que está incluído no Plano Integrar:
                 </span>
                 <div className="flex items-start gap-2">
                   <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                  <span><strong>Prontuário Ilimitado:</strong> Histórico clínico, evoluções e documentos de clientes particulares.</span>
+                  <span><strong>Carteira Externa & B2B Próprio:</strong> Gestão de pacientes particulares externos e empresas clientes próprias.</span>
                 </div>
                 <div className="flex items-start gap-2">
                   <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                  <span><strong>Emissão de Recibos em 1 Clique:</strong> Gere recibos com CRP e envie por WhatsApp ou PDF.</span>
+                  <span><strong>Página White-Label Independente:</strong> Cartão virtual com sua marca, mapa presencial e QR Code.</span>
                 </div>
                 <div className="flex items-start gap-2">
                   <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                  <span><strong>Lembretes Automáticos:</strong> Mensagens programadas para reduzir faltas e atrasos.</span>
-                </div>
-                <div className="flex items-start gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                  <span><strong>Gestão Financeira Consolidada:</strong> Gráficos unificados de receitas da plataforma e do seu consultório.</span>
+                  <span><strong>Faturamento PF/PJ Expandido:</strong> Recibos e controle consolidado da rede + consultório próprio.</span>
                 </div>
               </div>
 
               <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-amber-900 text-xs flex items-center gap-2">
                 <Lock className="w-4 h-4 text-amber-600 shrink-0" />
                 <span>
-                  O botão está pré-configurado na sua agenda e será ativado automaticamente assim que os novos planos forem lançados.
+                  Disponível mediante liberação da Gestão Master e contratação em <strong>Status / Plano</strong>.
                 </span>
               </div>
 
@@ -2871,10 +2861,22 @@ export function ProfissionalAgendaView({
                 <button
                   type="button"
                   onClick={() => setShowPlanoAvancadoModal(false)}
-                  className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-forest hover:bg-forest/90 text-white font-semibold text-xs transition-all shadow-xs cursor-pointer"
+                  className="px-4 py-2.5 rounded-xl border border-soft text-forest/70 hover:text-forest font-semibold text-xs transition-all cursor-pointer"
                 >
-                  Entendido, aguardo o lançamento!
+                  Fechar
                 </button>
+                {onGoToPlanos && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowPlanoAvancadoModal(false);
+                      onGoToPlanos();
+                    }}
+                    className="px-5 py-2.5 rounded-xl bg-forest hover:bg-forest/90 text-white font-semibold text-xs transition-all shadow-xs cursor-pointer"
+                  >
+                    Ver em Status / Plano
+                  </button>
+                )}
               </div>
             </div>
           </div>

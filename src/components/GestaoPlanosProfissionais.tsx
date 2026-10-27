@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { 
   Sparkles, 
   Check, 
@@ -9,17 +9,22 @@ import {
   RotateCcw, 
   Layers, 
   Star,
-  Clock,
   Eye,
   AlertCircle,
   HelpCircle,
   ToggleLeft,
   ToggleRight
 } from "lucide-react";
-import { PlanoProfissionalItem, PLANOS_PROFISSIONAIS_PADRAO } from "../types/planosProfissionais";
+import {
+  PlanoProfissionalItem,
+  PLANOS_PROFISSIONAIS_PADRAO,
+  sanitizePlanoSemHoras,
+  normalizePlanosConfig,
+} from "../types/planosProfissionais";
 
 interface GestaoPlanosProfissionaisProps {
   planos: PlanoProfissionalItem[];
+  planosSchemaVersion?: number;
   exibirPlanos?: boolean;
   onToggleExibirPlanos?: (novoValor: boolean) => Promise<void> | void;
   exibirPlanosPainel?: boolean;
@@ -30,6 +35,7 @@ interface GestaoPlanosProfissionaisProps {
 
 export function GestaoPlanosProfissionais({
   planos = PLANOS_PROFISSIONAIS_PADRAO,
+  planosSchemaVersion,
   exibirPlanos = false,
   onToggleExibirPlanos,
   exibirPlanosPainel = true,
@@ -37,8 +43,12 @@ export function GestaoPlanosProfissionais({
   onSavePlanos,
   showToast,
 }: GestaoPlanosProfissionaisProps) {
-  const currentPlanos = planos && planos.length > 0 ? planos : PLANOS_PROFISSIONAIS_PADRAO;
+  const currentPlanos = normalizePlanosConfig(planos, planosSchemaVersion);
   const [listaPlanos, setListaPlanos] = useState<PlanoProfissionalItem[]>(currentPlanos);
+
+  useEffect(() => {
+    setListaPlanos(normalizePlanosConfig(planos, planosSchemaVersion));
+  }, [planos, planosSchemaVersion]);
   const [isTogglingExibir, setIsTogglingExibir] = useState(false);
   const [isTogglingExibirPainel, setIsTogglingExibirPainel] = useState(false);
   const [planoAtivoAba, setPlanoAtivoAba] = useState<number>(0);
@@ -104,7 +114,6 @@ export function GestaoPlanosProfissionais({
       nome: `Novo Plano ${novoNum}`,
       subtitulo: "Plano Personalizado",
       valorMensal: "39,90",
-      horasInclusas: "Até 12 horas/mês",
       descricao: "Descrição do novo plano para psicólogos, psicanalistas e terapeutas da rede.",
       recursos: [
         "Acesso à triagem da rede AcolheMente",
@@ -137,7 +146,9 @@ export function GestaoPlanosProfissionais({
   const handleSalvar = async () => {
     setIsSaving(true);
     try {
-      await onSavePlanos(listaPlanos);
+      const planosLimpos = listaPlanos.map(sanitizePlanoSemHoras);
+      setListaPlanos(planosLimpos);
+      await onSavePlanos(planosLimpos);
       showToast("Quadro de Planos atualizado e sincronizado com sucesso!", "success");
     } catch (err) {
       console.error(err);
@@ -148,11 +159,15 @@ export function GestaoPlanosProfissionais({
   };
 
   const handleResetarPadrao = () => {
-    if (window.confirm("Deseja restaurar os 3 planos para a configuração padrão oficial da plataforma (Acolher R$ 29,90, Integrar R$ 49,90, Pleno R$ 79,90)?")) {
+    if (
+      window.confirm(
+        "Deseja restaurar os planos para a configuração padrão oficial da plataforma (Plano Acolher Essencial R$ 29,90, Plano Integrar R$ 49,90 e Plano Pleno IA R$ 79,90 inativo/em desenvolvimento)?"
+      )
+    ) {
       setListaPlanos(PLANOS_PROFISSIONAIS_PADRAO);
       onSavePlanos(PLANOS_PROFISSIONAIS_PADRAO);
       setPlanoAtivoAba(0);
-      showToast("3 Planos restaurados para o padrão oficial da rede.", "info");
+      showToast("Planos restaurados para o padrão oficial da rede.", "info");
     }
   };
 
@@ -311,8 +326,8 @@ export function GestaoPlanosProfissionais({
             </div>
             <p className="text-xs text-forest/80 leading-relaxed mt-1 max-w-2xl">
               {exibirPlanosPainel !== false 
-                ? "Os profissionais visualizam os planos de adesão disponíveis em seu painel de pagamentos (com exceção de cortesia que exibe apenas o plano Acolher)."
-                : "Os planos de adesão estão ocultos no painel dos profissionais. Profissionais em cortesia mantêm acesso ao Plano Acolher."}
+                ? "Os profissionais visualizam apenas os planos marcados como Ativos neste controle em seu painel Status / Plano (e nos seletores dos cards da Gestão)."
+                : "Os planos de adesão estão ocultos na aba Status / Plano do painel dos profissionais."}
             </p>
           </div>
         </div>
@@ -403,9 +418,6 @@ export function GestaoPlanosProfissionais({
                   <span className="text-base font-bold text-forest">{plano.valorMensal || "0,00"}</span>
                   <span className="text-[10px] text-forest/50">/mês</span>
                 </div>
-                <span className="text-[10px] font-medium text-forest/60 bg-warm/80 px-2 py-0.5 rounded-md">
-                  {plano.horasInclusas || "Horas flexíveis"}
-                </span>
               </div>
             </button>
           );
@@ -500,35 +512,17 @@ export function GestaoPlanosProfissionais({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="flex flex-col gap-1">
-              <label className="text-[11px] font-bold uppercase text-forest/70">
-                Subtítulo / Selo de Destaque
-              </label>
-              <input
-                type="text"
-                value={planoEditando.subtitulo}
-                onChange={(e) => handleUpdateCampo("subtitulo", e.target.value)}
-                placeholder="Ex: Mais Procurado • Clínico & Corporativo"
-                className="w-full px-3.5 py-2.5 bg-warm/40 border border-soft rounded-xl text-xs text-forest focus:outline-none focus:border-forest"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label className="text-[11px] font-bold uppercase text-forest/70">
-                Horas Inclusas Estimadas
-              </label>
-              <div className="relative flex items-center">
-                <Clock className="w-3.5 h-3.5 text-forest/50 absolute left-3" />
-                <input
-                  type="text"
-                  value={planoEditando.horasInclusas}
-                  onChange={(e) => handleUpdateCampo("horasInclusas", e.target.value)}
-                  placeholder="Ex: Até 16 horas/mês"
-                  className="w-full pl-9 pr-3.5 py-2.5 bg-warm/40 border border-soft rounded-xl text-xs text-forest focus:outline-none focus:border-forest"
-                />
-              </div>
-            </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-[11px] font-bold uppercase text-forest/70">
+              Subtítulo / Selo de Destaque
+            </label>
+            <input
+              type="text"
+              value={planoEditando.subtitulo}
+              onChange={(e) => handleUpdateCampo("subtitulo", e.target.value)}
+              placeholder="Ex: Mais Procurado • Clínico & Corporativo"
+              className="w-full px-3.5 py-2.5 bg-warm/40 border border-soft rounded-xl text-xs text-forest focus:outline-none focus:border-forest"
+            />
           </div>
 
           <div className="flex flex-col gap-1">

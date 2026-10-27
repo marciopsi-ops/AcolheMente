@@ -61,6 +61,7 @@ import {
   DEMANDAS_PESSOAIS_OPCOES,
   DEMANDAS_TRABALHO_NR1_OPCOES
 } from "../types/corporativo";
+import { isTestUserCredential } from "../types/planosProfissionais";
 
 interface EmpresaData {
   id: string;
@@ -515,7 +516,7 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
           const roles = Array.isArray(data.roles) ? data.roles : [];
           const isProf = data.role === "profissional" || roles.includes("profissional");
 
-          if (isProf && data.ativo !== false) {
+          if (isProf && data.ativo !== false && !isTestUserCredential(data)) {
             const foto = data.photoUrl || data.foto || data.photoURL || data.avatar || "";
             if (!foto) return; // apenas com foto profissional
 

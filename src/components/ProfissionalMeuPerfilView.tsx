@@ -34,6 +34,11 @@ import {
   normalizePerfisFaturamento,
   extractLegacySyncFields,
 } from "../types/faturamento";
+import {
+  PlanoProfissionalItem,
+  hasIntegrarFeatures,
+  getPlanDisplayName,
+} from "../types/planosProfissionais";
 
 const OPCOES_SERVICOS_REDE = [
   "Terapia Individual (Adulto)",
@@ -281,6 +286,9 @@ interface ProfissionalMeuPerfilViewProps {
   parseHorasNumber: (val?: string | number) => number;
   parseDateSafely: (val: any) => Date;
   formatDateSafely: (val: any, fallback?: string) => string;
+  planosConfig?: PlanoProfissionalItem[];
+  planosSchemaVersion?: number;
+  onGoToPlanos?: () => void;
 }
 
 export function ProfissionalMeuPerfilView({
@@ -301,6 +309,9 @@ export function ProfissionalMeuPerfilView({
   parseHorasNumber,
   parseDateSafely,
   formatDateSafely,
+  planosConfig,
+  planosSchemaVersion,
+  onGoToPlanos,
 }: ProfissionalMeuPerfilViewProps) {
   const [activeSubTab, setActiveSubTab] = useState<PerfilSubTab>("identificacao");
   const [isSaving, setIsSaving] = useState(false);
@@ -1734,15 +1745,13 @@ export function ProfissionalMeuPerfilView({
                 </div>
                 <span
                   className={`text-[11px] font-bold uppercase px-3 py-1 rounded-lg border ${
-                    profile.plano === "avancado"
-                      ? "bg-amber-50 text-amber-900 border-amber-200"
+                    hasIntegrarFeatures(profile)
+                      ? "bg-emerald-50 text-emerald-900 border-emerald-200"
                       : "bg-warm text-forest/80 border-soft"
                   }`}
                 >
                   Plano Atual:{" "}
-                  {profile.plano === "avancado"
-                    ? "Avançado"
-                    : profile.plano || "Básico / Profissional"}
+                  {getPlanDisplayName(profile, planosConfig, planosSchemaVersion)}
                 </span>
               </div>
 
@@ -1757,7 +1766,8 @@ export function ProfissionalMeuPerfilView({
                     setProfile(next);
                   }
                 }}
-                showToast={showToast}
+                showToast={(msg, type) => showToast(msg, type)}
+                onGoToPlanos={onGoToPlanos}
               />
             </div>
           )}

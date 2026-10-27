@@ -198,7 +198,25 @@ import { PacienteProntuarioModal, ProntuarioRegistroItem } from "../components/P
 import { GestaoCampanhasBanner } from "../components/GestaoCampanhasBanner";
 import { ImportExternalPatients } from "../components/ImportExternalPatients";
 import { GestaoPlanosProfissionais } from "../components/GestaoPlanosProfissionais";
-import { PLANOS_PROFISSIONAIS_PADRAO, PlanoProfissionalItem } from "../types/planosProfissionais";
+import {
+  PLANOS_PROFISSIONAIS_PADRAO,
+  PlanoProfissionalItem,
+  sanitizePlanoSemHoras,
+  normalizePlanosConfig,
+  getActivePlansForSelector,
+  ModalidadeCredencial,
+  MODALIDADES_CREDENCIAL_OPCOES,
+  resolveModalidadeCredencial,
+  isExemptFromPlatformBilling,
+  hasFullAccessExemption,
+  isTestUserCredential,
+  normalizeUserPlanId,
+  matchPlanItemToCanonicalId,
+  hasIntegrarFeatures,
+  isPlanoIntegrarAutorizadoPelaGestao,
+  getPlanDisplayName,
+  getCredentialBadgeMeta,
+} from "../types/planosProfissionais";
 import { formatProfessionalName, formatCnpj, isValidCnpj, getCnpjValidationError } from "../utils/formatters";
 import { ProfissionalAgendaView } from "../components/ProfissionalAgendaView";
 import { FeatureGate } from "../components/FeatureGate";
@@ -1347,13 +1365,137 @@ export function DashboardView({
     categoria: "empresa_direta" as CategoriaEmpresa,
   });
 
-  const handleUpdateProfissionalPlan = async (uid: string, plano: string) => {
+  const [checkoutPlanTarget, setCheckoutPlanTarget] = useState<{
+    id: string;
+    nome: string;
+    valorMensal: string;
+  } | null>(null);
+
+  const applyLocalUserUpdates = (uid: string, updates: Record<string, any>) => {
+    setProfissionaisAtivos((prev) =>
+      prev.map((p) => (p.uid === uid || p.id === uid ? { ...p, ...updates } : p))
+    );
+    setSelectedProfissional((prev: any) =>
+      prev && (prev.uid === uid || prev.id === uid) ? { ...prev, ...updates } : prev
+    );
+    if (profile && (profile.uid === uid || profile.id === uid)) {
+      setProfile((prev: any) => (prev ? { ...prev, ...updates } : prev));
+    }
+  };
+
+  const handleUpdateProfissionalPlan = async (uid: string, planoId: string) => {
+    if (!uid) return;
     try {
-      await updateDoc(doc(db, "users", uid), { plano });
-      showToast("Plano do profissional atualizado!", "success");
+      const canonical = normalizeUserPlanId(planoId);
+      const planosAtivos = normalizePlanosConfig(
+        globalConfigs.planosProfissionais,
+        (globalConfigs as any).planosSchemaVersion
+      );
+      const planoObj = planosAtivos.find(
+        (p, idx) => p.id === planoId || matchPlanItemToCanonicalId(p, idx) === canonical
+      );
+      const updates: Record<string, any> = {
+        plano: canonical,
+      };
+      if (planoObj?.valorMensal) {
+        updates.taxaAssociativaMensal = planoObj.valorMensal;
+      }
+      if (canonical === "plano_2" || canonical === "plano_3") {
+        updates.planoAvancadoLiberado = true;
+        updates.solicitacaoPlanoAvancado = false;
+      }
+      await updateDoc(doc(db, "users", uid), updates);
+      applyLocalUserUpdates(uid, updates);
+      showToast(
+        `Plano atualizado para "${planoObj?.nome || canonical}" com sucesso!`,
+        "success"
+      );
     } catch (err) {
       console.error("Erro ao atualizar plano:", err);
-      showToast("Erro ao atualizar plano.", "error");
+      showToast("Erro ao atualizar plano do profissional.", "error");
+    }
+  };
+
+  const handleUpdateModalidadeCredencial = async (
+    uid: string,
+    novaModalidade: ModalidadeCredencial
+  ) => {
+    if (!uid) return;
+    try {
+      let updates: Record<string, any> = {};
+      if (novaModalidade === "assinatura_padrao") {
+        updates = {
+          modalidadeCredencial: "assinatura_padrao",
+          isCortesia: false,
+          isUsuarioTeste: false,
+        };
+      } else if (novaModalidade === "cortesia_essencial") {
+        updates = {
+          modalidadeCredencial: "cortesia_essencial",
+          isCortesia: true,
+          isUsuarioTeste: false,
+          plano: "plano_1",
+        };
+      } else if (novaModalidade === "cortesia_plena") {
+        updates = {
+          modalidadeCredencial: "cortesia_plena",
+          isCortesia: true,
+          isUsuarioTeste: false,
+          plano: "plano_2",
+          planoAvancadoLiberado: true,
+          solicitacaoPlanoAvancado: false,
+        };
+      } else if (novaModalidade === "usuario_teste") {
+        updates = {
+          modalidadeCredencial: "usuario_teste",
+          isCortesia: true,
+          isUsuarioTeste: true,
+          plano: "plano_2",
+          planoAvancadoLiberado: true,
+          solicitacaoPlanoAvancado: false,
+        };
+      }
+
+      await updateDoc(doc(db, "users", uid), updates);
+      applyLocalUserUpdates(uid, updates);
+
+      const meta = MODALIDADES_CREDENCIAL_OPCOES.find(
+        (m) => m.value === novaModalidade
+      );
+      showToast(
+        `Credencial atualizada: ${meta?.label || novaModalidade}`,
+        "success"
+      );
+    } catch (err) {
+      console.error("Erro ao atualizar credencial do profissional:", err);
+      showToast("Erro ao atualizar modalidade de credencial.", "error");
+    }
+  };
+
+  const handleToggleLiberarPlanoIntegrar = async (
+    uid: string,
+    currentlyLiberado: boolean
+  ) => {
+    if (!uid) return;
+    try {
+      const novoValor = !currentlyLiberado;
+      const updates: Record<string, any> = {
+        planoAvancadoLiberado: novoValor,
+      };
+      if (novoValor) {
+        updates.solicitacaoPlanoAvancado = false;
+      }
+      await updateDoc(doc(db, "users", uid), updates);
+      applyLocalUserUpdates(uid, updates);
+      showToast(
+        novoValor
+          ? "Plano Integrar liberado para contratação no painel do profissional!"
+          : "Liberação do Plano Integrar revogada.",
+        "success"
+      );
+    } catch (err) {
+      console.error("Erro ao alternar liberação do Plano Integrar:", err);
+      showToast("Erro ao alterar autorização do plano.", "error");
     }
   };
 
@@ -2343,12 +2485,9 @@ export function DashboardView({
         if (!prof || prof.role !== "profissional") continue;
         const isPago =
           prof.statusPagamento === "pago" || prof.statusPagamento === "paga";
-        const isIsento =
-          prof.statusPagamento === "isento" ||
-          prof.isCortesia === true ||
-          prof.statusAssociado === "isento";
+        const isIsento = isExemptFromPlatformBilling(prof);
 
-        // Skip if already paid, exempt, or link already sent automatically
+        // Skip if already paid, exempt (cortesia essencial, cortesia plena, usuário teste), or link already sent automatically
         if (isPago || isIsento || prof.checkoutTrial7DiasEnviado) continue;
 
         // Determine admission date (or fallback to createdAt)
@@ -4076,18 +4215,10 @@ export function DashboardView({
   };
 
   const handleToggleCortesia = async (profUid: string, currentStatus: boolean) => {
-    try {
-      const newStatus = !currentStatus;
-      await updateDoc(doc(db, "users", profUid), {
-        isCortesia: newStatus,
-      });
-      setProfissionaisAtivos((prev) =>
-        prev.map((p) => (p.uid === profUid ? { ...p, isCortesia: newStatus } : p)),
-      );
-    } catch (err) {
-      console.error("Erro ao atualizar status de cortesia:", err);
-      alert("Erro ao alterar status de cortesia do profissional.");
-    }
+    await handleUpdateModalidadeCredencial(
+      profUid,
+      currentStatus ? "assinatura_padrao" : "cortesia_essencial"
+    );
   };
 
   const handleCreateProfissional = async (e: React.FormEvent) => {
@@ -6659,11 +6790,20 @@ export function DashboardView({
               >
                 <CreditCard className="w-3.5 h-3.5 text-forest" />
                 <span>Status / Plano</span>
-                {profile?.isCortesia && (
-                  <span className="px-2 py-0.5 bg-purple-100 text-purple-900 text-[10px] font-black rounded-full border border-purple-200">
-                    Convidado
-                  </span>
-                )}
+                {isExemptFromPlatformBilling(profile) && (() => {
+                  const credBadge = getCredentialBadgeMeta(profile);
+                  const badgeStyle =
+                    credBadge.tone === "emerald"
+                      ? "bg-emerald-100 text-emerald-900 border-emerald-200"
+                      : credBadge.tone === "indigo"
+                        ? "bg-indigo-100 text-indigo-900 border-indigo-200"
+                        : "bg-purple-100 text-purple-900 border-purple-200";
+                  return (
+                    <span className={`px-2 py-0.5 text-[10px] font-black rounded-full border ${badgeStyle}`}>
+                      {credBadge.shortLabel}
+                    </span>
+                  );
+                })()}
               </button>
 
               {/* 10. Eventos e Parcerias */}
@@ -6690,73 +6830,89 @@ export function DashboardView({
 
       {/* Professional Subscription Status Banner (Minimizable/Closable) */}
       {currentRole === "profissional" && subscriptionBannerState !== "closed" && (
-        profile?.isCortesia ? (
-          subscriptionBannerState === "minimized" ? (
-            <div className="bg-gradient-to-r from-purple-500/10 via-purple-500/15 to-emerald-500/10 border-b border-purple-200/80 px-3 sm:px-6 py-1.5 flex items-center justify-between gap-2 text-xs text-forest font-medium animate-in fade-in">
-              <div className="flex items-center gap-2 min-w-0">
-                <Gift className="w-3.5 h-3.5 text-purple-600 shrink-0" />
-                <span className="truncate text-[11px] sm:text-xs">
-                  <strong>Status:</strong> Profissional Convidado (Isenção Cortesia)
-                </span>
+        isExemptFromPlatformBilling(profile) ? (
+          (() => {
+            const mod = resolveModalidadeCredencial(profile);
+            const bannerTitle =
+              mod === "cortesia_plena"
+                ? "Cortesia Plena (Convidado VIP) • Todos os Recursos Liberados"
+                : mod === "usuario_teste"
+                  ? "Credencial Usuário Teste (Homologação) • Acesso Total"
+                  : "Profissional Convidado (Cortesia Essencial • Plano Acolher)";
+            const bannerDesc =
+              mod === "cortesia_plena"
+                ? "Você possui Cortesia Plena concedida pela Gestão: 100% dos recursos ativos da plataforma (incluindo Plano Integrar, Externos, Empresas B2B e White-Label) estão liberados com isenção total de mensalidade."
+                : mod === "usuario_teste"
+                  ? "Conta configurada como Usuário Teste para homologação: 100% dos recursos ativos estão liberados sem cobrança e seu perfil permanece oculto na vitrine pública de pacientes."
+                  : "Você está na modalidade Cortesia Essencial com todos os recursos do Plano Acolher liberados e isenção total de avisos de cobrança ou mensalidades.";
+
+            return subscriptionBannerState === "minimized" ? (
+              <div className="bg-gradient-to-r from-purple-500/10 via-purple-500/15 to-emerald-500/10 border-b border-purple-200/80 px-3 sm:px-6 py-1.5 flex items-center justify-between gap-2 text-xs text-forest font-medium animate-in fade-in">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Gift className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+                  <span className="truncate text-[11px] sm:text-xs">
+                    <strong>Status:</strong> {bannerTitle}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    onClick={() => setActiveTab("pagamentosProfissional")}
+                    className="px-2 py-0.5 bg-purple-700 text-white hover:bg-purple-800 rounded-lg text-[10px] font-bold transition-all shadow-2xs"
+                  >
+                    Ver
+                  </button>
+                  <button
+                    onClick={() => setSubscriptionBannerState("expanded")}
+                    className="p-1 text-purple-900/70 hover:text-purple-900 hover:bg-purple-100 rounded-lg transition-colors flex items-center gap-0.5 text-[10px] font-semibold"
+                    title="Expandir aviso de status"
+                  >
+                    <ChevronDown className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Expandir</span>
+                  </button>
+                  <button
+                    onClick={() => setSubscriptionBannerState("closed")}
+                    className="p-1 text-purple-900/70 hover:text-red-600 hover:bg-purple-100 rounded-lg transition-colors"
+                    title="Fechar aviso"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
-              <div className="flex items-center gap-1 shrink-0">
-                <button
-                  onClick={() => setActiveTab("pagamentosProfissional")}
-                  className="px-2 py-0.5 bg-purple-700 text-white hover:bg-purple-800 rounded-lg text-[10px] font-bold transition-all shadow-2xs"
-                >
-                  Ver
-                </button>
-                <button
-                  onClick={() => setSubscriptionBannerState("expanded")}
-                  className="p-1 text-purple-900/70 hover:text-purple-900 hover:bg-purple-100 rounded-lg transition-colors flex items-center gap-0.5 text-[10px] font-semibold"
-                  title="Expandir aviso de status"
-                >
-                  <ChevronDown className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Expandir</span>
-                </button>
-                <button
-                  onClick={() => setSubscriptionBannerState("closed")}
-                  className="p-1 text-purple-900/70 hover:text-red-600 hover:bg-purple-100 rounded-lg transition-colors"
-                  title="Fechar aviso"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
+            ) : (
+              <div className="bg-gradient-to-r from-purple-500/10 via-purple-500/15 to-emerald-500/10 border-b border-purple-200/80 px-3 sm:px-6 py-2 sm:py-2.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-3 text-xs text-forest font-medium animate-in fade-in">
+                <div className="flex items-start sm:items-center gap-2 min-w-0 flex-1">
+                  <Gift className="w-4 h-4 text-purple-600 shrink-0 mt-0.5 sm:mt-0" />
+                  <span className="text-[11px] sm:text-xs leading-tight sm:leading-normal">
+                    <strong>Status: {bannerTitle}:</strong> {bannerDesc}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 self-end sm:self-auto w-full sm:w-auto justify-end">
+                  <button
+                    onClick={() => setActiveTab("pagamentosProfissional")}
+                    className="px-2.5 sm:px-3.5 py-1 sm:py-1.5 bg-purple-700 text-white hover:bg-purple-800 rounded-xl text-[10px] sm:text-[11px] font-bold transition-all shrink-0 flex items-center gap-1 shadow-2xs"
+                  >
+                    <CreditCard className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-purple-200" />
+                    Ver Status
+                  </button>
+                  <button
+                    onClick={() => setSubscriptionBannerState("minimized")}
+                    className="p-1 sm:p-1.5 text-purple-900/70 hover:text-purple-900 hover:bg-purple-100 rounded-lg transition-colors flex items-center gap-0.5 text-[10px] font-semibold"
+                    title="Minimizar aviso"
+                  >
+                    <ChevronUp className="w-3.5 h-3.5" />
+                    <span className="hidden md:inline">Minimizar</span>
+                  </button>
+                  <button
+                    onClick={() => setSubscriptionBannerState("closed")}
+                    className="p-1 sm:p-1.5 text-purple-900/70 hover:text-red-600 hover:bg-purple-100 rounded-lg transition-colors"
+                    title="Fechar aviso"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
-            </div>
-          ) : (
-            <div className="bg-gradient-to-r from-purple-500/10 via-purple-500/15 to-emerald-500/10 border-b border-purple-200/80 px-3 sm:px-6 py-2 sm:py-2.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-3 text-xs text-forest font-medium animate-in fade-in">
-              <div className="flex items-start sm:items-center gap-2 min-w-0 flex-1">
-                <Gift className="w-4 h-4 text-purple-600 shrink-0 mt-0.5 sm:mt-0" />
-                <span className="text-[11px] sm:text-xs leading-tight sm:leading-normal">
-                  <strong>Status: Profissional Convidado (Isenção Cortesia):</strong> Você está cadastrado(a) na plataforma como <strong>Convidado Especial</strong> pela Gestão. Seu acesso é livre de avisos de cobrança ou mensalidades.
-                </span>
-              </div>
-              <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 self-end sm:self-auto w-full sm:w-auto justify-end">
-                <button
-                  onClick={() => setActiveTab("pagamentosProfissional")}
-                  className="px-2.5 sm:px-3.5 py-1 sm:py-1.5 bg-purple-700 text-white hover:bg-purple-800 rounded-xl text-[10px] sm:text-[11px] font-bold transition-all shrink-0 flex items-center gap-1 shadow-2xs"
-                >
-                  <CreditCard className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-purple-200" />
-                  Ver Status
-                </button>
-                <button
-                  onClick={() => setSubscriptionBannerState("minimized")}
-                  className="p-1 sm:p-1.5 text-purple-900/70 hover:text-purple-900 hover:bg-purple-100 rounded-lg transition-colors flex items-center gap-0.5 text-[10px] font-semibold"
-                  title="Minimizar aviso"
-                >
-                  <ChevronUp className="w-3.5 h-3.5" />
-                  <span className="hidden md:inline">Minimizar</span>
-                </button>
-                <button
-                  onClick={() => setSubscriptionBannerState("closed")}
-                  className="p-1 sm:p-1.5 text-purple-900/70 hover:text-red-600 hover:bg-purple-100 rounded-lg transition-colors"
-                  title="Fechar aviso"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
-          )
+            );
+          })()
         ) : profile?.statusPagamento !== "pago" && !profile?.solicitacaoCancelamento ? (
           subscriptionBannerState === "minimized" ? (
             <div className="bg-gradient-to-r from-amber-500/10 via-amber-500/15 to-emerald-500/10 border-b border-amber-200/80 px-3 sm:px-6 py-1.5 flex items-center justify-between gap-2 text-xs text-forest font-medium animate-in fade-in">
@@ -6830,7 +6986,7 @@ export function DashboardView({
       )}
 
       {/* Discreet restore button if closed */}
-      {currentRole === "profissional" && subscriptionBannerState === "closed" && (profile?.isCortesia || (profile?.statusPagamento !== "pago" && !profile?.solicitacaoCancelamento)) && (
+      {currentRole === "profissional" && subscriptionBannerState === "closed" && (isExemptFromPlatformBilling(profile) || (profile?.statusPagamento !== "pago" && !profile?.solicitacaoCancelamento)) && (
         <div className="px-3 sm:px-6 py-1 bg-warm/60 border-b border-soft flex justify-end">
           <button
             onClick={() => setSubscriptionBannerState("minimized")}
@@ -7599,6 +7755,7 @@ export function DashboardView({
                   {/* Quadro Integrado de Planos para Psicólogos, Psicanalistas e Terapeutas */}
                   <GestaoPlanosProfissionais
                     planos={globalConfigs.planosProfissionais || PLANOS_PROFISSIONAIS_PADRAO}
+                    planosSchemaVersion={(globalConfigs as any).planosSchemaVersion}
                     exibirPlanos={Boolean((globalConfigs as any).exibirPlanosProfissionais)}
                     onToggleExibirPlanos={async (novoValor) => {
                       await handleUpdateConfiguracoesProperty("exibirPlanosProfissionais", novoValor, true);
@@ -7609,6 +7766,7 @@ export function DashboardView({
                     }}
                     onSavePlanos={async (novosPlanos) => {
                       await handleUpdateConfiguracoesProperty("planosProfissionais", novosPlanos, true);
+                      await handleUpdateConfiguracoesProperty("planosSchemaVersion", 2, true);
                       if (novosPlanos && novosPlanos[0]?.valorMensal) {
                         await handleUpdateConfiguracoesProperty("taxaAssociativaMensal", novosPlanos[0].valorMensal, true);
                       }
@@ -8854,7 +9012,8 @@ export function DashboardView({
         <div className="flex-1 overflow-auto p-4 sm:p-6 md:p-8 flex flex-col gap-6 slide-up">
           <div className="max-w-6xl w-full mx-auto">
             <FeatureGate
-              requiredPlan="avancado"
+              requiredPlan="integrar"
+              userProfile={profile}
               userPlan={profile?.plano}
               isCortesia={profile?.isCortesia === true}
               fallback={
@@ -8864,10 +9023,10 @@ export function DashboardView({
                   </div>
                   <div className="space-y-1.5">
                     <h3 className="font-serif font-bold text-lg text-forest">
-                      Prestação de Serviços a Empresas (B2B)
+                      Prestação de Serviços a Empresas (B2B Próprio)
                     </h3>
                     <p className="text-xs sm:text-sm text-forest/70 leading-relaxed">
-                      Gerencie sua carteira externa de empresas clientes, palestras, treinamentos, consultorias NR-1, espelhos de NFS-e PJ e contratos corporativos em um ambiente integrado ao seu faturamento global.
+                      Gerencie sua carteira própria de empresas clientes, palestras, treinamentos, consultorias NR-1, espelhos de NFS-e PJ e contratos corporativos em um ambiente integrado ao seu faturamento global.
                     </p>
                   </div>
                   <div className="pt-2">
@@ -8876,7 +9035,7 @@ export function DashboardView({
                       onClick={() => setActiveTab("pagamentosProfissional")}
                       className="px-5 py-2.5 bg-forest hover:bg-forest/90 text-white text-xs font-bold rounded-xl transition-colors cursor-pointer whitespace-nowrap"
                     >
-                      Conhecer Plano Avançado
+                      Conhecer Plano Integrar
                     </button>
                   </div>
                 </div>
@@ -8904,6 +9063,8 @@ export function DashboardView({
           fichasCorporativas={minhasFichasCorporativas || []}
           empresasB2B={empresasProfissionalB2B || []}
           plano={profile?.plano}
+          userProfile={profile}
+          onGoToPlanos={() => setActiveTab("pagamentosProfissional")}
           initialPacienteId={agendaPreselectedPacienteId}
           onClearInitialPacienteId={() => setAgendaPreselectedPacienteId(null)}
           onOpenPacienteDetalhes={(pacienteId) => {
@@ -9004,17 +9165,7 @@ export function DashboardView({
                 fichasCorporativas={minhasFichasCorporativas || []}
                 pacientesExternos={pacientesExternos || []}
                 empresasB2B={empresasProfissionalB2B || []}
-                isPlanoAvancado={(() => {
-                  const norm = String(profile?.plano || "")
-                    .toLowerCase()
-                    .normalize("NFD")
-                    .replace(/[\u0300-\u036f]/g, "")
-                    .trim();
-                  return (
-                    ["ia", "avancado", "premium", "pro"].includes(norm) ||
-                    norm.includes("avanc")
-                  );
-                })()}
+                isPlanoAvancado={hasIntegrarFeatures(profile)}
                 dadosPJ={profile?.dadosPJ || (profile as any)?.perfilPJ}
                 companyData={profile?.companyData}
                 faturamentoPadrao={profile?.faturamentoPadrao}
@@ -9670,16 +9821,28 @@ export function DashboardView({
                     ) : null}
                   </button>
 
-                  <FeatureGate userPlan={profile?.plano} isCortesia={profile?.isCortesia === true} requiredPlan="avancado" fallback={
-                    <button
-                      type="button"
-                      className="px-3.5 py-1.5 rounded-lg text-forest/40 flex items-center gap-1.5 cursor-not-allowed text-xs font-semibold"
-                      title="Recurso exclusivo do Plano Avançado"
-                    >
-                      <Sparkles className="w-3.5 h-3.5" />
-                      <span>Externos</span>
-                    </button>
-                  }>
+                  <FeatureGate
+                    userProfile={profile}
+                    userPlan={profile?.plano}
+                    isCortesia={profile?.isCortesia === true}
+                    requiredPlan="integrar"
+                    fallback={
+                      <button
+                        type="button"
+                        onClick={() => {
+                          showToast(
+                            "A carteira particular de Pacientes Externos é exclusiva do Plano Integrar. Acesse Status / Plano para detalhes.",
+                            "info"
+                          );
+                        }}
+                        className="px-3.5 py-1.5 rounded-lg text-forest/45 hover:text-forest/70 flex items-center gap-1.5 cursor-pointer text-xs font-semibold"
+                        title="Recurso exclusivo do Plano Integrar"
+                      >
+                        <Lock className="w-3 h-3" />
+                        <span>Externos</span>
+                      </button>
+                    }
+                  >
                     <button
                       type="button"
                       onClick={() => setSubTabPacientes("externos")}
@@ -10835,6 +10998,9 @@ export function DashboardView({
           parseHorasNumber={parseHorasNumber}
           parseDateSafely={parseDateSafely}
           formatDateSafely={formatDateSafely}
+          planosConfig={globalConfigs.planosProfissionais}
+          planosSchemaVersion={(globalConfigs as any).planosSchemaVersion}
+          onGoToPlanos={() => setActiveTab("pagamentosProfissional")}
         />
       ) : currentRole === "profissional" && activeTab === "pagamentosProfissional" ? (
         <div className="flex-1 overflow-auto p-6 md:p-8 flex flex-col gap-8 slide-up font-sans">
@@ -10847,12 +11013,14 @@ export function DashboardView({
                 </div>
                 <div className="min-w-0">
                   <h2 className="font-serif text-sm sm:text-base text-forest font-bold leading-snug">
-                    {profile?.isCortesia ? "Status de Convidado & Isenção de Taxa" : "Gerenciar Pagamentos & Status da Assinatura"}
+                    {isExemptFromPlatformBilling(profile)
+                      ? "Status da Credencial & Isenção de Mensalidade"
+                      : "Gerenciar Pagamentos & Status do Plano"}
                   </h2>
                   <p className="text-[11px] sm:text-xs text-forest/65 mt-0.5">
-                    {profile?.isCortesia
-                      ? "Você está cadastrado(a) na plataforma como Profissional Convidado, com isenção total de mensalidades."
-                      : "Acompanhe seu status financeiro, prazos de vencimento e gerencie suas contribuições."}
+                    {isExemptFromPlatformBilling(profile)
+                      ? "Consulte os recursos liberados na sua credencial especial concedida pela Gestão Master."
+                      : "Acompanhe seu plano atual, prazos de vencimento e planos disponíveis para contratação."}
                   </p>
                 </div>
               </div>
@@ -10860,16 +11028,35 @@ export function DashboardView({
 
             {/* Main Status & Management Card */}
             {(() => {
-              const taxaVal = profile?.taxaAssociativaMensal || globalConfigs.taxaAssociativaMensal || "29,90";
+              const todosPlanosNorm = normalizePlanosConfig(
+                globalConfigs.planosProfissionais,
+                (globalConfigs as any).planosSchemaVersion
+              );
+              const userCanonicalPlan = normalizeUserPlanId(profile?.plano);
+              const planoAtualObj =
+                todosPlanosNorm.find(
+                  (p, i) => matchPlanItemToCanonicalId(p, i) === userCanonicalPlan
+                ) || todosPlanosNorm[0];
+
+              const taxaVal =
+                planoAtualObj?.valorMensal ||
+                profile?.taxaAssociativaMensal ||
+                globalConfigs.taxaAssociativaMensal ||
+                "29,90";
+
               const admDateStr = profile?.dataAdmissao || profile?.createdAt;
               const admDate = parseDateSafely(admDateStr);
               const vencDateStr = profile?.vencimentoPagamento;
-              const vencDate = vencDateStr ? parseDateSafely(vencDateStr) : new Date(admDate.getTime() + 7 * 86400000);
+              const vencDate = vencDateStr
+                ? parseDateSafely(vencDateStr)
+                : new Date(admDate.getTime() + 7 * 86400000);
               const now = new Date();
               const diffTime = vencDate.getTime() - now.getTime();
               const diffDays = Math.max(0, Math.ceil(diffTime / (1000 * 3600 * 24)));
 
-              const isCortesia = profile?.isCortesia === true;
+              const modalidade = resolveModalidadeCredencial(profile);
+              const isCortesia = isExemptFromPlatformBilling(profile);
+              const isFullExemption = hasFullAccessExemption(profile);
               const isPago = profile?.statusPagamento === "pago";
               const isCancelRequested = profile?.solicitacaoCancelamento === true;
               const isTrialActive = !isPago && !isCancelRequested && !isCortesia && diffDays > 0;
@@ -10880,7 +11067,11 @@ export function DashboardView({
                   <div
                     className={`p-8 rounded-[2rem] border shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-6 relative overflow-hidden ${
                       isCortesia
-                        ? "bg-gradient-to-br from-purple-900 via-[#2d114d] to-forest text-white border-purple-500/40"
+                        ? modalidade === "cortesia_plena"
+                          ? "bg-gradient-to-br from-emerald-950 via-forest to-[#102b1f] text-white border-emerald-500/40"
+                          : modalidade === "usuario_teste"
+                            ? "bg-gradient-to-br from-indigo-950 via-slate-900 to-forest text-white border-indigo-400/40"
+                            : "bg-gradient-to-br from-purple-900 via-[#2d114d] to-forest text-white border-purple-500/40"
                         : isCancelRequested
                           ? "bg-amber-500/10 border-amber-300"
                           : isPago
@@ -10893,9 +11084,13 @@ export function DashboardView({
                     <div className="space-y-3 z-10 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
                         {isCortesia ? (
-                          <span className="px-3 py-1 bg-purple-300 text-purple-950 text-[10px] font-black rounded-full uppercase tracking-wider flex items-center gap-1 shadow-xs">
-                            <Gift className="w-3.5 h-3.5 text-purple-900" />
-                            🎁 Convidado Especial • Isenção Cortesia
+                          <span className="px-3 py-1 bg-white/90 text-forest text-[10px] font-black rounded-full uppercase tracking-wider flex items-center gap-1.5 shadow-xs">
+                            <Gift className="w-3.5 h-3.5 text-purple-800" />
+                            {modalidade === "cortesia_plena"
+                              ? "Cortesia Plena • Acesso Total Liberado"
+                              : modalidade === "usuario_teste"
+                                ? "Credencial Usuário Teste • Homologação (Oculto da Vitrine)"
+                                : "Cortesia Essencial • Plano Acolher Liberado"}
                           </span>
                         ) : isCancelRequested ? (
                           <span className="px-3 py-1 bg-amber-200 text-amber-900 text-[10px] font-bold rounded-full uppercase tracking-wider">
@@ -10903,11 +11098,11 @@ export function DashboardView({
                           </span>
                         ) : isPago ? (
                           <span className="px-3 py-1 bg-emerald-400/20 text-emerald-200 text-[10px] font-bold rounded-full uppercase tracking-wider border border-emerald-400/30">
-                            Assinatura Ativa & Em Dia
+                            Assinatura Ativa & Em Dia • {planoAtualObj?.nome}
                           </span>
                         ) : isTrialActive ? (
                           <span className="px-3 py-1 bg-sun text-forest text-[10px] font-black uppercase tracking-wider rounded-full shadow-xs">
-                            ⏰ Prazo para o 1º Pagamento (7 dias)
+                            Prazo para o 1º Pagamento (7 dias)
                           </span>
                         ) : (
                           <span className="px-3 py-1 bg-red-400/20 text-red-200 text-[10px] font-bold rounded-full uppercase tracking-wider border border-red-400/30">
@@ -10922,11 +11117,15 @@ export function DashboardView({
                         }`}
                       >
                         {isCortesia
-                          ? "Sua conta está ativa na plataforma como Profissional Convidado"
+                          ? modalidade === "cortesia_plena"
+                            ? "Sua conta possui Cortesia Plena com 100% dos recursos liberados"
+                            : modalidade === "usuario_teste"
+                              ? "Conta de Usuário Teste ativa com todos os recursos habilitados"
+                              : "Sua conta está ativa na modalidade Cortesia Essencial (Plano Acolher)"
                           : isCancelRequested
                             ? "Sua solicitação de saída está em análise"
                             : isPago
-                              ? "Sua Taxa de Uso e Intermediação da Plataforma está quitada"
+                              ? `Seu ${planoAtualObj?.nome || "Plano"} está ativo e em dia`
                               : isTrialActive
                                 ? `Seu 1º pagamento vence em ${diffDays} dia(s) (${formatDateSafely(vencDate)})`
                                 : "O prazo para o primeiro pagamento expirou"}
@@ -10938,21 +11137,25 @@ export function DashboardView({
                         }`}
                       >
                         {isCortesia
-                          ? "A Gestão habilitou a sua conta na modalidade Profissional Convidado. Você possui isenção completa de cobranças e taxas da plataforma. Não há nenhum aviso ou cobrança de pagamento pendente, e você pode utilizar a plataforma e atender pacientes normalmente."
+                          ? modalidade === "cortesia_plena"
+                            ? "A Gestão Master concedeu a você uma Cortesia Plena (VIP). Você possui isenção total de mensalidades e acesso integral aos recursos do Plano Acolher e do Plano Integrar (Pacientes Externos, Empresas B2B próprias e Página White-Label)."
+                            : modalidade === "usuario_teste"
+                              ? "Sua credencial de Usuário Teste permite homologar e utilizar 100% das ferramentas da plataforma (incluindo Plano Integrar e Página White-Label) com isenção de cobranças. Por segurança, seu perfil fica oculto nas vitrines públicas de pacientes."
+                              : "A Gestão Master habilitou sua conta com Cortesia Essencial. Você possui isenção completa de taxas e acesso integral aos recursos do Plano Acolher (Valores Acessíveis, Corporativo da rede, Agenda, Prontuário, Blog, Eventos e Selo Sênior)."
                           : isCancelRequested
                             ? `Sua solicitação enviada em ${formatDateSafely(profile?.dataSolicitacaoCancelamento, "breve")} está sendo processada pela Gestão. Uma entrevista de desligamento será agendada.`
                             : isPago
-                              ? `Agradecemos sua parceria! Sua contribuição mensal de R$ ${taxaVal} mantém os servidores, equipe de suporte e atrai novos pacientes para o seu perfil.`
+                              ? `Agradecemos sua parceria! Sua contribuição mensal de R$ ${taxaVal} mantém os servidores, equipe de suporte e fortalece sua atuação na rede.`
                               : isTrialActive
                                 ? `O vencimento da sua primeira Taxa de Uso e Intermediação da Plataforma será em ${formatDateSafely(vencDate)} (${diffDays} dia(s) restante(s)).`
-                                : `Para continuar atendendo pacientes e mantendo seu perfil visível no catálogo oficial, efetue o pagamento da sua Taxa de Uso e Intermediação da Plataforma de R$ ${taxaVal}/mês.`}
+                                : `Para continuar atendendo pacientes e mantendo seu perfil visível no catálogo oficial, efetue o pagamento da sua assinatura de R$ ${taxaVal}/mês.`}
                       </p>
                     </div>
 
                     {/* Action Side Box */}
                     <div className="w-full md:w-auto bg-white/10 backdrop-blur-md p-6 rounded-2xl border border-white/20 flex flex-col items-center justify-center text-center shrink-0 min-w-[240px] z-10">
                       <span className="text-[10px] font-bold uppercase tracking-wider text-sun-light">
-                        Taxa de Uso e Intermediação da Plataforma
+                        {isCortesia ? "Modalidade de Credencial" : planoAtualObj?.nome || "Taxa Mensal do Plano"}
                       </span>
                       <div className="flex items-baseline gap-1 my-1">
                         <span className="text-sm font-bold text-sun">R$</span>
@@ -10963,13 +11166,20 @@ export function DashboardView({
                       </div>
 
                       {isCortesia ? (
-                        <div className="w-full mt-3 py-2.5 px-4 bg-purple-200/20 text-purple-200 border border-purple-300/30 rounded-xl font-bold text-[11px] uppercase tracking-wider flex items-center justify-center gap-2">
-                          <Gift className="w-4 h-4 text-purple-300" />
-                          Pagamento Desabilitado (Isento)
+                        <div className="w-full mt-3 py-2.5 px-4 bg-white/15 text-white border border-white/25 rounded-xl font-bold text-[11px] uppercase tracking-wider flex items-center justify-center gap-2">
+                          <Gift className="w-4 h-4 text-sun" />
+                          {isFullExemption ? "Acesso Total (Isento)" : "Cortesia Acolher (Isento)"}
                         </div>
                       ) : (
                         <button
-                          onClick={() => setShowCheckoutModal(true)}
+                          onClick={() => {
+                            setCheckoutPlanTarget({
+                              id: userCanonicalPlan,
+                              nome: planoAtualObj?.nome || "Plano Acolher (Essencial)",
+                              valorMensal: taxaVal,
+                            });
+                            setShowCheckoutModal(true);
+                          }}
                           className="w-full mt-3 py-3 px-5 bg-sun hover:bg-sun-dark text-forest rounded-xl font-bold text-xs uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
                         >
                           <Sparkles className="w-4 h-4 text-forest" />
@@ -11003,221 +11213,251 @@ export function DashboardView({
                         {isCortesia ? "Isento (Sem vencimento)" : formatDateSafely(vencDate)}
                       </p>
                       <p className="text-xs text-forest/60">
-                        {isCortesia ? "Modalidade Cortesia / Convidado Especial." : "7 dias após a data de admissão."}
+                        {isCortesia
+                          ? getCredentialBadgeMeta(profile).label
+                          : "7 dias após a data de admissão."}
                       </p>
                     </div>
 
                     <div className="bg-white p-6 rounded-3xl border border-soft shadow-xs space-y-2">
                       <span className="text-[10px] font-bold uppercase text-forest/50 tracking-wider">
-                        Status Atual
+                        Plano & Credencial Atual
                       </span>
-                      <p className="text-lg font-bold text-forest flex items-center gap-2">
-                        <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                        {isCortesia
-                          ? "Cortesia / Isento"
-                          : isPago
-                            ? "Pago / Ativo"
-                            : isCancelRequested
-                              ? "Desligamento Solicitado"
-                              : isTrialActive
-                                ? `Aguardando 1º Pagamento (${diffDays}d restantes)`
-                                : "Aguardando Pagamento"}
+                      <p className="text-base font-bold text-forest flex items-center gap-2">
+                        <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                        <span>
+                          {getPlanDisplayName(
+                            profile,
+                            globalConfigs.planosProfissionais,
+                            (globalConfigs as any).planosSchemaVersion
+                          )}
+                        </span>
                       </p>
                       <p className="text-xs text-forest/60">
-                        {isCortesia ? "Isenção total concedida pela Gestão." : isPago ? "Sua conta está regularizada." : "Sem fidelidade ou multa."}
+                        {isCortesia
+                          ? isTestUserCredential(profile)
+                            ? "Visibilidade pública desativada (modo homologação)."
+                            : "Isenção ativa concedida pela Gestão Master."
+                          : isPago
+                            ? "Assinatura regularizada."
+                            : "Sem fidelidade ou multa."}
                       </p>
                     </div>
                   </div>
 
-                   {/* Planos de Adesão da Rede & Status do Plano (Sincronizado com Gestão Master e Regra de Cortesia) */}
-                   {(globalConfigs as any).exibirPlanosPainel !== false && (() => {
-                     const todosPlanos = globalConfigs.planosProfissionais || PLANOS_PROFISSIONAIS_PADRAO;
-                     const planosAtivosControle = todosPlanos.filter((pItem: any, idx: number) => {
-                       const isBasico =
-                         idx === 0 ||
-                         pItem.id === "plano_1" ||
-                         String(pItem.nome || "").toLowerCase().includes("acolher") ||
-                         String(pItem.nome || "").toLowerCase().includes("básico") ||
-                         String(pItem.nome || "").toLowerCase().includes("basico");
-                       // Quem está em cortesia sempre vê o Plano Acolher (Básico) liberado; demais planos só aparecem se ativos no Controle da Gestão Master
-                       if (isCortesia && isBasico) return true;
-                       return pItem.ativo !== false;
-                     });
+                  {/* Planos de Adesão da Rede & Status do Plano (Sincronizado com Controle da Gestão Master) */}
+                  {(globalConfigs as any).exibirPlanosPainel !== false && (() => {
+                    const planosVisiveisNoPainel = todosPlanosNorm.filter(
+                      (pItem: PlanoProfissionalItem, idx: number) => {
+                        const canon = matchPlanItemToCanonicalId(pItem, idx);
+                        if (modalidade === "cortesia_essencial" && canon === "plano_1") {
+                          return true;
+                        }
+                        return pItem.ativo !== false;
+                      }
+                    );
 
-                     if (planosAtivosControle.length === 0) return null;
+                    if (planosVisiveisNoPainel.length === 0) return null;
 
-                     const userPlanNorm = String(profile?.plano || "essencial")
-                       .toLowerCase()
-                       .normalize("NFD")
-                       .replace(/[\u0300-\u036f]/g, "")
-                       .trim();
+                    return (
+                      <div className="bg-white p-8 rounded-[2rem] border border-soft shadow-xs space-y-6">
+                        <div className="border-b border-soft pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div>
+                            <h4 className="font-serif text-xl font-bold text-forest flex items-center gap-2">
+                              <Layers className="w-5 h-5 text-forest/70" />
+                              Planos de Adesão da Rede & Recursos Liberados
+                            </h4>
+                            <p className="text-xs text-forest/70 mt-1">
+                              {modalidade === "cortesia_plena"
+                                ? "Com a Cortesia Plena, você já possui todos os recursos dos planos ativos liberados sem cobrança."
+                                : modalidade === "usuario_teste"
+                                  ? "Com a Credencial de Usuário Teste, todos os recursos dos planos ativos estão liberados para homologação (perfil oculto da vitrine pública)."
+                                  : modalidade === "cortesia_essencial"
+                                    ? "Na Cortesia Essencial, o Plano Acolher (Essencial) está liberado gratuitamente. O Plano Integrar depende de autorização da Gestão Master."
+                                    : "Somente os planos ativos no Controle da Gestão Master aparecem abaixo. O Plano Integrar requer autorização da Gestão para contratação via Stripe."}
+                            </p>
+                          </div>
+                          {isCortesia && (
+                            <span className="px-3 py-1.5 bg-purple-50 text-purple-900 border border-purple-200 rounded-xl text-xs font-bold flex items-center gap-1.5 shrink-0">
+                              <Gift className="w-4 h-4 text-purple-700" />
+                              {getCredentialBadgeMeta(profile).shortLabel}
+                            </span>
+                          )}
+                        </div>
 
-                     return (
-                       <div className="bg-white p-8 rounded-[2rem] border border-soft shadow-xs space-y-6">
-                         <div className="border-b border-soft pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                           <div>
-                             <h4 className="font-serif text-xl font-bold text-forest flex items-center gap-2">
-                               <Layers className="w-5 h-5 text-forest/70" />
-                               Planos de Adesão da Rede & Status do Seu Plano
-                             </h4>
-                             <p className="text-xs text-forest/70 mt-1">
-                               {isCortesia
-                                 ? "Você possui Cortesia ativa com o Plano Acolher (Básico) liberado. Outros planos aparecem abaixo apenas quando habilitados pela Gestão Master."
-                                 : "Planos habilitados pela Gestão Master para contratação ou upgrade na plataforma."}
-                             </p>
-                           </div>
-                           {isCortesia && (
-                             <span className="px-3 py-1.5 bg-purple-50 text-purple-900 border border-purple-200 rounded-xl text-xs font-bold flex items-center gap-1.5 shrink-0">
-                               <Gift className="w-4 h-4 text-purple-700" />
-                               Cortesia Ativa • Plano Acolher Liberado
-                             </span>
-                           )}
-                         </div>
+                        <div
+                          className={`grid grid-cols-1 ${
+                            planosVisiveisNoPainel.length === 2
+                              ? "md:grid-cols-2"
+                              : "md:grid-cols-3"
+                          } gap-6`}
+                        >
+                          {planosVisiveisNoPainel.map((pItem: PlanoProfissionalItem, idx: number) => {
+                            const canon = matchPlanItemToCanonicalId(pItem, idx);
+                            const isAcolher = canon === "plano_1";
+                            const requiresMasterAuth = canon === "plano_2" || canon === "plano_3";
+                            const isAuthorizedByMaster =
+                              canon === "plano_2"
+                                ? isPlanoIntegrarAutorizadoPelaGestao(profile)
+                                : canon === "plano_3"
+                                  ? isFullExemption || userCanonicalPlan === "plano_3"
+                                  : true;
 
-                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                           {planosAtivosControle.map((pItem: any, idx: number) => {
-                             const nomeLower = String(pItem.nome || "")
-                               .toLowerCase()
-                               .normalize("NFD")
-                               .replace(/[\u0300-\u036f]/g, "");
-                             const idLower = String(pItem.id || "").toLowerCase();
+                            const isLockedForCurrentUser =
+                              modalidade === "cortesia_essencial"
+                                ? !isAcolher
+                                : requiresMasterAuth && !isAuthorizedByMaster;
 
-                             const isBasico =
-                               idLower === "plano_1" ||
-                               nomeLower.includes("acolher") ||
-                               nomeLower.includes("basico") ||
-                               nomeLower.includes("essencial");
-                             const isIntermediario =
-                               idLower === "plano_2" ||
-                               nomeLower.includes("integrar") ||
-                               nomeLower.includes("intermediario");
-                             const isAvancado =
-                               idLower === "plano_3" ||
-                               nomeLower.includes("pleno") ||
-                               nomeLower.includes("avancado");
+                            const isCurrentActivePlan = isFullExemption
+                              ? true
+                              : modalidade === "cortesia_essencial"
+                                ? isAcolher
+                                : userCanonicalPlan === canon;
 
-                             const isLiberadoPelaGestao =
-                               profile?.planoAvancadoLiberado === true ||
-                               userPlanNorm.includes("avanc") ||
-                               userPlanNorm === "plano_3" ||
-                               userPlanNorm.includes("pleno");
+                            const alreadyRequested = Boolean(profile?.solicitacaoPlanoAvancado);
 
-                             const isPlanoAtual = isCortesia
-                               ? isBasico
-                               : isAvancado
-                                 ? userPlanNorm.includes("avanc") || userPlanNorm.includes("pleno") || userPlanNorm === "plano_3"
-                                 : isIntermediario
-                                   ? userPlanNorm.includes("intermed") || userPlanNorm.includes("integrar") || userPlanNorm === "plano_2"
-                                   : isBasico && (userPlanNorm === "essencial" || userPlanNorm.includes("acolher") || userPlanNorm.includes("basico") || userPlanNorm === "plano_1");
+                            return (
+                              <div
+                                key={pItem.id || idx}
+                                className={`p-6 rounded-3xl border flex flex-col justify-between gap-4 ${
+                                  isLockedForCurrentUser
+                                    ? "bg-warm/40 border-amber-300/60 opacity-95"
+                                    : isCortesia && isCurrentActivePlan
+                                      ? "bg-purple-50/50 border-purple-300 ring-2 ring-purple-200/50"
+                                      : isCurrentActivePlan
+                                        ? "bg-emerald-500/10 border-emerald-500/40 ring-2 ring-emerald-500/20"
+                                        : "bg-warm/20 border-soft"
+                                }`}
+                              >
+                                <div className="space-y-3">
+                                  <div className="flex justify-between items-start gap-2">
+                                    <span className="text-[10px] font-bold uppercase tracking-wider text-forest/60">
+                                      Plano {idx + 1}
+                                    </span>
+                                    {isFullExemption ? (
+                                      <span className="px-2.5 py-0.5 bg-emerald-100 text-emerald-900 text-[10px] font-bold rounded-full border border-emerald-300">
+                                        Liberado ({modalidade === "usuario_teste" ? "Teste" : "Cortesia Plena"})
+                                      </span>
+                                    ) : modalidade === "cortesia_essencial" && isAcolher ? (
+                                      <span className="px-2.5 py-0.5 bg-purple-100 text-purple-900 text-[10px] font-bold rounded-full border border-purple-200">
+                                        Liberado (Cortesia)
+                                      </span>
+                                    ) : isLockedForCurrentUser ? (
+                                      <span className="px-2.5 py-0.5 bg-amber-100 text-amber-900 text-[10px] font-bold rounded-full flex items-center gap-1 border border-amber-300">
+                                        <Lock className="w-3 h-3 text-amber-800" />
+                                        Bloqueado (Requer Master)
+                                      </span>
+                                    ) : isCurrentActivePlan ? (
+                                      <span className="px-2.5 py-0.5 bg-emerald-100 text-emerald-800 text-[10px] font-bold rounded-full">
+                                        Seu Plano Atual
+                                      </span>
+                                    ) : requiresMasterAuth && isAuthorizedByMaster ? (
+                                      <span className="px-2.5 py-0.5 bg-blue-100 text-blue-900 text-[10px] font-bold rounded-full border border-blue-200">
+                                        Liberado p/ Contratação
+                                      </span>
+                                    ) : null}
+                                  </div>
 
-                             const isCortesiaBasico = isCortesia && isBasico;
+                                  <div>
+                                    <h5 className="font-serif font-bold text-lg text-forest">
+                                      {pItem.nome}
+                                    </h5>
+                                    <p className="text-xs text-forest/65 mt-0.5">
+                                      {pItem.subtitulo || pItem.descricao}
+                                    </p>
+                                  </div>
 
-                             return (
-                               <div
-                                 key={pItem.id || idx}
-                                 className={`p-6 rounded-3xl border flex flex-col justify-between gap-4 ${
-                                   isAvancado && !isLiberadoPelaGestao
-                                     ? "bg-warm/40 border-amber-300/60 opacity-90"
-                                     : isCortesiaBasico
-                                       ? "bg-purple-50/50 border-purple-300 ring-2 ring-purple-200/50"
-                                       : isPlanoAtual
-                                         ? "bg-emerald-500/10 border-emerald-500/40 ring-2 ring-emerald-500/20"
-                                         : "bg-warm/20 border-soft"
-                                 }`}
-                               >
-                                 <div className="space-y-3">
-                                   <div className="flex justify-between items-start gap-2">
-                                     <span className="text-[10px] font-bold uppercase tracking-wider text-forest/60">
-                                       Plano {idx + 1}
-                                     </span>
-                                     {isCortesiaBasico ? (
-                                       <span className="px-2.5 py-0.5 bg-purple-100 text-purple-900 text-[10px] font-bold rounded-full border border-purple-200">
-                                         Liberado (Cortesia)
-                                       </span>
-                                     ) : isAvancado && !isLiberadoPelaGestao ? (
-                                       <span className="px-2.5 py-0.5 bg-amber-100 text-amber-900 text-[10px] font-bold rounded-full flex items-center gap-1 border border-amber-300">
-                                         <Lock className="w-3 h-3 text-amber-800" />
-                                         Bloqueado (Requer Master)
-                                       </span>
-                                     ) : isPlanoAtual ? (
-                                       <span className="px-2.5 py-0.5 bg-emerald-100 text-emerald-800 text-[10px] font-bold rounded-full">
-                                         Seu Plano Atual
-                                       </span>
-                                     ) : null}
-                                   </div>
+                                  <div className="flex items-baseline gap-1">
+                                    <span className="text-xs font-bold text-forest/70">R$</span>
+                                    <span className="text-2xl font-extrabold text-forest font-serif">
+                                      {isCortesia && !isLockedForCurrentUser ? "0,00" : pItem.valorMensal}
+                                    </span>
+                                    <span className="text-[11px] text-forest/60">
+                                      {isCortesia && !isLockedForCurrentUser ? "/mês (isento)" : "/mês"}
+                                    </span>
+                                  </div>
 
-                                   <div>
-                                     <h5 className="font-serif font-bold text-lg text-forest">
-                                       {pItem.nome}
-                                     </h5>
-                                     <p className="text-xs text-forest/65 mt-0.5">
-                                       {pItem.subtitulo || pItem.descricao}
-                                     </p>
-                                   </div>
+                                  <ul className="space-y-1.5 text-xs text-forest/80 pt-2 border-t border-soft/50">
+                                    {(pItem.recursos || []).map((rec: string, rIdx: number) => (
+                                      <li key={rIdx} className="flex items-start gap-2">
+                                        <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                                        <span>{rec}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
 
-                                   <div className="flex items-baseline gap-1">
-                                     <span className="text-xs font-bold text-forest/70">R$</span>
-                                     <span className="text-2xl font-extrabold text-forest font-serif">
-                                       {isCortesiaBasico ? "0,00" : pItem.valorMensal}
-                                     </span>
-                                     <span className="text-[11px] text-forest/60">
-                                       {isCortesiaBasico ? "/mês (isento)" : "/mês"}
-                                     </span>
-                                   </div>
-
-                                   <ul className="space-y-1.5 text-xs text-forest/80 pt-2 border-t border-soft/50">
-                                     {(pItem.recursos || []).slice(0, 4).map((rec: string, rIdx: number) => (
-                                       <li key={rIdx} className="flex items-center gap-2">
-                                         <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                                         <span>{rec}</span>
-                                       </li>
-                                     ))}
-                                   </ul>
-                                 </div>
-
-                                 <div className="pt-4 border-t border-soft/50">
-                                   {isCortesiaBasico ? (
-                                     <div className="w-full py-2.5 px-4 bg-purple-100 text-purple-900 border border-purple-200 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5">
-                                       <Gift className="w-3.5 h-3.5 text-purple-700" />
-                                       <span>Plano Acolher Ativo na Cortesia</span>
-                                     </div>
-                                   ) : isAvancado && !isLiberadoPelaGestao ? (
-                                     <button
-                                       type="button"
-                                       onClick={async () => {
-                                         try {
-                                           await updateDoc(doc(db, "users", profile.uid || user?.uid), {
-                                             solicitacaoPlanoAvancado: true,
-                                             dataSolicitacaoPlanoAvancado: new Date().toISOString(),
-                                           });
-                                           showToast("Solicitação de liberação do Plano Avançado enviada à Gestão Master com sucesso!", "success");
-                                         } catch (err) {
-                                           showToast("Erro ao enviar solicitação.", "error");
-                                         }
-                                       }}
-                                       className="w-full py-2.5 px-4 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer flex items-center justify-center gap-1.5"
-                                     >
-                                       <Lock className="w-3.5 h-3.5" />
-                                       <span>Solicitar Liberação à Gestão</span>
-                                     </button>
-                                   ) : (
-                                     <button
-                                       type="button"
-                                       onClick={() => setShowCheckoutModal(true)}
-                                       className="w-full py-2.5 px-4 bg-forest hover:bg-forest/90 text-white rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer flex items-center justify-center gap-1.5"
-                                     >
-                                       <CreditCard className="w-3.5 h-3.5 text-sun" />
-                                       <span>Contratar / Pagar via Stripe</span>
-                                     </button>
-                                   )}
-                                 </div>
-                               </div>
-                             );
-                           })}
-                         </div>
-                       </div>
-                     );
-                   })()}
+                                <div className="pt-4 border-t border-soft/50">
+                                  {isFullExemption ? (
+                                    <div className="w-full py-2.5 px-4 bg-emerald-100 text-emerald-900 border border-emerald-200 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5">
+                                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700" />
+                                      <span>Recursos Ativos sem Cobrança</span>
+                                    </div>
+                                  ) : modalidade === "cortesia_essencial" && isAcolher ? (
+                                    <div className="w-full py-2.5 px-4 bg-purple-100 text-purple-900 border border-purple-200 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5">
+                                      <Gift className="w-3.5 h-3.5 text-purple-700" />
+                                      <span>Plano Acolher Ativo na Cortesia</span>
+                                    </div>
+                                  ) : isLockedForCurrentUser ? (
+                                    <button
+                                      type="button"
+                                      onClick={async () => {
+                                        try {
+                                          const targetUid = profile.uid || user?.uid;
+                                          if (!targetUid) return;
+                                          const reqUpdates = {
+                                            solicitacaoPlanoAvancado: true,
+                                            planoSolicitadoNome: pItem.nome,
+                                            dataSolicitacaoPlanoAvancado: new Date().toISOString(),
+                                          };
+                                          await updateDoc(doc(db, "users", targetUid), reqUpdates);
+                                          applyLocalUserUpdates(targetUid, reqUpdates);
+                                          showToast(
+                                            `Solicitação de liberação do ${pItem.nome} enviada à Gestão Master!`,
+                                            "success"
+                                          );
+                                        } catch (err) {
+                                          showToast("Erro ao enviar solicitação.", "error");
+                                        }
+                                      }}
+                                      className="w-full py-2.5 px-4 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer flex items-center justify-center gap-1.5"
+                                    >
+                                      <Lock className="w-3.5 h-3.5" />
+                                      <span>
+                                        {alreadyRequested
+                                          ? "Solicitação Enviada à Gestão"
+                                          : "Solicitar Liberação à Gestão"}
+                                      </span>
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setCheckoutPlanTarget({
+                                          id: canon,
+                                          nome: pItem.nome,
+                                          valorMensal: pItem.valorMensal,
+                                        });
+                                        setShowCheckoutModal(true);
+                                      }}
+                                      className="w-full py-2.5 px-4 bg-forest hover:bg-forest/90 text-white rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer flex items-center justify-center gap-1.5"
+                                    >
+                                      <CreditCard className="w-3.5 h-3.5 text-sun" />
+                                      <span>
+                                        {isCurrentActivePlan && isPago
+                                          ? "Renovar / Gerenciar via Stripe"
+                                          : `Contratar ${pItem.nome.split("(")[0].trim()} via Stripe`}
+                                      </span>
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {/* Offboarding Request Section */}
                   <div className="bg-white p-8 rounded-[2rem] border border-soft shadow-xs space-y-6">
@@ -13042,6 +13282,41 @@ export function DashboardView({
                               >
                                 {p.ativo === false ? "Inativo" : "Ativo"}
                               </span>
+                              {p.role === "profissional" && (() => {
+                                const cred = getCredentialBadgeMeta(p);
+                                const planLabel = getPlanDisplayName(
+                                  p,
+                                  globalConfigs.planosProfissionais,
+                                  (globalConfigs as any).planosSchemaVersion
+                                );
+                                const badgeClass =
+                                  cred.tone === "emerald"
+                                    ? "bg-emerald-50 text-emerald-900 border-emerald-300"
+                                    : cred.tone === "indigo"
+                                      ? "bg-indigo-50 text-indigo-900 border-indigo-300"
+                                      : cred.tone === "purple"
+                                        ? "bg-purple-50 text-purple-900 border-purple-300"
+                                        : hasIntegrarFeatures(p)
+                                          ? "bg-sun-light text-forest border-sun-dark/40"
+                                          : "bg-warm text-forest/80 border-soft";
+                                return (
+                                  <span
+                                    className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider border shrink-0 flex items-center gap-1 ${badgeClass}`}
+                                    title={cred.label}
+                                  >
+                                    {cred.modalidade === "usuario_teste" && (
+                                      <EyeOff className="w-2.5 h-2.5 text-indigo-700" />
+                                    )}
+                                    {planLabel.split("•")[0].trim()}
+                                  </span>
+                                );
+                              })()}
+                              {p.solicitacaoPlanoAvancado && !isPlanoIntegrarAutorizadoPelaGestao(p) && (
+                                <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-amber-100 text-amber-900 border border-amber-300 shrink-0 flex items-center gap-1 animate-pulse">
+                                  <Sparkles className="w-2.5 h-2.5 text-amber-700" />
+                                  Solicitou Plano Integrar
+                                </span>
+                              )}
                               {isAtCap && (
                                 <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-red-50 text-red-700 border border-red-200 shrink-0 flex items-center gap-1">
                                   <ShieldAlert className="w-2.5 h-2.5 text-red-600" />
@@ -13235,18 +13510,67 @@ export function DashboardView({
                                     {p.role}
                                   </span>
                                 </p>
-                                <p className="flex justify-between items-center">
-                                  <strong className="text-forest/60">Plano:</strong>
-                                  <select
-                                    value={p.plano || "essencial"}
-                                    onChange={(e) => handleUpdateProfissionalPlan(p.uid || p.id!, e.target.value)}
-                                    className="text-xs font-semibold text-forest bg-warm border border-soft rounded-lg px-2 py-1 focus:outline-none"
-                                  >
-                                    <option value="essencial">Essencial</option>
-                                    <option value="avancado">Avançado</option>
-                                    <option value="ia">IA (Em desenv.)</option>
-                                  </select>
-                                </p>
+                                <div className="flex flex-col gap-1.5 pt-1 border-t border-soft/40">
+                                  <div className="flex justify-between items-center gap-2">
+                                    <strong className="text-forest/60 shrink-0">Plano:</strong>
+                                    {(() => {
+                                      const planosAtivosSelect = getActivePlansForSelector(
+                                        globalConfigs.planosProfissionais,
+                                        (globalConfigs as any).planosSchemaVersion
+                                      );
+                                      const mod = resolveModalidadeCredencial(p);
+                                      const selectedCanon = normalizeUserPlanId(p.plano);
+
+                                      if (mod === "cortesia_essencial") {
+                                        const acolherNome =
+                                          planosAtivosSelect[0]?.nome ||
+                                          "Plano Acolher (Essencial)";
+                                        return (
+                                          <span
+                                            className="text-[11px] font-bold text-purple-900 bg-purple-50 border border-purple-200 rounded-lg px-2 py-1 truncate"
+                                            title="Na Cortesia Essencial fica habilitado apenas o Plano Acolher. Para liberar tudo sem cobrança, selecione Cortesia Plena ou Usuário Teste."
+                                          >
+                                            {acolherNome} (Fixo)
+                                          </span>
+                                        );
+                                      }
+
+                                      if (mod === "cortesia_plena" || mod === "usuario_teste") {
+                                        return (
+                                          <span className="text-[11px] font-bold text-emerald-900 bg-emerald-50 border border-emerald-200 rounded-lg px-2 py-1 truncate">
+                                            Acesso Total (Todos os Recursos)
+                                          </span>
+                                        );
+                                      }
+
+                                      return (
+                                        <select
+                                          disabled={profile?.role !== "master"}
+                                          value={selectedCanon}
+                                          onChange={(e) =>
+                                            handleUpdateProfissionalPlan(
+                                              p.uid || p.id!,
+                                              e.target.value
+                                            )
+                                          }
+                                          className="text-xs font-semibold text-forest bg-warm border border-soft rounded-lg px-2 py-1 focus:outline-none max-w-[200px] truncate disabled:opacity-60"
+                                        >
+                                          {planosAtivosSelect.map((plItem, pIdx) => {
+                                            const canonVal = matchPlanItemToCanonicalId(
+                                              plItem,
+                                              pIdx
+                                            );
+                                            return (
+                                              <option key={plItem.id || pIdx} value={canonVal}>
+                                                {plItem.nome}
+                                              </option>
+                                            );
+                                          })}
+                                        </select>
+                                      );
+                                    })()}
+                                  </div>
+                                </div>
                                 <p className="flex justify-between">
                                   <strong className="text-forest/60">CRP:</strong>
                                   <span className="font-mono">{p.crp || "Pendente"}</span>
@@ -13301,18 +13625,29 @@ export function DashboardView({
                               </div>
                             </div>
 
-                            {/* Bloco 3: Pagamento & Adimplência */}
-                            <div className="bg-white p-3.5 rounded-xl border border-soft shadow-2xs space-y-2">
+                            {/* Bloco 3: Pagamento, Credencial & Liberação Master */}
+                            <div className="bg-white p-3.5 rounded-xl border border-soft shadow-2xs space-y-2.5">
                               <span className="text-[10px] font-bold uppercase tracking-wider text-forest/50 block border-b border-soft/50 pb-1">
-                                Situação Financeira (Associação)
+                                Credencial & Situação Financeira
                               </span>
-                              <div className="flex items-center justify-between">
+                              <div className="flex items-center justify-between gap-2">
                                 <span className="text-forest/60 font-medium">Status:</span>
-                                {p.isCortesia ? (
-                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200 flex items-center gap-1">
-                                    <Gift className="w-3 h-3 text-purple-600" />
-                                    Cortesia / Isento
-                                  </span>
+                                {isExemptFromPlatformBilling(p) ? (
+                                  (() => {
+                                    const cred = getCredentialBadgeMeta(p);
+                                    const pillColor =
+                                      cred.tone === "emerald"
+                                        ? "bg-emerald-100 text-emerald-900 border-emerald-300"
+                                        : cred.tone === "indigo"
+                                          ? "bg-indigo-100 text-indigo-900 border-indigo-300"
+                                          : "bg-purple-100 text-purple-800 border-purple-200";
+                                    return (
+                                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border flex items-center gap-1 ${pillColor}`}>
+                                        <Gift className="w-3 h-3" />
+                                        {cred.shortLabel} (Isento)
+                                      </span>
+                                    );
+                                  })()
                                 ) : p.statusPagamento === "pago" ? (
                                   <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1">
                                     <CheckCircle2 className="w-3 h-3 text-emerald-600" />
@@ -13347,22 +13682,56 @@ export function DashboardView({
                               </div>
 
                               {profile?.role === "master" && (
-                                <div className="pt-2 border-t border-soft/50 flex items-center justify-between">
-                                  <span className="text-[11px] font-medium text-forest/70">
-                                    Isenção:
-                                  </span>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleToggleCortesia(p.uid!, !!p.isCortesia)}
-                                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1 cursor-pointer border ${
-                                      p.isCortesia
-                                        ? "bg-purple-600 text-white border-purple-700 hover:bg-purple-700"
-                                        : "bg-white text-forest/80 border-soft hover:bg-purple-50 hover:text-purple-700"
-                                    }`}
-                                  >
-                                    <Gift className="w-3 h-3" />
-                                    {p.isCortesia ? "Cortesia Ativa" : "Tornar Cortesia"}
-                                  </button>
+                                <div className="pt-2 border-t border-soft/50 space-y-2">
+                                  <div className="flex flex-col gap-1">
+                                    <span className="text-[10px] font-bold uppercase text-forest/60">
+                                      Credencial / Exceção:
+                                    </span>
+                                    <select
+                                      value={resolveModalidadeCredencial(p)}
+                                      onChange={(e) =>
+                                        handleUpdateModalidadeCredencial(
+                                          p.uid || p.id!,
+                                          e.target.value as ModalidadeCredencial
+                                        )
+                                      }
+                                      className="w-full text-[11px] font-bold text-forest bg-warm border border-soft rounded-lg px-2 py-1.5 focus:outline-none focus:border-forest cursor-pointer"
+                                    >
+                                      {MODALIDADES_CREDENCIAL_OPCOES.map((opt) => (
+                                        <option key={opt.value} value={opt.value}>
+                                          {opt.label}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+
+                                  {resolveModalidadeCredencial(p) === "assinatura_padrao" && (
+                                    <div className="flex items-center justify-between gap-2 pt-1">
+                                      <span className="text-[10px] font-semibold text-forest/70">
+                                        Contratação Integrar:
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          handleToggleLiberarPlanoIntegrar(
+                                            p.uid || p.id!,
+                                            Boolean(p.planoAvancadoLiberado)
+                                          )
+                                        }
+                                        className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1 cursor-pointer border ${
+                                          isPlanoIntegrarAutorizadoPelaGestao(p)
+                                            ? "bg-emerald-700 text-white border-emerald-800 hover:bg-emerald-800"
+                                            : "bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100"
+                                        }`}
+                                        title="Autoriza o profissional a contratar o Plano Integrar via Stripe na aba Status / Plano"
+                                      >
+                                        <Sparkles className="w-3 h-3" />
+                                        {isPlanoIntegrarAutorizadoPelaGestao(p)
+                                          ? "Liberado p/ Contratar"
+                                          : "Liberar Plano Integrar"}
+                                      </button>
+                                    </div>
+                                  )}
                                 </div>
                               )}
                             </div>
@@ -20506,45 +20875,147 @@ export function DashboardView({
                         }
                         isEditing={isEditingCard}
                       />
-                      <div className="mt-3 p-3 bg-warm/80 border border-soft rounded-xl space-y-2 text-xs text-forest">
-                        <div className="flex items-center justify-between">
-                          <span className="font-semibold text-forest/70">📌 Período de Teste (7 dias):</span>
-                          <span className="font-bold text-forest">
-                            {selectedProfissional.vencimentoPagamento
-                              ? formatDateSafely(selectedProfissional.vencimentoPagamento)
-                              : "7 dias após admissão"}
-                          </span>
+                      {/* Bloco Padronizado de Plano & Credencial na Ficha de Bordo */}
+                      {!("nome" in selectedProfissional) && profile?.role === "master" && (() => {
+                        const targetProfId = selectedProfissional.uid || selectedProfissional.id;
+                        const planosAtivosModal = getActivePlansForSelector(
+                          globalConfigs.planosProfissionais,
+                          (globalConfigs as any).planosSchemaVersion
+                        );
+                        const modModal = resolveModalidadeCredencial(selectedProfissional);
+                        const canonModal = normalizeUserPlanId(selectedProfissional.plano);
+
+                        return (
+                          <div className="mt-3 p-3.5 bg-white border border-soft rounded-xl space-y-3 text-xs text-forest shadow-2xs">
+                            <div className="flex items-center justify-between border-b border-soft/60 pb-2">
+                              <span className="font-bold uppercase tracking-wider text-[10px] text-forest/70 flex items-center gap-1.5">
+                                <Layers className="w-3.5 h-3.5 text-forest" />
+                                Plano & Credencial de Acesso
+                              </span>
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-warm border border-soft text-forest">
+                                {getCredentialBadgeMeta(selectedProfissional).shortLabel}
+                              </span>
+                            </div>
+
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-bold uppercase text-forest/60 block">
+                                Modalidade de Credencial / Isenção
+                              </label>
+                              <select
+                                value={modModal}
+                                onChange={(e) =>
+                                  handleUpdateModalidadeCredencial(
+                                    targetProfId,
+                                    e.target.value as ModalidadeCredencial
+                                  )
+                                }
+                                className="w-full px-3 py-2 bg-warm/50 border border-soft rounded-lg text-xs font-bold text-forest focus:outline-none focus:border-forest"
+                              >
+                                {MODALIDADES_CREDENCIAL_OPCOES.map((opt) => (
+                                  <option key={opt.value} value={opt.value}>
+                                    {opt.label}
+                                  </option>
+                                ))}
+                              </select>
+                              <p className="text-[10px] text-forest/60 leading-snug pt-0.5">
+                                {MODALIDADES_CREDENCIAL_OPCOES.find((o) => o.value === modModal)?.description}
+                              </p>
+                            </div>
+
+                            {modModal === "assinatura_padrao" && (
+                              <div className="space-y-2 pt-2 border-t border-soft/50">
+                                <div className="flex flex-col gap-1">
+                                  <label className="text-[10px] font-bold uppercase text-forest/60 block">
+                                    Plano Ativo (Sincronizado com Controle)
+                                  </label>
+                                  <select
+                                    value={canonModal}
+                                    onChange={(e) =>
+                                      handleUpdateProfissionalPlan(targetProfId, e.target.value)
+                                    }
+                                    className="w-full px-3 py-2 bg-warm/50 border border-soft rounded-lg text-xs font-bold text-forest focus:outline-none focus:border-forest"
+                                  >
+                                    {planosAtivosModal.map((plItem, idx) => {
+                                      const cId = matchPlanItemToCanonicalId(plItem, idx);
+                                      return (
+                                        <option key={plItem.id || idx} value={cId}>
+                                          {plItem.nome} (R$ {plItem.valorMensal}/mês)
+                                        </option>
+                                      );
+                                    })}
+                                  </select>
+                                </div>
+
+                                <div className="flex items-center justify-between pt-1">
+                                  <span className="text-[11px] font-semibold text-forest/75">
+                                    Autorização p/ Contratar Plano Integrar:
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleToggleLiberarPlanoIntegrar(
+                                        targetProfId,
+                                        Boolean(selectedProfissional.planoAvancadoLiberado)
+                                      )
+                                    }
+                                    className={`px-3 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer border ${
+                                      isPlanoIntegrarAutorizadoPelaGestao(selectedProfissional)
+                                        ? "bg-emerald-700 text-white border-emerald-800 hover:bg-emerald-800"
+                                        : "bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100"
+                                    }`}
+                                  >
+                                    {isPlanoIntegrarAutorizadoPelaGestao(selectedProfissional)
+                                      ? "Liberado no Painel"
+                                      : "Liberar p/ Contratação"}
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+
+                      {!isExemptFromPlatformBilling(selectedProfissional) && (
+                        <div className="mt-3 p-3 bg-warm/80 border border-soft rounded-xl space-y-2 text-xs text-forest">
+                          <div className="flex items-center justify-between">
+                            <span className="font-semibold text-forest/70">Período de Teste (7 dias):</span>
+                            <span className="font-bold text-forest">
+                              {selectedProfissional.vencimentoPagamento
+                                ? formatDateSafely(selectedProfissional.vencimentoPagamento)
+                                : "7 dias após admissão"}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="font-semibold text-forest/70">Checkout Automático:</span>
+                            <span className="font-bold text-emerald-800">
+                              {selectedProfissional.checkoutTrial7DiasEnviado
+                                ? `Enviado em ${formatDateSafely(selectedProfissional.checkoutTrial7DiasEnviadoEm)}`
+                                : "Pendente (agendado 7 dias pós admissão)"}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const profEmail = selectedProfissional.email;
+                              const profName = ("nome" in selectedProfissional ? selectedProfissional.nome : selectedProfissional.name) || "Profissional";
+                              const stripeUrl = globalConfigs.stripeCheckoutUrl || "https://buy.stripe.com/acolhemente";
+                              const admFmt = formatDateSafely(selectedProfissional.dataAdmissao || selectedProfissional.createdAt);
+                              await sendTrialExpiredCheckoutEmail(profName, profEmail, stripeUrl, admFmt);
+                              const profId = "id" in selectedProfissional ? selectedProfissional.id : selectedProfissional.uid;
+                              if (profId) {
+                                await handleUpdateProfissionalProperty(profId, "checkoutTrial7DiasEnviado", true);
+                                await handleUpdateProfissionalProperty(profId, "checkoutTrial7DiasEnviadoEm", new Date().toISOString());
+                                await handleUpdateProfissionalProperty(profId, "notificacao", `Link de checkout enviado manualmente por e-mail pela Gestão em ${new Date().toLocaleDateString("pt-BR")}.`);
+                              }
+                              showToast(`Link de checkout do Stripe enviado por e-mail para ${profEmail}!`, "success");
+                            }}
+                            className="w-full mt-1.5 py-2 px-3 bg-forest text-white hover:bg-forest/90 font-bold text-[11px] rounded-lg transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                          >
+                            <CreditCard className="w-3.5 h-3.5 text-sun" />
+                            Enviar Link de Checkout Agora (E-mail)
+                          </button>
                         </div>
-                        <div className="flex items-center justify-between">
-                          <span className="font-semibold text-forest/70">📧 Checkout Automático:</span>
-                          <span className="font-bold text-emerald-800">
-                            {selectedProfissional.checkoutTrial7DiasEnviado
-                              ? `Enviado em ${formatDateSafely(selectedProfissional.checkoutTrial7DiasEnviadoEm)}`
-                              : "Pendente (agendado 7 dias pós admissão)"}
-                          </span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            const profEmail = selectedProfissional.email;
-                            const profName = ("nome" in selectedProfissional ? selectedProfissional.nome : selectedProfissional.name) || "Profissional";
-                            const stripeUrl = globalConfigs.stripeCheckoutUrl || "https://buy.stripe.com/acolhemente";
-                            const admFmt = formatDateSafely(selectedProfissional.dataAdmissao || selectedProfissional.createdAt);
-                            await sendTrialExpiredCheckoutEmail(profName, profEmail, stripeUrl, admFmt);
-                            const profId = "id" in selectedProfissional ? selectedProfissional.id : selectedProfissional.uid;
-                            if (profId) {
-                              await handleUpdateProfissionalProperty(profId, "checkoutTrial7DiasEnviado", true);
-                              await handleUpdateProfissionalProperty(profId, "checkoutTrial7DiasEnviadoEm", new Date().toISOString());
-                              await handleUpdateProfissionalProperty(profId, "notificacao", `Link de checkout enviado manualmente por e-mail pela Gestão em ${new Date().toLocaleDateString("pt-BR")}.`);
-                            }
-                            alert(`Link de checkout do Stripe enviado por e-mail para ${profEmail}!`);
-                          }}
-                          className="w-full mt-1.5 py-2 px-3 bg-forest text-white hover:bg-forest/90 font-bold text-[11px] rounded-lg transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
-                        >
-                          <CreditCard className="w-3.5 h-3.5 text-sun" />
-                          Enviar Link de Checkout Agora (E-mail)
-                        </button>
-                      </div>
+                      )}
                       <EditableField
                         label="Cidade"
                         value={selectedProfissional.cidade}
@@ -23213,25 +23684,63 @@ export function DashboardView({
       {showCheckoutModal && (
         <StripeCheckoutModal
           isOpen={showCheckoutModal}
-          onClose={() => setShowCheckoutModal(false)}
+          onClose={() => {
+            setShowCheckoutModal(false);
+            setCheckoutPlanTarget(null);
+          }}
           professionalName={profile?.name || "Profissional AcolheMente"}
           professionalEmail={profile?.email || ""}
           professionalId={profile?.uid || profile?.id}
-          taxaMensal={profile?.taxaAssociativaMensal || globalConfigs.taxaAssociativaMensal || "29,90"}
+          taxaMensal={
+            checkoutPlanTarget?.valorMensal ||
+            profile?.taxaAssociativaMensal ||
+            globalConfigs.taxaAssociativaMensal ||
+            "29,90"
+          }
           stripeConfig={{
             stripeEnabled: globalConfigs.stripeEnabled ?? true,
             stripePublicKey: globalConfigs.stripePublicKey || "",
             stripeCheckoutUrl: globalConfigs.stripeCheckoutUrl || "",
           }}
-          onSuccess={() => {
+          onSuccess={async () => {
             if (profile) {
-              setProfile({
-                ...profile,
+              const targetUid = profile.uid || profile.id;
+              const targetPlanId = checkoutPlanTarget?.id
+                ? normalizeUserPlanId(checkoutPlanTarget.id)
+                : normalizeUserPlanId(profile.plano);
+              const canActivatePlan =
+                targetPlanId === "plano_1" ||
+                isPlanoIntegrarAutorizadoPelaGestao(profile);
+              const finalPlanId = canActivatePlan ? targetPlanId : "plano_1";
+              const paidTaxa =
+                checkoutPlanTarget?.valorMensal ||
+                profile.taxaAssociativaMensal ||
+                globalConfigs.taxaAssociativaMensal ||
+                "29,90";
+
+              const paymentUpdates = {
                 statusPagamento: "pago",
                 dataPagamento: new Date().toISOString(),
-              });
+                plano: finalPlanId,
+                taxaAssociativaMensal: paidTaxa,
+              };
+
+              if (targetUid) {
+                try {
+                  await updateDoc(doc(db, "users", targetUid), paymentUpdates);
+                } catch (e) {
+                  console.error("Erro ao registrar pagamento no usuário:", e);
+                }
+                applyLocalUserUpdates(targetUid, paymentUpdates);
+              } else {
+                setProfile({
+                  ...profile,
+                  ...paymentUpdates,
+                });
+              }
             }
             setShowCheckoutModal(false);
+            setCheckoutPlanTarget(null);
           }}
         />
       )}

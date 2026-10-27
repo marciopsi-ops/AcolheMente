@@ -17,14 +17,19 @@ import {
   ExternalLink,
   Video,
   Building2,
+  ShieldCheck,
 } from "lucide-react";
 import { doc, getDoc, collection, query, where, onSnapshot } from "firebase/firestore";
-import { db } from "../lib/firebase";
+import { auth, db } from "../lib/firebase";
 import { BrandLogo } from "../components/BrandLogo";
 import { Breadcrumbs } from "../components/Breadcrumbs";
 import { ArtigoBlog } from "../types/blog";
 import { BlogCard } from "../components/BlogCard";
 import { formatProfessionalName } from "../utils/formatters";
+import {
+  hasIntegrarFeatures,
+  isTestUserCredential,
+} from "../types/planosProfissionais";
 import {
   SOCIAL_NETWORKS_META,
   WhatsAppBrandIcon,
@@ -82,8 +87,12 @@ export function PublicProfProfileView({
         const snap = await getDoc(doc(db, "users", profUid));
         if (snap.exists()) {
           const data = snap.data();
-          // Suppress inactive professional presentation
-          if (data.role === 'profissional' && data.ativo !== false) {
+          const rolesArr = Array.isArray(data.roles) ? data.roles : [];
+          const isProfRole = data.role === "profissional" || rolesArr.includes("profissional");
+          const isTestAccount = isTestUserCredential(data);
+          // Contas de Usuário Teste ficam ocultas para visitantes externos, mas o próprio usuário autenticado ou gestão pode pré-visualizar
+          const canViewTestAccount = !isTestAccount || Boolean(auth.currentUser);
+          if (isProfRole && data.ativo !== false && canViewTestAccount) {
             const rawName = data.name || data.nome || data.displayName || "Profissional";
             setProf({
               ...data,
@@ -106,7 +115,7 @@ export function PublicProfProfileView({
     const originalTitle = document.title;
     const formattedName = formatProfessionalName(prof.name);
     const profissaoOuTitulo = prof.profissao || (prof.especialidade ? `Profissional - ${prof.especialidade}` : "Profissional de Saúde");
-    const wlActive = prof.whiteLabelEnabled === true && prof.plano === "avancado";
+    const wlActive = prof.whiteLabelEnabled === true && hasIntegrarFeatures(prof);
     const formattedTitle = wlActive
       ? `${formattedName} | ${profissaoOuTitulo}`
       : `${formattedName} | ${profissaoOuTitulo} - Projeto AcolheMente`;
@@ -252,7 +261,7 @@ export function PublicProfProfileView({
       )}`
     : "";
 
-  const isWhiteLabel = prof.whiteLabelEnabled && prof.plano === "avancado";
+  const isWhiteLabel = Boolean(prof.whiteLabelEnabled && hasIntegrarFeatures(prof));
   if (isWhiteLabel) {
     const wlConfig = prof.whiteLabelConfig || {};
     const company = prof.companyData || {};
@@ -931,6 +940,10 @@ export function PublicProfProfileView({
             <h1 className="font-serif text-2xl font-semibold leading-tight">{formatProfessionalName(prof.name)}</h1>
             <span className="text-xs uppercase tracking-wider font-bold text-sun-dark mt-1">
               {prof.profissao || "Profissional de Saúde"}
+            </span>
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 mt-1.5 rounded-full bg-sun-light/80 text-forest border border-sun-dark/30 text-[10px] font-bold uppercase tracking-wider shadow-2xs">
+              <ShieldCheck className="w-3 h-3 text-sun-dark" />
+              Selo Profissional Sênior
             </span>
             
             <div className="flex gap-4 mt-4 items-center justify-center">

@@ -22,11 +22,16 @@ import {
   normalizeSocialUrl,
 } from "./SocialBrandIcons";
 import { formatCnpj, isValidCnpj, getCnpjValidationError } from "../utils/formatters";
+import {
+  hasIntegrarFeatures,
+  resolveModalidadeCredencial,
+} from "../types/planosProfissionais";
 
 interface WhiteLabelProfileConfigPanelProps {
   profile: any;
   setProfile: (nextProfile: any) => void;
   showToast?: (msg: string, type?: "success" | "error") => void;
+  onGoToPlanos?: () => void;
 }
 
 const UF_LIST = [
@@ -39,6 +44,7 @@ export function WhiteLabelProfileConfigPanel({
   profile,
   setProfile,
   showToast,
+  onGoToPlanos,
 }: WhiteLabelProfileConfigPanelProps) {
   const [cepLoading, setCepLoading] = useState(false);
 
@@ -91,7 +97,8 @@ export function WhiteLabelProfileConfigPanel({
   const mapsPreview = buildMapsUrls(endereco);
   const publicPageUrl = profile?.uid ? `${window.location.origin}?prof=${profile.uid}` : "";
 
-  if (profile.isCortesia || profile.plano !== "avancado") {
+  if (!hasIntegrarFeatures(profile)) {
+    const modalidade = resolveModalidadeCredencial(profile);
     return (
       <div className="p-6 sm:p-8 bg-gradient-to-br from-amber-50 to-warm/60 rounded-3xl border border-amber-200/80 space-y-5 text-center">
         <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center mx-auto shadow-xs">
@@ -99,11 +106,12 @@ export function WhiteLabelProfileConfigPanel({
         </div>
         <div className="space-y-2">
           <h4 className="font-serif text-lg sm:text-xl font-bold text-forest">
-            Desbloqueie sua Página Profissional White-Label (Plano Avançado)
+            Página Profissional White-Label Independente (Plano Integrar)
           </h4>
           <p className="text-xs sm:text-sm text-forest/75 max-w-2xl mx-auto leading-relaxed">
-            No <strong>Plano Básico</strong>, sua página pública mantém o formato padrão institucional. Ao ativar o{" "}
-            <strong>Plano Avançado (White-Label)</strong>, você libera sua página própria independente, sem menção à plataforma, com recursos completos de captação:
+            No <strong>Plano Acolher (Essencial)</strong>
+            {modalidade === "cortesia_essencial" ? " em modalidade Cortesia" : ""}, sua página pública permanece ativa no formato institucional da rede (com destaque nas buscas e Selo Sênior). Ao contratar ou ter liberado o{" "}
+            <strong>Plano Integrar</strong>, você desbloqueia sua página própria White-Label independente:
           </p>
         </div>
 
@@ -138,19 +146,22 @@ export function WhiteLabelProfileConfigPanel({
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={() => {
-            setProfile({ ...profile, plano: "avancado", whiteLabelEnabled: true });
-            showToast?.(
-              "Plano Avançado ativado! Configure sua página White-Label e clique em Salvar ao final.",
-              "success",
-            );
-          }}
-          className="px-6 py-3.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-all shadow-md cursor-pointer inline-flex items-center gap-2"
-        >
-          <Sparkles className="w-4 h-4 text-sun" /> Ativar Plano Avançado / White-Label
-        </button>
+        {onGoToPlanos ? (
+          <button
+            type="button"
+            onClick={onGoToPlanos}
+            className="px-6 py-3.5 bg-forest hover:bg-forest/90 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-all shadow-md cursor-pointer inline-flex items-center gap-2"
+          >
+            <Sparkles className="w-4 h-4 text-sun" /> Ver Planos em Status / Plano
+          </button>
+        ) : (
+          <div className="inline-flex items-center gap-2 px-4 py-2.5 bg-white/90 border border-amber-300 rounded-xl text-xs font-semibold text-amber-900">
+            <AlertCircle className="w-4 h-4 text-amber-700 shrink-0" />
+            <span>
+              Acesse a aba <strong>Status / Plano</strong> no menu superior para solicitar liberação ou contratar o <strong>Plano Integrar</strong>.
+            </span>
+          </div>
+        )}
       </div>
     );
   }

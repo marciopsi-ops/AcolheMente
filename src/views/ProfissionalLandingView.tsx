@@ -7,7 +7,7 @@ import { sendProfessionalLeadEmail } from "../lib/emailService";
 import { sendWebhookNotification } from "../lib/webhookNotifier";
 import { Breadcrumbs } from "../components/Breadcrumbs";
 import { StripeCheckoutModal } from "../components/StripeCheckoutModal";
-import { PLANOS_PROFISSIONAIS_PADRAO, PlanoProfissionalItem } from "../types/planosProfissionais";
+import { PLANOS_PROFISSIONAIS_PADRAO, PlanoProfissionalItem, sanitizePlanoSemHoras, normalizePlanosConfig } from "../types/planosProfissionais";
 
 import psicologoHero from '../assets/images/psicologa_hero_parda_1788390113480.jpg';
 import logoImage from '../assets/images/logo_acolhe.svg';
@@ -183,8 +183,9 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
       if (snap.exists()) {
         const data = snap.data();
         if (data.planosProfissionais && Array.isArray(data.planosProfissionais) && data.planosProfissionais.length > 0) {
-          setPlanosProfissionais(data.planosProfissionais);
-          const featured = data.planosProfissionais.find((p: PlanoProfissionalItem) => p.destaque && p.ativo);
+          const normalized = normalizePlanosConfig(data.planosProfissionais, data.planosSchemaVersion);
+          setPlanosProfissionais(normalized);
+          const featured = normalized.find((p: PlanoProfissionalItem) => p.destaque && p.ativo !== false) || normalized.find((p: PlanoProfissionalItem) => p.ativo !== false);
           if (featured) {
             setPlanoEscolhidoId(featured.id);
           }
@@ -205,7 +206,9 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
     return () => unsub();
   }, []);
 
-  const planosAtivos = (planosProfissionais && planosProfissionais.length > 0 ? planosProfissionais : PLANOS_PROFISSIONAIS_PADRAO).filter(p => p.ativo !== false);
+  const planosAtivos = (planosProfissionais && planosProfissionais.length > 0 ? planosProfissionais : PLANOS_PROFISSIONAIS_PADRAO)
+    .filter(p => p.ativo !== false)
+    .map(sanitizePlanoSemHoras);
   const planoSelecionado = planosAtivos.find(p => p.id === planoEscolhidoId) || planosAtivos[0] || PLANOS_PROFISSIONAIS_PADRAO[0];
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -741,9 +744,6 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
                             <div className="flex items-center justify-between gap-2">
                               <span className="text-[11px] font-bold text-sun-light uppercase tracking-wider">
                                 {plano.subtitulo || `Plano ${pIdx + 1}`}
-                              </span>
-                              <span className="text-[11px] text-white/70 bg-white/10 px-2 py-0.5 rounded-md">
-                                {plano.horasInclusas}
                               </span>
                             </div>
 
@@ -1834,9 +1834,6 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
                                           <span className="text-lg font-extrabold text-forest font-serif">{plano.valorMensal}</span>
                                           <span className="text-[10px] text-forest/50">/mês</span>
                                         </div>
-                                        <span className="text-[9px] font-semibold text-forest/60 bg-warm px-1.5 py-0.5 rounded">
-                                          {plano.horasInclusas}
-                                        </span>
                                       </div>
 
                                       {isSelected && (
@@ -1858,7 +1855,7 @@ export function ProfissionalLandingView({ onNavigate }: { onNavigate: (view: 'la
                                     Benefícios do {planoSelecionado.nome}:
                                   </span>
                                   <span className="text-forest font-extrabold text-xs">
-                                    R$ {planoSelecionado.valorMensal}/mês ({planoSelecionado.horasInclusas})
+                                    R$ {planoSelecionado.valorMensal}/mês
                                   </span>
                                 </div>
                                 <p className="text-forest/75 text-[11px] leading-relaxed">
