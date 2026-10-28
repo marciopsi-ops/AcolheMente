@@ -1,41 +1,48 @@
 import React, { useState, useEffect } from "react";
-import { db } from "../lib/firebase";
-import { addDoc, collection, doc, getDoc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { db, handleFirestoreError, OperationType } from "../lib/firebase";
+import {
+  addDoc,
+  collection,
+  doc,
+  getDoc,
+  updateDoc,
+  serverTimestamp,
+} from "firebase/firestore";
 import {
   CheckCircle2,
-  ChevronRight,
-  Home,
   ShieldCheck,
   User,
   MapPin,
-  Heart,
-  Calendar,
   Clock,
-  Sparkles,
   Phone,
-  Mail,
-  DollarSign,
   AlertCircle,
-  HelpCircle,
+  ExternalLink,
+  ArrowLeft,
 } from "lucide-react";
+import { BrandLogo } from "../components/BrandLogo";
+import { hasIntegrarFeatures } from "../types/planosProfissionais";
 import { formatProfessionalName } from "../utils/formatters";
+import {
+  GENERO_OPCOES,
+  TERAPIA_ANTERIOR_OPCOES,
+} from "../constants/opcoesCadastroPaciente";
 
 interface ExternalPatientLandingViewProps {
   profUid: string | null;
   onGoHome: () => void;
 }
 
-export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatientLandingViewProps) {
-  const [profData, setProfData] = useState<any>(null);
-  const [loadingProf, setLoadingProf] = useState(true);
-
+export function ExternalPatientLandingView({
+  profUid,
+  onGoHome,
+}: ExternalPatientLandingViewProps) {
   // Leitura de parâmetros de URL
   const [urlParams] = useState(() => {
     if (typeof window === "undefined") return new URLSearchParams();
     return new URLSearchParams(window.location.search);
   });
 
-  const activeProfUid =
+  const initialProfUid =
     profUid ||
     urlParams.get("prof") ||
     urlParams.get("profissional") ||
@@ -47,11 +54,27 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
   const paramModalidade = urlParams.get("modalidade") || "";
   const paramFrequencia = urlParams.get("frequencia") || "";
   const paramOrigem = urlParams.get("origem") || "";
-  const paramPacienteId = urlParams.get("paciente") || urlParams.get("id") || urlParams.get("pacienteId") || "";
+  const paramPacienteId =
+    urlParams.get("paciente") ||
+    urlParams.get("id") ||
+    urlParams.get("pacienteId") ||
+    "";
   const paramTipo = urlParams.get("tipo") || "externo";
   const isModoAtualizacao = Boolean(paramPacienteId);
+
+  const [resolvedProfUid, setResolvedProfUid] = useState<string | null>(
+    initialProfUid
+  );
+  const [profData, setProfData] = useState<any>(null);
+  const [loadingProf, setLoadingProf] = useState<boolean>(
+    Boolean(initialProfUid || paramPacienteId)
+  );
   const [loadedCollection, setLoadedCollection] = useState<string>("pacientes");
-  const [loadingPacienteExistente, setLoadingPacienteExistente] = useState(false);
+  const [loadingPacienteExistente, setLoadingPacienteExistente] =
+    useState<boolean>(Boolean(paramPacienteId));
+
+  const [logoImgError, setLogoImgError] = useState(false);
+  const [profImgError, setProfImgError] = useState(false);
 
   // Form states - Básicos
   const [nome, setNome] = useState("");
@@ -61,18 +84,21 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
   const [dataNascimento, setDataNascimento] = useState("");
   const [cpf, setCpf] = useState("");
   const [genero, setGenero] = useState("");
+  const [generoOutro, setGeneroOutro] = useState("");
   const [profissao, setProfissao] = useState("");
 
-  // Menor de idade
+  // Menor de idade / Responsável Legal
   const [isMenorIdade, setIsMenorIdade] = useState(false);
-  const [menorManualOverride, setMenorManualOverride] = useState<boolean | null>(null);
+  const [menorManualOverride, setMenorManualOverride] = useState<boolean | null>(
+    null
+  );
   const [nomeResponsavel, setNomeResponsavel] = useState("");
   const [telefoneResponsavel, setTelefoneResponsavel] = useState("");
   const [cpfResponsavel, setCpfResponsavel] = useState("");
   const [emailResponsavel, setEmailResponsavel] = useState("");
   const [parentescoResponsavel, setParentescoResponsavel] = useState("");
 
-  // Endereço
+  // Endereço Residencial
   const [cep, setCep] = useState("");
   const [logradouro, setLogradouro] = useState("");
   const [numero, setNumero] = useState("");
@@ -87,7 +113,8 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
   const [terapiaAnterior, setTerapiaAnterior] = useState("");
   const [medicacao, setMedicacao] = useState("");
   const [contatoEmergenciaNome, setContatoEmergenciaNome] = useState("");
-  const [contatoEmergenciaTelefone, setContatoEmergenciaTelefone] = useState("");
+  const [contatoEmergenciaTelefone, setContatoEmergenciaTelefone] =
+    useState("");
 
   // Preferências de Atendimento
   const [modalidadeEscolhida, setModalidadeEscolhida] = useState(
@@ -96,7 +123,14 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
   const [turnoPreferido, setTurnoPreferido] = useState("");
   const [diasPreferidos, setDiasPreferidos] = useState<string[]>([]);
 
-  const DIAS_SEMANA_OPCOES = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
+  const DIAS_SEMANA_OPCOES = [
+    "Segunda",
+    "Terça",
+    "Quarta",
+    "Quinta",
+    "Sexta",
+    "Sábado",
+  ];
 
   const FONTES_INDICACAO_OPCOES = [
     "Instagram / Redes Sociais",
@@ -113,8 +147,10 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
     const clean = String(raw || "").trim();
     if (!clean) return "";
     const lower = clean.toLowerCase();
-    if (lower === "instagram" || lower === "redes sociais") return "Instagram / Redes Sociais";
-    if (lower === "indicacao" || lower === "indicação") return "Indicação de Amigo / Familiar";
+    if (lower === "instagram" || lower === "redes sociais")
+      return "Instagram / Redes Sociais";
+    if (lower === "indicacao" || lower === "indicação")
+      return "Indicação de Amigo / Familiar";
     if (lower === "google") return "Google / Pesquisa na Web";
     if (lower === "whatsapp") return "WhatsApp Direto";
     if (lower === "site") return "Site Pessoal";
@@ -122,7 +158,9 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
   };
 
   // Fonte de indicação
-  const [fonteIndicacao, setFonteIndicacao] = useState(() => normalizeFonteIndicacao(paramOrigem || ""));
+  const [fonteIndicacao, setFonteIndicacao] = useState(() =>
+    normalizeFonteIndicacao(paramOrigem || "")
+  );
 
   // LGPD
   const [aceitouLgpd, setAceitouLgpd] = useState(false);
@@ -144,7 +182,8 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
     const digits = val.replace(/\D/g, "").slice(0, 11);
     if (digits.length <= 3) return digits;
     if (digits.length <= 6) return `${digits.slice(0, 3)}.${digits.slice(3)}`;
-    if (digits.length <= 9) return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6)}`;
+    if (digits.length <= 9)
+      return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6)}`;
     return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
   };
 
@@ -154,40 +193,55 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
     return `${digits.slice(0, 5)}-${digits.slice(5)}`;
   };
 
-  // Carregar dados e configurações do profissional
+  // Carregar dados e configurações White-Label do profissional
   useEffect(() => {
-    if (!activeProfUid) {
-      setLoadingProf(false);
+    if (!initialProfUid || initialProfUid === "avulso") {
+      if (!paramPacienteId) {
+        setLoadingProf(false);
+      }
       return;
     }
+
+    let cancelled = false;
     const loadProf = async () => {
+      setLoadingProf(true);
       try {
-        const snap = await getDoc(doc(db, "users", activeProfUid));
-        if (snap.exists()) {
+        const snap = await getDoc(doc(db, "users", initialProfUid));
+        if (!cancelled && snap.exists()) {
           const data = snap.data();
           setProfData(data);
+          setLogoImgError(false);
+          setProfImgError(false);
 
-          // Se o profissional tiver modalidade padrão e a URL não especificou
-          if (!paramModalidade && data?.configFormularioExterno?.modalidadePadrao) {
-            const padrao = data.configFormularioExterno.modalidadePadrao;
-            if (padrao !== "ambas") {
+          if (!paramModalidade && !isModoAtualizacao) {
+            const padrao = data?.configFormularioExterno?.modalidadePadrao;
+            if (padrao && padrao !== "ambas") {
               setModalidadeEscolhida(padrao);
+            } else if (data?.modalidadeAtendimento === "presencial") {
+              setModalidadeEscolhida("presencial");
             }
           }
         }
       } catch (err) {
         console.error("Erro ao carregar dados do profissional:", err);
       } finally {
-        setLoadingProf(false);
+        if (!cancelled) {
+          setLoadingProf(false);
+        }
       }
     };
     loadProf();
-  }, [activeProfUid, paramModalidade]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [initialProfUid, paramModalidade, paramPacienteId, isModoAtualizacao]);
 
   // Carregar dados existentes do paciente caso seja um link de atualização cadastral
   useEffect(() => {
     if (!paramPacienteId) return;
 
+    let cancelled = false;
     const loadPaciente = async () => {
       setLoadingPacienteExistente(true);
       try {
@@ -212,24 +266,52 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
           }
         }
 
-        if (snap && snap.exists()) {
+        if (!cancelled && snap && snap.exists()) {
           const d = snap.data();
           setLoadedCollection(col);
-          setNome(d.nomeCivil || d.nome || d.colaboradorNome || d.nomeCompleto || "");
+          setNome(
+            d.nomeCivil ||
+              d.pacienteNomeCompleto ||
+              d.nome ||
+              d.colaboradorNome ||
+              d.nomeCompleto ||
+              ""
+          );
           setNomeSocial(d.nomeSocial || d.nomeDesejado || "");
-          setEmail(d.email || d.colaboradorEmail || "");
-          setTelefone(d.telefone || d.colaboradorWhatsapp || d.whatsapp || "");
-          setDataNascimento(d.dataNascimento || d.colaboradorDataNascimento || "");
-          setCpf(d.cpf || d.colaboradorCpf || "");
+          setEmail(
+            d.email || d.pacienteEmail || d.colaboradorEmail || ""
+          );
+          setTelefone(
+            d.telefone ||
+              d.pacienteTelefone ||
+              d.colaboradorWhatsapp ||
+              d.whatsapp ||
+              ""
+          );
+          setDataNascimento(
+            d.dataNascimento ||
+              d.pacienteDataNascimento ||
+              d.colaboradorDataNascimento ||
+              ""
+          );
+          setCpf(d.cpf || d.pacienteCpf || d.colaboradorCpf || "");
           setGenero(d.genero || "");
           setProfissao(d.profissao || d.cargoNome || "");
 
           if (d.responsavel && typeof d.responsavel === "object") {
-            setNomeResponsavel(d.responsavel.nome || d.responsavelNome || "");
-            setTelefoneResponsavel(d.responsavel.telefone || d.responsavelTelefone || "");
+            setNomeResponsavel(
+              d.responsavel.nome || d.responsavelNome || ""
+            );
+            setTelefoneResponsavel(
+              d.responsavel.telefone || d.responsavelTelefone || ""
+            );
             setCpfResponsavel(d.responsavel.cpf || d.responsavelCpf || "");
-            setEmailResponsavel(d.responsavel.email || d.responsavelEmail || "");
-            setParentescoResponsavel(d.responsavel.parentesco || d.responsavelParentesco || "");
+            setEmailResponsavel(
+              d.responsavel.email || d.responsavelEmail || ""
+            );
+            setParentescoResponsavel(
+              d.responsavel.parentesco || d.responsavelParentesco || ""
+            );
           } else {
             setNomeResponsavel(d.responsavelNome || "");
             setTelefoneResponsavel(d.responsavelTelefone || "");
@@ -238,7 +320,12 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
             setParentescoResponsavel(d.responsavelParentesco || "");
           }
 
-          if (d.isMenorIdade || d.menorIdade || d.responsavel?.nome || d.responsavelNome) {
+          if (
+            d.isMenorIdade ||
+            d.menorIdade ||
+            d.responsavel?.nome ||
+            d.responsavelNome
+          ) {
             setIsMenorIdade(true);
             setMenorManualOverride(true);
           }
@@ -247,8 +334,8 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
             typeof d.endereco === "object" && d.endereco !== null
               ? d.endereco
               : d.enderecoDetalhado && typeof d.enderecoDetalhado === "object"
-              ? d.enderecoDetalhado
-              : {};
+                ? d.enderecoDetalhado
+                : {};
           setCep(d.cep || end.cep || "");
           setLogradouro(
             d.logradouro ||
@@ -262,7 +349,9 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
           setCidade(d.cidade || end.cidade || "");
           setUf(d.uf || end.uf || "");
 
-          setQueixaPrincipal(d.queixaPrincipal || d.motivo || d.queixa || "");
+          setQueixaPrincipal(
+            d.queixaPrincipal || d.motivo || d.queixa || ""
+          );
           setTerapiaAnterior(d.terapiaAnterior || "");
           setMedicacao(d.medicacao || "");
 
@@ -270,7 +359,10 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
           if (rawEmergencia && typeof rawEmergencia === "object") {
             setContatoEmergenciaNome(String(rawEmergencia.nome || ""));
             setContatoEmergenciaTelefone(String(rawEmergencia.telefone || ""));
-          } else if (typeof rawEmergencia === "string" && rawEmergencia.trim()) {
+          } else if (
+            typeof rawEmergencia === "string" &&
+            rawEmergencia.trim()
+          ) {
             const match = rawEmergencia.match(/^(.*?)\s*\(([^)]*)\)\s*$/);
             if (match) {
               setContatoEmergenciaNome(match[1].trim());
@@ -278,12 +370,21 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
             } else {
               setContatoEmergenciaNome(rawEmergencia.trim());
               setContatoEmergenciaTelefone(
-                String(d.contatoEmergenciaObj?.telefone || d.contatoEmergenciaTelefone || "")
+                String(
+                  d.contatoEmergenciaObj?.telefone ||
+                    d.contatoEmergenciaTelefone ||
+                    ""
+                )
               );
             }
-          } else if (d.contatoEmergenciaObj && typeof d.contatoEmergenciaObj === "object") {
+          } else if (
+            d.contatoEmergenciaObj &&
+            typeof d.contatoEmergenciaObj === "object"
+          ) {
             setContatoEmergenciaNome(String(d.contatoEmergenciaObj.nome || ""));
-            setContatoEmergenciaTelefone(String(d.contatoEmergenciaObj.telefone || ""));
+            setContatoEmergenciaTelefone(
+              String(d.contatoEmergenciaObj.telefone || "")
+            );
           }
 
           if (d.modalidade) {
@@ -294,7 +395,10 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
           }
           if (Array.isArray(d.diasPreferidos)) {
             setDiasPreferidos(d.diasPreferidos.filter(Boolean));
-          } else if (typeof d.diasPreferidos === "string" && d.diasPreferidos.trim()) {
+          } else if (
+            typeof d.diasPreferidos === "string" &&
+            d.diasPreferidos.trim()
+          ) {
             setDiasPreferidos(
               d.diasPreferidos
                 .split(",")
@@ -307,13 +411,16 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
           }
           setAceitouLgpd(true);
 
-          // Se não havia profissional carregado, carrega o vinculado ao paciente
+          // Se o link não trouxe profUid na URL, carrega o profissional vinculado à ficha antes de encerrar loadingProf
           const profTarget = d.profissionalId || d.profissionalUid;
-          if (profTarget && !profData) {
+          if (profTarget && profTarget !== "avulso" && !initialProfUid) {
+            setResolvedProfUid(profTarget);
             try {
               const profSnap = await getDoc(doc(db, "users", profTarget));
-              if (profSnap.exists()) {
+              if (!cancelled && profSnap.exists()) {
                 setProfData(profSnap.data());
+                setLogoImgError(false);
+                setProfImgError(false);
               }
             } catch (errProf) {
               console.error("Erro ao carregar profissional vinculado:", errProf);
@@ -321,14 +428,25 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
           }
         }
       } catch (err) {
-        console.error("Erro ao carregar dados do paciente para atualização:", err);
+        console.error(
+          "Erro ao carregar dados do paciente para atualização:",
+          err
+        );
       } finally {
-        setLoadingPacienteExistente(false);
+        if (!cancelled) {
+          setLoadingPacienteExistente(false);
+          if (!initialProfUid) {
+            setLoadingProf(false);
+          }
+        }
       }
     };
 
     loadPaciente();
-  }, [paramPacienteId, paramTipo]);
+    return () => {
+      cancelled = true;
+    };
+  }, [paramPacienteId, paramTipo, initialProfUid]);
 
   // Verificar se é menor de idade pela data de nascimento (respeitando override manual se marcado)
   useEffect(() => {
@@ -370,20 +488,141 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
     }
   };
 
-  // Configurações ativas do profissional
+  // Identidade White-Label & Configurações do Profissional
+  const isWhiteLabel =
+    Boolean(
+      profData &&
+        (hasIntegrarFeatures(profData) || profData.whiteLabelEnabled === true)
+    ) ||
+    (!profData && loadedCollection === "pacientes" && paramTipo === "externo");
+
+  const wlConfig = profData?.whiteLabelConfig || {};
+  const company = profData?.companyData || {};
   const config = profData?.configFormularioExterno || {};
+
+  const bgColor = isWhiteLabel
+    ? wlConfig.backgroundColor || "#F8FAFC"
+    : "#FDFBF7";
+  const primaryColor = isWhiteLabel
+    ? wlConfig.primaryColor || "#0F766E"
+    : "#1B4332";
+  const secondaryColor = isWhiteLabel
+    ? wlConfig.secondaryColor || "#06B6D4"
+    : "#2D6A4F";
+
+  const profRawNome = String(profData?.name || profData?.nome || "").trim();
+  const formattedProfName = profRawNome
+    ? formatProfessionalName(profRawNome)
+    : "Profissional Responsável";
+  const profPhoto =
+    profData?.photoURL || profData?.photoUrl || profData?.fotoUrl || "";
+  const profCrp = String(profData?.crp || "").trim();
+  const profEspecialidade = String(
+    profData?.profissao || profData?.especialidade || ""
+  ).trim();
+  const profAbordagem = String(profData?.abordagem || "").trim();
+
+  const brandDisplayName = isWhiteLabel
+    ? company.razaoSocial?.trim() ||
+      (profRawNome ? formattedProfName : "Consultório Particular")
+    : "Projeto AcolheMente";
+
+  const brandLogo = isWhiteLabel
+    ? company.logoEmpresaUrl?.trim() || profData?.logoEmpresaUrl?.trim() || null
+    : null;
+
   const tituloPagina = isModoAtualizacao
     ? "Atualização de Dados Cadastrais"
     : config.tituloPersonalizado || "Ficha de Cadastro do Paciente";
+
   const mensagemBoasVindas = isModoAtualizacao
-    ? "Por favor, confira e atualize seus dados cadastrais para manter seu prontuário em dia."
+    ? "Confira e atualize seus dados abaixo para manter seu prontuário clínico e documentos sempre em dia."
     : config.mensagemBoasVindas ||
       "Preencha seus dados abaixo para registro seguro no prontuário do consultório.";
+
   const valorFinalSessao = paramValor || config.valorPadrao || "";
   const solicitarEndereco = config.solicitarEndereco !== false;
   const solicitarQueixaPrincipal = config.solicitarQueixaPrincipal !== false;
   const solicitarDisponibilidade = config.solicitarDisponibilidade !== false;
   const solicitarContatoEmergencia = config.solicitarContatoEmergencia !== false;
+
+  // Endereço presencial do consultório (caso configurado pelo profissional)
+  const enderecoConsultorio = profData?.enderecoPresencial || {};
+  const possuiEnderecoConsultorioPublico = Boolean(
+    profData?.atendePresencial === true &&
+      profData?.divulgarEnderecoPresencial !== false &&
+      enderecoConsultorio?.logradouro
+  );
+  const textoEnderecoConsultorio = possuiEnderecoConsultorioPublico
+    ? [
+        enderecoConsultorio.nomeEspaco,
+        `${enderecoConsultorio.logradouro}${
+          enderecoConsultorio.numero ? `, ${enderecoConsultorio.numero}` : ""
+        }${
+          enderecoConsultorio.complemento
+            ? ` (${enderecoConsultorio.complemento})`
+            : ""
+        }`,
+        [
+          enderecoConsultorio.bairro,
+          enderecoConsultorio.cidade
+            ? `${enderecoConsultorio.cidade}${
+                enderecoConsultorio.uf ? `/${enderecoConsultorio.uf}` : ""
+              }`
+            : "",
+        ]
+          .filter(Boolean)
+          .join(" - "),
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : "";
+
+  // Numeração editorial dinâmica conforme seções ativas
+  let secCounter = 1;
+  const secNumIdentificacao = String(secCounter++).padStart(2, "0");
+  const secNumEndereco = solicitarEndereco
+    ? String(secCounter++).padStart(2, "0")
+    : "";
+  const secNumClinico = solicitarQueixaPrincipal
+    ? String(secCounter++).padStart(2, "0")
+    : "";
+  const secNumPreferencias = String(secCounter++).padStart(2, "0");
+  const secNumOrigem = String(secCounter++).padStart(2, "0");
+
+  // Sincronização dinâmica do título da aba e metadados (zero referência ao AcolheMente em White-Label)
+  useEffect(() => {
+    if (loadingProf) return;
+    const originalTitle = document.title;
+    const dynamicTitle = `${tituloPagina} | ${brandDisplayName}`;
+    document.title = dynamicTitle;
+
+    const metaDesc = `${tituloPagina} — ${formattedProfName}. Ambiente protegido sob sigilo ético profissional (CFP) e LGPD.`;
+    const metaMap: Record<string, { attr: string; val: string }> = {
+      description: { attr: "name", val: metaDesc },
+      "og:title": { attr: "property", val: dynamicTitle },
+      "og:description": { attr: "property", val: metaDesc },
+    };
+
+    const createdEls: HTMLMetaElement[] = [];
+    Object.entries(metaMap).forEach(([key, { attr, val }]) => {
+      let el = document.querySelector(
+        `meta[${attr}="${key}"]`
+      ) as HTMLMetaElement | null;
+      if (!el) {
+        el = document.createElement("meta");
+        el.setAttribute(attr, key);
+        document.head.appendChild(el);
+        createdEls.push(el);
+      }
+      el.setAttribute("content", val);
+    });
+
+    return () => {
+      document.title = originalTitle;
+      createdEls.forEach((el) => el.remove());
+    };
+  }, [loadingProf, tituloPagina, brandDisplayName, formattedProfName]);
 
   const toggleDiaPreferido = (dia: string) => {
     setDiasPreferidos((prev) =>
@@ -395,18 +634,32 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
     e.preventDefault();
     setErrorMsg("");
 
-    if (!nome.trim() || !telefone.trim() || !dataNascimento || !cpf.trim()) {
+    if (
+      !nome.trim() ||
+      !telefone.trim() ||
+      !dataNascimento ||
+      !cpf.trim()
+    ) {
       setErrorMsg("Por favor, preencha todos os campos obrigatórios (*).");
       return;
     }
 
-    if (isMenorIdade && (!nomeResponsavel.trim() || !telefoneResponsavel.trim() || !cpfResponsavel.trim())) {
-      setErrorMsg("Para pacientes menores de 18 anos ou com responsável legal, preencha nome, CPF e telefone do responsável.");
+    if (
+      isMenorIdade &&
+      (!nomeResponsavel.trim() ||
+        !telefoneResponsavel.trim() ||
+        !cpfResponsavel.trim())
+    ) {
+      setErrorMsg(
+        "Para pacientes menores de 18 anos ou com responsável legal, preencha nome, CPF e telefone do responsável."
+      );
       return;
     }
 
     if (!aceitouLgpd) {
-      setErrorMsg("É necessário concordar com os Termos e Acordos (LGPD) para prosseguir.");
+      setErrorMsg(
+        "É necessário concordar com os Termos e Acordos (LGPD) para prosseguir."
+      );
       return;
     }
 
@@ -421,7 +674,9 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
       const cepTrim = String(cep || "").trim();
 
       const enderecoCompleto = [
-        logradouroTrim ? `${logradouroTrim}${numeroTrim ? `, ${numeroTrim}` : ""}` : "",
+        logradouroTrim
+          ? `${logradouroTrim}${numeroTrim ? `, ${numeroTrim}` : ""}`
+          : "",
         complementoTrim,
         bairroTrim,
         cidadeTrim ? `${cidadeTrim}${ufTrim ? ` - ${ufTrim}` : ""}` : "",
@@ -462,8 +717,12 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
         parentesco: parentescoResponsavel.trim(),
       };
 
+      const generoFinal =
+        genero === "Outro"
+          ? generoOutro.trim() || "Outro"
+          : genero.trim();
+
       if (isModoAtualizacao && paramPacienteId) {
-        // MODO ATUALIZAÇÃO: atualiza o registro existente respeitando o formato de cada coleção
         const isPacientesCol = loadedCollection === "pacientes";
         await updateDoc(doc(db, loadedCollection, paramPacienteId), {
           nome: nome.trim(),
@@ -474,12 +733,17 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
           telefone: telefone.trim(),
           dataNascimento,
           cpf: cpf.trim(),
-          genero: genero.trim(),
+          genero: generoFinal,
           profissao: profissao.trim(),
           isMenorIdade,
           menorIdade: isMenorIdade,
           ...(loadedCollection === "triagem_corporativa"
             ? {
+                pacienteNomeCompleto: nome.trim(),
+                pacienteCpf: cpf.trim(),
+                pacienteEmail: email.trim(),
+                pacienteTelefone: telefone.trim(),
+                pacienteDataNascimento: dataNascimento,
                 colaboradorNome: nome.trim(),
                 colaboradorWhatsapp: telefone.trim(),
                 colaboradorEmail: email.trim(),
@@ -503,7 +767,9 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
           enderecoCompleto,
           cidade: cidadeTrim,
           uf: ufTrim,
-          cidadeEstado: cidadeTrim ? `${cidadeTrim}${ufTrim ? ` - ${ufTrim}` : ""}` : "",
+          cidadeEstado: cidadeTrim
+            ? `${cidadeTrim}${ufTrim ? ` - ${ufTrim}` : ""}`
+            : "",
           queixaPrincipal: queixaPrincipal.trim(),
           motivo: queixaPrincipal.trim(),
           terapiaAnterior: terapiaAnterior.trim(),
@@ -516,14 +782,15 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
           modalidade: modalidadeEscolhida || "online",
           turnoPreferido,
           diasPreferidos,
-          ...(disponibilidadeTexto ? { disponibilidade: disponibilidadeTexto } : {}),
+          ...(disponibilidadeTexto
+            ? { disponibilidade: disponibilidadeTexto }
+            : {}),
           ...(fonteIndicacao ? { fonteIndicacao } : {}),
           aceitouLgpd: true,
           dadosAtualizadosPeloPacienteEm: new Date().toISOString(),
           updatedAt: serverTimestamp(),
         });
       } else {
-        // MODO NOVO CADASTRO
         await addDoc(collection(db, "pacientes"), {
           nome: nome.trim(),
           nomeCivil: nome.trim(),
@@ -533,7 +800,7 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
           telefone: telefone.trim(),
           dataNascimento,
           cpf: cpf.trim(),
-          genero: genero.trim(),
+          genero: generoFinal,
           profissao: profissao.trim(),
           isMenorIdade,
           menorIdade: isMenorIdade,
@@ -555,7 +822,9 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
           enderecoCompleto,
           cidade: cidadeTrim,
           uf: ufTrim,
-          cidadeEstado: cidadeTrim ? `${cidadeTrim}${ufTrim ? ` - ${ufTrim}` : ""}` : "",
+          cidadeEstado: cidadeTrim
+            ? `${cidadeTrim}${ufTrim ? ` - ${ufTrim}` : ""}`
+            : "",
 
           queixaPrincipal: queixaPrincipal.trim(),
           motivo: queixaPrincipal.trim(),
@@ -578,7 +847,7 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
           origem: "formulario_externo",
           origemCampanha: paramOrigem || "",
           tipo: "externo",
-          profissionalId: activeProfUid || "avulso",
+          profissionalId: resolvedProfUid || "avulso",
           status: "Em Atendimento",
           statusTratamento: "Em Atendimento",
           atribuicaoStatus: "Aceito",
@@ -593,168 +862,385 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
         });
       }
 
+      window.scrollTo({ top: 0, left: 0, behavior: "instant" });
       setSubmitted(true);
     } catch (err) {
       console.error("Erro ao salvar cadastro do paciente:", err);
-      setErrorMsg("Ocorreu um erro ao salvar suas informações. Por favor, tente novamente.");
+      setErrorMsg(
+        "Ocorreu um erro ao salvar suas informações. Por favor, tente novamente."
+      );
+      if (
+        err instanceof Error &&
+        err.message.toLowerCase().includes("insufficient permissions")
+      ) {
+        handleFirestoreError(
+          err,
+          isModoAtualizacao ? OperationType.UPDATE : OperationType.CREATE,
+          isModoAtualizacao ? loadedCollection : "pacientes"
+        );
+      }
     } finally {
       setSubmitting(false);
     }
   };
 
-  const profNome = profData?.name || profData?.nome || "Profissional Responsável";
-  const profPhoto = profData?.photoURL || profData?.photoUrl || profData?.fotoUrl;
-  const profCrp = profData?.crp;
-  const brandName =
-    profData?.plano === "avancado" &&
-    profData?.whiteLabelEnabled &&
-    profData?.companyData?.razaoSocial?.trim()
-      ? profData.companyData.razaoSocial.trim()
-      : "AcolheHub";
-  const brandLogo =
-    profData?.plano === "avancado" &&
-    profData?.whiteLabelEnabled &&
-    profData?.companyData?.logoEmpresaUrl?.trim()
-      ? profData.companyData.logoEmpresaUrl.trim()
-      : null;
+  const publicProfileHref =
+    resolvedProfUid && resolvedProfUid !== "avulso"
+      ? `${typeof window !== "undefined" ? window.location.origin : ""}/?prof=${resolvedProfUid}`
+      : "";
 
+  const inputBaseClass =
+    "w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[var(--wl-primary)] focus:ring-2 focus:ring-[var(--wl-primary)]/15 transition-colors";
+
+  // Estado inicial de carregamento sem exibir nenhuma marca de plataforma antes da resolução do perfil
+  if (loadingProf || (isModoAtualizacao && loadingPacienteExistente && !profData)) {
+    return (
+      <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center p-6">
+        <div className="flex flex-col items-center gap-3 text-center">
+          <div className="w-9 h-9 border-3 border-slate-300 border-t-slate-700 rounded-full animate-spin" />
+          <p className="text-xs font-medium text-slate-500">
+            Preparando formulário seguro...
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Tela de confirmação sincronizada com o tema White-Label
   if (submitted) {
     return (
-      <div className="min-h-screen bg-warm/50 flex flex-col items-center justify-center p-4">
-        <div className="bg-white max-w-lg w-full rounded-3xl p-8 border border-soft shadow-lg text-center flex flex-col items-center gap-4 animate-in fade-in zoom-in-95">
-          <div className="w-16 h-16 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center border border-emerald-200">
-            <CheckCircle2 className="w-9 h-9" />
+      <div
+        className="min-h-screen flex flex-col items-center justify-center p-4 sm:p-6"
+        style={{
+          backgroundColor: bgColor,
+          ["--wl-primary" as any]: primaryColor,
+          ["--wl-secondary" as any]: secondaryColor,
+        }}
+      >
+        <div className="bg-white max-w-lg w-full rounded-3xl p-7 sm:p-9 border border-slate-200/90 shadow-sm text-center flex flex-col items-center gap-5">
+          {brandLogo && !logoImgError ? (
+            <img
+              src={brandLogo}
+              alt={brandDisplayName}
+              referrerPolicy="no-referrer"
+              onError={() => setLogoImgError(true)}
+              className="h-9 max-w-[160px] object-contain"
+            />
+          ) : null}
+
+          <div
+            className="w-14 h-14 rounded-2xl flex items-center justify-center border"
+            style={{
+              backgroundColor: `${primaryColor}12`,
+              borderColor: `${primaryColor}30`,
+              color: primaryColor,
+            }}
+          >
+            <CheckCircle2 className="w-8 h-8" />
           </div>
-          <h2 className="font-serif text-2xl font-bold text-forest">
-            {isModoAtualizacao ? "Dados Atualizados com Sucesso!" : "Cadastro Concluído com Sucesso!"}
-          </h2>
-          <p className="text-sm text-forest/75 leading-relaxed">
-            {isModoAtualizacao ? (
-              <>
-                Seus dados cadastrais foram revisados e atualizados diretamente no prontuário do(a){" "}
-                <strong>{formatProfessionalName(profNome)}</strong>.
-              </>
-            ) : (
-              <>
-                Seus dados cadastrais foram encaminhados com total segurança e sigilo ao prontuário do(a){" "}
-                <strong>{formatProfessionalName(profNome)}</strong>.
-              </>
-            )}
-          </p>
-          <div className="w-full bg-warm/60 p-4 rounded-2xl border border-soft text-xs text-forest/70 space-y-1 text-left">
-            <p>• Suas informações foram sincronizadas e registradas com data e hora.</p>
-            <p>• Suas informações estão resguardadas sob rigoroso sigilo ético profissional e LGPD.</p>
+
+          <div className="space-y-2">
+            <h2 className="font-serif text-2xl font-bold text-slate-900 text-balance">
+              {isModoAtualizacao
+                ? "Dados atualizados com sucesso"
+                : "Cadastro concluído com sucesso"}
+            </h2>
+            <p className="text-sm text-slate-600 leading-relaxed">
+              {isModoAtualizacao ? (
+                <>
+                  Suas informações cadastrais foram atualizadas diretamente no
+                  prontuário sob responsabilidade de{" "}
+                  <strong className="text-slate-900">
+                    {formattedProfName}
+                  </strong>
+                  .
+                </>
+              ) : (
+                <>
+                  Seus dados cadastrais foram encaminhados com segurança ao
+                  prontuário sob responsabilidade de{" "}
+                  <strong className="text-slate-900">
+                    {formattedProfName}
+                  </strong>
+                  .
+                </>
+              )}
+            </p>
           </div>
+
+          <div className="w-full bg-slate-50 p-4 rounded-2xl border border-slate-200/80 text-xs text-slate-600 space-y-1.5 text-left">
+            <p>
+              Registro sincronizado automaticamente com data e hora no
+              prontuário clínico.
+            </p>
+            <p>
+              Dados protegidos sob sigilo ético profissional (CFP) e Lei Geral
+              de Proteção de Dados (LGPD).
+            </p>
+          </div>
+
+          {publicProfileHref ? (
+            <a
+              href={publicProfileHref}
+              style={{
+                background: `linear-gradient(135deg, ${primaryColor}, ${secondaryColor})`,
+              }}
+              className="w-full py-3 px-5 rounded-xl text-white font-semibold text-sm transition-opacity hover:opacity-95 flex items-center justify-center gap-2 whitespace-nowrap"
+            >
+              <span>Acessar página profissional</span>
+              <ExternalLink className="w-4 h-4 shrink-0" />
+            </a>
+          ) : !isWhiteLabel ? (
+            <button
+              type="button"
+              onClick={onGoHome}
+              className="px-5 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer whitespace-nowrap"
+            >
+              Voltar ao início
+            </button>
+          ) : null}
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#FDFBF7] py-8 px-4 flex flex-col items-center">
-      <div className="max-w-2xl w-full flex flex-col gap-5">
-        
-        {/* Barra de Identificação White-Label / AcolheHub */}
-        <div className="flex items-center justify-between gap-2 flex-wrap">
-          <div className="flex items-center gap-2 text-xs text-forest/70 bg-white/90 px-3.5 py-2 rounded-xl border border-soft shadow-2xs">
-            {brandLogo ? (
-              <img src={brandLogo} alt={brandName} className="w-5 h-5 rounded object-contain" />
+    <div
+      className="min-h-screen text-slate-800 flex flex-col items-center px-4 sm:px-6 py-6 sm:py-10"
+      style={{
+        backgroundColor: bgColor,
+        ["--wl-primary" as any]: primaryColor,
+        ["--wl-secondary" as any]: secondaryColor,
+      }}
+    >
+      <div className="w-full max-w-3xl flex flex-col gap-6">
+        {/* Top Bar Contract (3 zonas limpas: Marca · Contexto · Ação única) */}
+        <header className="flex items-center justify-between gap-6 pb-4 border-b border-slate-200/80">
+          <div className="flex items-center gap-2.5 min-w-0 shrink-0">
+            {isWhiteLabel ? (
+              brandLogo && !logoImgError ? (
+                <img
+                  src={brandLogo}
+                  alt={brandDisplayName}
+                  referrerPolicy="no-referrer"
+                  onError={() => setLogoImgError(true)}
+                  className="h-8 sm:h-9 max-w-[150px] object-contain shrink-0"
+                />
+              ) : (
+                <span className="font-serif text-base sm:text-lg font-bold tracking-tight text-slate-900 truncate max-w-[240px] sm:max-w-[320px]">
+                  {brandDisplayName}
+                </span>
+              )
             ) : (
-              <ShieldCheck className="w-4 h-4 text-emerald-700" />
+              <button
+                type="button"
+                onClick={onGoHome}
+                className="inline-flex items-center gap-2 text-left cursor-pointer shrink-0"
+              >
+                <BrandLogo size="sm" showSubtitle={false} />
+              </button>
             )}
-            <span className="font-bold text-forest">{brandName}</span>
-            <ChevronRight className="w-3 h-3 text-forest/40" />
-            <span className="text-forest/70">{tituloPagina}</span>
           </div>
 
-          <span className="text-[11px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-full flex items-center gap-1.5">
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" /> Prontuário Criptografado
-          </span>
-        </div>
+          <div className="hidden md:flex items-center gap-2 text-xs text-slate-500 whitespace-nowrap shrink-0">
+            <ShieldCheck
+              className="w-3.5 h-3.5 shrink-0"
+              style={{ color: primaryColor }}
+            />
+            <span>Prontuário Criptografado</span>
+            <span aria-hidden="true">·</span>
+            <span>Conformidade CFP e LGPD</span>
+          </div>
 
-        {/* Card Header Dourado / Sun conforme identidade visual */}
-        <div className="bg-gradient-to-r from-amber-500 via-amber-400 to-yellow-500 rounded-3xl p-6 sm:p-7 shadow-md text-amber-950 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div className="space-y-1">
-            <h1 className="font-serif text-2xl sm:text-3xl font-extrabold tracking-tight text-white drop-shadow-2xs">
-              {tituloPagina}
-            </h1>
-            <div className="flex items-center gap-2.5 pt-1">
-              <span className="text-xs sm:text-sm font-semibold text-white/95">
-                Profissional: <strong className="font-bold underline decoration-white/40">{formatProfessionalName(profNome)}</strong>
-                {profCrp && <span className="opacity-80"> (CRP: {profCrp})</span>}
+          <div className="flex items-center shrink-0">
+            {publicProfileHref ? (
+              <a
+                href={publicProfileHref}
+                className="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 border border-slate-200/90 text-xs font-semibold text-slate-700 hover:text-slate-900 transition-colors inline-flex items-center gap-1.5 whitespace-nowrap shrink-0"
+              >
+                <ArrowLeft
+                  className="w-3.5 h-3.5 shrink-0"
+                  style={{ color: primaryColor }}
+                />
+                <span>Página Profissional</span>
+              </a>
+            ) : (
+              <span className="md:hidden text-[11px] text-slate-500 whitespace-nowrap shrink-0">
+                Sigilo CFP · LGPD
               </span>
-            </div>
-            <p className="text-xs sm:text-sm text-white/90 pt-0.5">
-              {mensagemBoasVindas}
-            </p>
-          </div>
-
-          {/* Foto de Perfil do Profissional */}
-          <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-white/20 backdrop-blur-xs border-2 border-white/80 p-0.5 shadow-md shrink-0 overflow-hidden flex items-center justify-center">
-            {profPhoto ? (
-              <img
-                src={profPhoto}
-                alt={profNome}
-                className="w-full h-full object-cover rounded-xl"
-              />
-            ) : (
-              <User className="w-8 h-8 text-white" />
             )}
           </div>
-        </div>
+        </header>
 
-        {/* Banner de Condições Acordadas / Parametrizadas (se houver valor ou modalidade) */}
-        {(valorFinalSessao || paramModalidade || paramFrequencia) && (
-          <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-200/80 flex items-center justify-between flex-wrap gap-3 shadow-2xs">
-            <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0">
-                <Sparkles className="w-4 h-4 text-emerald-700" />
+        {/* Hero / Cabeçalho Clínico sincronizado com a identidade White-Label */}
+        <section className="bg-white rounded-3xl border border-slate-200/90 shadow-xs overflow-hidden">
+          <div
+            className="h-1.5 w-full"
+            style={{
+              background: `linear-gradient(90deg, ${primaryColor}, ${secondaryColor})`,
+            }}
+          />
+
+          <div className="p-6 sm:p-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5">
+            <div className="space-y-2 min-w-0 flex-1">
+              <h1 className="font-serif text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 text-balance">
+                {tituloPagina}
+              </h1>
+
+              {/* Credenciais em texto limpo com separadores tipográficos */}
+              <div className="flex items-center flex-wrap gap-x-2 gap-y-1 text-xs sm:text-sm text-slate-600">
+                <strong
+                  className="font-semibold"
+                  style={{ color: primaryColor }}
+                >
+                  {formattedProfName}
+                </strong>
+                {profEspecialidade && (
+                  <>
+                    <span aria-hidden="true" className="text-slate-300">
+                      ·
+                    </span>
+                    <span>{profEspecialidade}</span>
+                  </>
+                )}
+                {profCrp && (
+                  <>
+                    <span aria-hidden="true" className="text-slate-300">
+                      ·
+                    </span>
+                    <span className="tabular-nums">CRP {profCrp}</span>
+                  </>
+                )}
+                {profAbordagem && (
+                  <>
+                    <span aria-hidden="true" className="text-slate-300">
+                      ·
+                    </span>
+                    <span>{profAbordagem}</span>
+                  </>
+                )}
               </div>
-              <div>
-                <span className="text-xs font-bold text-emerald-950 block">
-                  Condições do Atendimento:
-                </span>
-                <span className="text-xs text-emerald-800">
-                  {valorFinalSessao ? `Sessão: R$ ${valorFinalSessao}` : "Valor a combinar"}
-                  {modalidadeEscolhida ? ` • Modalidade ${modalidadeEscolhida === "online" ? "Online" : "Presencial"}` : ""}
-                  {paramFrequencia ? ` • Frequência ${paramFrequencia}` : ""}
-                </span>
-              </div>
+
+              <p className="text-xs sm:text-sm text-slate-600 leading-relaxed pt-1 max-w-2xl">
+                {mensagemBoasVindas}
+              </p>
             </div>
-            <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-emerald-200 text-emerald-900 border border-emerald-300">
-              Particular
-            </span>
+
+            {/* Foto do Profissional com anel na cor primária White-Label */}
+            <div
+              className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl p-0.5 shrink-0 overflow-hidden flex items-center justify-center bg-slate-50 border-2"
+              style={{ borderColor: primaryColor }}
+            >
+              {profPhoto && !profImgError ? (
+                <img
+                  src={profPhoto}
+                  alt={formattedProfName}
+                  referrerPolicy="no-referrer"
+                  onError={() => setProfImgError(true)}
+                  className="w-full h-full object-cover rounded-[13px]"
+                />
+              ) : (
+                <User
+                  className="w-8 h-8"
+                  style={{ color: primaryColor }}
+                />
+              )}
+            </div>
           </div>
-        )}
+
+          {/* Linha de condições acordadas (se parametrizadas no link ou perfil) */}
+          {(valorFinalSessao || paramModalidade || paramFrequencia) && (
+            <div
+              className="px-6 sm:px-8 py-3.5 border-t flex flex-wrap items-center justify-between gap-2 text-xs"
+              style={{
+                backgroundColor: `${primaryColor}08`,
+                borderColor: `${primaryColor}20`,
+              }}
+            >
+              <div className="flex items-center flex-wrap gap-x-2 gap-y-1 text-slate-700">
+                <span
+                  className="font-semibold"
+                  style={{ color: primaryColor }}
+                >
+                  Condições do atendimento:
+                </span>
+                <span className="tabular-nums">
+                  {valorFinalSessao
+                    ? `Sessão R$ ${valorFinalSessao}`
+                    : "Honorários a combinar"}
+                </span>
+                {modalidadeEscolhida && (
+                  <>
+                    <span aria-hidden="true" className="text-slate-300">
+                      ·
+                    </span>
+                    <span>
+                      Modalidade{" "}
+                      {modalidadeEscolhida === "presencial"
+                        ? "Presencial"
+                        : "Online"}
+                    </span>
+                  </>
+                )}
+                {paramFrequencia && (
+                  <>
+                    <span aria-hidden="true" className="text-slate-300">
+                      ·
+                    </span>
+                    <span className="capitalize">
+                      Frequência {paramFrequencia}
+                    </span>
+                  </>
+                )}
+              </div>
+              <span className="text-slate-500">Atendimento Particular</span>
+            </div>
+          )}
+        </section>
 
         {/* Formulário Principal */}
         <form
           onSubmit={handleSubmit}
-          className="bg-white rounded-3xl border border-soft shadow-xs p-6 sm:p-8 flex flex-col gap-6"
+          className="bg-white rounded-3xl border border-slate-200/90 shadow-xs p-6 sm:p-8 flex flex-col gap-8"
         >
           {loadingPacienteExistente && (
-            <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl text-amber-900 text-xs font-semibold flex items-center gap-2">
-              <Clock className="w-4 h-4 animate-spin text-amber-700" />
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 text-xs font-medium flex items-center gap-2">
+              <Clock
+                className="w-4 h-4 animate-spin shrink-0"
+                style={{ color: primaryColor }}
+              />
               <span>Carregando seus dados atuais para conferência...</span>
             </div>
           )}
 
           {errorMsg && (
-            <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl text-rose-800 text-xs font-semibold">
-              {errorMsg}
+            <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-xs font-semibold flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+              <span>{errorMsg}</span>
             </div>
           )}
 
-          {/* 1. SEÇÃO DE IDENTIFICAÇÃO PESSOAL */}
+          {/* SEÇÃO 01: IDENTIFICAÇÃO PESSOAL */}
           <div className="space-y-4">
-            <span className="text-xs font-bold uppercase tracking-wider text-forest/70 block border-b border-soft pb-2">
-              1. Identificação Pessoal
-            </span>
+            <div className="border-b border-slate-100 pb-2.5 flex items-baseline justify-between gap-2">
+              <h2 className="text-sm sm:text-base font-semibold text-slate-900">
+                <span
+                  className="font-mono text-xs mr-1.5 tabular-nums"
+                  style={{ color: primaryColor }}
+                >
+                  {secNumIdentificacao}.
+                </span>
+                Identificação Pessoal
+              </h2>
+              <span className="text-[11px] text-slate-400">
+                Campos com * são obrigatórios
+              </span>
+            </div>
 
             {/* Nome Completo */}
             <div>
-              <label className="block text-xs font-bold text-forest mb-1.5">
-                Nome Completo <span className="text-red-500">*</span>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                Nome Completo <span className="text-rose-500">*</span>
               </label>
               <input
                 type="text"
@@ -762,29 +1248,33 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
                 value={nome}
                 onChange={(e) => setNome(e.target.value)}
                 placeholder="Digite seu nome completo civil"
-                className="w-full px-4 py-3 bg-white border border-soft rounded-2xl text-xs sm:text-sm text-forest focus:outline-none focus:ring-2 focus:ring-amber-400/30 focus:border-amber-500 transition-all shadow-2xs"
+                className={inputBaseClass}
               />
             </div>
 
             {/* Nome Social */}
             <div>
-              <label className="block text-xs font-bold text-forest mb-1.5">
-                Nome Social / Como prefere ser chamado(a) <span className="text-forest/40 font-normal">(Opcional)</span>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                Nome Social / Como prefere ser chamado(a){" "}
+                <span className="text-slate-400 font-normal">(Opcional)</span>
               </label>
               <input
                 type="text"
                 value={nomeSocial}
                 onChange={(e) => setNomeSocial(e.target.value)}
-                placeholder="Se preferir um nome diferente do registro civil"
-                className="w-full px-4 py-3 bg-white border border-soft rounded-2xl text-xs sm:text-sm text-forest focus:outline-none focus:ring-2 focus:ring-amber-400/30 focus:border-amber-500 transition-all shadow-2xs"
+                placeholder="Preencha caso utilize um nome diferente do registro civil"
+                className={inputBaseClass}
               />
             </div>
 
             {/* E-mail e Telefone */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-bold text-forest mb-1.5">
-                  E-mail {!isModoAtualizacao && <span className="text-red-500">*</span>}
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  E-mail{" "}
+                  {!isModoAtualizacao && (
+                    <span className="text-rose-500">*</span>
+                  )}
                 </label>
                 <input
                   type="email"
@@ -792,13 +1282,13 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="seu.email@exemplo.com"
-                  className="w-full px-4 py-3 bg-white border border-soft rounded-2xl text-xs sm:text-sm text-forest focus:outline-none focus:ring-2 focus:ring-amber-400/30 focus:border-amber-500 transition-all shadow-2xs"
+                  className={inputBaseClass}
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-forest mb-1.5">
-                  WhatsApp / Celular <span className="text-red-500">*</span>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  WhatsApp / Celular <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="tel"
@@ -806,7 +1296,7 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
                   value={telefone}
                   onChange={(e) => setTelefone(formatPhone(e.target.value))}
                   placeholder="(00) 00000-0000"
-                  className="w-full px-4 py-3 bg-white border border-soft rounded-2xl text-xs sm:text-sm text-forest focus:outline-none focus:ring-2 focus:ring-amber-400/30 focus:border-amber-500 transition-all shadow-2xs"
+                  className={`${inputBaseClass} tabular-nums`}
                 />
               </div>
             </div>
@@ -814,21 +1304,21 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
             {/* Data de Nascimento e CPF */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-bold text-forest mb-1.5">
-                  Data de Nascimento <span className="text-red-500">*</span>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  Data de Nascimento <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="date"
                   required
                   value={dataNascimento}
                   onChange={(e) => setDataNascimento(e.target.value)}
-                  className="w-full px-4 py-3 bg-white border border-soft rounded-2xl text-xs sm:text-sm text-forest focus:outline-none focus:ring-2 focus:ring-amber-400/30 focus:border-amber-500 transition-all shadow-2xs"
+                  className={`${inputBaseClass} tabular-nums`}
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-forest mb-1.5">
-                  CPF <span className="text-red-500">*</span>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  CPF <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="text"
@@ -836,155 +1326,207 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
                   value={cpf}
                   onChange={(e) => setCpf(formatCpf(e.target.value))}
                   placeholder="000.000.000-00"
-                  className="w-full px-4 py-3 bg-white border border-soft rounded-2xl text-xs sm:text-sm text-forest focus:outline-none focus:ring-2 focus:ring-amber-400/30 focus:border-amber-500 transition-all shadow-2xs"
+                  className={`${inputBaseClass} tabular-nums`}
                 />
               </div>
             </div>
 
             {/* Gênero e Profissão */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-bold text-forest mb-1.5">
-                  Gênero / Identidade
-                </label>
-                <input
-                  type="text"
-                  value={genero}
-                  onChange={(e) => setGenero(e.target.value)}
-                  placeholder="Ex: Feminino, Masculino, Não-binário..."
-                  className="w-full px-4 py-3 bg-white border border-soft rounded-2xl text-xs sm:text-sm text-forest focus:outline-none focus:border-amber-500 shadow-2xs"
-                />
+              <div className="space-y-2">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Gênero
+                  </label>
+                  <select
+                    value={genero}
+                    onChange={(e) => setGenero(e.target.value)}
+                    className={`${inputBaseClass} cursor-pointer`}
+                  >
+                    <option value="">Selecione...</option>
+                    {genero &&
+                      !(GENERO_OPCOES as readonly string[]).includes(genero) && (
+                        <option value={genero}>{genero}</option>
+                      )}
+                    {GENERO_OPCOES.map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {genero === "Outro" && (
+                  <input
+                    type="text"
+                    value={generoOutro}
+                    onChange={(e) => setGeneroOutro(e.target.value)}
+                    placeholder="Como prefere especificar? (Opcional)"
+                    className={inputBaseClass}
+                  />
+                )}
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-forest mb-1.5">
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                   Profissão / Ocupação
                 </label>
                 <input
                   type="text"
                   value={profissao}
                   onChange={(e) => setProfissao(e.target.value)}
-                  placeholder="Ex: Designer, Estudante..."
-                  className="w-full px-4 py-3 bg-white border border-soft rounded-2xl text-xs sm:text-sm text-forest focus:outline-none focus:border-amber-500 shadow-2xs"
+                  placeholder="Ex: Arquiteta, Estudante, Analista..."
+                  className={inputBaseClass}
                 />
               </div>
             </div>
-          </div>
 
-          {/* 2. RESPONSÁVEL LEGAL (Exibido se menor de 18 anos ou toggle manual) */}
-          <div className="pt-1">
-            <label className="inline-flex items-center gap-2.5 cursor-pointer select-none text-xs font-semibold text-forest/80 hover:text-forest">
-              <input
-                type="checkbox"
-                checked={isMenorIdade}
-                onChange={(e) => {
-                  setIsMenorIdade(e.target.checked);
-                  setMenorManualOverride(e.target.checked);
-                }}
-                className="w-4 h-4 rounded text-amber-500 focus:ring-amber-400 cursor-pointer"
-              />
-              <span>Paciente menor de 18 anos ou representado por responsável legal</span>
-            </label>
-          </div>
-
-          {isMenorIdade && (
-            <div className="p-4 sm:p-5 bg-amber-50/50 rounded-2xl border-2 border-amber-300/80 flex flex-col gap-3">
-              <div className="flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 text-amber-700 shrink-0" />
-                <span className="font-bold text-xs text-amber-950">
-                  Dados do Responsável Legal:
+            {/* Responsável Legal (Menor de 18 anos ou toggle manual) */}
+            <div className="pt-2">
+              <label className="inline-flex items-center gap-2.5 cursor-pointer select-none text-xs font-medium text-slate-700 hover:text-slate-900">
+                <input
+                  type="checkbox"
+                  checked={isMenorIdade}
+                  onChange={(e) => {
+                    setIsMenorIdade(e.target.checked);
+                    setMenorManualOverride(e.target.checked);
+                  }}
+                  style={{ accentColor: primaryColor }}
+                  className="w-4 h-4 rounded cursor-pointer shrink-0"
+                />
+                <span>
+                  Paciente menor de 18 anos ou representado por responsável
+                  legal
                 </span>
+              </label>
+            </div>
+
+            {isMenorIdade && (
+              <div className="p-4 sm:p-5 bg-slate-50 rounded-2xl border border-slate-200 flex flex-col gap-3.5">
+                <div className="flex items-center gap-2">
+                  <AlertCircle
+                    className="w-4 h-4 shrink-0"
+                    style={{ color: primaryColor }}
+                  />
+                  <span className="font-semibold text-xs text-slate-900">
+                    Dados do Responsável Legal
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Nome do Responsável Legal{" "}
+                      <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required={isMenorIdade}
+                      value={nomeResponsavel}
+                      onChange={(e) => setNomeResponsavel(e.target.value)}
+                      placeholder="Nome completo do responsável"
+                      className={inputBaseClass}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Parentesco / Grau de Guarda{" "}
+                      <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required={isMenorIdade}
+                      value={parentescoResponsavel}
+                      onChange={(e) => setParentescoResponsavel(e.target.value)}
+                      placeholder="Ex: Mãe, Pai, Responsável Legal..."
+                      className={inputBaseClass}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      CPF do Responsável{" "}
+                      <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required={isMenorIdade}
+                      value={cpfResponsavel}
+                      onChange={(e) =>
+                        setCpfResponsavel(formatCpf(e.target.value))
+                      }
+                      placeholder="000.000.000-00"
+                      className={`${inputBaseClass} tabular-nums`}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      WhatsApp / Telefone{" "}
+                      <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="tel"
+                      required={isMenorIdade}
+                      value={telefoneResponsavel}
+                      onChange={(e) =>
+                        setTelefoneResponsavel(formatPhone(e.target.value))
+                      }
+                      placeholder="(00) 00000-0000"
+                      className={`${inputBaseClass} tabular-nums`}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      E-mail do Responsável
+                    </label>
+                    <input
+                      type="email"
+                      value={emailResponsavel}
+                      onChange={(e) => setEmailResponsavel(e.target.value)}
+                      placeholder="email@exemplo.com"
+                      className={inputBaseClass}
+                    />
+                  </div>
+                </div>
               </div>
+            )}
+          </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                <div>
-                  <label className="block text-[11px] font-semibold text-forest/70 mb-1">
-                    Nome do Responsável Legal <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required={isMenorIdade}
-                    value={nomeResponsavel}
-                    onChange={(e) => setNomeResponsavel(e.target.value)}
-                    placeholder="Nome completo do responsável"
-                    className="w-full px-3.5 py-2.5 bg-white border border-soft rounded-xl text-xs text-forest focus:outline-none focus:border-amber-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-semibold text-forest/70 mb-1">
-                    Parentesco / Grau de Guarda <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required={isMenorIdade}
-                    value={parentescoResponsavel}
-                    onChange={(e) => setParentescoResponsavel(e.target.value)}
-                    placeholder="Ex: Mãe, Pai, Guardião..."
-                    className="w-full px-3.5 py-2.5 bg-white border border-soft rounded-xl text-xs text-forest focus:outline-none focus:border-amber-500"
-                  />
-                </div>
+          {/* SEÇÃO: ENDEREÇO RESIDENCIAL (Parametrizável) */}
+          {solicitarEndereco && (
+            <div className="space-y-4 pt-2 border-t border-slate-100">
+              <div className="flex items-baseline justify-between gap-2">
+                <h2 className="text-sm sm:text-base font-semibold text-slate-900">
+                  <span
+                    className="font-mono text-xs mr-1.5 tabular-nums"
+                    style={{ color: primaryColor }}
+                  >
+                    {secNumEndereco}.
+                  </span>
+                  Endereço Residencial
+                </h2>
+                <span className="text-[11px] text-slate-400">
+                  Para prontuário e emissão de recibos
+                </span>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
                 <div>
-                  <label className="block text-[11px] font-semibold text-forest/70 mb-1">
-                    CPF do Responsável <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required={isMenorIdade}
-                    value={cpfResponsavel}
-                    onChange={(e) => setCpfResponsavel(formatCpf(e.target.value))}
-                    placeholder="000.000.000-00"
-                    className="w-full px-3.5 py-2.5 bg-white border border-soft rounded-xl text-xs text-forest focus:outline-none focus:border-amber-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-semibold text-forest/70 mb-1">
-                    WhatsApp/Telefone do Responsável <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="tel"
-                    required={isMenorIdade}
-                    value={telefoneResponsavel}
-                    onChange={(e) => setTelefoneResponsavel(formatPhone(e.target.value))}
-                    placeholder="(00) 00000-0000"
-                    className="w-full px-3.5 py-2.5 bg-white border border-soft rounded-xl text-xs text-forest focus:outline-none focus:border-amber-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-semibold text-forest/70 mb-1">
-                    E-mail do Responsável
-                  </label>
-                  <input
-                    type="email"
-                    value={emailResponsavel}
-                    onChange={(e) => setEmailResponsavel(e.target.value)}
-                    placeholder="email@exemplo.com"
-                    className="w-full px-3.5 py-2.5 bg-white border border-soft rounded-xl text-xs text-forest focus:outline-none focus:border-amber-500"
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* 3. ENDEREÇO RESIDENCIAL (Parametrizável) */}
-          {solicitarEndereco && (
-            <div className="space-y-4 pt-2 border-t border-soft">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold uppercase tracking-wider text-forest/70 block">
-                  2. Endereço Residencial
-                </span>
-                <span className="text-[10px] text-forest/50">Para registro de prontuário e recibos</span>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-forest mb-1.5">
-                    CEP {buscandoCep && <span className="text-emerald-600 text-[10px] font-normal">(Buscando...)</span>}
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    CEP{" "}
+                    {buscandoCep && (
+                      <span
+                        className="text-[11px] font-normal"
+                        style={{ color: primaryColor }}
+                      >
+                        (Buscando...)
+                      </span>
+                    )}
                   </label>
                   <input
                     type="text"
@@ -997,27 +1539,27 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
                       }
                     }}
                     placeholder="00000-000"
-                    className="w-full px-3.5 py-2.5 bg-white border border-soft rounded-xl text-xs sm:text-sm text-forest focus:outline-none focus:border-amber-500"
+                    className={`${inputBaseClass} tabular-nums`}
                   />
                 </div>
 
                 <div className="sm:col-span-2">
-                  <label className="block text-xs font-bold text-forest mb-1.5">
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                     Rua / Logradouro
                   </label>
                   <input
                     type="text"
                     value={logradouro}
                     onChange={(e) => setLogradouro(e.target.value)}
-                    placeholder="Nome da sua rua ou avenida"
-                    className="w-full px-3.5 py-2.5 bg-white border border-soft rounded-xl text-xs sm:text-sm text-forest focus:outline-none focus:border-amber-500"
+                    placeholder="Nome da rua ou avenida"
+                    className={inputBaseClass}
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-6 gap-3.5">
                 <div>
-                  <label className="block text-xs font-bold text-forest mb-1.5">
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                     Número
                   </label>
                   <input
@@ -1025,12 +1567,12 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
                     value={numero}
                     onChange={(e) => setNumero(e.target.value)}
                     placeholder="Ex: 123"
-                    className="w-full px-3.5 py-2.5 bg-white border border-soft rounded-xl text-xs sm:text-sm text-forest focus:outline-none focus:border-amber-500"
+                    className={inputBaseClass}
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-forest mb-1.5">
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                     Complemento
                   </label>
                   <input
@@ -1038,12 +1580,12 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
                     value={complemento}
                     onChange={(e) => setComplemento(e.target.value)}
                     placeholder="Apto, Bloco..."
-                    className="w-full px-3.5 py-2.5 bg-white border border-soft rounded-xl text-xs sm:text-sm text-forest focus:outline-none focus:border-amber-500"
+                    className={inputBaseClass}
                   />
                 </div>
 
                 <div className="sm:col-span-2">
-                  <label className="block text-xs font-bold text-forest mb-1.5">
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                     Bairro
                   </label>
                   <input
@@ -1051,12 +1593,12 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
                     value={bairro}
                     onChange={(e) => setBairro(e.target.value)}
                     placeholder="Bairro"
-                    className="w-full px-3.5 py-2.5 bg-white border border-soft rounded-xl text-xs sm:text-sm text-forest focus:outline-none focus:border-amber-500"
+                    className={inputBaseClass}
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-forest mb-1.5">
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                     Cidade
                   </label>
                   <input
@@ -1064,12 +1606,12 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
                     value={cidade}
                     onChange={(e) => setCidade(e.target.value)}
                     placeholder="Cidade"
-                    className="w-full px-3.5 py-2.5 bg-white border border-soft rounded-xl text-xs sm:text-sm text-forest focus:outline-none focus:border-amber-500"
+                    className={inputBaseClass}
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-forest mb-1.5">
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                     UF
                   </label>
                   <input
@@ -1078,81 +1620,104 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
                     value={uf}
                     onChange={(e) => setUf(e.target.value.toUpperCase())}
                     placeholder="SP"
-                    className="w-full px-3.5 py-2.5 bg-white border border-soft rounded-xl text-xs sm:text-sm text-forest uppercase focus:outline-none focus:border-amber-500"
+                    className={`${inputBaseClass} uppercase`}
                   />
                 </div>
               </div>
             </div>
           )}
 
-          {/* 4. QUEIXA PRINCIPAL / MOTIVO DA CONSULTA (Parametrizável) */}
+          {/* SEÇÃO: MOTIVO DA CONSULTA & INFORMAÇÕES CLÍNICAS (Parametrizável) */}
           {solicitarQueixaPrincipal && (
-            <div className="space-y-4 pt-2 border-t border-soft">
-              <span className="text-xs font-bold uppercase tracking-wider text-forest/70 block">
-                3. Motivo da Consulta & Informações Clínicas
-              </span>
+            <div className="space-y-4 pt-2 border-t border-slate-100">
+              <h2 className="text-sm sm:text-base font-semibold text-slate-900">
+                <span
+                  className="font-mono text-xs mr-1.5 tabular-nums"
+                  style={{ color: primaryColor }}
+                >
+                  {secNumClinico}.
+                </span>
+                Motivo da Consulta e Histórico Clínico
+              </h2>
 
               <div>
-                <label className="block text-xs font-bold text-forest mb-1.5">
-                  O que te motivou a buscar psicoterapia neste momento? (Queixa Principal)
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  O que motivou a busca por psicoterapia neste momento? (Queixa
+                  Principal)
                 </label>
                 <textarea
                   rows={3}
                   value={queixaPrincipal}
                   onChange={(e) => setQueixaPrincipal(e.target.value)}
-                  placeholder="Conte brevemente o que você gostaria de trabalhar ou quais sentimentos/desafios está vivenciando..."
-                  className="w-full px-4 py-3 bg-white border border-soft rounded-2xl text-xs sm:text-sm text-forest focus:outline-none focus:ring-2 focus:ring-amber-400/30 focus:border-amber-500 transition-all shadow-2xs leading-relaxed"
+                  placeholder="Conte brevemente o que gostaria de trabalhar ou quais desafios está vivenciando..."
+                  className={`${inputBaseClass} leading-relaxed`}
                 />
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-bold text-forest mb-1.5">
-                    Já fez psicoterapia anteriormente?
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Já fez terapia?
                   </label>
                   <select
                     value={terapiaAnterior}
                     onChange={(e) => setTerapiaAnterior(e.target.value)}
-                    className="w-full px-3.5 py-2.5 bg-white border border-soft rounded-xl text-xs sm:text-sm text-forest focus:outline-none focus:border-amber-500 cursor-pointer"
+                    className={`${inputBaseClass} cursor-pointer`}
                   >
                     <option value="">Selecione...</option>
-                    <option value="Sim, já fiz e foi uma boa experiência">Sim, já fiz e foi positiva</option>
-                    <option value="Sim, mas interrompi">Sim, mas interrompi</option>
-                    <option value="Não, é minha primeira vez em terapia">Não, é minha primeira vez</option>
+                    {terapiaAnterior &&
+                      !(TERAPIA_ANTERIOR_OPCOES as readonly string[]).includes(
+                        terapiaAnterior
+                      ) && (
+                        <option value={terapiaAnterior}>
+                          {terapiaAnterior}
+                        </option>
+                      )}
+                    {TERAPIA_ANTERIOR_OPCOES.map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt}
+                      </option>
+                    ))}
                   </select>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-forest mb-1.5">
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                     Faz uso de medicação psiquiátrica?
                   </label>
                   <input
                     type="text"
                     value={medicacao}
                     onChange={(e) => setMedicacao(e.target.value)}
-                    placeholder="Se sim, qual medicação? (Opcional)"
-                    className="w-full px-3.5 py-2.5 bg-white border border-soft rounded-xl text-xs sm:text-sm text-forest focus:outline-none focus:border-amber-500"
+                    placeholder="Se sim, informe qual medicação (Opcional)"
+                    className={inputBaseClass}
                   />
                 </div>
               </div>
             </div>
           )}
 
-          {/* 5. PREFERÊNCIAS DE ATENDIMENTO & DISPONIBILIDADE */}
-          <div className="space-y-4 pt-2 border-t border-soft">
-            <span className="text-xs font-bold uppercase tracking-wider text-forest/70 block">
-              4. Preferências de Atendimento
-            </span>
+          {/* SEÇÃO: PREFERÊNCIAS DE ATENDIMENTO & DISPONIBILIDADE */}
+          <div className="space-y-4 pt-2 border-t border-slate-100">
+            <h2 className="text-sm sm:text-base font-semibold text-slate-900">
+              <span
+                className="font-mono text-xs mr-1.5 tabular-nums"
+                style={{ color: primaryColor }}
+              >
+                {secNumPreferencias}.
+              </span>
+              Preferências de Atendimento
+            </h2>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-bold text-forest mb-1.5">
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                   Modalidade do Atendimento
                 </label>
                 <select
                   value={modalidadeEscolhida}
                   onChange={(e) => setModalidadeEscolhida(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-white border border-soft rounded-xl text-xs sm:text-sm text-forest focus:outline-none focus:border-amber-500 font-semibold cursor-pointer"
+                  className={`${inputBaseClass} font-medium cursor-pointer`}
                 >
                   <option value="online">Online (Videochamada)</option>
                   <option value="presencial">Presencial (Consultório)</option>
@@ -1161,13 +1726,13 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
 
               {solicitarDisponibilidade && (
                 <div>
-                  <label className="block text-xs font-bold text-forest mb-1.5">
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                     Melhor Turno para Sessões
                   </label>
                   <select
                     value={turnoPreferido}
                     onChange={(e) => setTurnoPreferido(e.target.value)}
-                    className="w-full px-3.5 py-2.5 bg-white border border-soft rounded-xl text-xs sm:text-sm text-forest focus:outline-none focus:border-amber-500 cursor-pointer"
+                    className={`${inputBaseClass} cursor-pointer`}
                   >
                     <option value="">Selecione seu turno preferido...</option>
                     {turnoPreferido &&
@@ -1179,19 +1744,50 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
                       ].includes(turnoPreferido) && (
                         <option value={turnoPreferido}>{turnoPreferido}</option>
                       )}
-                    <option value="Manhã (08h às 12h)">Manhã (08h às 12h)</option>
-                    <option value="Tarde (13h às 18h)">Tarde (13h às 18h)</option>
-                    <option value="Noite (18h às 21h)">Noite (18h às 21h)</option>
-                    <option value="Flexível">Qualquer horário / Flexível</option>
+                    <option value="Manhã (08h às 12h)">
+                      Manhã (08h às 12h)
+                    </option>
+                    <option value="Tarde (13h às 18h)">
+                      Tarde (13h às 18h)
+                    </option>
+                    <option value="Noite (18h às 21h)">
+                      Noite (18h às 21h)
+                    </option>
+                    <option value="Flexível">
+                      Qualquer horário / Flexível
+                    </option>
                   </select>
                 </div>
               )}
             </div>
 
+            {/* Exibição sincronizada do endereço do consultório caso Presencial selecionado e configurado no perfil */}
+            {modalidadeEscolhida === "presencial" &&
+              textoEnderecoConsultorio && (
+                <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200/80 flex items-start gap-2.5 text-xs text-slate-600">
+                  <MapPin
+                    className="w-4 h-4 shrink-0 mt-0.5"
+                    style={{ color: primaryColor }}
+                  />
+                  <div className="space-y-0.5">
+                    <span className="font-semibold text-slate-800 block">
+                      Local de atendimento presencial:
+                    </span>
+                    <span className="block">{textoEnderecoConsultorio}</span>
+                    {enderecoConsultorio.referencia && (
+                      <span className="text-slate-500 block">
+                        Referência: {enderecoConsultorio.referencia}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+
             {solicitarDisponibilidade && (
               <div>
-                <label className="block text-xs font-bold text-forest mb-2">
-                  Dias da Semana de Preferência <span className="text-forest/40 font-normal">(Opcional)</span>
+                <label className="block text-xs font-semibold text-slate-700 mb-2">
+                  Dias da Semana de Preferência{" "}
+                  <span className="text-slate-400 font-normal">(Opcional)</span>
                 </label>
                 <div className="flex flex-wrap gap-2">
                   {DIAS_SEMANA_OPCOES.map((dia) => {
@@ -1201,10 +1797,19 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
                         key={dia}
                         type="button"
                         onClick={() => toggleDiaPreferido(dia)}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
+                        style={
                           ativo
-                            ? "bg-amber-500 text-white border-amber-600 shadow-2xs"
-                            : "bg-white text-forest/75 border-soft hover:bg-warm/50"
+                            ? {
+                                backgroundColor: primaryColor,
+                                borderColor: primaryColor,
+                                color: "#FFFFFF",
+                              }
+                            : undefined
+                        }
+                        className={`min-h-[38px] px-3.5 py-1.5 rounded-xl text-xs font-semibold border transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                          ativo
+                            ? "shadow-2xs"
+                            : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
                         }`}
                       >
                         {dia}
@@ -1217,59 +1822,81 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
 
             {/* Contato de Emergência (Parametrizável) */}
             {solicitarContatoEmergencia && (
-              <div className="p-4 bg-warm/30 rounded-2xl border border-soft flex flex-col gap-3">
-                <span className="text-xs font-bold text-forest flex items-center gap-1.5">
-                  <Phone className="w-3.5 h-3.5 text-forest/60" />
-                  Contato de Emergência (Pessoa de Confiança)
-                </span>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="pt-2 space-y-2.5">
+                <label className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+                  <Phone
+                    className="w-3.5 h-3.5 shrink-0"
+                    style={{ color: primaryColor }}
+                  />
+                  <span>Contato de Emergência (Pessoa de Confiança)</span>
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                   <input
                     type="text"
                     value={contatoEmergenciaNome}
                     onChange={(e) => setContatoEmergenciaNome(e.target.value)}
-                    placeholder="Nome completo (Ex: Irmã Maria)"
-                    className="w-full px-3.5 py-2 bg-white border border-soft rounded-xl text-xs text-forest focus:outline-none focus:border-amber-500"
+                    placeholder="Nome e parentesco (Ex: Maria - Mãe)"
+                    className={inputBaseClass}
                   />
                   <input
                     type="tel"
                     value={contatoEmergenciaTelefone}
-                    onChange={(e) => setContatoEmergenciaTelefone(formatPhone(e.target.value))}
+                    onChange={(e) =>
+                      setContatoEmergenciaTelefone(formatPhone(e.target.value))
+                    }
                     placeholder="Telefone (00) 00000-0000"
-                    className="w-full px-3.5 py-2 bg-white border border-soft rounded-xl text-xs text-forest focus:outline-none focus:border-amber-500"
+                    className={`${inputBaseClass} tabular-nums`}
                   />
                 </div>
               </div>
             )}
           </div>
 
-          {/* 6. FONTE DE INDICAÇÃO */}
-          <div>
-            <label className="block text-xs font-bold text-forest mb-1.5">
-              Como você conheceu meu trabalho? {!isModoAtualizacao && <span className="text-red-500">*</span>}
-            </label>
-            <select
-              required={!isModoAtualizacao}
-              value={fonteIndicacao}
-              onChange={(e) => setFonteIndicacao(e.target.value)}
-              className="w-full px-4 py-3 bg-white border border-soft rounded-2xl text-xs sm:text-sm text-forest focus:outline-none focus:ring-2 focus:ring-amber-400/30 focus:border-amber-500 transition-all shadow-2xs cursor-pointer"
-            >
-              <option value="">Selecione uma opção...</option>
-              {fonteIndicacao && !FONTES_INDICACAO_OPCOES.includes(fonteIndicacao) && (
-                <option value={fonteIndicacao}>{fonteIndicacao}</option>
-              )}
-              {FONTES_INDICACAO_OPCOES.map((opt) => (
-                <option key={opt} value={opt}>
-                  {opt}
-                </option>
-              ))}
-            </select>
+          {/* SEÇÃO: ORIGEM / INDICAÇÃO */}
+          <div className="space-y-3 pt-2 border-t border-slate-100">
+            <h2 className="text-sm sm:text-base font-semibold text-slate-900">
+              <span
+                className="font-mono text-xs mr-1.5 tabular-nums"
+                style={{ color: primaryColor }}
+              >
+                {secNumOrigem}.
+              </span>
+              Origem do Contato
+            </h2>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                Como você conheceu meu trabalho?{" "}
+                {!isModoAtualizacao && <span className="text-rose-500">*</span>}
+              </label>
+              <select
+                required={!isModoAtualizacao}
+                value={fonteIndicacao}
+                onChange={(e) => setFonteIndicacao(e.target.value)}
+                className={`${inputBaseClass} cursor-pointer`}
+              >
+                <option value="">Selecione uma opção...</option>
+                {fonteIndicacao &&
+                  !FONTES_INDICACAO_OPCOES.includes(fonteIndicacao) && (
+                    <option value={fonteIndicacao}>{fonteIndicacao}</option>
+                  )}
+                {FONTES_INDICACAO_OPCOES.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
-          {/* 7. TERMOS E LGPD */}
-          <div className="p-4 sm:p-5 bg-warm/20 rounded-2xl border border-soft flex flex-col gap-2.5">
-            <span className="font-bold text-xs text-forest flex items-center gap-1.5">
-              <ShieldCheck className="w-4 h-4 text-emerald-600" />
-              Termos e Acordos (Sigilo Ético & LGPD)
+          {/* TERMOS E LGPD */}
+          <div className="p-4 sm:p-5 bg-slate-50 rounded-2xl border border-slate-200/90 flex flex-col gap-2.5">
+            <span className="font-semibold text-xs text-slate-900 flex items-center gap-1.5">
+              <ShieldCheck
+                className="w-4 h-4 shrink-0"
+                style={{ color: primaryColor }}
+              />
+              Termos de Consentimento, Sigilo Ético e LGPD
             </span>
 
             <label className="flex items-start gap-3 cursor-pointer">
@@ -1278,35 +1905,91 @@ export function ExternalPatientLandingView({ profUid, onGoHome }: ExternalPatien
                 required
                 checked={aceitouLgpd}
                 onChange={(e) => setAceitouLgpd(e.target.checked)}
-                className="mt-1 rounded text-amber-500 focus:ring-amber-400 w-4 h-4 cursor-pointer shrink-0"
+                style={{ accentColor: primaryColor }}
+                className="mt-0.5 rounded w-4 h-4 cursor-pointer shrink-0"
               />
-              <span className="text-xs text-forest/80 leading-relaxed">
-                <strong>Ciente sobre o uso de dados (LGPD):</strong> Autorizo a coleta, armazenamento e tratamento
-                dos meus dados pessoais informados neste formulário pela clínica profissional do(a){" "}
-                <strong>{formatProfessionalName(profNome)}</strong>, estritamente para as
-                finalidades de prestação de serviços psicológicos, agendamentos, emissão de recibos/notas
-                fiscais e cumprimento do Código de Ética Profissional do Psicólogo e Lei Geral de Proteção
-                de Dados (LGPD).
+              <span className="text-xs text-slate-600 leading-relaxed">
+                <strong className="text-slate-800">
+                  Ciente sobre o tratamento de dados (LGPD):
+                </strong>{" "}
+                Autorizo a coleta, armazenamento e tratamento dos dados
+                informados neste formulário por{" "}
+                <strong className="text-slate-900">{formattedProfName}</strong>
+                {company.razaoSocial?.trim()
+                  ? ` (${company.razaoSocial.trim()})`
+                  : ""}
+                , estritamente para fins de prontuário clínico, agendamentos,
+                emissão de recibos ou notas fiscais e cumprimento do Código de
+                Ética Profissional do Psicólogo (CFP) e da Lei Geral de
+                Proteção de Dados (Lei nº 13.709/2018).
               </span>
             </label>
           </div>
 
-          {/* BOTÃO FINALIZAR / ATUALIZAR CADASTRO */}
+          {/* CTA PRIMÁRIO */}
           <button
             type="submit"
             disabled={submitting}
-            className="w-full py-4 px-6 rounded-2xl bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 hover:from-amber-500 hover:to-yellow-500 text-amber-950 font-bold text-sm sm:text-base transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+            style={{
+              background: `linear-gradient(135deg, ${primaryColor}, ${secondaryColor})`,
+            }}
+            className="w-full py-3.5 px-6 rounded-xl text-white font-semibold text-sm sm:text-base transition-opacity hover:opacity-95 shadow-sm flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 whitespace-nowrap"
           >
-            {submitting ? (
-              <span>{isModoAtualizacao ? "Salvando Atualizações no Prontuário..." : "Salvando Cadastro no Prontuário..."}</span>
-            ) : (
-              <span>{isModoAtualizacao ? "Confirmar e Salvar Atualização Cadastral" : "Finalizar Cadastro Seguro"}</span>
-            )}
+            <span>
+              {submitting
+                ? isModoAtualizacao
+                  ? "Salvando atualizações..."
+                  : "Registrando cadastro..."
+                : isModoAtualizacao
+                  ? "Confirmar e salvar atualização cadastral"
+                  : "Finalizar cadastro"}
+            </span>
           </button>
         </form>
 
-        <footer className="text-center text-[11px] text-forest/50 py-2">
-          © {new Date().getFullYear()} {brandName} • Gestão Clínica Segura em conformidade com o CFP e LGPD
+        {/* Rodapé Silencioso Sincronizado com Dados White-Label */}
+        <footer className="py-4 text-center space-y-1.5 text-xs text-slate-500">
+          <div className="flex items-center justify-center flex-wrap gap-x-2 gap-y-1">
+            <span className="font-medium text-slate-700">
+              © {new Date().getFullYear()} {brandDisplayName}
+            </span>
+            {company.cnpj?.trim() && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span className="tabular-nums">
+                  CNPJ {company.cnpj.trim()}
+                </span>
+              </>
+            )}
+            {profCrp && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span className="tabular-nums">CRP {profCrp}</span>
+              </>
+            )}
+          </div>
+
+          {(company.enderecoEmpresa?.trim() ||
+            company.telefoneEmpresa?.trim()) && (
+            <div className="flex items-center justify-center flex-wrap gap-x-2 gap-y-1 text-[11px] text-slate-400">
+              {company.enderecoEmpresa?.trim() && (
+                <span>{company.enderecoEmpresa.trim()}</span>
+              )}
+              {company.enderecoEmpresa?.trim() &&
+                company.telefoneEmpresa?.trim() && (
+                  <span aria-hidden="true">·</span>
+                )}
+              {company.telefoneEmpresa?.trim() && (
+                <span className="tabular-nums">
+                  {company.telefoneEmpresa.trim()}
+                </span>
+              )}
+            </div>
+          )}
+
+          <p className="text-[11px] text-slate-400">
+            Ambiente protegido sob sigilo ético profissional (CFP) e LGPD
+          </p>
         </footer>
       </div>
     </div>

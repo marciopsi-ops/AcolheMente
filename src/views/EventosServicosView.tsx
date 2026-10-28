@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { collection, query, onSnapshot, addDoc, deleteDoc, doc, updateDoc, serverTimestamp, orderBy, where } from "firebase/firestore";
 import { db } from "../lib/firebase";
-import { Calendar, Clock, Plus, Trash2, Briefcase, X, Edit3, User, Share2, ExternalLink, CreditCard } from "lucide-react";
+import { Calendar, Clock, Plus, Trash2, Briefcase, X, Edit3, User, Share2, ExternalLink, CreditCard, ImagePlus, Loader2, Check, Maximize2 } from "lucide-react";
+import { compressThematicImage, formatEventDateDisplay } from "../utils/eventImageHelper";
 
 interface UserProfile {
   id?: string;
@@ -39,6 +40,10 @@ export function EventosServicosView({ profile, activeSection = "eventos_e_parcer
   const [subscribingItem, setSubscribingItem] = useState<any>(null);
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
   const [inscricoes, setInscricoes] = useState<any[]>([]);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [imageUploadError, setImageUploadError] = useState<string | null>(null);
+  const [copiedShareId, setCopiedShareId] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Formulário Padrão Unificado (O mais completo, abrangendo Eventos e Serviços)
   const [unifiedForm, setUnifiedForm] = useState({
@@ -51,6 +56,9 @@ export function EventosServicosView({ profile, activeSection = "eventos_e_parcer
     vagas: "" as string | number,
     isGratuito: false,
     valor: "",
+    imagemUrl: "",
+    imagemModoExibicao: "capa" as "capa" | "cartaz",
+    imagemPosicaoY: 50,
     linkInscricao: "",
     requisitos: "",
     solicitarComprovante: false,
@@ -61,6 +69,7 @@ export function EventosServicosView({ profile, activeSection = "eventos_e_parcer
   });
 
   const resetUnifiedForm = (initialCat: "evento" | "servico" = "evento") => {
+    setImageUploadError(null);
     setUnifiedForm({
       categoria: initialCat,
       titulo: "",
@@ -71,6 +80,9 @@ export function EventosServicosView({ profile, activeSection = "eventos_e_parcer
       vagas: "",
       isGratuito: false,
       valor: "",
+      imagemUrl: "",
+      imagemModoExibicao: "capa",
+      imagemPosicaoY: 50,
       linkInscricao: "",
       requisitos: "",
       solicitarComprovante: false,
@@ -157,6 +169,9 @@ export function EventosServicosView({ profile, activeSection = "eventos_e_parcer
         vagas: unifiedForm.vagas || "",
         isGratuito: unifiedForm.isGratuito,
         valor: unifiedForm.isGratuito ? "" : (unifiedForm.valor || ""),
+        imagemUrl: unifiedForm.imagemUrl || "",
+        imagemModoExibicao: unifiedForm.imagemModoExibicao || "capa",
+        imagemPosicaoY: typeof unifiedForm.imagemPosicaoY === "number" ? unifiedForm.imagemPosicaoY : 50,
         linkInscricao: unifiedForm.linkInscricao || "",
         requisitos: unifiedForm.requisitos || "",
         solicitarComprovante: unifiedForm.solicitarComprovante || false,
@@ -200,11 +215,34 @@ export function EventosServicosView({ profile, activeSection = "eventos_e_parcer
       resetUnifiedForm(unifiedForm.categoria);
     } catch (error) {
       console.error("Erro ao salvar item:", error);
-      alert("Erro ao salvar item. Por favor, tente novamente.");
+      setImageUploadError("Não foi possível salvar a publicação. Verifique sua conexão e tente novamente.");
+    }
+  };
+
+  const handleSelectImageFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImageUploadError(null);
+    setIsUploadingImage(true);
+    try {
+      const optimizedDataUrl = await compressThematicImage(file, 1200);
+      setUnifiedForm((prev) => ({
+        ...prev,
+        imagemUrl: optimizedDataUrl,
+      }));
+    } catch (err: any) {
+      console.error("Erro ao otimizar imagem temática:", err);
+      setImageUploadError(err?.message || "Erro ao processar a imagem selecionada.");
+    } finally {
+      setIsUploadingImage(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
     }
   };
 
   const handleEditUnifiedItem = (item: any, category: "evento" | "servico") => {
+    setImageUploadError(null);
     setEditingId(item.id);
     setEditingCategory(category);
     setModalCategory(category);
@@ -218,6 +256,9 @@ export function EventosServicosView({ profile, activeSection = "eventos_e_parcer
       vagas: item.vagas || "",
       isGratuito: !!item.isGratuito,
       valor: item.valor || "",
+      imagemUrl: item.imagemUrl || "",
+      imagemModoExibicao: item.imagemModoExibicao === "cartaz" ? "cartaz" : "capa",
+      imagemPosicaoY: typeof item.imagemPosicaoY === "number" ? item.imagemPosicaoY : 50,
       linkInscricao: item.linkInscricao || "",
       requisitos: item.requisitos || "",
       solicitarComprovante: !!item.solicitarComprovante,
@@ -244,7 +285,8 @@ export function EventosServicosView({ profile, activeSection = "eventos_e_parcer
   const handleShareEvento = (ev: any) => {
     const url = `${window.location.origin}?evento=${ev.id}`;
     navigator.clipboard.writeText(url).then(() => {
-      alert("Link público do evento copiado com sucesso!");
+      setCopiedShareId(ev.id);
+      setTimeout(() => setCopiedShareId((prev) => (prev === ev.id ? null : prev)), 2500);
     }).catch(err => {
       console.error("Erro ao copiar link:", err);
     });
@@ -253,7 +295,8 @@ export function EventosServicosView({ profile, activeSection = "eventos_e_parcer
   const handleShareServico = (svc: any) => {
     const url = `${window.location.origin}?servico=${svc.id}`;
     navigator.clipboard.writeText(url).then(() => {
-      alert("Link público do serviço copiado com sucesso!");
+      setCopiedShareId(svc.id);
+      setTimeout(() => setCopiedShareId((prev) => (prev === svc.id ? null : prev)), 2500);
     }).catch(err => {
       console.error("Erro ao copiar link:", err);
     });
@@ -371,19 +414,50 @@ export function EventosServicosView({ profile, activeSection = "eventos_e_parcer
               const isCreator = profileId === ev.criadorId;
 
               return (
-              <div key={ev.id} className="bg-white p-6 rounded-[2rem] shadow-md border border-soft hover:shadow-lg transition-all duration-300 flex flex-col gap-5 relative">
+              <div key={ev.id} className="bg-white rounded-[2rem] shadow-md border border-soft hover:shadow-lg transition-all duration-300 flex flex-col overflow-hidden relative">
+                {ev.imagemUrl && (
+                  <div className="w-full aspect-[16/9] bg-forest/5 relative overflow-hidden border-b border-soft/70">
+                    {ev.imagemModoExibicao === "cartaz" ? (
+                      <>
+                        <img
+                          src={ev.imagemUrl}
+                          alt=""
+                          aria-hidden="true"
+                          referrerPolicy="no-referrer"
+                          className="absolute inset-0 w-full h-full object-cover scale-110 blur-xl opacity-45 pointer-events-none"
+                        />
+                        <img
+                          src={ev.imagemUrl}
+                          alt={ev.titulo}
+                          referrerPolicy="no-referrer"
+                          className="relative z-10 w-full h-full object-contain p-2"
+                        />
+                      </>
+                    ) : (
+                      <img
+                        src={ev.imagemUrl}
+                        alt={ev.titulo}
+                        referrerPolicy="no-referrer"
+                        style={{ objectPosition: `50% ${typeof ev.imagemPosicaoY === "number" ? ev.imagemPosicaoY : 50}%` }}
+                        className="w-full h-full object-cover"
+                      />
+                    )}
+                  </div>
+                )}
+
+                <div className="p-6 flex flex-col gap-5 flex-1 relative">
                 {(isCreator || isGestor) && (
                   <div className="absolute top-4 right-4 flex items-center gap-2 z-10">
                     <button 
                       onClick={() => handleEditUnifiedItem(ev, "evento")}
-                      className="bg-blue-50 text-blue-600 p-2 rounded-full hover:bg-blue-100 transition-colors cursor-pointer"
+                      className="bg-blue-50 text-blue-600 p-2 rounded-full hover:bg-blue-100 transition-colors cursor-pointer shadow-2xs"
                       title="Editar evento"
                     >
                       <Edit3 className="w-4 h-4" />
                     </button>
                     <button 
                       onClick={() => handleRemoveUnifiedItem(ev.id, "evento", ev.criadorId)}
-                      className="bg-red-50 text-red-600 p-2 rounded-full hover:bg-red-100 transition-colors cursor-pointer"
+                      className="bg-red-50 text-red-600 p-2 rounded-full hover:bg-red-100 transition-colors cursor-pointer shadow-2xs"
                       title="Remover evento"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -409,17 +483,17 @@ export function EventosServicosView({ profile, activeSection = "eventos_e_parcer
                 </div>
 
                 {/* Description */}
-                <p className="text-xs text-forest/75 leading-relaxed whitespace-pre-wrap flex-1 bg-warm/15 p-3.5 rounded-2xl border border-soft/30">
+                <p className="text-xs text-forest/75 leading-relaxed whitespace-pre-wrap flex-1 bg-warm/15 p-3.5 rounded-2xl border border-soft/30 line-clamp-4">
                   {ev.descricao}
                 </p>
                 
                 {/* Information organized in lines (Rows) */}
-                <div className="bg-warm/25 rounded-2xl border border-soft/50 p-4 flex flex-col gap-2.5 text-xs text-forest/85">
+                <div className="bg-warm/25 rounded-2xl border border-soft/50 p-4 flex flex-col gap-2.5 text-xs text-forest/85 tabular-nums">
                   <div className="flex items-center justify-between py-1 border-b border-soft/30">
                     <span className="text-forest/50 font-medium flex items-center gap-1.5">
                       <Calendar className="w-3.5 h-3.5 text-forest/40" /> Data:
                     </span>
-                    <span className="font-semibold text-forest/90">{ev.data || "A combinar"}</span>
+                    <span className="font-semibold text-forest/90">{ev.data ? formatEventDateDisplay(ev.data) : "A combinar"}</span>
                   </div>
                   
                   <div className="flex items-center justify-between py-1 border-b border-soft/30">
@@ -521,9 +595,15 @@ export function EventosServicosView({ profile, activeSection = "eventos_e_parcer
                       <ExternalLink className="w-3.5 h-3.5" /> Página Pública
                     </a>
                   )}
-                  <button onClick={() => handleShareEvento(ev)} className="p-2 border border-soft rounded-xl text-forest/70 hover:bg-forest hover:text-white transition-colors bg-warm" title="Compartilhar evento">
-                    <Share2 className="w-4 h-4" />
+                  <button onClick={() => handleShareEvento(ev)} className="p-2 border border-soft rounded-xl text-forest/70 hover:bg-forest hover:text-white transition-colors bg-warm cursor-pointer relative" title="Copiar link público do evento">
+                    {copiedShareId === ev.id ? <Check className="w-4 h-4 text-emerald-600" /> : <Share2 className="w-4 h-4" />}
+                    {copiedShareId === ev.id && (
+                      <span className="absolute -top-8 right-0 bg-forest text-white text-[10px] px-2 py-0.5 rounded shadow whitespace-nowrap">
+                        Link copiado!
+                      </span>
+                    )}
                   </button>
+                </div>
                 </div>
               </div>
             )})}
@@ -555,13 +635,44 @@ export function EventosServicosView({ profile, activeSection = "eventos_e_parcer
               const canRemove = isCreator || isGestor;
 
               return (
-                <div key={svc.id} className="bg-white p-6 rounded-[2rem] shadow-md border border-soft hover:shadow-lg transition-all duration-300 flex flex-col gap-5 relative">
+                <div key={svc.id} className="bg-white rounded-[2rem] shadow-md border border-soft hover:shadow-lg transition-all duration-300 flex flex-col overflow-hidden relative">
+                  {svc.imagemUrl && (
+                    <div className="w-full aspect-[16/9] bg-forest/5 relative overflow-hidden border-b border-soft/70">
+                      {svc.imagemModoExibicao === "cartaz" ? (
+                        <>
+                          <img
+                            src={svc.imagemUrl}
+                            alt=""
+                            aria-hidden="true"
+                            referrerPolicy="no-referrer"
+                            className="absolute inset-0 w-full h-full object-cover scale-110 blur-xl opacity-45 pointer-events-none"
+                          />
+                          <img
+                            src={svc.imagemUrl}
+                            alt={svc.titulo}
+                            referrerPolicy="no-referrer"
+                            className="relative z-10 w-full h-full object-contain p-2"
+                          />
+                        </>
+                      ) : (
+                        <img
+                          src={svc.imagemUrl}
+                          alt={svc.titulo}
+                          referrerPolicy="no-referrer"
+                          style={{ objectPosition: `50% ${typeof svc.imagemPosicaoY === "number" ? svc.imagemPosicaoY : 50}%` }}
+                          className="w-full h-full object-cover"
+                        />
+                      )}
+                    </div>
+                  )}
+
+                  <div className="p-6 flex flex-col gap-5 flex-1 relative">
                    {canRemove && (
                     <div className="absolute top-4 right-4 flex items-center gap-2 z-10">
                       {(isCreator || isGestor) && (
                         <button 
                           onClick={() => handleEditUnifiedItem(svc, "servico")}
-                          className="bg-blue-50 text-blue-600 p-2 rounded-full hover:bg-blue-100 transition-colors cursor-pointer"
+                          className="bg-blue-50 text-blue-600 p-2 rounded-full hover:bg-blue-100 transition-colors cursor-pointer shadow-2xs"
                           title="Editar Serviço"
                         >
                           <Edit3 className="w-4 h-4" />
@@ -569,7 +680,7 @@ export function EventosServicosView({ profile, activeSection = "eventos_e_parcer
                       )}
                       <button 
                         onClick={() => handleRemoveUnifiedItem(svc.id, "servico", svc.criadorId)}
-                        className="bg-red-50 text-red-600 p-2 rounded-full hover:bg-red-100 transition-colors cursor-pointer"
+                        className="bg-red-50 text-red-600 p-2 rounded-full hover:bg-red-100 transition-colors cursor-pointer shadow-2xs"
                         title="Remover Serviço"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -589,18 +700,18 @@ export function EventosServicosView({ profile, activeSection = "eventos_e_parcer
                   </div>
 
                   {/* Description */}
-                  <p className="text-xs text-forest/75 leading-relaxed whitespace-pre-wrap flex-1 bg-warm/15 p-3.5 rounded-2xl border border-soft/30">
+                  <p className="text-xs text-forest/75 leading-relaxed whitespace-pre-wrap flex-1 bg-warm/15 p-3.5 rounded-2xl border border-soft/30 line-clamp-4">
                     {svc.descricao}
                   </p>
 
                   {/* Information organized in lines (Rows) */}
-                  <div className="bg-warm/25 rounded-2xl border border-soft/50 p-4 flex flex-col gap-2.5 text-xs text-forest/85">
+                  <div className="bg-warm/25 rounded-2xl border border-soft/50 p-4 flex flex-col gap-2.5 text-xs text-forest/85 tabular-nums">
                     {svc.data && (
                       <div className="flex items-center justify-between py-1 border-b border-soft/30">
                         <span className="text-forest/50 font-medium flex items-center gap-1.5">
                           <Calendar className="w-3.5 h-3.5 text-forest/40" /> Data:
                         </span>
-                        <span className="font-semibold text-forest/90">{svc.data}</span>
+                        <span className="font-semibold text-forest/90">{formatEventDateDisplay(svc.data)}</span>
                       </div>
                     )}
                     
@@ -744,9 +855,15 @@ export function EventosServicosView({ profile, activeSection = "eventos_e_parcer
                         <ExternalLink className="w-3.5 h-3.5 text-purple-700" /> Página Pública
                       </a>
                     )}
-                    <button onClick={() => handleShareServico(svc)} className="p-2 border border-soft rounded-xl text-forest/70 hover:bg-forest hover:text-white transition-colors bg-warm" title="Compartilhar">
-                      <Share2 className="w-4 h-4" />
+                    <button onClick={() => handleShareServico(svc)} className="p-2 border border-soft rounded-xl text-forest/70 hover:bg-forest hover:text-white transition-colors bg-warm cursor-pointer relative" title="Copiar link público do serviço">
+                      {copiedShareId === svc.id ? <Check className="w-4 h-4 text-emerald-600" /> : <Share2 className="w-4 h-4" />}
+                      {copiedShareId === svc.id && (
+                        <span className="absolute -top-8 right-0 bg-forest text-white text-[10px] px-2 py-0.5 rounded shadow whitespace-nowrap">
+                          Link copiado!
+                        </span>
+                      )}
                     </button>
+                  </div>
                   </div>
                 </div>
               );
@@ -823,6 +940,170 @@ export function EventosServicosView({ profile, activeSection = "eventos_e_parcer
                   onChange={e => setUnifiedForm({...unifiedForm, titulo: e.target.value})} 
                   className="w-full px-4 py-3 bg-warm border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-all text-forest" 
                 />
+              </div>
+
+              {/* Upload de Imagem Temática / Cartaz de Divulgação */}
+              <div className="bg-warm/35 border border-soft rounded-2xl p-4 flex flex-col gap-3">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div>
+                    <label className="text-xs font-bold uppercase tracking-wider text-forest/80 block">
+                      Imagem Temática ou Cartaz de Divulgação (Opcional)
+                    </label>
+                    <p className="text-[11px] text-forest/60 mt-0.5">
+                      Valoriza o anúncio na rede, na sua página profissional e na prévia de compartilhamento.
+                    </p>
+                  </div>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleSelectImageFile}
+                    className="hidden"
+                  />
+                </div>
+
+                {!unifiedForm.imagemUrl ? (
+                  <button
+                    type="button"
+                    disabled={isUploadingImage}
+                    onClick={() => fileInputRef.current?.click()}
+                    className="w-full py-6 px-4 rounded-xl border-2 border-dashed border-forest/20 hover:border-forest/45 bg-white/80 hover:bg-white transition-all flex flex-col items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+                  >
+                    {isUploadingImage ? (
+                      <>
+                        <Loader2 className="w-6 h-6 text-forest animate-spin" />
+                        <span className="text-xs font-semibold text-forest">Otimizando imagem em alta nitidez...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="w-10 h-10 rounded-xl bg-forest/5 text-forest flex items-center justify-center">
+                          <ImagePlus className="w-5 h-5" />
+                        </span>
+                        <span className="text-xs font-bold text-forest">
+                          Clique para enviar foto temática ou flyer do evento
+                        </span>
+                        <span className="text-[11px] text-forest/55">
+                          JPG, PNG ou WebP • Ajuste automático para carregamento rápido
+                        </span>
+                      </>
+                    )}
+                  </button>
+                ) : (
+                  <div className="flex flex-col gap-3">
+                    {/* Seletor de Modo de Enquadramento */}
+                    <div className="flex items-center p-1 bg-white rounded-xl border border-soft text-xs">
+                      <button
+                        type="button"
+                        onClick={() => setUnifiedForm((prev) => ({ ...prev, imagemModoExibicao: "capa" }))}
+                        className={`flex-1 py-1.5 px-2.5 rounded-lg font-semibold transition-all cursor-pointer whitespace-nowrap ${
+                          unifiedForm.imagemModoExibicao !== "cartaz"
+                            ? "bg-forest text-white shadow-2xs"
+                            : "text-forest/70 hover:text-forest"
+                        }`}
+                      >
+                        Capa Panorâmica (16:9)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setUnifiedForm((prev) => ({ ...prev, imagemModoExibicao: "cartaz" }))}
+                        className={`flex-1 py-1.5 px-2.5 rounded-lg font-semibold transition-all cursor-pointer whitespace-nowrap flex items-center justify-center gap-1.5 ${
+                          unifiedForm.imagemModoExibicao === "cartaz"
+                            ? "bg-forest text-white shadow-2xs"
+                            : "text-forest/70 hover:text-forest"
+                        }`}
+                      >
+                        <Maximize2 className="w-3.5 h-3.5" />
+                        Cartaz / Flyer Inteiro
+                      </button>
+                    </div>
+
+                    {/* Pré-visualização ao vivo */}
+                    <div className="w-full rounded-xl overflow-hidden border border-soft bg-forest/5 relative">
+                      {unifiedForm.imagemModoExibicao === "cartaz" ? (
+                        <div className="w-full h-56 relative flex items-center justify-center overflow-hidden">
+                          <img
+                            src={unifiedForm.imagemUrl}
+                            alt=""
+                            aria-hidden="true"
+                            referrerPolicy="no-referrer"
+                            className="absolute inset-0 w-full h-full object-cover scale-110 blur-xl opacity-45 pointer-events-none"
+                          />
+                          <img
+                            src={unifiedForm.imagemUrl}
+                            alt="Prévia do cartaz"
+                            referrerPolicy="no-referrer"
+                            className="relative z-10 max-h-full max-w-full object-contain p-2"
+                          />
+                        </div>
+                      ) : (
+                        <div className="w-full aspect-[16/9] overflow-hidden">
+                          <img
+                            src={unifiedForm.imagemUrl}
+                            alt="Prévia da capa temática"
+                            referrerPolicy="no-referrer"
+                            style={{ objectPosition: `50% ${unifiedForm.imagemPosicaoY}%` }}
+                            className="w-full h-full object-cover transition-all duration-75"
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    {unifiedForm.imagemModoExibicao !== "cartaz" && (
+                      <div className="flex items-center gap-3 px-1">
+                        <span className="text-[11px] font-semibold text-forest/70 whitespace-nowrap">
+                          Foco vertical:
+                        </span>
+                        <input
+                          type="range"
+                          min={0}
+                          max={100}
+                          value={unifiedForm.imagemPosicaoY}
+                          onChange={(e) =>
+                            setUnifiedForm((prev) => ({
+                              ...prev,
+                              imagemPosicaoY: Number(e.target.value),
+                            }))
+                          }
+                          className="flex-1 accent-forest cursor-pointer"
+                        />
+                        <span className="text-[11px] font-mono text-forest/65 tabular-nums w-9 text-right">
+                          {unifiedForm.imagemPosicaoY}%
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between gap-2">
+                      <button
+                        type="button"
+                        disabled={isUploadingImage}
+                        onClick={() => fileInputRef.current?.click()}
+                        className="px-3 py-1.5 rounded-lg bg-white hover:bg-warm border border-soft text-xs font-semibold text-forest transition-colors cursor-pointer"
+                      >
+                        {isUploadingImage ? "Processando..." : "Trocar Imagem"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setUnifiedForm((prev) => ({
+                            ...prev,
+                            imagemUrl: "",
+                            imagemModoExibicao: "capa",
+                            imagemPosicaoY: 50,
+                          }))
+                        }
+                        className="px-3 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 border border-red-200 text-xs font-semibold text-red-700 transition-colors cursor-pointer"
+                      >
+                        Remover Imagem
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {imageUploadError && (
+                  <p className="text-xs font-semibold text-red-700 bg-red-50 border border-red-200 rounded-xl px-3 py-2">
+                    {imageUploadError}
+                  </p>
+                )}
               </div>
 
               {/* Tipo e Vagas */}

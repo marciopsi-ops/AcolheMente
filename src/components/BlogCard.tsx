@@ -7,6 +7,8 @@ interface BlogCardProps {
   artigo: ArtigoBlog;
   onRead: (artigo: ArtigoBlog) => void;
   onSelectTag?: (tag: string) => void;
+  shareUrlOverride?: string;
+  whiteLabelMode?: boolean;
 }
 
 const getCapaFallback = (categoria?: string) => {
@@ -29,12 +31,12 @@ const getCapaFallback = (categoria?: string) => {
   return "https://images.unsplash.com/photo-1455390582262-044cdead277a?auto=format&fit=crop&w=1000&q=85";
 };
 
-export function BlogCard({ artigo, onRead, onSelectTag }: BlogCardProps) {
+export function BlogCard({ artigo, onRead, onSelectTag, shareUrlOverride, whiteLabelMode }: BlogCardProps) {
   const [copied, setCopied] = useState(false);
 
   const handleCopyLink = (e: React.MouseEvent) => {
     e.stopPropagation();
-    const url = `${window.location.origin}${window.location.pathname}?artigo=${artigo.id || ""}`;
+    const url = shareUrlOverride || `${window.location.origin}${window.location.pathname}?artigo=${artigo.id || ""}`;
     navigator.clipboard.writeText(url).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2500);
@@ -132,7 +134,7 @@ export function BlogCard({ artigo, onRead, onSelectTag }: BlogCardProps) {
                 {artigo.autorNome}
               </span>
               <span className="block text-[11px] text-white/70 truncate">
-                {artigo.autorProfissao || "Profissional Parceiro"}
+                {artigo.autorProfissao || (whiteLabelMode ? "Profissional Especializado" : "Profissional Parceiro")}
               </span>
             </div>
           </div>

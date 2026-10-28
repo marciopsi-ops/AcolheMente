@@ -401,8 +401,8 @@ export function ProfissionalMeuPerfilView({
     },
     {
       id: "paginaPublica",
-      label: "Página White-Label",
-      shortDesc: "Cartão virtual independente, redes sociais, endereço com mapa e tabela particular",
+      label: "Página Pública",
+      shortDesc: "Exposição de eventos e artigos, cartão virtual e identidade White-Label",
       Icon: Globe,
       missingCount: 0,
     },
@@ -525,6 +525,8 @@ export function ProfissionalMeuPerfilView({
         siteUrl: merged.siteUrl || "",
         atendePresencial: merged.atendePresencial || false,
         divulgarEnderecoPresencial: merged.divulgarEnderecoPresencial || false,
+        exibirEventosPaginaPublica: merged.exibirEventosPaginaPublica !== false,
+        exibirArtigosPaginaPublica: merged.exibirArtigosPaginaPublica !== false,
         enderecoPresencial: merged.enderecoPresencial || {
           cep: "",
           nomeEspaco: "",
@@ -543,6 +545,29 @@ export function ProfissionalMeuPerfilView({
     }
   };
 
+  const handleTogglePublicVisibility = async (
+    field: "exibirEventosPaginaPublica" | "exibirArtigosPaginaPublica",
+    checked: boolean,
+  ) => {
+    updateProfileField({ [field]: checked });
+    if (user?.uid) {
+      try {
+        await updateDoc(doc(db, "users", user.uid), {
+          [field]: checked,
+          updatedAt: serverTimestamp(),
+        });
+        showToast(
+          checked
+            ? "Conteúdo habilitado na sua Página Pública!"
+            : "Conteúdo ocultado da sua Página Pública.",
+          "success",
+        );
+      } catch (err) {
+        console.error("Erro ao atualizar visibilidade na página pública:", err);
+      }
+    }
+  };
+
   const shareLink = profile?.uid
     ? `${window.location.origin}?prof=${profile.uid}`
     : "";
@@ -552,7 +577,7 @@ export function ProfissionalMeuPerfilView({
       ? `Profissional - ${profile.especialidade}`
       : "Profissional de Saúde");
   const isWLActive =
-    profile?.whiteLabelEnabled === true && profile?.plano === "avancado";
+    profile?.whiteLabelEnabled === true && hasIntegrarFeatures(profile);
   const shareTitle = `${profile?.name || "Profissional"} - ${profTitulo}`;
   const shareText = isWLActive
     ? `Conheça minha página profissional (${profTitulo}): ${shareLink}`
@@ -1730,17 +1755,17 @@ export function ProfissionalMeuPerfilView({
           )}
 
           {/* ================================================================= */}
-          {/* SUB-ABA 5: PÁGINA WHITE-LABEL & CARTÃO VIRTUAL                    */}
+          {/* SUB-ABA 5: PÁGINA PÚBLICA & IDENTIDADE WHITE-LABEL                */}
           {/* ================================================================= */}
           {activeSubTab === "paginaPublica" && (
             <div className="flex flex-col gap-6">
               <div className="flex items-center justify-between flex-wrap gap-3">
                 <div>
                   <h3 className="font-serif text-lg sm:text-xl font-bold text-forest">
-                    Página White-Label & Cartão Virtual na Internet
+                    Minha Página Pública & Cartão Virtual
                   </h3>
                   <p className="text-xs text-forest/65 mt-0.5">
-                    Personalize cores, marca própria, redes sociais, endereço presencial com mapa e tabela particular.
+                    Escolha quais conteúdos deseja expor na sua vitrine profissional e configure sua identidade White-Label.
                   </p>
                 </div>
                 <span
@@ -1756,6 +1781,70 @@ export function ProfissionalMeuPerfilView({
               </div>
 
               {renderPublicLinkCard()}
+
+              {/* Controles de Exposição de Eventos e Artigos — Liberados em TODOS os Planos */}
+              <div className="bg-warm/30 border border-soft rounded-3xl p-5 sm:p-6 flex flex-col gap-4">
+                <div>
+                  <h4 className="font-serif text-base sm:text-lg font-bold text-forest">
+                    Conteúdos Exibidos na Minha Página Pública
+                  </h4>
+                  <p className="text-xs text-forest/65 mt-0.5 leading-relaxed">
+                    Disponível em todos os planos: escolha se deseja expor automaticamente seus eventos/serviços criados em <strong>Eventos e Parcerias</strong> e seus textos publicados em <strong>Meus Artigos (Blog)</strong> dentro da sua página profissional.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                  <div className="bg-white p-4 rounded-2xl border border-soft flex items-center justify-between gap-4">
+                    <div className="min-w-0">
+                      <span className="text-sm font-bold text-forest block leading-snug">
+                        Exibir Eventos, Workshops e Serviços
+                      </span>
+                      <span className="text-xs text-forest/60 block mt-0.5 leading-snug">
+                        Mostra na sua página pública as oportunidades criadas por você em Eventos e Parcerias.
+                      </span>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                      <input
+                        type="checkbox"
+                        checked={profile.exibirEventosPaginaPublica !== false}
+                        onChange={(e) =>
+                          handleTogglePublicVisibility(
+                            "exibirEventosPaginaPublica",
+                            e.target.checked,
+                          )
+                        }
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600" />
+                    </label>
+                  </div>
+
+                  <div className="bg-white p-4 rounded-2xl border border-soft flex items-center justify-between gap-4">
+                    <div className="min-w-0">
+                      <span className="text-sm font-bold text-forest block leading-snug">
+                        Exibir Meus Artigos do Blog
+                      </span>
+                      <span className="text-xs text-forest/60 block mt-0.5 leading-snug">
+                        Mostra na sua página pública os artigos de sua autoria aprovados e publicados no Blog.
+                      </span>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                      <input
+                        type="checkbox"
+                        checked={profile.exibirArtigosPaginaPublica !== false}
+                        onChange={(e) =>
+                          handleTogglePublicVisibility(
+                            "exibirArtigosPaginaPublica",
+                            e.target.checked,
+                          )
+                        }
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600" />
+                    </label>
+                  </div>
+                </div>
+              </div>
 
               <WhiteLabelProfileConfigPanel
                 profile={profile}

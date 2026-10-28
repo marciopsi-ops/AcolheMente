@@ -355,6 +355,9 @@ export default function App() {
   const [publicEventoId, setPublicEventoId] = useState<string | null>(() => {
     return new URLSearchParams(window.location.search).get("evento");
   });
+  const [returnFromProfUid, setReturnFromProfUid] = useState<string | null>(() => {
+    return new URLSearchParams(window.location.search).get("fromProf");
+  });
   const [publicContratoId, setPublicContratoId] = useState<string | null>(() => {
     return new URLSearchParams(window.location.search).get("contrato");
   });
@@ -433,6 +436,7 @@ export default function App() {
   const [doacoesAtivas, setDoacoesAtivas] = useState(true);
   const [carrosselEmpresasAtivo, setCarrosselEmpresasAtivo] = useState(true);
   const [metricasAtivas, setMetricasAtivas] = useState(true);
+  const [showDoacaoConfirm, setShowDoacaoConfirm] = useState(false);
 
   // Synchronize browser history / popstate
   useEffect(() => {
@@ -441,6 +445,7 @@ export default function App() {
       setPublicProfUid(p.get("prof") || p.get("profissional") || p.get("profissionalId") || p.get("uid"));
       setPublicServiceId(p.get("servico"));
       setPublicEventoId(p.get("evento"));
+      setReturnFromProfUid(p.get("fromProf"));
       setPublicContratoId(p.get("contrato"));
       setPublicPropostaId(p.get("proposta"));
       setPublicFichaEmpresaId(
@@ -540,8 +545,6 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  const [showDoacaoConfirm, setShowDoacaoConfirm] = useState(false);
-
   const handleNavigate = (view: any) => {
     window.scrollTo({ top: 0, left: 0, behavior: "instant" });
     if (view === "doacao") {
@@ -566,6 +569,7 @@ export default function App() {
     setPublicProfUid(null);
     setPublicServiceId(null);
     setPublicEventoId(null);
+    setReturnFromProfUid(null);
     setPublicContratoId(null);
     setPublicPropostaId(null);
     setPublicFichaEmpresaId(null);
@@ -590,13 +594,15 @@ export default function App() {
     );
   }
 
-  if (publicArtigoId || currentView === "blog") {
+  if ((publicArtigoId && !publicProfUid) || currentView === "blog") {
     return (
       <BlogView
         initialArtigoId={publicArtigoId}
         onNavigate={handleNavigate}
         onGoHome={handleGoToLanding}
         onSelectProf={(uid) => {
+          setPublicArtigoId(null);
+          setCurrentView("landing");
           setPublicProfUid(uid);
         }}
       />
@@ -618,8 +624,15 @@ export default function App() {
       <PublicServiceView
         serviceId={publicServiceId}
         eventId={publicEventoId}
+        returnProfUid={returnFromProfUid}
         onBack={handleBackFromPublicProfile}
         onGoHome={handleGoToLanding}
+        onSelectProf={(uid) => {
+          setPublicServiceId(null);
+          setPublicEventoId(null);
+          setReturnFromProfUid(null);
+          setPublicProfUid(uid);
+        }}
       />
     );
   }
@@ -667,12 +680,25 @@ export default function App() {
     return (
       <PublicProfProfileView
         profUid={publicProfUid}
+        initialArtigoId={publicArtigoId}
         onBack={handleBackFromPublicProfile}
         onGoHome={handleGoToLanding}
         onReadArtigo={(artigoId) => {
           setPublicProfUid(null);
           setPublicArtigoId(artigoId);
           setCurrentView("blog");
+        }}
+        onOpenPublicItem={(kind, itemId, fromUid) => {
+          setPublicProfUid(null);
+          setPublicArtigoId(null);
+          setReturnFromProfUid(fromUid);
+          if (kind === "evento") {
+            setPublicEventoId(itemId);
+            setPublicServiceId(null);
+          } else {
+            setPublicServiceId(itemId);
+            setPublicEventoId(null);
+          }
         }}
       />
     );

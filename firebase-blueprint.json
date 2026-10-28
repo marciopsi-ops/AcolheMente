@@ -291,6 +291,40 @@
         "updatedAt": { "type": "timestamp" }
       },
       "required": ["profissionalId", "nomeFantasia", "razaoSocial", "cnpj", "contatoNome", "contatoTelefone", "statusComercial"]
+    },
+    "OportunidadeEventoServico": {
+      "title": "OportunidadeEventoServico",
+      "description": "Eventos, workshops, supervisões, sublocações e serviços publicados por profissionais com suporte a imagem temática ou cartaz.",
+      "type": "object",
+      "properties": {
+        "categoria": { "type": "string", "enum": ["evento", "servico"] },
+        "titulo": { "type": "string" },
+        "tipo": { "type": "string" },
+        "descricao": { "type": "string" },
+        "data": { "type": "string" },
+        "hora": { "type": "string" },
+        "vagas": { "type": "string" },
+        "isGratuito": { "type": "boolean" },
+        "valor": { "type": "string" },
+        "imagemUrl": { "type": "string" },
+        "imagemModoExibicao": { "type": "string", "enum": ["capa", "cartaz"] },
+        "imagemPosicaoY": { "type": "number" },
+        "linkInscricao": { "type": "string" },
+        "requisitos": { "type": "string" },
+        "solicitarComprovante": { "type": "boolean" },
+        "contatoEmail": { "type": "string" },
+        "contatoTelefone": { "type": "string" },
+        "contatoPreferencial": { "type": "string", "enum": ["email", "whatsapp"] },
+        "modoInscricao": { "type": "string", "enum": ["contato", "plataforma"] },
+        "criadorId": { "type": "string" },
+        "criadorNome": { "type": "string" },
+        "criadorFoto": { "type": "string" },
+        "criadorPixKey": { "type": "string" },
+        "criadorContato": { "type": "string" },
+        "createdAt": { "type": "timestamp" },
+        "updatedAt": { "type": "timestamp" }
+      },
+      "required": ["titulo", "tipo", "descricao", "criadorId"]
     }
   },
   "firestore": {
@@ -313,6 +347,14 @@
     "agendamentos": {
       "schema": { "$ref": "#/entities/Agendamento" },
       "description": "Sessões e agendamentos clínicos da agenda do profissional."
+    },
+    "eventos": {
+      "schema": { "$ref": "#/entities/OportunidadeEventoServico" },
+      "description": "Eventos e workshops publicados na rede e nas páginas públicas dos profissionais."
+    },
+    "servicos": {
+      "schema": { "$ref": "#/entities/OportunidadeEventoServico" },
+      "description": "Serviços, supervisões e parcerias publicados na rede e nas páginas públicas dos profissionais."
     },
     "servicos_profissionais": {
       "schema": { "$ref": "#/entities/ServicoProfissional" },

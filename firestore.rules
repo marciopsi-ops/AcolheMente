@@ -183,6 +183,13 @@ service cloud.firestore {
       allow update, delete: if isSignedIn() && (isMaster() || isTriagem() || (resource.data.autorUid == request.auth.uid));
     }
 
+    // Documentos Psicológicos do Profissional
+    match /documentos_psicologicos/{docId} {
+      allow read: if isSignedIn() && (resource.data.profissionalId == request.auth.uid || isMaster());
+      allow create: if isSignedIn() && request.resource.data.profissionalId == request.auth.uid;
+      allow update, delete: if isSignedIn() && (resource.data.profissionalId == request.auth.uid || isMaster());
+    }
+
     // Auditoria de Acessos e Gestão
     match /auditoria_gestao/{auditId} {
       allow create: if isSignedIn();

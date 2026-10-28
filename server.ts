@@ -1,11 +1,10 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
-import { createServer as createViteServer } from "vite";
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 3000;
 
   // Enable trust proxy for Cloud Run and Nginx reverse proxies
   app.set("trust proxy", 1);
@@ -1314,13 +1313,36 @@ async function startServer() {
     });
   });
 
+  // Bind port immediately so reverse-proxy warmup and health checks succeed without waiting on cold Vite bundling
+  const httpServer = app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on http://0.0.0.0:${PORT}`);
+  });
+
   // Vite middleware for development vs static serving for production
   if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
+    const vitePromise = import("vite").then(({ createServer: createViteServer }) =>
+      createViteServer({
+        server: {
+          middlewareMode: true,
+          allowedHosts: true,
+          hmr: process.env.DISABLE_HMR === "true" ? false : { server: httpServer },
+        },
+        appType: "spa",
+      })
+    );
+
+    vitePromise.catch((err) => {
+      console.error("[Vite Init Error]", err);
     });
-    app.use(vite.middlewares);
+
+    app.use(async (req, res, next) => {
+      try {
+        const vite = await vitePromise;
+        vite.middlewares(req, res, next);
+      } catch (err) {
+        next(err);
+      }
+    });
   } else {
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
@@ -1329,9 +1351,16 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://0.0.0.0:${PORT}`);
-  });
+  const shutdown = () => {
+    httpServer.close(() => {
+      process.exit(0);
+    });
+  };
+  process.on("SIGTERM", shutdown);
+  process.on("SIGINT", shutdown);
 }
 
-startServer();
+startServer().catch((err) => {
+  console.error("[Fatal Server Startup Error]", err);
+  process.exit(1);
+});

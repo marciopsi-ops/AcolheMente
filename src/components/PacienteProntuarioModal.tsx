@@ -18,6 +18,7 @@ import {
   Tag,
   ArrowRight,
   FileText,
+  FileSignature,
   Sparkles,
   ChevronDown,
   Layers,
@@ -66,6 +67,7 @@ export interface PacienteProntuarioModalProps {
   registros?: ProntuarioRegistroItem[];
   onSaveRegistros: (novosRegistros: ProntuarioRegistroItem[]) => Promise<void> | void;
   onAbrirFaturamento?: (sessaoId?: string) => void;
+  onEmitirDocumento?: () => void;
   profissionalLogado?: {
     uid?: string;
     nome?: string;
@@ -114,6 +116,7 @@ export const PacienteProntuarioModal: React.FC<PacienteProntuarioModalProps> = (
   registros = [],
   onSaveRegistros,
   onAbrirFaturamento,
+  onEmitirDocumento,
   profissionalLogado,
   showToast,
 }) => {
@@ -446,6 +449,20 @@ export const PacienteProntuarioModal: React.FC<PacienteProntuarioModalProps> = (
                 <CreditCard className="w-3.5 h-3.5 text-emerald-700" />
                 <span className="hidden sm:inline">Sessões & Faturamento</span>
                 <span className="sm:hidden">Faturamento</span>
+              </button>
+            )}
+
+            {/* Botão Emitir Documento */}
+            {onEmitirDocumento && (
+              <button
+                type="button"
+                onClick={onEmitirDocumento}
+                className="flex items-center gap-1.5 text-xs font-bold text-forest bg-sun hover:bg-sun-dark border border-sun-dark/30 px-3 py-2 rounded-xl transition-colors shadow-2xs cursor-pointer"
+                title="Emitir documento (atestado, laudo, declaração, etc.) para este paciente"
+              >
+                <FileSignature className="w-3.5 h-3.5 text-forest" />
+                <span className="hidden sm:inline">Emitir Documento</span>
+                <span className="sm:hidden">Documento</span>
               </button>
             )}
 

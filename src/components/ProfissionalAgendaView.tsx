@@ -32,6 +32,7 @@ import {
   Repeat,
   DollarSign,
   UserPlus,
+  UserX,
 } from "lucide-react";
 import {
   collection,
@@ -63,7 +64,7 @@ export interface AgendamentoSessao {
   modalidade: "online" | "presencial";
   linkAtendimento?: string;
   localEndereco?: string;
-  status: "agendada" | "realizada" | "remarcada" | "cancelada";
+  status: "agendada" | "realizada" | "falta_cobrada" | "remarcada" | "cancelada";
   valor?: number;
   observacoes?: string;
   isHorarioFixo?: boolean;
@@ -93,7 +94,7 @@ interface ProfissionalAgendaViewProps {
 }
 
 type ViewMode = "dia" | "semana" | "mes" | "lista";
-type StatusFilter = "todos" | "agendada" | "realizada" | "remarcada" | "cancelada";
+type StatusFilter = "todos" | "agendada" | "realizada" | "falta_cobrada" | "remarcada" | "cancelada";
 
 export const formatarDataIso = (d: Date): string => {
   const ano = d.getFullYear();
@@ -178,7 +179,7 @@ export function ProfissionalAgendaView({
   const [formModalidade, setFormModalidade] = useState<"online" | "presencial">("online");
   const [formLinkAtendimento, setFormLinkAtendimento] = useState("");
   const [formLocalEndereco, setFormLocalEndereco] = useState("");
-  const [formStatus, setFormStatus] = useState<"agendada" | "realizada" | "remarcada" | "cancelada">("agendada");
+  const [formStatus, setFormStatus] = useState<"agendada" | "realizada" | "falta_cobrada" | "remarcada" | "cancelada">("agendada");
   const [formValor, setFormValor] = useState<string>("100");
   const [formFrequenciaFixa, setFormFrequenciaFixa] = useState<"nenhuma" | "semanal" | "quinzenal">("nenhuma");
   const [formGerarSemanas, setFormGerarSemanas] = useState(4); // quantas semanas gerar se fixo
@@ -477,17 +478,21 @@ export function ProfissionalAgendaView({
   const metricasMensais = useMemo(() => {
     const total = agendamentosDoMes.length;
     const realizadas = agendamentosDoMes.filter((a) => a.status === "realizada").length;
+    const faltasCobradas = agendamentosDoMes.filter((a) => a.status === "falta_cobrada").length;
     const agendadas = agendamentosDoMes.filter((a) => a.status === "agendada").length;
     const remarcadas = agendamentosDoMes.filter((a) => a.status === "remarcada").length;
     const canceladas = agendamentosDoMes.filter((a) => a.status === "cancelada").length;
     const fixos = agendamentosDoMes.filter((a) => a.isHorarioFixo).length;
 
     const taxaComparecimento =
-      total > 0 ? Math.round((realizadas / (realizadas + canceladas || 1)) * 100) : 100;
+      total > 0
+        ? Math.round((realizadas / (realizadas + faltasCobradas + canceladas || 1)) * 100)
+        : 100;
 
     return {
       total,
       realizadas,
+      faltasCobradas,
       agendadas,
       remarcadas,
       canceladas,
@@ -678,7 +683,13 @@ export function ProfissionalAgendaView({
       data: string;
       horario: string;
       modalidade: "online" | "presencial";
-      statusAtendimento: "agendada" | "realizada" | "desmarcada_antecedencia" | "falta_sem_aviso";
+      statusAtendimento:
+        | "agendada"
+        | "realizada"
+        | "falta_cobrada"
+        | "desmarcada_antecedencia"
+        | "cancelada_sem_cobranca"
+        | "falta_sem_aviso";
       valor: number;
       observacoes?: string;
     }
@@ -749,7 +760,9 @@ export function ProfissionalAgendaView({
         const statusExecucaoMap: Record<string, "agendado" | "realizado" | "cancelado"> = {
           agendada: "agendado",
           realizada: "realizado",
+          falta_cobrada: "realizado",
           desmarcada_antecedencia: "cancelado",
+          cancelada_sem_cobranca: "cancelado",
           falta_sem_aviso: "cancelado",
         };
         const statusExec = statusExecucaoMap[sessaoItem.statusAtendimento] || "agendado";
@@ -828,8 +841,9 @@ export function ProfissionalAgendaView({
       const statusAtendimentoMap: Record<string, any> = {
         agendada: "agendada",
         realizada: "realizada",
+        falta_cobrada: "falta_cobrada",
         remarcada: "desmarcada_antecedencia",
-        cancelada: "falta_sem_aviso",
+        cancelada: "cancelada_sem_cobranca",
       };
 
       if (selectedAgendamentoParaEditar) {
@@ -950,7 +964,7 @@ export function ProfissionalAgendaView({
   // Mudança rápida de status diretamente pelo card da sessão
   const handleUpdateStatusRapido = async (
     agendamento: AgendamentoSessao,
-    novoStatus: "agendada" | "realizada" | "remarcada" | "cancelada"
+    novoStatus: "agendada" | "realizada" | "falta_cobrada" | "remarcada" | "cancelada"
   ) => {
     try {
       const agendamentoRef = doc(db, "agendamentos", agendamento.id);
@@ -963,8 +977,9 @@ export function ProfissionalAgendaView({
       const statusAtendimentoMap: Record<string, any> = {
         agendada: "agendada",
         realizada: "realizada",
+        falta_cobrada: "falta_cobrada",
         remarcada: "desmarcada_antecedencia",
-        cancelada: "falta_sem_aviso",
+        cancelada: "cancelada_sem_cobranca",
       };
 
       if (agendamento.pacienteId) {
@@ -1072,29 +1087,40 @@ export function ProfissionalAgendaView({
     switch (status) {
       case "realizada":
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 whitespace-nowrap">
+            <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
             Realizada
+          </span>
+        );
+      case "falta_cobrada":
+        return (
+          <span
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-orange-100 text-orange-900 border border-orange-300 whitespace-nowrap"
+            title="Falta cobrada — contabilizada no faturamento do paciente"
+          >
+            <UserX className="w-3 h-3 text-orange-700 shrink-0" />
+            <DollarSign className="w-2.5 h-2.5 -ml-1 text-orange-700 shrink-0" />
+            Falta Cobrada
           </span>
         );
       case "remarcada":
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
-            <RotateCcw className="w-3 h-3 text-amber-600" />
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-200 whitespace-nowrap">
+            <RotateCcw className="w-3 h-3 text-amber-600 shrink-0" />
             Remarcada
           </span>
         );
       case "cancelada":
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
-            <XCircle className="w-3 h-3 text-rose-600" />
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-rose-100 text-rose-800 border border-rose-200 whitespace-nowrap">
+            <XCircle className="w-3 h-3 text-rose-600 shrink-0" />
             Cancelada
           </span>
         );
       default:
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-sky-100 text-sky-800 border border-sky-200">
-            <Clock className="w-3 h-3 text-sky-600" />
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-sky-100 text-sky-800 border border-sky-200 whitespace-nowrap">
+            <Clock className="w-3 h-3 text-sky-600 shrink-0" />
             Agendada
           </span>
         );
@@ -1139,14 +1165,14 @@ export function ProfissionalAgendaView({
       </div>
 
       {/* 2. CARDS DE INDICADORES MENSAIS EM TEMPO REAL - COMPACTOS E OTIMIZADOS VERTICALMENTE */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
         {/* Total do Mês */}
         <div className="bg-white px-2.5 py-1.5 rounded-xl border border-soft shadow-2xs flex items-center justify-between gap-1.5">
           <div className="min-w-0">
             <span className="text-[9px] sm:text-[10px] font-semibold text-forest/60 uppercase tracking-wider block truncate">
               Total Mês
             </span>
-            <span className="text-sm sm:text-base font-bold text-forest leading-tight block">
+            <span className="text-sm sm:text-base font-bold text-forest leading-tight block tabular-nums">
               {metricasMensais.total}
             </span>
           </div>
@@ -1161,12 +1187,28 @@ export function ProfissionalAgendaView({
             <span className="text-[9px] sm:text-[10px] font-semibold text-emerald-700 uppercase tracking-wider block truncate">
               Realizadas
             </span>
-            <span className="text-sm sm:text-base font-bold text-emerald-700 leading-tight block">
+            <span className="text-sm sm:text-base font-bold text-emerald-700 leading-tight block tabular-nums">
               {metricasMensais.realizadas}
             </span>
           </div>
           <div className="w-6 h-6 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0">
             <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+          </div>
+        </div>
+
+        {/* Faltas Cobradas */}
+        <div className="bg-white px-2.5 py-1.5 rounded-xl border border-soft shadow-2xs flex items-center justify-between gap-1.5">
+          <div className="min-w-0">
+            <span className="text-[9px] sm:text-[10px] font-semibold text-orange-800 uppercase tracking-wider block truncate">
+              Faltas Cobradas
+            </span>
+            <span className="text-sm sm:text-base font-bold text-orange-800 leading-tight block tabular-nums">
+              {metricasMensais.faltasCobradas}
+            </span>
+          </div>
+          <div className="w-6 h-6 rounded-lg bg-orange-50 flex items-center justify-center shrink-0">
+            <UserX className="w-3 h-3 text-orange-700" />
+            <DollarSign className="w-2.5 h-2.5 -ml-0.5 text-orange-700" />
           </div>
         </div>
 
@@ -1176,7 +1218,7 @@ export function ProfissionalAgendaView({
             <span className="text-[9px] sm:text-[10px] font-semibold text-amber-700 uppercase tracking-wider block truncate">
               Remarcadas
             </span>
-            <span className="text-sm sm:text-base font-bold text-amber-700 leading-tight block">
+            <span className="text-sm sm:text-base font-bold text-amber-700 leading-tight block tabular-nums">
               {metricasMensais.remarcadas}
             </span>
           </div>
@@ -1186,12 +1228,12 @@ export function ProfissionalAgendaView({
         </div>
 
         {/* Canceladas */}
-        <div className="bg-white px-2.5 py-1.5 rounded-xl border border-soft shadow-2xs flex items-center justify-between gap-1.5">
+        <div className="bg-white px-2.5 py-1.5 rounded-xl border border-soft shadow-2xs flex items-center justify-between gap-1.5 col-span-2 sm:col-span-1">
           <div className="min-w-0">
             <span className="text-[9px] sm:text-[10px] font-semibold text-rose-700 uppercase tracking-wider block truncate">
               Canceladas
             </span>
-            <span className="text-sm sm:text-base font-bold text-rose-700 leading-tight block">
+            <span className="text-sm sm:text-base font-bold text-rose-700 leading-tight block tabular-nums">
               {metricasMensais.canceladas}
             </span>
           </div>
@@ -1337,6 +1379,7 @@ export function ProfissionalAgendaView({
             <option value="todos">Todos os status</option>
             <option value="agendada">Apenas Agendadas</option>
             <option value="realizada">Apenas Realizadas</option>
+            <option value="falta_cobrada">Apenas Faltas Cobradas</option>
             <option value="remarcada">Apenas Remarcadas</option>
             <option value="cancelada">Apenas Canceladas</option>
           </select>
@@ -1471,6 +1514,8 @@ export function ProfissionalAgendaView({
                                     className={`p-3 sm:p-4 rounded-xl border text-xs shadow-2xs transition-all hover:shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3 ${
                                       sessao.status === "realizada"
                                         ? "bg-emerald-50/70 border-emerald-200"
+                                        : sessao.status === "falta_cobrada"
+                                        ? "bg-orange-50/75 border-orange-300"
                                         : sessao.status === "remarcada"
                                         ? "bg-amber-50/70 border-amber-200"
                                         : sessao.status === "cancelada"
@@ -1546,44 +1591,58 @@ export function ProfissionalAgendaView({
                                 {/* Ações Rápidas */}
                                 <div className="flex flex-wrap items-center gap-1.5 shrink-0 self-end md:self-center">
                                   {/* Mudança de status rápida */}
-                                  <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-soft shadow-2xs">
+                                  <div className="flex flex-wrap items-center gap-1 bg-white p-1 rounded-xl border border-soft shadow-2xs">
                                     <button
                                       type="button"
                                       onClick={() => handleUpdateStatusRapido(sessao, "realizada")}
-                                      title="Marcar Realizada"
-                                      className={`px-2 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer transition-all ${
+                                      title="Marcar Realizada (entra no faturamento)"
+                                      className={`px-2 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer transition-all whitespace-nowrap ${
                                         sessao.status === "realizada"
                                           ? "bg-emerald-600 text-white"
                                           : "text-emerald-700 hover:bg-emerald-50"
                                       }`}
                                     >
-                                      <Check className="w-3 h-3" />
+                                      <Check className="w-3 h-3 shrink-0" />
                                       <span>Realizada</span>
                                     </button>
                                     <button
                                       type="button"
+                                      onClick={() => handleUpdateStatusRapido(sessao, "falta_cobrada")}
+                                      title="Marcar Falta Cobrada (não compareceu — entra no faturamento)"
+                                      className={`px-2 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer transition-all whitespace-nowrap ${
+                                        sessao.status === "falta_cobrada"
+                                          ? "bg-orange-600 text-white"
+                                          : "text-orange-800 hover:bg-orange-50"
+                                      }`}
+                                    >
+                                      <UserX className="w-3 h-3 shrink-0" />
+                                      <DollarSign className="w-2.5 h-2.5 -ml-1 shrink-0" />
+                                      <span>Falta Cobrada</span>
+                                    </button>
+                                    <button
+                                      type="button"
                                       onClick={() => handleUpdateStatusRapido(sessao, "remarcada")}
-                                      title="Marcar Remarcada"
-                                      className={`px-2 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer transition-all ${
+                                      title="Marcar Remarcada (isenta de cobrança)"
+                                      className={`px-2 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer transition-all whitespace-nowrap ${
                                         sessao.status === "remarcada"
                                           ? "bg-amber-600 text-white"
                                           : "text-amber-700 hover:bg-amber-50"
                                       }`}
                                     >
-                                      <RotateCcw className="w-3 h-3" />
+                                      <RotateCcw className="w-3 h-3 shrink-0" />
                                       <span>Remarcar</span>
                                     </button>
                                     <button
                                       type="button"
                                       onClick={() => handleUpdateStatusRapido(sessao, "cancelada")}
-                                      title="Marcar Cancelada"
-                                      className={`px-2 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer transition-all ${
+                                      title="Marcar Cancelada (sem cobrança)"
+                                      className={`px-2 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer transition-all whitespace-nowrap ${
                                         sessao.status === "cancelada"
                                           ? "bg-rose-600 text-white"
                                           : "text-rose-700 hover:bg-rose-50"
                                       }`}
                                     >
-                                      <X className="w-3 h-3" />
+                                      <X className="w-3 h-3 shrink-0" />
                                       <span>Cancelar</span>
                                     </button>
                                   </div>
@@ -1772,6 +1831,8 @@ export function ProfissionalAgendaView({
                               className={`p-2 rounded-xl border text-xs shadow-2xs transition-all hover:shadow-xs group ${
                                 sessao.status === "realizada"
                                   ? "bg-emerald-50/70 border-emerald-200"
+                                  : sessao.status === "falta_cobrada"
+                                  ? "bg-orange-50/75 border-orange-300"
                                   : sessao.status === "remarcada"
                                   ? "bg-amber-50/70 border-amber-200"
                                   : sessao.status === "cancelada"
@@ -1825,22 +1886,33 @@ export function ProfissionalAgendaView({
                               {/* Ações Rápidas no Hover / Card */}
                               <div className="mt-2 pt-1.5 border-t border-soft/60 flex items-center justify-between gap-1">
                                 {/* Menu rápido de status */}
-                                <div className="flex items-center gap-1">
+                                <div className="flex items-center gap-0.5">
                                   {sessao.status !== "realizada" && (
                                     <button
                                       type="button"
                                       onClick={() => handleUpdateStatusRapido(sessao, "realizada")}
-                                      title="Marcar como Realizada"
+                                      title="Marcar como Realizada (entra no faturamento)"
                                       className="p-1 hover:bg-emerald-100 text-emerald-700 rounded transition-colors cursor-pointer"
                                     >
                                       <Check className="w-3 h-3" />
+                                    </button>
+                                  )}
+                                  {sessao.status !== "falta_cobrada" && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleUpdateStatusRapido(sessao, "falta_cobrada")}
+                                      title="Marcar como Falta Cobrada (entra no faturamento)"
+                                      className="px-1 py-1 hover:bg-orange-100 text-orange-700 rounded transition-colors cursor-pointer inline-flex items-center"
+                                    >
+                                      <UserX className="w-3 h-3" />
+                                      <DollarSign className="w-2.5 h-2.5 -ml-0.5" />
                                     </button>
                                   )}
                                   {sessao.status !== "remarcada" && (
                                     <button
                                       type="button"
                                       onClick={() => handleUpdateStatusRapido(sessao, "remarcada")}
-                                      title="Marcar como Remarcada"
+                                      title="Marcar como Remarcada (sem cobrança)"
                                       className="p-1 hover:bg-amber-100 text-amber-700 rounded transition-colors cursor-pointer"
                                     >
                                       <RotateCcw className="w-3 h-3" />
@@ -1850,7 +1922,7 @@ export function ProfissionalAgendaView({
                                     <button
                                       type="button"
                                       onClick={() => handleUpdateStatusRapido(sessao, "cancelada")}
-                                      title="Marcar como Cancelada"
+                                      title="Marcar como Cancelada (sem cobrança)"
                                       className="p-1 hover:bg-rose-100 text-rose-700 rounded transition-colors cursor-pointer"
                                     >
                                       <X className="w-3 h-3" />
@@ -1964,13 +2036,21 @@ export function ProfissionalAgendaView({
                               className={`text-[10px] truncate px-1 py-0.5 rounded leading-tight font-medium ${
                                 s.status === "realizada"
                                   ? "bg-emerald-100 text-emerald-800"
+                                  : s.status === "falta_cobrada"
+                                  ? "bg-orange-100 text-orange-900 font-bold"
                                   : s.status === "remarcada"
                                   ? "bg-amber-100 text-amber-800"
                                   : s.status === "cancelada"
                                   ? "bg-rose-100 text-rose-800"
                                   : "bg-sky-100 text-sky-800"
                               }`}
+                              title={
+                                s.status === "falta_cobrada"
+                                  ? `${s.horario} - ${s.pacienteNome} (Falta Cobrada)`
+                                  : `${s.horario} - ${s.pacienteNome}`
+                              }
                             >
+                              {s.status === "falta_cobrada" ? "$ " : ""}
                               {s.horario} - {s.pacienteNome.split(" ")[0]}
                             </div>
                           ))}
@@ -2084,46 +2164,61 @@ export function ProfissionalAgendaView({
                     {/* Botões de Ação na Linha */}
                     <div className="flex flex-wrap items-center gap-2 self-end md:self-center shrink-0">
                       {/* Mudança rápida de status */}
-                      <div className="flex items-center gap-1 bg-warm p-1 rounded-xl border border-soft">
+                      <div className="flex flex-wrap items-center gap-1 bg-warm p-1 rounded-xl border border-soft">
                         <button
                           type="button"
                           onClick={() => handleUpdateStatusRapido(item, "realizada")}
-                          title="Marcar Realizada"
-                          className={`px-2 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer transition-all ${
+                          title="Marcar Realizada (entra no faturamento)"
+                          className={`px-2 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer transition-all whitespace-nowrap ${
                             item.status === "realizada"
                               ? "bg-emerald-600 text-white shadow-2xs"
                               : "text-emerald-700 hover:bg-emerald-100"
                           }`}
                         >
-                          <Check className="w-3 h-3" />
+                          <Check className="w-3 h-3 shrink-0" />
                           <span className="hidden sm:inline">Realizada</span>
                         </button>
 
                         <button
                           type="button"
+                          onClick={() => handleUpdateStatusRapido(item, "falta_cobrada")}
+                          title="Marcar Falta Cobrada (entra no faturamento)"
+                          className={`px-2 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer transition-all whitespace-nowrap ${
+                            item.status === "falta_cobrada"
+                              ? "bg-orange-600 text-white shadow-2xs"
+                              : "text-orange-800 hover:bg-orange-100"
+                          }`}
+                        >
+                          <UserX className="w-3 h-3 shrink-0" />
+                          <DollarSign className="w-2.5 h-2.5 -ml-1 shrink-0" />
+                          <span className="hidden sm:inline">Falta Cobrada</span>
+                        </button>
+
+                        <button
+                          type="button"
                           onClick={() => handleUpdateStatusRapido(item, "remarcada")}
-                          title="Marcar Remarcada"
-                          className={`px-2 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer transition-all ${
+                          title="Marcar Remarcada (sem cobrança)"
+                          className={`px-2 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer transition-all whitespace-nowrap ${
                             item.status === "remarcada"
                               ? "bg-amber-600 text-white shadow-2xs"
                               : "text-amber-700 hover:bg-amber-100"
                           }`}
                         >
-                          <RotateCcw className="w-3 h-3" />
+                          <RotateCcw className="w-3 h-3 shrink-0" />
                           <span className="hidden sm:inline">Remarcar</span>
                         </button>
 
                         <button
                           type="button"
                           onClick={() => handleUpdateStatusRapido(item, "cancelada")}
-                          title="Marcar Cancelada"
-                          className={`px-2 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer transition-all ${
+                          title="Marcar Cancelada (sem cobrança)"
+                          className={`px-2 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer transition-all whitespace-nowrap ${
                             item.status === "cancelada"
                               ? "bg-rose-600 text-white shadow-2xs"
                               : "text-rose-700 hover:bg-rose-100"
                           }`}
                         >
-                          <X className="w-3 h-3" />
+                          <X className="w-3 h-3 shrink-0" />
                           <span className="hidden sm:inline">Cancelar</span>
                         </button>
                       </div>
@@ -2538,9 +2633,10 @@ export function ProfissionalAgendaView({
                     className="w-full px-3 py-2 bg-warm/30 border border-soft rounded-xl text-forest focus:outline-none text-xs sm:text-sm font-medium"
                   >
                     <option value="agendada">Agendada</option>
-                    <option value="realizada">Realizada</option>
-                    <option value="remarcada">Remarcada</option>
-                    <option value="cancelada">Cancelada</option>
+                    <option value="realizada">Realizada (Cobrada)</option>
+                    <option value="falta_cobrada">Falta Cobrada (Cobrar sessão)</option>
+                    <option value="remarcada">Remarcada (Sem cobrança)</option>
+                    <option value="cancelada">Cancelada (Sem cobrança)</option>
                   </select>
                 </div>
               </div>

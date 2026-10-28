@@ -302,10 +302,13 @@ export function computeGrossRevenueForScope(params: {
         if (competencia !== "todas" && (!s?.data || !s.data.startsWith(competencia))) {
           return;
         }
+        const isenta =
+          s?.statusAtendimento === "desmarcada_antecedencia" ||
+          s?.statusAtendimento === "cancelada_sem_cobranca";
         const valida =
           s?.statusAtendimento === "realizada" ||
-          (s?.statusPagamento === "pago" &&
-            s?.statusAtendimento !== "desmarcada_antecedencia");
+          s?.statusAtendimento === "falta_cobrada" ||
+          (s?.statusPagamento === "pago" && !isenta);
         if (valida) {
           acc += Number(s?.valor) || 0;
         }

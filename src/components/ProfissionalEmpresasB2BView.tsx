@@ -35,6 +35,7 @@ import {
 import { db, handleFirestoreError, OperationType } from "../lib/firebase";
 import {
   EmpresaClienteB2B,
+  ServicoB2BFaturamentoItem,
   StatusEmpresaB2B,
   STATUS_EMPRESA_B2B_LABELS,
 } from "../types/empresaB2B";
@@ -98,6 +99,7 @@ export const ProfissionalEmpresasB2BView: React.FC<ProfissionalEmpresasB2BViewPr
   const [salvandoNova, setSalvandoNova] = useState(false);
   const [empresaParaExcluir, setEmpresaParaExcluir] =
     useState<EmpresaClienteB2B | null>(null);
+  const [salvandoBadgeB2B, setSalvandoBadgeB2B] = useState<string | null>(null);
   const [showGerenciarPerfisModal, setShowGerenciarPerfisModal] = useState(false);
 
   const perfisFaturamento = useMemo(
@@ -253,12 +255,16 @@ export const ProfissionalEmpresasB2BView: React.FC<ProfissionalEmpresasB2BViewPr
       let faturado = 0;
       let recebido = 0;
       let nfsPendentes = 0;
+      let nfsEmitidas = 0;
+      let nfsDispensadas = 0;
 
       servicosCompetencia.forEach((s) => {
         const val = Number(s.valor) || 0;
         faturado += val;
         if (s.statusPagamento === "pago") recebido += val;
-        if (s.statusNotaFiscal === "pendente") nfsPendentes++;
+        if (s.statusNotaFiscal === "emitida") nfsEmitidas++;
+        else if (s.statusNotaFiscal === "dispensada") nfsDispensadas++;
+        else nfsPendentes++;
 
         const pLinha = resolvePerfilFaturamentoAtivo(
           perfisFaturamento,
@@ -281,14 +287,44 @@ export const ProfissionalEmpresasB2BView: React.FC<ProfissionalEmpresasB2BViewPr
         emp.perfilFaturamento || "PJ"
       );
 
+      const statusPagamentoLinha: "sem_servico" | "quitado" | "parcial" | "pendente" =
+        servicosCompetencia.length === 0
+          ? "sem_servico"
+          : pendente === 0
+          ? "quitado"
+          : recebido > 0
+          ? "parcial"
+          : "pendente";
+
+      const statusFiscalLinha:
+        | "sem_servico"
+        | "emitida"
+        | "parcial"
+        | "pendente"
+        | "dispensada" =
+        servicosCompetencia.length === 0
+          ? "sem_servico"
+          : nfsPendentes === 0 && nfsEmitidas === 0
+          ? "dispensada"
+          : nfsPendentes === 0
+          ? "emitida"
+          : nfsEmitidas > 0
+          ? "parcial"
+          : "pendente";
+
       return {
         empresa: emp,
         perfilPadraoEmp,
+        servicosCompetencia,
         qtdServicos: servicosCompetencia.length,
         faturado,
         recebido,
         pendente,
         nfsPendentes,
+        nfsEmitidas,
+        nfsDispensadas,
+        statusPagamentoLinha,
+        statusFiscalLinha,
       };
     });
 
@@ -494,6 +530,116 @@ export const ProfissionalEmpresasB2BView: React.FC<ProfissionalEmpresasB2BViewPr
         );
       } catch {}
       showToast("Erro ao excluir empresa.", "error");
+    }
+  };
+
+  const sanitizeServicoB2B = (srv: ServicoB2BFaturamentoItem): ServicoB2BFaturamentoItem =>
+    Object.fromEntries(
+      Object.entries(srv).filter(([, v]) => v !== undefined)
+    ) as ServicoB2BFaturamentoItem;
+
+  const handleQuickTogglePagamentoB2B = async (
+    emp: EmpresaClienteB2B,
+    idsAlvo: string[],
+    atualmenteQuitado: boolean
+  ) => {
+    if (!emp?.id || idsAlvo.length === 0) return;
+    const key = `pag-${emp.id}`;
+    if (salvandoBadgeB2B === key) return;
+
+    const targetSet = new Set(idsAlvo);
+    const novoStatus: "pago" | "pendente" = atualmenteQuitado ? "pendente" : "pago";
+    const hojeIso = new Date().toISOString().split("T")[0];
+
+    setSalvandoBadgeB2B(key);
+    try {
+      const listaAtual = Array.isArray(emp.historicoServicos)
+        ? emp.historicoServicos
+        : [];
+      const novaLista = listaAtual.map((srv) => {
+        if (!targetSet.has(srv.id)) return sanitizeServicoB2B(srv);
+        return sanitizeServicoB2B({
+          ...srv,
+          statusPagamento: novoStatus,
+          dataPagamento:
+            novoStatus === "pago" ? srv.dataPagamento || hojeIso : undefined,
+        });
+      });
+
+      await updateDoc(doc(db, "empresas_profissional", emp.id), {
+        historicoServicos: novaLista,
+        updatedAt: serverTimestamp(),
+      });
+
+      showToast(
+        novoStatus === "pago"
+          ? `Pagamento marcado como Quitado para ${emp.nomeFantasia || emp.razaoSocial}!`
+          : `Pagamento retornado para Pendente (${emp.nomeFantasia || emp.razaoSocial}).`,
+        "success"
+      );
+    } catch (err) {
+      try {
+        handleFirestoreError(
+          err,
+          OperationType.UPDATE,
+          `empresas_profissional/${emp.id}`
+        );
+      } catch {}
+      showToast("Erro ao atualizar status de pagamento B2B.", "error");
+    } finally {
+      setSalvandoBadgeB2B(null);
+    }
+  };
+
+  const handleQuickToggleFiscalB2B = async (
+    emp: EmpresaClienteB2B,
+    idsAlvo: string[],
+    atualmenteEmitida: boolean
+  ) => {
+    if (!emp?.id || idsAlvo.length === 0) return;
+    const key = `nf-${emp.id}`;
+    if (salvandoBadgeB2B === key) return;
+
+    const targetSet = new Set(idsAlvo);
+    const nextNf: ServicoB2BFaturamentoItem["statusNotaFiscal"] = atualmenteEmitida
+      ? "pendente"
+      : "emitida";
+
+    setSalvandoBadgeB2B(key);
+    try {
+      const listaAtual = Array.isArray(emp.historicoServicos)
+        ? emp.historicoServicos
+        : [];
+      const novaLista = listaAtual.map((srv) => {
+        if (!targetSet.has(srv.id)) return sanitizeServicoB2B(srv);
+        return sanitizeServicoB2B({
+          ...srv,
+          statusNotaFiscal: nextNf,
+        });
+      });
+
+      await updateDoc(doc(db, "empresas_profissional", emp.id), {
+        historicoServicos: novaLista,
+        updatedAt: serverTimestamp(),
+      });
+
+      showToast(
+        nextNf === "emitida"
+          ? `NFS-e marcada como Emitida para ${emp.nomeFantasia || emp.razaoSocial}!`
+          : `NFS-e retornada para Pendente (${emp.nomeFantasia || emp.razaoSocial}).`,
+        "success"
+      );
+    } catch (err) {
+      try {
+        handleFirestoreError(
+          err,
+          OperationType.UPDATE,
+          `empresas_profissional/${emp.id}`
+        );
+      } catch {}
+      showToast("Erro ao atualizar status da NFS-e.", "error");
+    } finally {
+      setSalvandoBadgeB2B(null);
     }
   };
 
@@ -818,9 +964,9 @@ export const ProfissionalEmpresasB2BView: React.FC<ProfissionalEmpresasB2BViewPr
                         </div>
                       </div>
 
-                      {/* Resumo Financeiro em Linha + Botões */}
+                      {/* Resumo Financeiro em Linha + Selos 1-Toque + Botões */}
                       <div className="flex flex-wrap items-center justify-between lg:justify-end gap-3 pt-2 lg:pt-0 border-t lg:border-t-0 border-soft/70 shrink-0">
-                        <div className="flex items-center gap-3 text-xs tabular-nums">
+                        <div className="flex items-center gap-2.5 text-xs tabular-nums flex-wrap">
                           <div className="text-right">
                             <span className="text-[10px] text-forest/50 block">
                               Serviços ({servs.length})
@@ -839,6 +985,102 @@ export const ProfissionalEmpresasB2BView: React.FC<ProfissionalEmpresasB2BViewPr
                               </span>
                             </div>
                           )}
+
+                          {servs.length > 0 &&
+                            (() => {
+                              const idsServs = servs.map((s) => s.id);
+                              const isQuitadoEmp = pendEmp === 0;
+                              const isParcialEmp = !isQuitadoEmp && pagoEmp > 0;
+                              const nfsPendCard = servs.filter(
+                                (s) => s.statusNotaFiscal === "pendente"
+                              ).length;
+                              const nfsEmitCard = servs.filter(
+                                (s) => s.statusNotaFiscal === "emitida"
+                              ).length;
+                              const isNfEmitidaCard =
+                                nfsPendCard === 0 && nfsEmitCard > 0;
+                              const isNfDispensadaCard =
+                                nfsPendCard === 0 && nfsEmitCard === 0;
+
+                              return (
+                                <div className="flex items-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    disabled={salvandoBadgeB2B === `pag-${emp.id}`}
+                                    onClick={() =>
+                                      handleQuickTogglePagamentoB2B(
+                                        emp,
+                                        idsServs,
+                                        isQuitadoEmp
+                                      )
+                                    }
+                                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-colors cursor-pointer whitespace-nowrap disabled:opacity-50 ${
+                                      isQuitadoEmp
+                                        ? "bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100"
+                                        : isParcialEmp
+                                        ? "bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100"
+                                        : "bg-rose-50 text-rose-800 border-rose-200 hover:bg-rose-100"
+                                    }`}
+                                    title={
+                                      isQuitadoEmp
+                                        ? "Toque para retornar serviços para Pendente"
+                                        : "Toque para marcar todos os serviços ativos como Pagos"
+                                    }
+                                  >
+                                    {isQuitadoEmp ? (
+                                      <>
+                                        <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
+                                        <span>Quitado</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Clock className="w-3 h-3 shrink-0" />
+                                        <span>{isParcialEmp ? "Parcial" : "Pendente"}</span>
+                                      </>
+                                    )}
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    disabled={salvandoBadgeB2B === `nf-${emp.id}`}
+                                    onClick={() =>
+                                      handleQuickToggleFiscalB2B(
+                                        emp,
+                                        idsServs,
+                                        isNfEmitidaCard
+                                      )
+                                    }
+                                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-colors cursor-pointer whitespace-nowrap disabled:opacity-50 ${
+                                      isNfEmitidaCard
+                                        ? "bg-blue-50 text-blue-800 border-blue-200 hover:bg-blue-100"
+                                        : isNfDispensadaCard
+                                        ? "bg-stone-100 text-stone-600 border-stone-300 hover:bg-stone-200"
+                                        : "bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100"
+                                    }`}
+                                    title={
+                                      isNfEmitidaCard
+                                        ? "Toque para retornar NFS-e para Pendente"
+                                        : "Toque para marcar NFS-e como Emitida"
+                                    }
+                                  >
+                                    {isNfEmitidaCard ? (
+                                      <CheckCircle2 className="w-3 h-3 text-blue-600 shrink-0" />
+                                    ) : (
+                                      <FileText className="w-3 h-3 shrink-0" />
+                                    )}
+                                    <span>
+                                      {isNfEmitidaCard
+                                        ? "NF Emitida"
+                                        : isNfDispensadaCard
+                                        ? "Recibo / S/NF"
+                                        : nfsEmitCard > 0
+                                        ? `NF (${nfsEmitCard}/${servs.length})`
+                                        : "NF Pendente"}
+                                    </span>
+                                  </button>
+                                </div>
+                              );
+                            })()}
                         </div>
 
                         <div className="flex items-center gap-1.5">
@@ -1118,7 +1360,7 @@ export const ProfissionalEmpresasB2BView: React.FC<ProfissionalEmpresasB2BViewPr
                   </h3>
                 </div>
                 <span className="text-[11px] text-forest/60 hidden sm:inline">
-                  Consolidado automaticamente também na aba global Dashboard → Faturamento
+                  Toque nos selos de Pagamento ou NFS-e para alternar sem entrar na ficha
                 </span>
               </div>
 
@@ -1134,6 +1376,7 @@ export const ProfissionalEmpresasB2BView: React.FC<ProfissionalEmpresasB2BViewPr
                       <th className="py-2.5 px-3 text-right">Custos Alocados</th>
                       <th className="py-2.5 px-3 text-right">Recebido</th>
                       <th className="py-2.5 px-3 text-right">Em Aberto</th>
+                      <th className="py-2.5 px-3 text-center">Pagamento</th>
                       <th className="py-2.5 px-3 text-center">NFS-e</th>
                       <th className="py-2.5 px-3 text-right">Ações</th>
                     </tr>
@@ -1141,7 +1384,7 @@ export const ProfissionalEmpresasB2BView: React.FC<ProfissionalEmpresasB2BViewPr
                   <tbody className="divide-y divide-soft/60">
                     {consolidadoB2B.linhas.length === 0 ? (
                       <tr>
-                        <td colSpan={10} className="py-10 text-center text-forest/55">
+                        <td colSpan={11} className="py-10 text-center text-forest/55">
                           Nenhuma empresa com lançamentos nesta competência.
                         </td>
                       </tr>
@@ -1149,6 +1392,9 @@ export const ProfissionalEmpresasB2BView: React.FC<ProfissionalEmpresasB2BViewPr
                       consolidadoB2B.linhas.map((l) => {
                         const custoEmp =
                           despesasB2BResumo.porEmpresaMap.get(l.empresa.id) || 0;
+                        const idsCompetencia = (l.servicosCompetencia || []).map(
+                          (s) => s.id
+                        );
                         return (
                           <tr
                             key={l.empresa.id}
@@ -1196,16 +1442,92 @@ export const ProfissionalEmpresasB2BView: React.FC<ProfissionalEmpresasB2BViewPr
                               {l.pendente > 0 ? fmtMoeda(l.pendente) : "—"}
                             </td>
                             <td className="py-2.5 px-3 text-center">
-                              {l.nfsPendentes > 0 ? (
-                                <span className="text-[11px] font-semibold text-amber-800">
-                                  {l.nfsPendentes} pend.
-                                </span>
-                              ) : l.qtdServicos > 0 ? (
-                                <span className="text-[11px] font-semibold text-emerald-700">
-                                  Em dia
-                                </span>
-                              ) : (
+                              {l.statusPagamentoLinha === "sem_servico" ? (
                                 <span className="text-forest/35">—</span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  disabled={salvandoBadgeB2B === `pag-${l.empresa.id}`}
+                                  onClick={() =>
+                                    handleQuickTogglePagamentoB2B(
+                                      l.empresa,
+                                      idsCompetencia,
+                                      l.statusPagamentoLinha === "quitado"
+                                    )
+                                  }
+                                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-colors cursor-pointer whitespace-nowrap disabled:opacity-50 ${
+                                    l.statusPagamentoLinha === "quitado"
+                                      ? "bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100"
+                                      : l.statusPagamentoLinha === "parcial"
+                                      ? "bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100"
+                                      : "bg-rose-50 text-rose-800 border-rose-200 hover:bg-rose-100"
+                                  }`}
+                                  title={
+                                    l.statusPagamentoLinha === "quitado"
+                                      ? "Toque para retornar serviços do período para Pendente"
+                                      : "Toque para marcar serviços do período como Quitados"
+                                  }
+                                >
+                                  {l.statusPagamentoLinha === "quitado" ? (
+                                    <>
+                                      <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
+                                      <span>Quitado</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Clock className="w-3 h-3 shrink-0" />
+                                      <span>
+                                        {l.statusPagamentoLinha === "parcial"
+                                          ? "Parcial"
+                                          : "Pendente"}
+                                      </span>
+                                    </>
+                                  )}
+                                </button>
+                              )}
+                            </td>
+                            <td className="py-2.5 px-3 text-center">
+                              {l.statusFiscalLinha === "sem_servico" ? (
+                                <span className="text-forest/35">—</span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  disabled={salvandoBadgeB2B === `nf-${l.empresa.id}`}
+                                  onClick={() =>
+                                    handleQuickToggleFiscalB2B(
+                                      l.empresa,
+                                      idsCompetencia,
+                                      l.statusFiscalLinha === "emitida"
+                                    )
+                                  }
+                                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-colors cursor-pointer whitespace-nowrap disabled:opacity-50 ${
+                                    l.statusFiscalLinha === "emitida"
+                                      ? "bg-blue-50 text-blue-800 border-blue-200 hover:bg-blue-100"
+                                      : l.statusFiscalLinha === "dispensada"
+                                      ? "bg-stone-100 text-stone-600 border-stone-300 hover:bg-stone-200"
+                                      : "bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100"
+                                  }`}
+                                  title={
+                                    l.statusFiscalLinha === "emitida"
+                                      ? "Toque para retornar NFS-e para Pendente"
+                                      : "Toque para marcar NFS-e do período como Emitida"
+                                  }
+                                >
+                                  {l.statusFiscalLinha === "emitida" ? (
+                                    <CheckCircle2 className="w-3 h-3 text-blue-600 shrink-0" />
+                                  ) : (
+                                    <FileText className="w-3 h-3 shrink-0" />
+                                  )}
+                                  <span>
+                                    {l.statusFiscalLinha === "emitida"
+                                      ? "NF Emitida"
+                                      : l.statusFiscalLinha === "dispensada"
+                                      ? "Recibo / S/NF"
+                                      : l.statusFiscalLinha === "parcial"
+                                      ? `NF (${l.nfsEmitidas}/${l.qtdServicos})`
+                                      : `${l.nfsPendentes} NF Pend.`}
+                                  </span>
+                                </button>
                               )}
                             </td>
                             <td className="py-2.5 px-3 text-right">

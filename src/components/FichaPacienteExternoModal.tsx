@@ -46,6 +46,10 @@ import {
   getPerfilChavePixEfetiva,
   getPerfilFavorecidoEfetivo,
 } from "../types/faturamento";
+import {
+  GENERO_OPCOES,
+  TERAPIA_ANTERIOR_OPCOES,
+} from "../constants/opcoesCadastroPaciente";
 
 interface FichaPacienteExternoModalProps {
   paciente: any;
@@ -293,7 +297,9 @@ export function FichaPacienteExternoModal({
     const mapToAgendaStatus: Record<string, string> = {
       agendada: "agendada",
       realizada: "realizada",
+      falta_cobrada: "falta_cobrada",
       desmarcada_antecedencia: "remarcada",
+      cancelada_sem_cobranca: "cancelada",
       falta_sem_aviso: "cancelada",
     };
 
@@ -554,7 +560,9 @@ export function FichaPacienteExternoModal({
   const sessoesRealizadas = sessoes.filter((s) => s.statusAtendimento === "realizada");
   const sessoesPagas = sessoes.filter((s) => s.statusPagamento === "pago");
   const sessoesPendentes = sessoes.filter(
-    (s) => s.statusAtendimento === "realizada" && s.statusPagamento !== "pago"
+    (s) =>
+      (s.statusAtendimento === "realizada" || s.statusAtendimento === "falta_cobrada") &&
+      s.statusPagamento !== "pago"
   );
   const totalPago = sessoesPagas.reduce((acc, s) => acc + (Number(s.valor) || 0), 0);
   const totalPendente = sessoesPendentes.reduce((acc, s) => acc + (Number(s.valor) || 0), 0);
@@ -887,16 +895,15 @@ export function FichaPacienteExternoModal({
               >
                 <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
               </button>
-              <button
-                type="button"
-                onClick={() => {
-                  window.open(urlAtualizacaoCadastro, "_blank");
-                }}
-                className="p-1 sm:p-1.5 text-emerald-700 hover:text-emerald-950 hover:bg-emerald-100/80 rounded-md sm:rounded-lg transition-colors cursor-pointer"
+              <a
+                href={urlAtualizacaoCadastro}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="p-1 sm:p-1.5 text-emerald-700 hover:text-emerald-950 hover:bg-emerald-100/80 rounded-md sm:rounded-lg transition-colors cursor-pointer inline-flex items-center justify-center"
                 title="Abrir formulário de atualização em nova aba"
               >
                 <ExternalLink className="w-3.5 h-3.5 text-emerald-700" />
-              </button>
+              </a>
             </div>
 
             {onNavigateToAgenda && (
@@ -1228,13 +1235,22 @@ export function FichaPacienteExternoModal({
                   Gênero / Identidade
                 </span>
                 {isEditing ? (
-                  <input
-                    type="text"
+                  <select
                     value={currentPaciente.genero || ""}
                     onChange={(e) => handleUpdateField("genero", e.target.value)}
-                    placeholder="Ex: Feminino, Masculino, Não-binário..."
-                    className="text-xs sm:text-sm font-semibold text-forest border border-emerald-500/80 bg-emerald-50/50 rounded-lg px-2.5 py-1.5 w-full focus:outline-none"
-                  />
+                    className="text-xs sm:text-sm font-semibold text-forest border border-emerald-500/80 bg-emerald-50/50 rounded-lg px-2.5 py-1.5 w-full focus:outline-none cursor-pointer"
+                  >
+                    <option value="">Selecione...</option>
+                    {currentPaciente.genero &&
+                      !(GENERO_OPCOES as readonly string[]).includes(currentPaciente.genero) && (
+                        <option value={currentPaciente.genero}>{currentPaciente.genero}</option>
+                      )}
+                    {GENERO_OPCOES.map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt}
+                      </option>
+                    ))}
+                  </select>
                 ) : (
                   <span className="text-xs sm:text-sm font-semibold text-forest">
                     {currentPaciente.genero || "-"}
@@ -1805,13 +1821,26 @@ export function FichaPacienteExternoModal({
                     Já fez terapia antes?
                   </span>
                   {isEditing ? (
-                    <input
-                      type="text"
+                    <select
                       value={currentPaciente.terapiaAnterior || ""}
                       onChange={(e) => handleUpdateField("terapiaAnterior", e.target.value)}
-                      placeholder="Sim / Não (detalhes)"
-                      className="text-xs sm:text-sm font-semibold text-forest border border-emerald-500/80 bg-emerald-50/50 rounded-lg px-2.5 py-1.5 w-full focus:outline-none"
-                    />
+                      className="text-xs sm:text-sm font-semibold text-forest border border-emerald-500/80 bg-emerald-50/50 rounded-lg px-2.5 py-1.5 w-full focus:outline-none cursor-pointer"
+                    >
+                      <option value="">Selecione...</option>
+                      {currentPaciente.terapiaAnterior &&
+                        !(TERAPIA_ANTERIOR_OPCOES as readonly string[]).includes(
+                          currentPaciente.terapiaAnterior
+                        ) && (
+                          <option value={currentPaciente.terapiaAnterior}>
+                            {currentPaciente.terapiaAnterior}
+                          </option>
+                        )}
+                      {TERAPIA_ANTERIOR_OPCOES.map((opt) => (
+                        <option key={opt} value={opt}>
+                          {opt}
+                        </option>
+                      ))}
+                    </select>
                   ) : (
                     <span className="text-xs sm:text-sm font-semibold text-forest">
                       {currentPaciente.terapiaAnterior || "-"}

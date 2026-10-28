@@ -34,6 +34,8 @@ import {
   formatPerfilCurtoLabel,
   extractLegacySyncFields,
 } from "../types/faturamento";
+import { doc, getDoc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { db } from "../lib/firebase";
 import { PerfisFaturamentoManagerModal } from "./PerfisFaturamentoManagerModal";
 
 export interface SessaoFaturamentoItem {
@@ -42,7 +44,13 @@ export interface SessaoFaturamentoItem {
   data: string; // YYYY-MM-DD
   horario?: string; // HH:MM
   modalidade: "online" | "presencial";
-  statusAtendimento: "realizada" | "agendada" | "desmarcada_antecedencia" | "falta_sem_aviso";
+  statusAtendimento:
+    | "realizada"
+    | "agendada"
+    | "falta_cobrada"
+    | "desmarcada_antecedencia"
+    | "cancelada_sem_cobranca"
+    | "falta_sem_aviso";
   valor: number;
   statusPagamento: "pago" | "pendente";
   dataPagamento?: string;
@@ -50,6 +58,40 @@ export interface SessaoFaturamentoItem {
   observacoes?: string;
   perfilFaturamentoId?: string;
   declararIrOverride?: boolean;
+  statusFiscal?: "pendente" | "emitido" | "dispensado";
+  dataEmissaoFiscal?: string;
+}
+
+export function isSessaoIsentaCobranca(
+  sessao: Pick<SessaoFaturamentoItem, "statusAtendimento">
+): boolean {
+  return (
+    sessao.statusAtendimento === "desmarcada_antecedencia" ||
+    sessao.statusAtendimento === "cancelada_sem_cobranca"
+  );
+}
+
+export function isSessaoCobravel(
+  sessao: Pick<SessaoFaturamentoItem, "statusAtendimento" | "statusPagamento">
+): boolean {
+  return (
+    sessao.statusAtendimento === "realizada" ||
+    sessao.statusAtendimento === "falta_cobrada" ||
+    (sessao.statusPagamento === "pago" && !isSessaoIsentaCobranca(sessao))
+  );
+}
+
+export function resolveStatusFiscalSessao(
+  sessao: Pick<SessaoFaturamentoItem, "statusFiscal" | "declararIrOverride" | "formaPagamento">,
+  perfilLinha: PerfilFaturamentoItem
+): "pendente" | "emitido" | "dispensado" {
+  if (sessao.statusFiscal === "emitido") return "emitido";
+  if (sessao.statusFiscal === "dispensado") return "dispensado";
+  if (sessao.statusFiscal === "pendente") return "pendente";
+  if (perfilLinha.via === "PF" && !shouldDeclararIrForItem(sessao, perfilLinha)) {
+    return "dispensado";
+  }
+  return "pendente";
 }
 
 export interface DadosPessoaJuridica {
@@ -314,6 +356,7 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
   // Métricas Consolidadas do Período (Gerencial + Separação Tributável IRPF vs Caixa s/ IR vs PJ)
   const metricas = useMemo(() => {
     let realizadas = 0;
+    let faltasCobradas = 0;
     let agendadas = 0;
     let faltas = 0;
     let totalPago = 0;
@@ -325,32 +368,40 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
     let qtdTributavelIr = 0;
 
     sessoesFiltradas.forEach((s) => {
-      const v = Number(s.valor) || 0;
+      const isenta = isSessaoIsentaCobranca(s);
+      const v = isenta && s.statusPagamento !== "pago" ? 0 : Number(s.valor) || 0;
       totalGeral += v;
       if (s.statusAtendimento === "realizada") realizadas++;
+      if (s.statusAtendimento === "falta_cobrada") {
+        faltasCobradas++;
+        faltas++;
+      }
       if (s.statusAtendimento === "agendada") agendadas++;
       if (s.statusAtendimento === "falta_sem_aviso") faltas++;
 
       if (s.statusPagamento === "pago") {
         totalPago += v;
-      } else {
+      } else if (!isenta) {
         totalPendente += v;
       }
 
-      const entraIr = isSessaoDeclaravelIr(s);
-      if (entraIr) {
-        qtdTributavelIr++;
-        totalTributavelIr += v;
-        if (s.statusPagamento === "pago") {
-          totalPagoTributavelIr += v;
+      if (!isenta || s.statusPagamento === "pago") {
+        const entraIr = isSessaoDeclaravelIr(s);
+        if (entraIr) {
+          qtdTributavelIr++;
+          totalTributavelIr += v;
+          if (s.statusPagamento === "pago") {
+            totalPagoTributavelIr += v;
+          }
+        } else {
+          totalSemIrOuPj += v;
         }
-      } else {
-        totalSemIrOuPj += v;
       }
     });
 
     return {
       realizadas,
+      faltasCobradas,
       agendadas,
       faltas,
       totalPago,
@@ -479,8 +530,14 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
     const atualizadas = itensSessoes.map((s) => {
       if (s.id !== id) return sanitizeSessao(s);
       const updated: SessaoFaturamentoItem = { ...s, [campo]: valor };
-      if (campo === "statusPagamento" && valor === "pago" && !updated.dataPagamento) {
-        updated.dataPagamento = new Date().toISOString().split("T")[0];
+      if (campo === "statusPagamento") {
+        if (valor === "pago") {
+          if (!updated.dataPagamento) {
+            updated.dataPagamento = new Date().toISOString().split("T")[0];
+          }
+        } else {
+          delete updated.dataPagamento;
+        }
       }
       // Ao selecionar "Dinheiro", sugere automaticamente não declarar no IR (ou vincula ao Caixa Físico se existir)
       if (campo === "formaPagamento" && valor === "Dinheiro") {
@@ -499,6 +556,44 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
     setItensSessoes(atualizadas);
     try {
       await onSaveSessoes(atualizadas);
+      if (
+        (campo === "statusAtendimento" ||
+          campo === "data" ||
+          campo === "horario" ||
+          campo === "modalidade" ||
+          campo === "valor") &&
+        id &&
+        !id.startsWith("sessao_") &&
+        !id.startsWith("lote_")
+      ) {
+        const itemAlvo = atualizadas.find((item) => item.id === id);
+        if (itemAlvo) {
+          const mapToAgendaStatus: Record<string, string> = {
+            agendada: "agendada",
+            realizada: "realizada",
+            falta_cobrada: "falta_cobrada",
+            desmarcada_antecedencia: "remarcada",
+            cancelada_sem_cobranca: "cancelada",
+            falta_sem_aviso: "cancelada",
+          };
+          try {
+            const agRef = doc(db, "agendamentos", id);
+            const agSnap = await getDoc(agRef);
+            if (agSnap.exists()) {
+              await updateDoc(agRef, {
+                data: itemAlvo.data,
+                ...(itemAlvo.horario ? { horario: itemAlvo.horario } : {}),
+                modalidade: itemAlvo.modalidade,
+                valor: Number(itemAlvo.valor) || 0,
+                status: mapToAgendaStatus[itemAlvo.statusAtendimento] || "agendada",
+                updatedAt: serverTimestamp(),
+              });
+            }
+          } catch {
+            // Sessão avulsa sem documento correspondente em agendamentos
+          }
+        }
+      }
     } catch (err) {
       console.error("Erro ao atualizar item da sessão:", err);
     }
@@ -576,15 +671,24 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
 
   const gerarTextoFechamentoWhatsApp = () => {
     const sessoesFinalizadas = sessoesFiltradas.filter(
-      (s) => s.statusAtendimento === "realizada"
+      (s) => s.statusAtendimento === "realizada" || s.statusAtendimento === "falta_cobrada"
     );
-    const datas = sessoesFinalizadas.map((s) => fmtDataBr(s.data)).join(", ");
+    const datas = sessoesFinalizadas
+      .map((s) =>
+        s.statusAtendimento === "falta_cobrada"
+          ? `${fmtDataBr(s.data)} (falta cobrada)`
+          : fmtDataBr(s.data)
+      )
+      .join(", ");
     const periodoTxt =
       filtroPeriodo === "todas" ? "Período Geral" : fmtMesExtenso(filtroPeriodo);
 
     let txt = `Olá, *${pacienteNome.split(" ")[0]}*! Tudo bem?\n\n`;
     txt += `Passando para compartilhar o fechamento dos atendimentos clínicos (*${periodoTxt}*):\n\n`;
     txt += `• *Sessões Realizadas:* ${metricas.realizadas}\n`;
+    if (metricas.faltasCobradas > 0) {
+      txt += `• *Faltas Cobradas:* ${metricas.faltasCobradas}\n`;
+    }
     if (datas) txt += `• *Datas:* ${datas}\n`;
     txt += `• *Valor Total:* ${fmtMoeda(metricas.totalGeral)}\n`;
     txt += `• *Status:* ${
@@ -635,7 +739,7 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
 
   const gerarDiscriminacaoNf = () => {
     const sessoesFinalizadas = sessoesFiltradas.filter(
-      (s) => s.statusAtendimento === "realizada"
+      (s) => s.statusAtendimento === "realizada" || s.statusAtendimento === "falta_cobrada"
     );
     const datas = sessoesFinalizadas.map((s) => fmtDataBr(s.data)).join(", ");
     const modalidades = Array.from(
@@ -651,7 +755,7 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
       : "atendimento terapêutico / psicanalítico";
 
     let desc = `Prestação de serviços de ${tipoServico} (${modalidades || "modalidade online"}), `;
-    desc += `referente a ${sessoesFinalizadas.length} sessão(ões) realizada(s) nos dias: ${datas || "conforme prontuário"}. `;
+    desc += `referente a ${sessoesFinalizadas.length} sessão(ões) nos dias: ${datas || "conforme prontuário"}. `;
     desc += `Tomador/Paciente: ${pacienteNome} (CPF: ${pacienteCpf || "Não informado"}). `;
     if (perfilResolvidoPaciente.via === "PJ" && perfilResolvidoPaciente.razaoSocial) {
       desc += `Prestador: ${perfilResolvidoPaciente.razaoSocial} (CNPJ: ${
@@ -982,6 +1086,7 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
                 <th className="py-2.5 px-3 min-w-[105px]">Pagamento</th>
                 <th className="py-2.5 px-3 min-w-[100px]">Forma</th>
                 <th className="py-2.5 px-3 min-w-[155px]">Conta / IRPF</th>
+                <th className="py-2.5 px-3 min-w-[115px]">NF / Recibo</th>
                 <th className="py-2.5 px-3 text-right min-w-[120px]">Ações</th>
               </tr>
             </thead>
@@ -989,6 +1094,8 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
               {sessoesFiltradas.map((sessao) => {
                 const perfilLinha = resolverPerfilDaSessao(sessao);
                 const declaraIrLinha = shouldDeclararIrForItem(sessao, perfilLinha);
+                const statusFiscalLinha = resolveStatusFiscalSessao(sessao, perfilLinha);
+                const isPjLinha = perfilLinha.via === "PJ";
 
                 return (
                   <tr key={sessao.id} className="hover:bg-warm/30 transition-colors">
@@ -1032,12 +1139,25 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
                         onChange={(e) =>
                           handleUpdateItem(sessao.id, "statusAtendimento", e.target.value)
                         }
-                        className="bg-white text-[11px] font-medium text-forest px-2 py-1 rounded-lg border border-soft outline-none cursor-pointer w-full"
+                        className={`text-[11px] font-medium px-2 py-1 rounded-lg border outline-none cursor-pointer w-full ${
+                          sessao.statusAtendimento === "falta_cobrada"
+                            ? "bg-orange-50 text-orange-900 border-orange-300 font-bold"
+                            : sessao.statusAtendimento === "agendada"
+                            ? "bg-sky-50 text-sky-900 border-sky-200"
+                            : sessao.statusAtendimento === "desmarcada_antecedencia" ||
+                              sessao.statusAtendimento === "cancelada_sem_cobranca"
+                            ? "bg-stone-100 text-stone-600 border-stone-200"
+                            : "bg-white text-forest border-soft"
+                        }`}
                       >
-                        <option value="realizada">Realizada</option>
-                        <option value="agendada">Agendada</option>
-                        <option value="desmarcada_antecedencia">Desmarcada (Aviso)</option>
-                        <option value="falta_sem_aviso">Falta sem aviso</option>
+                        <option value="realizada">Realizada (Cobrada)</option>
+                        <option value="falta_cobrada">Falta Cobrada ($)</option>
+                        <option value="agendada">Agendada (Sem baixa)</option>
+                        <option value="desmarcada_antecedencia">Remarcada / Aviso (Isenta)</option>
+                        <option value="cancelada_sem_cobranca">Cancelada s/ cobrança</option>
+                        {sessao.statusAtendimento === "falta_sem_aviso" && (
+                          <option value="falta_sem_aviso">Falta s/ aviso (Legado)</option>
+                        )}
                       </select>
                     </td>
 
@@ -1170,6 +1290,60 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
                           </button>
                         )}
                       </div>
+                    </td>
+
+                    {/* Status Fiscal: NF / Recibo (1 toque) */}
+                    <td className="py-2 px-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const hojeIso = new Date().toISOString().split("T")[0];
+                          const proximoStatus: "pendente" | "emitido" | "dispensado" =
+                            statusFiscalLinha === "emitido"
+                              ? !isPjLinha && !declaraIrLinha
+                                ? "dispensado"
+                                : "pendente"
+                              : "emitido";
+                          handleUpdatePatchItem(sessao.id, {
+                            statusFiscal: proximoStatus,
+                            dataEmissaoFiscal:
+                              proximoStatus === "emitido" ? hojeIso : undefined,
+                          });
+                        }}
+                        className={`text-[11px] font-bold px-2.5 py-0.5 rounded-lg border transition-all flex items-center gap-1 cursor-pointer whitespace-nowrap ${
+                          statusFiscalLinha === "emitido"
+                            ? "bg-blue-50 text-blue-800 border-blue-200 hover:bg-blue-100"
+                            : statusFiscalLinha === "dispensado"
+                            ? "bg-stone-100 text-stone-600 border-stone-300 hover:bg-stone-200"
+                            : "bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100"
+                        }`}
+                        title={
+                          isPjLinha
+                            ? "Clique para alternar entre NF Pendente e NF Emitida"
+                            : "Clique para alternar entre Recibo Pendente e Recibo Emitido"
+                        }
+                      >
+                        {statusFiscalLinha === "emitido" ? (
+                          <CheckCircle2 className="w-3 h-3 text-blue-600 shrink-0" />
+                        ) : statusFiscalLinha === "dispensado" ? (
+                          <EyeOff className="w-3 h-3 text-stone-500 shrink-0" />
+                        ) : (
+                          <FileText className="w-3 h-3 text-amber-600 shrink-0" />
+                        )}
+                        <span>
+                          {isPjLinha
+                            ? statusFiscalLinha === "emitido"
+                              ? "NF Emitida"
+                              : statusFiscalLinha === "dispensado"
+                              ? "Dispensada"
+                              : "NF Pendente"
+                            : statusFiscalLinha === "emitido"
+                            ? "Recibo Emitido"
+                            : statusFiscalLinha === "dispensado"
+                            ? "Sem Recibo"
+                            : "Recibo Pendente"}
+                        </span>
+                      </button>
                     </td>
 
                     {/* Ações por Linha */}
@@ -1393,22 +1567,92 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setModalRecibo({ isOpen: false })}
-                className="px-4 py-2 text-xs font-semibold text-forest/70 hover:text-forest cursor-pointer"
-              >
-                Fechar
-              </button>
-              <button
-                type="button"
-                onClick={() => window.print()}
-                className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-2xs cursor-pointer"
-              >
-                <Printer className="w-3.5 h-3.5" />
-                <span>Imprimir / Salvar PDF</span>
-              </button>
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
+              {(() => {
+                const alvos = modalRecibo.isConsolidado
+                  ? sessoesFiltradas.filter((s) => !isSessaoIsentaCobranca(s))
+                  : modalRecibo.sessao
+                  ? [modalRecibo.sessao]
+                  : [];
+                const todosEmitidos =
+                  alvos.length > 0 &&
+                  alvos.every(
+                    (s) =>
+                      resolveStatusFiscalSessao(s, resolverPerfilDaSessao(s)) === "emitido"
+                  );
+
+                return alvos.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const idsAlvo = new Set(alvos.map((a) => a.id));
+                      const hojeIso = new Date().toISOString().split("T")[0];
+                      const nextStatus: "emitido" | "pendente" = todosEmitidos
+                        ? "pendente"
+                        : "emitido";
+                      const atualizadas = itensSessoes.map((s) => {
+                        if (!idsAlvo.has(s.id)) return sanitizeSessao(s);
+                        const patched: SessaoFaturamentoItem = {
+                          ...s,
+                          statusFiscal: nextStatus,
+                          dataEmissaoFiscal:
+                            nextStatus === "emitido" ? hojeIso : undefined,
+                        };
+                        return sanitizeSessao(patched);
+                      });
+                      setItensSessoes(atualizadas);
+                      if (modalRecibo.sessao) {
+                        const atualizadoModal = atualizadas.find(
+                          (x) => x.id === modalRecibo.sessao?.id
+                        );
+                        if (atualizadoModal) {
+                          setModalRecibo((prev) => ({
+                            ...prev,
+                            sessao: atualizadoModal,
+                          }));
+                        }
+                      }
+                      await onSaveSessoes(atualizadas);
+                      showToast(
+                        nextStatus === "emitido"
+                          ? "Recibo marcado como Emitido!"
+                          : "Status do recibo retornado para Pendente.",
+                        "success"
+                      );
+                    }}
+                    className={`px-3.5 py-2 rounded-xl text-xs font-bold border transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                      todosEmitidos
+                        ? "bg-blue-50 text-blue-800 border-blue-200 hover:bg-blue-100"
+                        : "bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100"
+                    }`}
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>
+                      {todosEmitidos ? "Recibo Emitido" : "Marcar Recibo Emitido"}
+                    </span>
+                  </button>
+                ) : (
+                  <span />
+                );
+              })()}
+
+              <div className="flex items-center gap-2 ml-auto">
+                <button
+                  type="button"
+                  onClick={() => setModalRecibo({ isOpen: false })}
+                  className="px-4 py-2 text-xs font-semibold text-forest/70 hover:text-forest cursor-pointer"
+                >
+                  Fechar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Imprimir / Salvar PDF</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -1636,11 +1880,65 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
               </div>
             </div>
 
-            <div className="flex items-center justify-end pt-2">
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
+              {(() => {
+                const alvosNf = sessoesFiltradas.filter(
+                  (s) => !isSessaoIsentaCobranca(s)
+                );
+                const todasNfsEmitidas =
+                  alvosNf.length > 0 &&
+                  alvosNf.every(
+                    (s) =>
+                      resolveStatusFiscalSessao(s, resolverPerfilDaSessao(s)) === "emitido"
+                  );
+
+                return alvosNf.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const idsAlvo = new Set(alvosNf.map((a) => a.id));
+                      const hojeIso = new Date().toISOString().split("T")[0];
+                      const nextStatus: "emitido" | "pendente" = todasNfsEmitidas
+                        ? "pendente"
+                        : "emitido";
+                      const atualizadas = itensSessoes.map((s) => {
+                        if (!idsAlvo.has(s.id)) return sanitizeSessao(s);
+                        return sanitizeSessao({
+                          ...s,
+                          statusFiscal: nextStatus,
+                          dataEmissaoFiscal:
+                            nextStatus === "emitido" ? hojeIso : undefined,
+                        });
+                      });
+                      setItensSessoes(atualizadas);
+                      await onSaveSessoes(atualizadas);
+                      showToast(
+                        nextStatus === "emitido"
+                          ? "NFS-e marcada como Emitida para as sessões do período!"
+                          : "Status da NFS-e retornado para Pendente.",
+                        "success"
+                      );
+                    }}
+                    className={`px-3.5 py-2 rounded-xl text-xs font-bold border transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                      todasNfsEmitidas
+                        ? "bg-blue-50 text-blue-800 border-blue-200 hover:bg-blue-100"
+                        : "bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100"
+                    }`}
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>
+                      {todasNfsEmitidas ? "NF Emitida" : "Marcar NF como Emitida"}
+                    </span>
+                  </button>
+                ) : (
+                  <span />
+                );
+              })()}
+
               <button
                 type="button"
                 onClick={() => setModalNf(false)}
-                className="px-4 py-2 bg-forest text-white font-bold rounded-xl text-xs hover:bg-forest/90 cursor-pointer"
+                className="px-4 py-2 bg-forest text-white font-bold rounded-xl text-xs hover:bg-forest/90 cursor-pointer ml-auto"
               >
                 Concluído
               </button>

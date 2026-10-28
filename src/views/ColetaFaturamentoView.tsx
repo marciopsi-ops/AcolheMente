@@ -16,6 +16,7 @@ import {
   ArrowRight,
   HeartHandshake
 } from "lucide-react";
+import { getAppBranding } from "../utils/branding";
 
 interface ColetaFaturamentoViewProps {
   fichaId: string;
@@ -116,12 +117,9 @@ export function ColetaFaturamentoView({ fichaId, onGoHome }: ColetaFaturamentoVi
               const pSnap = await getDoc(doc(db, "users", d.profissionalId));
               if (pSnap.exists()) {
                 const pData = pSnap.data();
-                if (
-                  pData?.plano === "avancado" &&
-                  pData?.whiteLabelEnabled &&
-                  pData?.companyData?.razaoSocial?.trim()
-                ) {
-                  setProfBrandName(pData.companyData.razaoSocial.trim());
+                const branding = getAppBranding(pData);
+                if (branding.isCustom) {
+                  setProfBrandName(branding.brandName);
                 }
               }
             } catch (e) {}

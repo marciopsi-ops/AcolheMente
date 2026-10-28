@@ -21,6 +21,7 @@ import {
   Check
 } from "lucide-react";
 import { Breadcrumbs } from "../components/Breadcrumbs";
+import { getAppBranding } from "../utils/branding";
 
 // Estilos Caligráficos Formais para Assinatura Eletrônica Tipográfica
 export const ESTILOS_RUBRICA = [
@@ -226,12 +227,14 @@ export function ContratoLandingView({
               const profSnap = await getDoc(doc(db, "users", docData.profissionalId));
               if (profSnap.exists()) {
                 const pData = profSnap.data();
-                if (pData.plano === "avancado" && pData.whiteLabelEnabled) {
-                  if (pData.companyData?.razaoSocial) {
-                    setProfBrandName(pData.companyData.razaoSocial);
-                  }
-                  if (pData.logoEmpresaUrl) {
-                    setProfLogoUrl(pData.logoEmpresaUrl);
+                const branding = getAppBranding(pData);
+                if (branding.isCustom) {
+                  setProfBrandName(branding.brandName);
+                  const resolvedLogo =
+                    branding.logoUrl ||
+                    (typeof pData.logoEmpresaUrl === "string" ? pData.logoEmpresaUrl.trim() : "");
+                  if (resolvedLogo) {
+                    setProfLogoUrl(resolvedLogo);
                   }
                 }
               }

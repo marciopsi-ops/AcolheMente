@@ -18,14 +18,27 @@ import {
   Video,
   Building2,
   ShieldCheck,
+  Clock,
+  ArrowRight,
+  Sparkles,
 } from "lucide-react";
-import { doc, getDoc, collection, query, where, onSnapshot } from "firebase/firestore";
+import {
+  doc,
+  getDoc,
+  collection,
+  query,
+  where,
+  onSnapshot,
+  updateDoc,
+  increment,
+} from "firebase/firestore";
 import { auth, db } from "../lib/firebase";
 import { BrandLogo } from "../components/BrandLogo";
 import { Breadcrumbs } from "../components/Breadcrumbs";
 import { ArtigoBlog } from "../types/blog";
 import { BlogCard } from "../components/BlogCard";
 import { formatProfessionalName } from "../utils/formatters";
+import { formatEventDateDisplay } from "../utils/eventImageHelper";
 import {
   hasIntegrarFeatures,
   isTestUserCredential,
@@ -42,20 +55,29 @@ import {
 
 export function PublicProfProfileView({ 
   profUid, 
+  initialArtigoId,
   onBack,
   onGoHome,
   onReadArtigo,
+  onOpenPublicItem,
   hideMotivacaoProjeto,
 }: { 
   profUid: string; 
+  initialArtigoId?: string | null;
   onBack: () => void;
   onGoHome?: () => void;
   onReadArtigo?: (artigoId: string) => void;
+  onOpenPublicItem?: (kind: "evento" | "servico", itemId: string, fromProfUid: string) => void;
   hideMotivacaoProjeto?: boolean;
 }) {
   const [prof, setProf] = useState<any>(null);
   const [servicos, setServicos] = useState<any[]>([]);
+  const [eventosCriados, setEventosCriados] = useState<any[]>([]);
+  const [servicosRedeCriados, setServicosRedeCriados] = useState<any[]>([]);
   const [artigosProfissional, setArtigosProfissional] = useState<ArtigoBlog[]>([]);
+  const [selectedWlArtigo, setSelectedWlArtigo] = useState<ArtigoBlog | null>(null);
+  const [wlArtigoCopied, setWlArtigoCopied] = useState(false);
+  const [wlArtigoLiked, setWlArtigoLiked] = useState(false);
   const [loading, setLoading] = useState(true);
   const [copySuccess, setCopySuccess] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
@@ -211,6 +233,51 @@ export function PublicProfProfileView({
     return () => unsubscribe();
   }, [profUid]);
 
+  // Carregar eventos e serviços/parcerias criados por este profissional
+  useEffect(() => {
+    if (!profUid) return;
+    const qEv = query(collection(db, "eventos"), where("criadorId", "==", profUid));
+    const unsubEv = onSnapshot(
+      qEv,
+      (snap) => {
+        setEventosCriados(
+          snap.docs.map((d) => ({ id: d.id, _kind: "evento", ...d.data() })),
+        );
+      },
+      (err) => console.error("Erro ao carregar eventos do profissional:", err),
+    );
+
+    const qSvc = query(collection(db, "servicos"), where("criadorId", "==", profUid));
+    const unsubSvc = onSnapshot(
+      qSvc,
+      (snap) => {
+        setServicosRedeCriados(
+          snap.docs.map((d) => ({ id: d.id, _kind: "servico", ...d.data() })),
+        );
+      },
+      (err) => console.error("Erro ao carregar serviços da rede do profissional:", err),
+    );
+
+    return () => {
+      unsubEv();
+      unsubSvc();
+    };
+  }, [profUid]);
+
+  // Sincroniza leitura de artigo via URL (?prof=...&artigo=...)
+  useEffect(() => {
+    if (!initialArtigoId || !prof) return;
+    const wlActive = Boolean(prof.whiteLabelEnabled && hasIntegrarFeatures(prof));
+    if (!wlActive) {
+      if (onReadArtigo) onReadArtigo(initialArtigoId);
+      return;
+    }
+    const found = artigosProfissional.find((a) => a.id === initialArtigoId);
+    if (found) {
+      setSelectedWlArtigo(found);
+    }
+  }, [initialArtigoId, prof, artigosProfissional, onReadArtigo]);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#FCFBF7] flex items-center justify-center p-6">
@@ -262,6 +329,151 @@ export function PublicProfProfileView({
     : "";
 
   const isWhiteLabel = Boolean(prof.whiteLabelEnabled && hasIntegrarFeatures(prof));
+
+  const oportunidadesPublicadas = [...eventosCriados, ...servicosRedeCriados].sort(
+    (a, b) => {
+      const tA = a.createdAt?.toMillis?.() || 0;
+      const tB = b.createdAt?.toMillis?.() || 0;
+      return tB - tA;
+    },
+  );
+
+  const showEventosNaPagina =
+    prof.exibirEventosPaginaPublica !== false && oportunidadesPublicadas.length > 0;
+  const showArtigosNaPagina =
+    prof.exibirArtigosPaginaPublica !== false && artigosProfissional.length > 0;
+
+  const handleOpenOportunidade = (op: any) => {
+    const kind: "evento" | "servico" = op._kind === "servico" ? "servico" : "evento";
+    try {
+      const nextUrl = `${window.location.origin}${window.location.pathname}?${kind}=${op.id}&fromProf=${profUid}`;
+      window.history.pushState({}, "", nextUrl);
+    } catch (e) {
+      console.error(e);
+    }
+    if (onOpenPublicItem) {
+      onOpenPublicItem(kind, op.id, profUid);
+    } else {
+      window.location.href = `${window.location.origin}?${kind}=${op.id}&fromProf=${profUid}`;
+    }
+  };
+
+  const handleOpenWlArtigo = (art: ArtigoBlog) => {
+    setSelectedWlArtigo(art);
+    setWlArtigoLiked(false);
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set("prof", profUid);
+      if (art.id) url.searchParams.set("artigo", art.id);
+      window.history.pushState({}, "", url.toString());
+    } catch (e) {
+      console.error(e);
+    }
+    if (art.id && !art.id.includes("seeds")) {
+      updateDoc(doc(db, "artigos_blog", art.id), {
+        visualizacoes: increment(1),
+      }).catch(() => {});
+    }
+  };
+
+  const handleCloseWlArtigo = () => {
+    setSelectedWlArtigo(null);
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("artigo");
+      url.searchParams.set("prof", profUid);
+      window.history.pushState({}, "", url.toString());
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const renderInlineArticleText = (str: string) => {
+    const parts = str.split(/(\*\*.*?\*\*|\*.*?\*|<u>.*?<\/u>)/g);
+    return parts.map((part, index) => {
+      if (part.startsWith("**") && part.endsWith("**")) {
+        return (
+          <strong key={index} className="font-bold text-slate-900">
+            {part.slice(2, -2)}
+          </strong>
+        );
+      }
+      if (part.startsWith("*") && part.endsWith("*")) {
+        return (
+          <em key={index} className="italic text-slate-800">
+            {part.slice(1, -1)}
+          </em>
+        );
+      }
+      if (part.startsWith("<u>") && part.endsWith("</u>")) {
+        return <u key={index}>{part.slice(3, -4)}</u>;
+      }
+      return part;
+    });
+  };
+
+  const renderWlArticleBody = (conteudo: string) => {
+    const lines = (conteudo || "").split("\n");
+    return (
+      <div className="space-y-5 text-slate-700 leading-relaxed font-sans text-base sm:text-lg">
+        {lines.map((line, idx) => {
+          const trimmed = line.trim();
+          if (!trimmed) return <div key={idx} className="h-2" />;
+          if (trimmed.startsWith("## ")) {
+            return (
+              <h2
+                key={idx}
+                className="font-serif text-2xl sm:text-3xl font-bold text-slate-900 pt-5 pb-2 border-b border-slate-100"
+              >
+                {trimmed.replace(/^##\s+/, "")}
+              </h2>
+            );
+          }
+          if (trimmed.startsWith("### ")) {
+            return (
+              <h3
+                key={idx}
+                className="font-serif text-xl sm:text-2xl font-semibold text-slate-900 pt-3"
+              >
+                {trimmed.replace(/^###\s+/, "")}
+              </h3>
+            );
+          }
+          if (trimmed.startsWith("> ")) {
+            return (
+              <blockquote
+                key={idx}
+                className="bg-slate-50 border border-slate-200 p-5 rounded-2xl italic text-slate-800 font-serif text-lg leading-relaxed my-5"
+              >
+                {trimmed.replace(/^>\s+/, "")}
+              </blockquote>
+            );
+          }
+          if (trimmed.startsWith("- ") || trimmed.startsWith("* ")) {
+            return (
+              <li key={idx} className="ml-6 list-disc text-slate-700">
+                {renderInlineArticleText(trimmed.replace(/^[-*]\s+/, ""))}
+              </li>
+            );
+          }
+          if (/^\d+\.\s+/.test(trimmed)) {
+            return (
+              <li key={idx} className="ml-6 list-decimal text-slate-700">
+                {renderInlineArticleText(trimmed.replace(/^\d+\.\s+/, ""))}
+              </li>
+            );
+          }
+          if (trimmed === "---" || trimmed === "***") {
+            return <hr key={idx} className="my-7 border-slate-200" />;
+          }
+          return <p key={idx}>{renderInlineArticleText(line)}</p>;
+        })}
+      </div>
+    );
+  };
+
   if (isWhiteLabel) {
     const wlConfig = prof.whiteLabelConfig || {};
     const company = prof.companyData || {};
@@ -328,6 +540,241 @@ export function PublicProfProfileView({
         })
         .catch((err) => console.error(err));
     };
+
+    // MODO LEITURA DE ARTIGO 100% WHITE-LABEL (Zero referência ao AcolheMente)
+    if (selectedWlArtigo) {
+      const wlArticleShareUrl = `${window.location.origin}${window.location.pathname}?prof=${profUid}&artigo=${selectedWlArtigo.id || ""}`;
+      return (
+        <div
+          className="min-h-screen text-slate-800 p-4 sm:p-6 md:p-8 flex flex-col items-center"
+          style={{ backgroundColor: bgColor }}
+        >
+          <header className="w-full max-w-4xl flex items-center justify-between mb-8 gap-3 flex-wrap">
+            <button
+              type="button"
+              onClick={handleCloseWlArtigo}
+              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 text-slate-800 border border-slate-200/90 shadow-2xs text-xs font-bold transition-colors cursor-pointer whitespace-nowrap"
+            >
+              <ArrowLeft className="w-4 h-4" style={{ color: primaryColor }} />
+              <span>Voltar para a página de {formattedName}</span>
+            </button>
+
+            <div className="flex items-center gap-2.5">
+              {company.logoEmpresaUrl ? (
+                <div
+                  onClick={handleCloseWlArtigo}
+                  className="flex items-center gap-2 bg-white px-3.5 py-1.5 rounded-xl border border-slate-200/90 shadow-2xs cursor-pointer"
+                >
+                  <img
+                    src={company.logoEmpresaUrl}
+                    alt={company.razaoSocial || formattedName}
+                    referrerPolicy="no-referrer"
+                    className="h-7 max-w-[120px] object-contain"
+                  />
+                  {company.razaoSocial && (
+                    <span className="text-xs font-bold text-slate-800 hidden sm:inline">
+                      {company.razaoSocial}
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleCloseWlArtigo}
+                  className="font-serif text-sm font-bold text-slate-900 hover:opacity-80 cursor-pointer whitespace-nowrap"
+                >
+                  {company.razaoSocial || formattedName}
+                </button>
+              )}
+            </div>
+          </header>
+
+          <article className="w-full max-w-3xl flex flex-col gap-6 pb-12">
+            <div className="bg-white p-6 sm:p-10 rounded-[2rem] border border-slate-200/90 shadow-sm flex flex-col gap-6">
+              <div className="flex items-center justify-between gap-3 flex-wrap text-xs text-slate-500">
+                <div className="flex items-center gap-2">
+                  <span
+                    className="font-bold uppercase tracking-wider"
+                    style={{ color: primaryColor }}
+                  >
+                    {selectedWlArtigo.categoria || "Artigo"}
+                  </span>
+                  <span aria-hidden="true">·</span>
+                  <span className="inline-flex items-center gap-1">
+                    <Clock className="w-3.5 h-3.5" />
+                    {selectedWlArtigo.tempoLeitura || "4 min de leitura"}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (wlArtigoLiked) return;
+                      setWlArtigoLiked(true);
+                      if (selectedWlArtigo.id) {
+                        updateDoc(doc(db, "artigos_blog", selectedWlArtigo.id), {
+                          curtidas: increment(1),
+                        }).catch(() => {});
+                      }
+                    }}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold border inline-flex items-center gap-1.5 transition-colors cursor-pointer ${
+                      wlArtigoLiked
+                        ? "bg-rose-50 text-rose-600 border-rose-200"
+                        : "bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200"
+                    }`}
+                  >
+                    <Heart
+                      className={`w-3.5 h-3.5 ${wlArtigoLiked ? "fill-rose-500 text-rose-500" : ""}`}
+                    />
+                    <span className="tabular-nums">
+                      {(selectedWlArtigo.curtidas || 0) + (wlArtigoLiked ? 1 : 0)}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard
+                        .writeText(wlArticleShareUrl)
+                        .then(() => {
+                          setWlArtigoCopied(true);
+                          setTimeout(() => setWlArtigoCopied(false), 2500);
+                        })
+                        .catch(() => {});
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    {wlArtigoCopied ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>Copiado!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Share2 className="w-3.5 h-3.5" />
+                        <span>Compartilhar</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <h1 className="font-serif text-2xl sm:text-4xl font-bold text-slate-900 leading-tight [text-wrap:balance]">
+                {selectedWlArtigo.titulo}
+              </h1>
+
+              {selectedWlArtigo.resumo && (
+                <p className="text-slate-600 text-base sm:text-lg leading-relaxed">
+                  {selectedWlArtigo.resumo}
+                </p>
+              )}
+
+              <div className="flex items-center gap-3 py-4 border-y border-slate-100">
+                <div
+                  className="w-11 h-11 rounded-full overflow-hidden bg-slate-100 border-2 flex items-center justify-center shrink-0"
+                  style={{ borderColor: primaryColor }}
+                >
+                  {prof.photoUrl || selectedWlArtigo.autorFoto ? (
+                    <img
+                      src={prof.photoUrl || selectedWlArtigo.autorFoto}
+                      alt={formattedName}
+                      referrerPolicy="no-referrer"
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <User className="w-5 h-5 text-slate-400" />
+                  )}
+                </div>
+                <div>
+                  <span className="font-serif font-bold text-sm text-slate-900 block">
+                    {formattedName}
+                  </span>
+                  <span className="text-xs text-slate-500 block">
+                    {profissaoTitulo}
+                    {prof.crp ? ` · Registro ${prof.crp}` : ""}
+                  </span>
+                </div>
+              </div>
+
+              {selectedWlArtigo.capaUrl && (
+                <div className="w-full aspect-[16/9] rounded-2xl overflow-hidden bg-slate-100 border border-slate-200/80">
+                  <img
+                    src={selectedWlArtigo.capaUrl}
+                    alt={selectedWlArtigo.titulo}
+                    referrerPolicy="no-referrer"
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+              )}
+
+              <div className="pt-2">{renderWlArticleBody(selectedWlArtigo.conteudo)}</div>
+            </div>
+
+            {/* Card de Contato Direto do Autor no Rodapé do Artigo */}
+            <div className="bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-200/90 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-5">
+              <div className="flex items-center gap-4 text-center sm:text-left flex-col sm:flex-row">
+                <div
+                  className="w-14 h-14 rounded-full overflow-hidden bg-slate-100 border-2 flex items-center justify-center shrink-0"
+                  style={{ borderColor: primaryColor }}
+                >
+                  {prof.photoUrl ? (
+                    <img
+                      src={prof.photoUrl}
+                      alt={formattedName}
+                      referrerPolicy="no-referrer"
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <User className="w-6 h-6 text-slate-400" />
+                  )}
+                </div>
+                <div>
+                  <h3 className="font-serif text-lg font-bold text-slate-900">
+                    {formattedName}
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {profissaoTitulo}
+                    {prof.crp ? ` • Registro: ${prof.crp}` : ""}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-center gap-2.5 w-full sm:w-auto">
+                {whatsAppWhiteLabelUrl && (
+                  <a
+                    href={whatsAppWhiteLabelUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="py-2.5 px-4 bg-[#1FAF5A] hover:bg-[#19964B] text-white rounded-xl text-xs font-bold inline-flex items-center gap-2 transition-colors whitespace-nowrap"
+                  >
+                    <WhatsAppBrandIcon className="w-4 h-4" />
+                    <span>{whatsAppCtaLabel}</span>
+                  </a>
+                )}
+                <button
+                  type="button"
+                  onClick={handleCloseWlArtigo}
+                  className="py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold transition-colors cursor-pointer whitespace-nowrap"
+                >
+                  Ver Página Completa
+                </button>
+              </div>
+            </div>
+          </article>
+
+          <footer className="w-full max-w-4xl text-center py-8 text-slate-500 text-xs flex flex-col items-center gap-1.5">
+            <p className="font-medium text-slate-600">
+              {company.razaoSocial || formattedName}
+              {company.cnpj ? ` • CNPJ: ${company.cnpj}` : ""}
+              {prof.crp ? ` • Registro: ${prof.crp}` : ""}
+            </p>
+            {company.enderecoEmpresa && <p>{company.enderecoEmpresa}</p>}
+            {company.telefoneEmpresa && <p>Contato: {company.telefoneEmpresa}</p>}
+          </footer>
+        </div>
+      );
+    }
 
     return (
       <div
@@ -718,7 +1165,137 @@ export function PublicProfProfileView({
               )}
             </section>
 
-            {artigosProfissional.length > 0 && (
+            {/* Vitrine Opcional: Eventos, Workshops & Oportunidades (White-Label) */}
+            {showEventosNaPagina && (
+              <section className="bg-white p-6 sm:p-9 rounded-[2rem] border border-slate-200/90 shadow-sm flex flex-col gap-5">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-4 flex-wrap gap-2">
+                  <div className="flex items-center gap-3">
+                    <Sparkles
+                      className="w-6 h-6 shrink-0"
+                      style={{ color: primaryColor }}
+                    />
+                    <div>
+                      <h2 className="font-serif text-xl sm:text-2xl font-semibold text-slate-900">
+                        Eventos, Workshops & Oportunidades
+                      </h2>
+                      <p className="text-xs text-slate-500">
+                         Encontros, grupos, supervisões e parcerias organizadas por{" "}
+                        {formattedName}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {oportunidadesPublicadas.map((op) => {
+                    const isCartaz = op.imagemModoExibicao === "cartaz";
+                    const posY =
+                      typeof op.imagemPosicaoY === "number"
+                        ? op.imagemPosicaoY
+                        : 50;
+                    return (
+                      <div
+                        key={`${op._kind}-${op.id}`}
+                        onClick={() => handleOpenOportunidade(op)}
+                        className="rounded-2xl border border-slate-200/90 bg-slate-50/60 hover:bg-white hover:shadow-sm transition-all overflow-hidden flex flex-col justify-between cursor-pointer group"
+                      >
+                        <div>
+                          {op.imagemUrl && (
+                            <div className="w-full aspect-[16/9] bg-slate-100 relative overflow-hidden border-b border-slate-200/70">
+                              {isCartaz ? (
+                                <>
+                                  <img
+                                    src={op.imagemUrl}
+                                    alt=""
+                                    aria-hidden="true"
+                                    referrerPolicy="no-referrer"
+                                    className="absolute inset-0 w-full h-full object-cover scale-110 blur-xl opacity-45 pointer-events-none"
+                                  />
+                                  <img
+                                    src={op.imagemUrl}
+                                    alt={op.titulo}
+                                    referrerPolicy="no-referrer"
+                                    className="relative z-10 w-full h-full object-contain p-2"
+                                  />
+                                </>
+                              ) : (
+                                <img
+                                  src={op.imagemUrl}
+                                  alt={op.titulo}
+                                  referrerPolicy="no-referrer"
+                                  style={{ objectPosition: `50% ${posY}%` }}
+                                  className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-200"
+                                />
+                              )}
+                            </div>
+                          )}
+
+                          <div className="p-5 flex flex-col gap-2">
+                            <div className="flex items-center gap-1.5 text-[11px] text-slate-500 flex-wrap tabular-nums">
+                              <span
+                                className="font-bold uppercase tracking-wider"
+                                style={{ color: primaryColor }}
+                              >
+                                {op.tipo ||
+                                  (op._kind === "evento" ? "Evento" : "Serviço")}
+                              </span>
+                              {op.data && (
+                                <>
+                                  <span aria-hidden="true">·</span>
+                                  <span>{formatEventDateDisplay(op.data)}</span>
+                                </>
+                              )}
+                              {op.hora && (
+                                <>
+                                  <span aria-hidden="true">·</span>
+                                  <span>{op.hora}</span>
+                                </>
+                              )}
+                              {(op.isGratuito || op.valor) && (
+                                <>
+                                  <span aria-hidden="true">·</span>
+                                  <span
+                                    className={
+                                      op.isGratuito
+                                        ? "text-emerald-700 font-bold"
+                                        : "font-semibold text-slate-700"
+                                    }
+                                  >
+                                    {op.isGratuito ? "Gratuito" : op.valor}
+                                  </span>
+                                </>
+                              )}
+                            </div>
+
+                            <h3 className="font-serif text-base sm:text-lg font-bold text-slate-900 leading-snug">
+                              {op.titulo}
+                            </h3>
+
+                            {op.descricao && (
+                              <p className="text-xs text-slate-600 leading-relaxed line-clamp-2">
+                                {op.descricao}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="px-5 pb-4 pt-2 border-t border-slate-200/60 flex items-center justify-between text-xs font-bold">
+                          <span style={{ color: primaryColor }}>
+                            Ver detalhes e inscrição
+                          </span>
+                          <ArrowRight
+                            className="w-4 h-4 group-hover:translate-x-0.5 transition-transform"
+                            style={{ color: primaryColor }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
+
+            {showArtigosNaPagina && (
               <section className="bg-white p-6 sm:p-9 rounded-[2rem] border border-slate-200/90 shadow-sm flex flex-col gap-5">
                 <div className="flex items-center justify-between border-b border-slate-100 pb-4 flex-wrap gap-2">
                   <div className="flex items-center gap-3">
@@ -742,21 +1319,9 @@ export function PublicProfProfileView({
                     <BlogCard
                       key={artigo.id || artigo.titulo}
                       artigo={artigo}
-                      onRead={(art) => {
-                        try {
-                          const url = new URL(window.location.href);
-                          url.searchParams.set("artigo", art.id || "");
-                          url.searchParams.delete("prof");
-                          window.history.pushState({}, "", url.toString());
-                        } catch (e) {
-                          console.error(e);
-                        }
-                        if (onReadArtigo && art.id) {
-                          onReadArtigo(art.id);
-                        } else {
-                          window.location.href = `${window.location.origin}?artigo=${art.id}`;
-                        }
-                      }}
+                      whiteLabelMode={true}
+                      shareUrlOverride={`${window.location.origin}${window.location.pathname}?prof=${profUid}&artigo=${artigo.id || ""}`}
+                      onRead={(art) => handleOpenWlArtigo(art)}
                     />
                   ))}
                 </div>
@@ -1119,8 +1684,132 @@ export function PublicProfProfileView({
             )}
           </div>
 
-          {/* Seção Artigos & Publicações do Profissional */}
-          {artigosProfissional.length > 0 && (
+          {/* Seção Opcional: Eventos, Workshops & Oportunidades (Página Institucional) */}
+          {showEventosNaPagina && (
+            <div className="bg-white p-6 sm:p-10 rounded-[2rem] border border-soft shadow-sm flex flex-col gap-6">
+              <div className="flex items-center justify-between border-b border-soft/60 pb-4 flex-wrap gap-2">
+                <div className="flex items-center gap-3">
+                  <Sparkles className="w-6 h-6 text-sun-dark shrink-0" />
+                  <div>
+                    <h2 className="font-serif text-xl sm:text-2xl font-semibold">
+                      Eventos, Workshops & Oportunidades
+                    </h2>
+                    <p className="text-xs text-forest/60">
+                      Encontros, supervisões e serviços divulgados por este profissional
+                    </p>
+                  </div>
+                </div>
+                <span className="text-xs text-forest/60 font-medium tabular-nums">
+                  {oportunidadesPublicadas.length}{" "}
+                  {oportunidadesPublicadas.length === 1
+                    ? "publicação ativa"
+                    : "publicações ativas"}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {oportunidadesPublicadas.map((op) => {
+                  const isCartaz = op.imagemModoExibicao === "cartaz";
+                  const posY =
+                    typeof op.imagemPosicaoY === "number"
+                      ? op.imagemPosicaoY
+                      : 50;
+                  return (
+                    <div
+                      key={`std-op-${op._kind}-${op.id}`}
+                      onClick={() => handleOpenOportunidade(op)}
+                      className="rounded-2xl border border-soft bg-warm/20 hover:bg-white hover:shadow-md transition-all overflow-hidden flex flex-col justify-between cursor-pointer group"
+                    >
+                      <div>
+                        {op.imagemUrl && (
+                          <div className="w-full aspect-[16/9] bg-forest/5 relative overflow-hidden border-b border-soft/70">
+                            {isCartaz ? (
+                              <>
+                                <img
+                                  src={op.imagemUrl}
+                                  alt=""
+                                  aria-hidden="true"
+                                  referrerPolicy="no-referrer"
+                                  className="absolute inset-0 w-full h-full object-cover scale-110 blur-xl opacity-45 pointer-events-none"
+                                />
+                                <img
+                                  src={op.imagemUrl}
+                                  alt={op.titulo}
+                                  referrerPolicy="no-referrer"
+                                  className="relative z-10 w-full h-full object-contain p-2"
+                                />
+                              </>
+                            ) : (
+                              <img
+                                src={op.imagemUrl}
+                                alt={op.titulo}
+                                referrerPolicy="no-referrer"
+                                style={{ objectPosition: `50% ${posY}%` }}
+                                className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-200"
+                              />
+                            )}
+                          </div>
+                        )}
+
+                        <div className="p-5 flex flex-col gap-2">
+                          <div className="flex items-center gap-1.5 text-[11px] text-forest/65 flex-wrap tabular-nums">
+                            <span className="font-bold uppercase tracking-wider text-forest">
+                              {op.tipo ||
+                                (op._kind === "evento" ? "Evento" : "Serviço")}
+                            </span>
+                            {op.data && (
+                              <>
+                                <span aria-hidden="true">·</span>
+                                <span>{formatEventDateDisplay(op.data)}</span>
+                              </>
+                            )}
+                            {op.hora && (
+                              <>
+                                <span aria-hidden="true">·</span>
+                                <span>{op.hora}</span>
+                              </>
+                            )}
+                            {(op.isGratuito || op.valor) && (
+                              <>
+                                <span aria-hidden="true">·</span>
+                                <span
+                                  className={
+                                    op.isGratuito
+                                      ? "text-emerald-700 font-bold"
+                                      : "font-semibold text-forest"
+                                  }
+                                >
+                                  {op.isGratuito ? "Gratuito" : op.valor}
+                                </span>
+                              </>
+                            )}
+                          </div>
+
+                          <h3 className="font-serif text-base sm:text-lg font-bold text-forest leading-snug">
+                            {op.titulo}
+                          </h3>
+
+                          {op.descricao && (
+                            <p className="text-xs text-forest/75 leading-relaxed line-clamp-2">
+                              {op.descricao}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="px-5 pb-4 pt-2 border-t border-soft/60 flex items-center justify-between text-xs font-bold text-forest">
+                        <span>Ver detalhes e inscrição</span>
+                        <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Seção Opcional: Artigos & Publicações do Profissional */}
+          {showArtigosNaPagina && (
             <div className="bg-white p-6 sm:p-10 rounded-[2rem] border border-soft shadow-sm flex flex-col gap-6">
               <div className="flex items-center justify-between border-b border-soft/60 pb-4 flex-wrap gap-2">
                 <div className="flex items-center gap-3">
@@ -1130,7 +1819,7 @@ export function PublicProfProfileView({
                     <p className="text-xs text-forest/60">Textos informativos e reflexões escritas por este profissional</p>
                   </div>
                 </div>
-                <span className="text-xs font-bold px-3 py-1 bg-warm rounded-full text-forest/70 border border-soft">
+                <span className="text-xs font-medium text-forest/60 tabular-nums">
                   {artigosProfissional.length} {artigosProfissional.length === 1 ? "artigo publicado" : "artigos publicados"}
                 </span>
               </div>

@@ -117,10 +117,9 @@ export function ParametrizarLinkModal({
     }
   };
 
-  const handleShareWhatsApp = () => {
-    const texto = `Olá! Segue o link exclusivo para preencher seus dados de cadastro para darmos início aos nossos atendimentos:\n\n${urlParametrizada}`;
-    window.open(`https://wa.me/?text=${encodeURIComponent(texto)}`, "_blank");
-  };
+  const whatsAppShareUrl = `https://wa.me/?text=${encodeURIComponent(
+    `Olá! Segue o link exclusivo para preencher seus dados de cadastro para darmos início aos nossos atendimentos:\n\n${urlParametrizada}`
+  )}`;
 
   const handleSaveConfigs = async () => {
     if (!profUid) {
@@ -337,14 +336,15 @@ export function ParametrizarLinkModal({
                     <span>Copiar Link</span>
                   </button>
 
-                  <button
-                    type="button"
-                    onClick={handleShareWhatsApp}
+                  <a
+                    href={whatsAppShareUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
                     className="px-4 py-2 bg-[#25D366] hover:bg-[#20b858] text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
                   >
                     <MessageCircle className="w-3.5 h-3.5" />
                     <span>Enviar no WhatsApp</span>
-                  </button>
+                  </a>
 
                   <a
                     href={urlParametrizada}
@@ -360,8 +360,13 @@ export function ParametrizarLinkModal({
             </div>
           ) : (
             <div className="space-y-5">
-              <div className="p-4 bg-warm/40 rounded-2xl border border-soft text-xs text-forest/80">
-                Configure os campos e mensagens padrão que serão exibidos no seu formulário público de pacientes externos.
+              <div className="p-4 bg-warm/40 rounded-2xl border border-soft text-xs text-forest/80 space-y-1">
+                <p>
+                  Configure os campos e mensagens padrão que serão exibidos no seu formulário público de cadastro e atualização cadastral.
+                </p>
+                <p className="text-[11px] text-emerald-800 font-medium">
+                  Identidade visual sincronizada: cores, logotipo, razão social/CNPJ e endereço presencial configurados no seu Perfil White-Label são aplicados automaticamente na ficha.
+                </p>
               </div>
 
               {/* Título & Mensagem */}

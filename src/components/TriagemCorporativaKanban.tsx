@@ -444,6 +444,108 @@ export const TriagemCorporativaKanban: React.FC<TriagemCorporativaKanbanProps> =
         </div>
       </div>
 
+      {/* CARDS ENXUTOS E MINIMALISTAS - ESTILO AGENDA */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        {/* Em Atendimento (Ativos) */}
+        <button
+          type="button"
+          onClick={() => setModoKanban("atendimento")}
+          className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between gap-1.5 ${
+            modoKanban === "atendimento"
+              ? "bg-emerald-50/80 border-emerald-300 ring-2 ring-emerald-600/20 shadow-xs"
+              : "bg-white border-soft hover:border-emerald-200 shadow-2xs"
+          }`}
+          title="Ver pacientes corporativos em atendimento ativo"
+        >
+          <div className="min-w-0">
+            <span className="text-[10px] font-semibold text-emerald-800 uppercase tracking-wider block truncate">
+              Em Atendimento
+            </span>
+            <div className="flex items-baseline gap-1 mt-0.5">
+              <span className="text-base sm:text-lg font-bold text-emerald-800 leading-tight block tabular-nums">
+                {pacientesAtivos.length}
+              </span>
+              <span className="text-[10px] text-emerald-700/70 font-medium">ativos</span>
+            </div>
+          </div>
+          <div className="w-7 h-7 rounded-lg bg-emerald-100/80 flex items-center justify-center shrink-0">
+            <Layers className="w-3.5 h-3.5 text-emerald-700" />
+          </div>
+        </button>
+
+        {/* Solicitações de Serviço */}
+        <button
+          type="button"
+          onClick={() => setModoKanban("solicitacoes")}
+          className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between gap-1.5 ${
+            modoKanban === "solicitacoes"
+              ? "bg-amber-50/80 border-amber-300 ring-2 ring-amber-600/20 shadow-xs"
+              : "bg-white border-soft hover:border-amber-200 shadow-2xs"
+          }`}
+          title="Ver novas solicitações de acolhimento aguardando aceite"
+        >
+          <div className="min-w-0">
+            <span className="text-[10px] font-semibold text-amber-800 uppercase tracking-wider block truncate">
+              Solicitações
+            </span>
+            <div className="flex items-baseline gap-1 mt-0.5">
+              <span className="text-base sm:text-lg font-bold text-amber-800 leading-tight block tabular-nums">
+                {solicitacoes.length}
+              </span>
+              <span className="text-[10px] text-amber-700/70 font-medium">aguardando</span>
+            </div>
+          </div>
+          <div className="w-7 h-7 rounded-lg bg-amber-100/80 flex items-center justify-center shrink-0">
+            <Clock className="w-3.5 h-3.5 text-amber-700" />
+          </div>
+        </button>
+
+        {/* Altas / Interrupções */}
+        <button
+          type="button"
+          onClick={() => setModoKanban("desfechos")}
+          className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between gap-1.5 ${
+            modoKanban === "desfechos"
+              ? "bg-purple-50/80 border-purple-300 ring-2 ring-purple-600/20 shadow-xs"
+              : "bg-white border-soft hover:border-purple-200 shadow-2xs"
+          }`}
+          title="Ver pacientes com desfecho (Altas ou Interrupções)"
+        >
+          <div className="min-w-0">
+            <span className="text-[10px] font-semibold text-purple-800 uppercase tracking-wider block truncate">
+              Altas / Interrupções
+            </span>
+            <div className="flex items-baseline gap-1 mt-0.5">
+              <span className="text-base sm:text-lg font-bold text-purple-800 leading-tight block tabular-nums">
+                {altas.length + interrupcoes.length}
+              </span>
+              <span className="text-[10px] text-purple-700/70 font-medium">desfechos</span>
+            </div>
+          </div>
+          <div className="w-7 h-7 rounded-lg bg-purple-100/80 flex items-center justify-center shrink-0">
+            <UserCheck className="w-3.5 h-3.5 text-purple-700" />
+          </div>
+        </button>
+
+        {/* Empresas Vinculadas */}
+        <div className="p-2.5 bg-white rounded-xl border border-soft shadow-2xs flex items-center justify-between gap-1.5">
+          <div className="min-w-0">
+            <span className="text-[10px] font-semibold text-forest/70 uppercase tracking-wider block truncate">
+              Empresas Parceiras
+            </span>
+            <div className="flex items-baseline gap-1 mt-0.5">
+              <span className="text-base sm:text-lg font-bold text-forest leading-tight block tabular-nums">
+                {new Set(fichasFiltradas.map((f) => f.empresaNome).filter(Boolean)).size}
+              </span>
+              <span className="text-[10px] text-forest/60 font-medium">vinculadas</span>
+            </div>
+          </div>
+          <div className="w-7 h-7 rounded-lg bg-forest/10 flex items-center justify-center shrink-0">
+            <Building2 className="w-3.5 h-3.5 text-forest/70" />
+          </div>
+        </div>
+      </div>
+
       {/* FILTROS E BUSCA (Compacto e Intuitivo para Mobile) */}
       <div className="bg-white rounded-2xl p-2.5 sm:p-4 border border-soft shadow-xs flex flex-col md:flex-row items-center gap-2 sm:gap-3">
         <div className="relative flex-1 w-full">

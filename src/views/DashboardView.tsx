@@ -185,6 +185,7 @@ import { parseCSV, parseAndValidateData, ParseResult, ImportedProfissional } fro
 import { Breadcrumbs } from "../components/Breadcrumbs";
 import { GestaoEsteiraTarefas } from "../components/GestaoEsteiraTarefas";
 import { ProfissionalEsteiraTarefas } from "../components/ProfissionalEsteiraTarefas";
+import { ProfissionalDocumentosManager } from "../components/ProfissionalDocumentosManager";
 import { GestaoBlogView } from "../components/GestaoBlogView";
 import { ProfissionalBlogView } from "../components/ProfissionalBlogView";
 import { NotificationRulesManager } from "../components/NotificationRulesManager";
@@ -1193,6 +1194,7 @@ export function DashboardView({
       pagamentosProfissional: "Status / Plano",
       redeProfissional: "Rede Profissional",
       triagemCorporativa: "Acolhimento Corporativo",
+      documentosPsicologicos: "Documentos Psicológicos",
     };
     return [
       { label: "Painel", onClick: () => onNavigate("landing") },
@@ -1227,6 +1229,7 @@ export function DashboardView({
     | "artigosProfissional"
     | "redeProfissional"
     | "triagemCorporativa"
+    | "documentosPsicologicos"
     | "campanhasBanner"
   >("kanban");
 
@@ -1281,6 +1284,7 @@ export function DashboardView({
   const [showContratoModal, setShowContratoModal] = useState(false);
   const [showFaturamentoModal, setShowFaturamentoModal] = useState(false);
   const [showProntuarioModal, setShowProntuarioModal] = useState(false);
+  const [documentPreselectedPaciente, setDocumentPreselectedPaciente] = useState<any>(null);
   const [showPendenciasModal, setShowPendenciasModal] = useState(false);
   const [showDesligamentoModal, setShowDesligamentoModal] = useState(false);
   const [desligamentoMotivo, setDesligamentoMotivo] = useState("");
@@ -1496,6 +1500,32 @@ export function DashboardView({
     } catch (err) {
       console.error("Erro ao alternar liberação do Plano Integrar:", err);
       showToast("Erro ao alterar autorização do plano.", "error");
+    }
+  };
+
+  const handleQuickToggleAssinaturaProfissional = async (
+    uid: string,
+    currentlyPago: boolean,
+    profNome?: string
+  ) => {
+    if (!uid || profile?.role !== "master") return;
+    try {
+      const novoStatus = currentlyPago ? "pendente" : "pago";
+      const updates: Record<string, any> = {
+        statusPagamento: novoStatus,
+        dataPagamento: novoStatus === "pago" ? new Date().toISOString() : null,
+      };
+      await updateDoc(doc(db, "users", uid), updates);
+      applyLocalUserUpdates(uid, updates);
+      showToast(
+        novoStatus === "pago"
+          ? `Mensalidade marcada como Paga${profNome ? ` (${profNome})` : ""}!`
+          : `Status retornado para Pendente${profNome ? ` (${profNome})` : ""}.`,
+        "success"
+      );
+    } catch (err) {
+      console.error("Erro ao alternar status de pagamento da assinatura:", err);
+      showToast("Erro ao atualizar pagamento da assinatura.", "error");
     }
   };
 
@@ -2216,6 +2246,7 @@ export function DashboardView({
   const [patientSortOrder, setPatientSortOrder] = useState<"fifo" | "recent">("fifo");
   const [pacienteExternoSearchTerm, setPacienteExternoSearchTerm] = useState("");
   const [filtroStatusExterno, setFiltroStatusExterno] = useState<"ativos" | "inativos">("ativos");
+  const [filtroStatusAcessiveis, setFiltroStatusAcessiveis] = useState<"todos" | "ativos" | "pendentes" | "altas">("ativos");
   const [subFiltroInativo, setSubFiltroInativo] = useState<"todos" | "alta" | "pausa" | "desligado">("todos");
   const [filtroPerfilExternos, setFiltroPerfilExternos] = useState<string>("todos");
   const [showModalNovoPacienteExterno, setShowModalNovoPacienteExterno] = useState(false);
@@ -4878,12 +4909,20 @@ export function DashboardView({
     if (!profile) return [];
     const profUid = profile.uid || "";
     const profName = (profile.name || profile.nome || "").trim().toLowerCase();
+    const profCrp = (profile.crp || "").replace(/\D/g, "");
     return fichasCorporativas.filter((f) => {
       if (f.profissionalId && profUid && f.profissionalId === profUid) return true;
       if (
         f.profissionalNome &&
         profName &&
         f.profissionalNome.trim().toLowerCase() === profName
+      ) {
+        return true;
+      }
+      if (
+        profCrp.length > 0 &&
+        f.profissionalCrp &&
+        f.profissionalCrp.replace(/\D/g, "") === profCrp
       ) {
         return true;
       }
@@ -6781,6 +6820,18 @@ export function DashboardView({
               >
                 <BookOpen className="w-3.5 h-3.5 text-forest/70" />
                 <span>Meus Artigos</span>
+              </button>
+
+              {/* 8.5 Documentos Psicológicos (Plano Integrar) */}
+              <button
+                onClick={() => setActiveTab("documentosPsicologicos")}
+                className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap shrink-0 relative flex items-center gap-1.5 cursor-pointer ${activeTab === "documentosPsicologicos" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70 hover:text-forest"}`}
+              >
+                <FileSignature className="w-3.5 h-3.5 text-forest/70" />
+                <span>Documentos</span>
+                <span className="bg-sun text-forest text-[9px] font-black px-1.5 py-0.2 rounded-full uppercase tracking-wider">
+                  Integrar
+                </span>
               </button>
 
               {/* 9. Status / Plano */}
@@ -9189,6 +9240,40 @@ export function DashboardView({
                 onSelecionarEmpresaB2B={(empresa) => {
                   setSelectedEmpresaB2B(empresa);
                 }}
+                onLocalSyncItem={(origemTipo, id, patch) => {
+                  if (origemTipo === "particular") {
+                    setMeusPacientes((prev) =>
+                      prev.map((p) => (p.id === id ? { ...p, ...patch } : p))
+                    );
+                    setAcolhimentos((prev) =>
+                      prev.map((p) => (p.id === id ? { ...p, ...patch } : p))
+                    );
+                    setSelectedCard((prev: any) =>
+                      prev && prev.id === id ? { ...prev, ...patch } : prev
+                    );
+                  } else if (origemTipo === "corporativo") {
+                    setFichasCorporativas((prev) =>
+                      prev.map((f) => (f.id === id ? { ...f, ...patch } : f))
+                    );
+                    setSelectedFichaCorporativa((prev: any) =>
+                      prev && prev.id === id ? { ...prev, ...patch } : prev
+                    );
+                  } else if (origemTipo === "externo") {
+                    setPacientesExternos((prev) =>
+                      prev.map((p) => (p.id === id ? { ...p, ...patch } : p))
+                    );
+                    setSelectedPacienteExterno((prev: any) =>
+                      prev && prev.id === id ? { ...prev, ...patch } : prev
+                    );
+                  } else if (origemTipo === "empresa_b2b") {
+                    setEmpresasProfissionalB2B((prev) =>
+                      prev.map((e) => (e.id === id ? { ...e, ...patch } : e))
+                    );
+                    setSelectedEmpresaB2B((prev) =>
+                      prev && prev.id === id ? { ...prev, ...patch } : prev
+                    );
+                  }
+                }}
                 showToast={showToast}
                 onReceitaBrutaChange={setReceitaBrutaConsolidada}
               />
@@ -9780,10 +9865,69 @@ export function DashboardView({
             })()}
           </div>
         </div>
-      ) : currentRole === "profissional" && activeTab === "pacientes" ? (
+      ) : currentRole === "profissional" && activeTab === "pacientes" ? (() => {
+        const isPacienteExtInativo = (p: any) => {
+          const st = (p.statusTratamento || p.status || "").toLowerCase();
+          return (
+            st.includes("alta") ||
+            st.includes("concluído") ||
+            st.includes("concluido") ||
+            st.includes("pausa") ||
+            st.includes("standby") ||
+            st.includes("inativo") ||
+            st.includes("desligado") ||
+            st.includes("quebra")
+          );
+        };
+
+        // 1. Valores Acessíveis
+        const pacsAcessAtivosCount = meusPacientes.filter(
+          (a) =>
+            a.atribuicaoStatus === "Aceito" &&
+            a.status !== "Alta" &&
+            a.status !== "Rejeitado" &&
+            a.status !== "Encerrado" &&
+            a.status !== "Desistência" &&
+            a.status !== "Cancelado"
+        ).length;
+
+        const pacsAcessPendentesCount = meusPacientes.filter(
+          (a) =>
+            a.atribuicaoStatus === "Pendente" ||
+            (!a.atribuicaoStatus && a.status === "Aguardando Contato")
+        ).length;
+
+        const pacsAcessAltasCount = meusPacientes.filter(
+          (a) =>
+            a.status === "Alta" ||
+            a.status === "Encerrado" ||
+            a.atribuicaoStatus === "Rejeitado" ||
+            a.status === "Desistência" ||
+            a.status === "Cancelado"
+        ).length;
+
+        // 2. Corporativo
+        const fichasCorpAtivasCount = minhasFichasCorporativas.filter(
+          (f) => f.status === "paciente"
+        ).length;
+
+        const fichasCorpSolicitadasCount = minhasFichasCorporativas.filter(
+          (f) => f.status === "solicitacao_servico"
+        ).length;
+
+        // 3. Externos
+        const pacsExtAtivosCount = (pacientesExternos || []).filter(
+          (p: any) => !isPacienteExtInativo(p)
+        ).length;
+
+        const pacsExtInativosCount = (pacientesExternos || []).filter(
+          (p: any) => isPacienteExtInativo(p)
+        ).length;
+
+        return (
         <div className="flex-1 overflow-auto p-3 sm:p-6 md:p-8 flex flex-col gap-5 slide-up bg-warm">
           <div className="max-w-7xl w-full mx-auto flex flex-col gap-4">
-            {/* SUB-ABAS DE MEUS PACIENTES: VALORES ACESSÍVEIS & CORPORATIVO */}
+            {/* SUB-ABAS DE MEUS PACIENTES: VALORES ACESSÍVEIS & CORPORATIVO & EXTERNOS */}
             <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3 sm:p-4 rounded-2xl shadow-xs border border-soft">
               <div className="flex items-center gap-2">
                 <div className="flex items-center p-1 bg-warm rounded-xl border border-soft text-xs font-semibold">
@@ -9798,8 +9942,8 @@ export function DashboardView({
                   >
                     <User className="w-3.5 h-3.5 text-forest" />
                     <span>Valores Acessíveis</span>
-                    <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-forest/10 text-forest">
-                      {filteredMeusPacientes.length}
+                    <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 tabular-nums">
+                      {pacsAcessAtivosCount}
                     </span>
                   </button>
 
@@ -9814,9 +9958,12 @@ export function DashboardView({
                   >
                     <Building2 className="w-3.5 h-3.5 text-emerald-700" />
                     <span>Corporativo</span>
-                    {solicitacoesCorpCount > 0 ? (
-                      <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-600 text-white animate-pulse">
-                        {solicitacoesCorpCount}
+                    <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 tabular-nums">
+                      {fichasCorpAtivasCount}
+                    </span>
+                    {fichasCorpSolicitadasCount > 0 ? (
+                      <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-600 text-white animate-pulse tabular-nums" title={`${fichasCorpSolicitadasCount} solicitação(ões) aguardando aceite`}>
+                        +{fichasCorpSolicitadasCount}
                       </span>
                     ) : null}
                   </button>
@@ -9840,6 +9987,11 @@ export function DashboardView({
                       >
                         <Lock className="w-3 h-3" />
                         <span>Externos</span>
+                        {pacsExtAtivosCount > 0 && (
+                          <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-forest/10 text-forest/60 tabular-nums">
+                            {pacsExtAtivosCount}
+                          </span>
+                        )}
                       </button>
                     }
                   >
@@ -9854,6 +10006,9 @@ export function DashboardView({
                     >
                       <User className="w-3.5 h-3.5 text-forest" />
                       <span>Externos</span>
+                      <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 tabular-nums">
+                        {pacsExtAtivosCount}
+                      </span>
                     </button>
                   </FeatureGate>
                 </div>
@@ -9887,32 +10042,84 @@ export function DashboardView({
                 }}
               />
             ) : subTabPacientes === "externos" ? (
-              <div className="max-w-5xl w-full mx-auto flex flex-col gap-5">
-                {/* 1. Header Card: Link de Cadastro e Perfil do Profissional */}
-                <div className="bg-white p-5 sm:p-6 rounded-2xl border border-soft shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-                  <div className="flex items-center gap-4">
-                    <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl overflow-hidden border-2 border-sun shadow-md shrink-0">
-                      {profile?.photoURL ? (
-                        <img src={profile.photoURL} alt={profile.name} className="w-full h-full object-cover" />
-                      ) : (
-                        <div className="w-full h-full bg-forest flex items-center justify-center text-white font-bold text-xl">
-                          {profile?.name?.charAt(0).toUpperCase()}
-                        </div>
-                      )}
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h2 className="text-lg sm:text-xl font-bold font-serif text-forest">{profile?.name}</h2>
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                          Carteira Particular
+              <div className="max-w-5xl w-full mx-auto flex flex-col gap-4">
+                {/* CARDS ENXUTOS E MINIMALISTAS - ESTILO AGENDA */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  {/* Em Atendimento (Ativos) */}
+                  <button
+                    type="button"
+                    onClick={() => setFiltroStatusExterno("ativos")}
+                    className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between gap-1.5 ${
+                      filtroStatusExterno === "ativos"
+                        ? "bg-emerald-50/80 border-emerald-300 ring-2 ring-emerald-600/20 shadow-xs"
+                        : "bg-white border-soft hover:border-emerald-200 shadow-2xs"
+                    }`}
+                    title="Ver pacientes externos em atendimento ativo"
+                  >
+                    <div className="min-w-0">
+                      <span className="text-[10px] font-semibold text-emerald-800 uppercase tracking-wider block truncate">
+                        Em Atendimento
+                      </span>
+                      <div className="flex items-baseline gap-1 mt-0.5">
+                        <span className="text-base sm:text-lg font-bold text-emerald-800 leading-tight block tabular-nums">
+                          {pacsExtAtivosCount}
                         </span>
+                        <span className="text-[10px] text-emerald-700/70 font-medium">ativos</span>
                       </div>
-                      <p className="text-xs text-forest/70 mt-0.5">
-                        Pacientes particulares atendidos por você fora da triagem pública.
-                      </p>
+                    </div>
+                    <div className="w-7 h-7 rounded-lg bg-emerald-100/80 flex items-center justify-center shrink-0">
+                      <UserCheck className="w-3.5 h-3.5 text-emerald-700" />
+                    </div>
+                  </button>
+
+                  {/* Inativos (Altas, Pausas, Desligamentos) */}
+                  <button
+                    type="button"
+                    onClick={() => setFiltroStatusExterno("inativos")}
+                    className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between gap-1.5 ${
+                      filtroStatusExterno === "inativos"
+                        ? "bg-purple-50/80 border-purple-300 ring-2 ring-purple-600/20 shadow-xs"
+                        : "bg-white border-soft hover:border-purple-200 shadow-2xs"
+                    }`}
+                    title="Ver pacientes inativos (Alta, Pausa ou Desligamento)"
+                  >
+                    <div className="min-w-0">
+                      <span className="text-[10px] font-semibold text-purple-800 uppercase tracking-wider block truncate">
+                        Inativos / Altas / Pausas
+                      </span>
+                      <div className="flex items-baseline gap-1 mt-0.5">
+                        <span className="text-base sm:text-lg font-bold text-purple-800 leading-tight block tabular-nums">
+                          {pacsExtInativosCount}
+                        </span>
+                        <span className="text-[10px] text-purple-700/70 font-medium">inativos</span>
+                      </div>
+                    </div>
+                    <div className="w-7 h-7 rounded-lg bg-purple-100/80 flex items-center justify-center shrink-0">
+                      <UserX className="w-3.5 h-3.5 text-purple-700" />
+                    </div>
+                  </button>
+
+                  {/* Total da Carteira */}
+                  <div className="p-2.5 bg-white rounded-xl border border-soft shadow-2xs flex items-center justify-between gap-1.5">
+                    <div className="min-w-0">
+                      <span className="text-[10px] font-semibold text-forest/70 uppercase tracking-wider block truncate">
+                        Total da Carteira
+                      </span>
+                      <div className="flex items-baseline gap-1 mt-0.5">
+                        <span className="text-base sm:text-lg font-bold text-forest leading-tight block tabular-nums">
+                          {(pacientesExternos || []).length}
+                        </span>
+                        <span className="text-[10px] text-forest/60 font-medium">cadastrados</span>
+                      </div>
+                    </div>
+                    <div className="w-7 h-7 rounded-lg bg-forest/10 flex items-center justify-center shrink-0">
+                      <Users className="w-3.5 h-3.5 text-forest/70" />
                     </div>
                   </div>
+                </div>
 
+                {/* 1. Header Card: Link de Cadastro e Perfil do Profissional */}
+                <div className="bg-white p-5 sm:p-6 rounded-2xl border border-soft shadow-xs flex flex-col md:flex-row items-start md:items-center justify-end gap-4">
                   {/* Bloco de Compartilhamento do Link (Otimizado sem link escrito, com ícones e descrição básica) */}
                   <div className="w-full md:w-auto flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-warm/50 p-3 sm:px-4 sm:py-3 rounded-2xl border border-soft shadow-2xs">
                     <div className="flex flex-col pr-1">
@@ -10608,6 +10815,117 @@ export function DashboardView({
               </div>
             ) : (
               <div className="max-w-5xl w-full mx-auto flex flex-col gap-4">
+                {/* CARDS ENXUTOS E MINIMALISTAS - ESTILO AGENDA */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {/* Em Atendimento (Ativos) */}
+                  <button
+                    type="button"
+                    onClick={() => setFiltroStatusAcessiveis(filtroStatusAcessiveis === "ativos" ? "todos" : "ativos")}
+                    className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between gap-1.5 ${
+                      filtroStatusAcessiveis === "ativos"
+                        ? "bg-emerald-50/80 border-emerald-300 ring-2 ring-emerald-600/20 shadow-xs"
+                        : "bg-white border-soft hover:border-emerald-200 shadow-2xs"
+                    }`}
+                    title="Ver pacientes em atendimento ativo"
+                  >
+                    <div className="min-w-0">
+                      <span className="text-[10px] font-semibold text-emerald-800 uppercase tracking-wider block truncate">
+                        Em Atendimento
+                      </span>
+                      <div className="flex items-baseline gap-1 mt-0.5">
+                        <span className="text-base sm:text-lg font-bold text-emerald-800 leading-tight block tabular-nums">
+                          {pacsAcessAtivosCount}
+                        </span>
+                        <span className="text-[10px] text-emerald-700/70 font-medium">ativos</span>
+                      </div>
+                    </div>
+                    <div className="w-7 h-7 rounded-lg bg-emerald-100/80 flex items-center justify-center shrink-0">
+                      <UserCheck className="w-3.5 h-3.5 text-emerald-700" />
+                    </div>
+                  </button>
+
+                  {/* Aguardando Aceite (Pendentes) */}
+                  <button
+                    type="button"
+                    onClick={() => setFiltroStatusAcessiveis(filtroStatusAcessiveis === "pendentes" ? "todos" : "pendentes")}
+                    className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between gap-1.5 ${
+                      filtroStatusAcessiveis === "pendentes"
+                        ? "bg-amber-50/80 border-amber-300 ring-2 ring-amber-600/20 shadow-xs"
+                        : "bg-white border-soft hover:border-amber-200 shadow-2xs"
+                    }`}
+                    title="Ver pacientes aguardando seu aceite formal"
+                  >
+                    <div className="min-w-0">
+                      <span className="text-[10px] font-semibold text-amber-800 uppercase tracking-wider block truncate">
+                        Aguardando Aceite
+                      </span>
+                      <div className="flex items-baseline gap-1 mt-0.5">
+                        <span className="text-base sm:text-lg font-bold text-amber-800 leading-tight block tabular-nums">
+                          {pacsAcessPendentesCount}
+                        </span>
+                        <span className="text-[10px] text-amber-700/70 font-medium">pendentes</span>
+                      </div>
+                    </div>
+                    <div className="w-7 h-7 rounded-lg bg-amber-100/80 flex items-center justify-center shrink-0">
+                      <Clock className="w-3.5 h-3.5 text-amber-700" />
+                    </div>
+                  </button>
+
+                  {/* Altas / Encerrados */}
+                  <button
+                    type="button"
+                    onClick={() => setFiltroStatusAcessiveis(filtroStatusAcessiveis === "altas" ? "todos" : "altas")}
+                    className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between gap-1.5 ${
+                      filtroStatusAcessiveis === "altas"
+                        ? "bg-purple-50/80 border-purple-300 ring-2 ring-purple-600/20 shadow-xs"
+                        : "bg-white border-soft hover:border-purple-200 shadow-2xs"
+                    }`}
+                    title="Ver pacientes com alta clínica ou processo encerrado"
+                  >
+                    <div className="min-w-0">
+                      <span className="text-[10px] font-semibold text-purple-800 uppercase tracking-wider block truncate">
+                        Altas / Encerrados
+                      </span>
+                      <div className="flex items-baseline gap-1 mt-0.5">
+                        <span className="text-base sm:text-lg font-bold text-purple-800 leading-tight block tabular-nums">
+                          {pacsAcessAltasCount}
+                        </span>
+                        <span className="text-[10px] text-purple-700/70 font-medium">concluídos</span>
+                      </div>
+                    </div>
+                    <div className="w-7 h-7 rounded-lg bg-purple-100/80 flex items-center justify-center shrink-0">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-purple-700" />
+                    </div>
+                  </button>
+
+                  {/* Total Vinculados */}
+                  <button
+                    type="button"
+                    onClick={() => setFiltroStatusAcessiveis("todos")}
+                    className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between gap-1.5 ${
+                      filtroStatusAcessiveis === "todos"
+                        ? "bg-forest/5 border-forest/30 ring-2 ring-forest/20 shadow-xs"
+                        : "bg-white border-soft hover:border-forest/20 shadow-2xs"
+                    }`}
+                    title="Ver todos os pacientes vinculados (sem filtro de status)"
+                  >
+                    <div className="min-w-0">
+                      <span className="text-[10px] font-semibold text-forest/70 uppercase tracking-wider block truncate">
+                        Total Vinculados
+                      </span>
+                      <div className="flex items-baseline gap-1 mt-0.5">
+                        <span className="text-base sm:text-lg font-bold text-forest leading-tight block tabular-nums">
+                          {filteredMeusPacientes.length}
+                        </span>
+                        <span className="text-[10px] text-forest/60 font-medium">histórico</span>
+                      </div>
+                    </div>
+                    <div className="w-7 h-7 rounded-lg bg-forest/10 flex items-center justify-center shrink-0">
+                      <Users className="w-3.5 h-3.5 text-forest/70" />
+                    </div>
+                  </button>
+                </div>
+
                 {/* Barra de Topo Enxuta com Contagem, Busca e Botão Expandir/Recolher Todos */}
                 <div className="flex flex-wrap items-center justify-between gap-3 bg-white px-4 sm:px-6 py-3.5 rounded-2xl shadow-xs border border-soft">
               <div className="flex items-center gap-2.5">
@@ -10621,7 +10939,13 @@ export function DashboardView({
                   <p className="text-[11px] text-forest/60">
                     {pacienteSearchTerm.trim()
                       ? "Filtrando resultados da busca"
-                      : `${filteredMeusPacientes.length} paciente(s) vinculado(s) ao seu acompanhamento`}
+                      : filtroStatusAcessiveis === "ativos"
+                      ? `${pacsAcessAtivosCount} paciente(s) em atendimento ativo`
+                      : filtroStatusAcessiveis === "pendentes"
+                      ? `${pacsAcessPendentesCount} paciente(s) aguardando aceite`
+                      : filtroStatusAcessiveis === "altas"
+                      ? `${pacsAcessAltasCount} paciente(s) com alta/encerramento`
+                      : `${filteredMeusPacientes.length} paciente(s) no total vinculado`}
                   </p>
                 </div>
               </div>
@@ -10708,6 +11032,30 @@ export function DashboardView({
             {(() => {
               const perfisProfAcessList = normalizePerfisFaturamento(profile);
               const pacientesFiltrados = filteredMeusPacientes.filter((p) => {
+                if (filtroStatusAcessiveis === "ativos") {
+                  const isAtivo =
+                    p.atribuicaoStatus === "Aceito" &&
+                    p.status !== "Alta" &&
+                    p.status !== "Rejeitado" &&
+                    p.status !== "Encerrado" &&
+                    p.status !== "Desistência" &&
+                    p.status !== "Cancelado";
+                  if (!isAtivo) return false;
+                } else if (filtroStatusAcessiveis === "pendentes") {
+                  const isPendente =
+                    p.atribuicaoStatus === "Pendente" ||
+                    (!p.atribuicaoStatus && p.status === "Aguardando Contato");
+                  if (!isPendente) return false;
+                } else if (filtroStatusAcessiveis === "altas") {
+                  const isAlta =
+                    p.status === "Alta" ||
+                    p.status === "Encerrado" ||
+                    p.atribuicaoStatus === "Rejeitado" ||
+                    p.status === "Desistência" ||
+                    p.status === "Cancelado";
+                  if (!isAlta) return false;
+                }
+
                 if (filtroPerfilAcessiveis !== "todos") {
                   const pAtivo = resolvePerfilFaturamentoAtivo(
                     perfisProfAcessList,
@@ -10733,6 +11081,12 @@ export function DashboardView({
                   <div className="w-full text-center p-8 bg-white/70 border border-dashed border-soft rounded-2xl text-forest/70 text-sm">
                     {pacienteSearchTerm.trim() || filtroPerfilAcessiveis !== "todos"
                       ? "Nenhum paciente encontrado com os filtros aplicados."
+                      : filtroStatusAcessiveis === "ativos"
+                      ? "Nenhum paciente em atendimento ativo no momento."
+                      : filtroStatusAcessiveis === "pendentes"
+                      ? "Nenhum paciente aguardando aceite."
+                      : filtroStatusAcessiveis === "altas"
+                      ? "Nenhum paciente com alta clínica ou encerramento registrado."
                       : "Nenhum paciente encaminhado no momento."}
                   </div>
                 );
@@ -10936,7 +11290,8 @@ export function DashboardView({
             )}
           </div>
         </div>
-      ) : currentRole === "profissional" &&
+        );
+      })() : currentRole === "profissional" &&
         activeTab === "tarefasProfissional" ? (
         <ProfissionalEsteiraTarefas
           meusPacientes={meusPacientes}
@@ -11529,6 +11884,18 @@ export function DashboardView({
                 </div>
               );
             })()}
+          </div>
+        </div>
+      ) : currentRole === "profissional" && activeTab === "documentosPsicologicos" ? (
+        <div className="flex-1 overflow-auto p-6 md:p-8 flex flex-col gap-8 slide-up font-sans">
+          <div className="max-w-6xl w-full mx-auto">
+            <ProfissionalDocumentosManager
+              profissionalProfile={profile!}
+              meusPacientes={meusPacientes || []}
+              pacientesExternos={pacientesExternos || []}
+              showToast={showToast}
+              preselectedPaciente={documentPreselectedPaciente}
+            />
           </div>
         </div>
       ) : isMasterOrTriagem && activeTab === "tarefas" ? (
@@ -13649,10 +14016,29 @@ export function DashboardView({
                                     );
                                   })()
                                 ) : p.statusPagamento === "pago" ? (
-                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1">
-                                    <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                                    Adimplente (Pago)
-                                  </span>
+                                  profile?.role === "master" ? (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleQuickToggleAssinaturaProfissional(
+                                          p.uid || p.id!,
+                                          true,
+                                          p.name || p.nome
+                                        );
+                                      }}
+                                      className="px-2.5 py-0.5 rounded-lg text-[10px] font-bold bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border border-emerald-200 flex items-center gap-1 transition-colors cursor-pointer"
+                                      title="Toque para alternar status de pagamento para Pendente"
+                                    >
+                                      <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                      Adimplente (Pago)
+                                    </button>
+                                  ) : (
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1">
+                                      <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                      Adimplente (Pago)
+                                    </span>
+                                  )
                                 ) : p.solicitacaoCancelamento ? (
                                   <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200 flex items-center gap-1">
                                     <ShieldAlert className="w-3 h-3 text-amber-600" />
@@ -13667,6 +14053,43 @@ export function DashboardView({
                                       : new Date(admDate.getTime() + 7 * 86400000);
                                     const now = new Date();
                                     const isTrial = vencDate.getTime() > now.getTime();
+                                    if (profile?.role === "master") {
+                                      return isTrial ? (
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleQuickToggleAssinaturaProfissional(
+                                              p.uid || p.id!,
+                                              false,
+                                              p.name || p.nome
+                                            );
+                                          }}
+                                          className="px-2.5 py-0.5 rounded-lg text-[10px] font-bold bg-blue-100 hover:bg-emerald-100 hover:text-emerald-900 hover:border-emerald-300 text-blue-800 border border-blue-200 flex items-center gap-1 transition-colors cursor-pointer"
+                                          title="Toque para marcar mensalidade como Paga sem entrar na ficha"
+                                        >
+                                          <Clock className="w-3 h-3 text-blue-600" />
+                                          Prazo 1º Pagto ({formatDateSafely(vencDate)})
+                                        </button>
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleQuickToggleAssinaturaProfissional(
+                                              p.uid || p.id!,
+                                              false,
+                                              p.name || p.nome
+                                            );
+                                          }}
+                                          className="px-2.5 py-0.5 rounded-lg text-[10px] font-bold bg-red-100 hover:bg-emerald-100 hover:text-emerald-900 hover:border-emerald-300 text-red-800 border border-red-200 flex items-center gap-1 transition-colors cursor-pointer"
+                                          title="Toque para marcar mensalidade como Paga sem entrar na ficha"
+                                        >
+                                          <XCircle className="w-3 h-3 text-red-600" />
+                                          Inadimplente / Pendente
+                                        </button>
+                                      );
+                                    }
                                     return isTrial ? (
                                       <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200 flex items-center gap-1">
                                         <Clock className="w-3 h-3 text-blue-600" />
@@ -14908,6 +15331,23 @@ export function DashboardView({
                       {selectedCard.prontuarioClinico.length}
                     </span>
                   )}
+                </button>
+
+                {/* Botão Documentos Psicológicos do Paciente */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDocumentPreselectedPaciente(selectedCard);
+                    setSelectedCard(null);
+                    setShowProntuarioModal(false);
+                    setActiveTab("documentosPsicologicos");
+                  }}
+                  className="flex items-center gap-1 sm:gap-1.5 text-[10px] sm:text-xs font-bold text-forest bg-warm/60 hover:bg-amber-50 hover:text-amber-950 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg sm:rounded-xl border border-soft hover:border-sun-dark/40 transition-colors whitespace-nowrap shadow-2xs cursor-pointer"
+                  title="Emitir ou visualizar atestados, laudos e declarações para este paciente"
+                >
+                  <FileSignature className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-sun-dark shrink-0" />
+                  <span className="hidden sm:inline">Documentos</span>
+                  <span className="sm:hidden">Docs</span>
                 </button>
 
                 {/* Botão Agendar Sessão */}
@@ -17396,6 +17836,12 @@ export function DashboardView({
             setShowProntuarioModal(false);
             setShowFaturamentoModal(true);
           }}
+          onEmitirDocumento={() => {
+            setDocumentPreselectedPaciente(selectedCard);
+            setShowProntuarioModal(false);
+            setSelectedCard(null);
+            setActiveTab("documentosPsicologicos");
+          }}
           profissionalLogado={
             (() => {
               if (currentRole === "profissional") {
@@ -19855,27 +20301,9 @@ export function DashboardView({
                         </div>
                       </div>
 
-                      <div className="sm:col-span-2">
-                        <label className="block font-bold text-forest mb-1">Chave PIX para Cobrança</label>
-                        <input
-                          type="text"
-                          value={chavePix}
-                          onChange={(e) => handleSalvarParametrosFinanceiros("chavePix", e.target.value)}
-                          className="w-full px-3 py-2 bg-warm/30 border border-soft focus:border-forest rounded-xl outline-none font-mono text-forest"
-                        />
                       </div>
-
-                      <div>
-                        <label className="block font-bold text-forest mb-1">Nome do Favorecido PIX</label>
-                        <input
-                          type="text"
-                          value={favorecidoPix}
-                          onChange={(e) => handleSalvarParametrosFinanceiros("favorecidoPix", e.target.value)}
-                          className="w-full px-3 py-2 bg-warm/30 border border-soft focus:border-forest rounded-xl outline-none text-forest"
-                        />
-                      </div>
-                    </div>
                   </div>
+
 
                   {/* Bloco de Regras de Precificação por Volume / Escalonamento do Contrato */}
                   <div className="bg-white p-6 rounded-2xl border border-soft shadow-xs space-y-4">
