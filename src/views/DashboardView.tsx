@@ -266,6 +266,37 @@ const safeLocalStorage = {
   },
 };
 
+const PACIENTE_TESTE_PADRAO: any = {
+  id: "paciente-teste-exemplo-padrao",
+  nome: "Mariana Silva (Paciente Teste)",
+  nomeCivil: "Mariana Silva",
+  nomeDesejado: "Mariana (Teste)",
+  cpf: "123.456.789-00",
+  email: "mariana.teste@acolhemente.exemplo",
+  telefone: "(11) 98765-4321",
+  dataNascimento: "1995-05-12",
+  genero: "Feminino",
+  cidade: "São Paulo",
+  estado: "SP",
+  valorSessao: "50,00",
+  frequenciaSessoes: "Semanal (1x por semana)",
+  viaAcesso: "Triagem Acessível",
+  status: "Em Atendimento",
+  atribuicaoStatus: "Aceito",
+  isPacienteTeste: true,
+  motivo: "Paciente de exemplo cadastrado automaticamente pela plataforma para demonstração de todas as funcionalidades (emissão de documentos CFP, contratos, evolução e prontuário).",
+  prontuario: [
+    {
+      id: "pront-1",
+      data: new Date().toISOString(),
+      titulo: "Sessão Inicial de Acolhimento (Demonstração)",
+      conteudo: "Paciente compareceu à primeira sessão de demonstração. Relata boa adesão ao processo terapêutico e interesse nas ferramentas da plataforma.",
+      tipo: "evolucao"
+    }
+  ],
+  createdAt: new Date()
+};
+
 export function parseDateSafely(val: any): Date {
   if (!val) return new Date();
   if (val instanceof Date) {
@@ -2241,6 +2272,23 @@ export function DashboardView({
   const [isCreatingWhatsappInstance, setIsCreatingWhatsappInstance] = useState(false);
 
   // Psychologist State
+  const [exibirPacienteTeste, setExibirPacienteTeste] = useState<boolean>(() => {
+    try {
+      const saved = safeLocalStorage.getItem("acolhe_exibir_paciente_teste");
+      return saved !== null ? JSON.parse(saved) : true;
+    } catch (e) {
+      return true;
+    }
+  });
+
+  const handleTogglePacienteTeste = (val: boolean) => {
+    setExibirPacienteTeste(val);
+    try {
+      safeLocalStorage.setItem("acolhe_exibir_paciente_teste", JSON.stringify(val));
+    } catch (e) {}
+    showToast(val ? "Paciente teste ativado com sucesso!" : "Paciente teste desativado.", "info");
+  };
+
   const [meusPacientes, setMeusPacientes] = useState<Acolhimento[]>([]);
   const [pacientesExternos, setPacientesExternos] = useState<Acolhimento[]>([]);
   const [patientSortOrder, setPatientSortOrder] = useState<"fifo" | "recent">("fifo");
@@ -2746,6 +2794,11 @@ export function DashboardView({
                 const data = d.data() as Acolhimento;
                 list.push({ id: d.id, ...data });
               });
+              if (exibirPacienteTeste) {
+                if (!list.some(p => p.isPacienteTeste || p.id === "paciente-teste-exemplo-padrao")) {
+                  list.unshift(PACIENTE_TESTE_PADRAO);
+                }
+              }
               list.sort(
                 (a, b) =>
                   getTimestampMillis(a.createdAt) - getTimestampMillis(b.createdAt) || 0,
@@ -6822,16 +6875,13 @@ export function DashboardView({
                 <span>Meus Artigos</span>
               </button>
 
-              {/* 8.5 Documentos Psicológicos (Plano Integrar) */}
+              {/* 8.5 Documentos Psicológicos */}
               <button
                 onClick={() => setActiveTab("documentosPsicologicos")}
                 className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap shrink-0 relative flex items-center gap-1.5 cursor-pointer ${activeTab === "documentosPsicologicos" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70 hover:text-forest"}`}
               >
                 <FileSignature className="w-3.5 h-3.5 text-forest/70" />
                 <span>Documentos</span>
-                <span className="bg-sun text-forest text-[9px] font-black px-1.5 py-0.2 rounded-full uppercase tracking-wider">
-                  Integrar
-                </span>
               </button>
 
               {/* 9. Status / Plano */}
@@ -10933,9 +10983,27 @@ export function DashboardView({
                   <User className="w-4 h-4 text-forest" />
                 </div>
                 <div>
-                  <h2 className="font-serif text-sm sm:text-base font-bold text-forest">
-                    Meus Pacientes Encaminhados
-                  </h2>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h2 className="font-serif text-sm sm:text-base font-bold text-forest">
+                      Meus Pacientes Encaminhados
+                    </h2>
+                    <div className="flex items-center gap-1.5 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200 text-xs text-amber-900">
+                      <Sparkles className="w-3 h-3 text-amber-700 shrink-0" />
+                      <span className="font-semibold text-[10px]">Paciente Teste:</span>
+                      <button
+                        type="button"
+                        onClick={() => handleTogglePacienteTeste(!exibirPacienteTeste)}
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${
+                          exibirPacienteTeste
+                            ? "bg-amber-700 text-white shadow-2xs"
+                            : "bg-white text-forest/70 border border-soft"
+                        }`}
+                        title="Ativar ou desativar o paciente de exemplo para testar funcionalidades"
+                      >
+                        {exibirPacienteTeste ? "Ativo (Desativar)" : "Inativo (Ativar)"}
+                      </button>
+                    </div>
+                  </div>
                   <p className="text-[11px] text-forest/60">
                     {pacienteSearchTerm.trim()
                       ? "Filtrando resultados da busca"
@@ -11138,10 +11206,15 @@ export function DashboardView({
                             <span aria-hidden="true" className="text-forest/30 text-xs shrink-0">·</span>
 
                             {/* Nome do Paciente */}
-                            <div className="flex items-baseline gap-2 min-w-0 flex-1">
+                            <div className="flex items-center gap-2 min-w-0 flex-1 flex-wrap">
                               <h4 className="font-bold text-xs sm:text-sm text-forest truncate" title={p.nomeDesejado || p.nomeCivil || p.nome || "Paciente sem nome"}>
                                 {p.nomeDesejado || p.nomeCivil || p.nome || "Paciente sem nome"}
                               </h4>
+                              {p.isPacienteTeste && (
+                                <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-sun text-forest border border-sun-dark/30 flex items-center gap-1 uppercase tracking-wider shrink-0 shadow-2xs" title="Paciente de exemplo para testar as funcionalidades">
+                                  <Sparkles className="w-2.5 h-2.5" /> Paciente Teste
+                                </span>
+                              )}
                               {p.viaAcesso && p.viaAcesso !== "Particular" && (
                                 <span className="text-[11px] text-forest/50 hidden sm:inline shrink-0">
                                   · {p.viaAcesso}

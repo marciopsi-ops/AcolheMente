@@ -55,6 +55,7 @@ import { ExternalPatientLandingView } from "./views/ExternalPatientLandingView";
 import { PortalEmpresaView } from "./views/PortalEmpresaView";
 import { BlogView } from "./views/BlogView";
 import { ColetaFaturamentoView } from "./views/ColetaFaturamentoView";
+import { DocumentoPublicoView } from "./components/DocumentoPublicoView";
 
 import { Footer } from "./components/Footer";
 import { ProfissionaisCarousel } from "./components/ProfissionaisCarousel";
@@ -387,6 +388,14 @@ export default function App() {
     const p = new URLSearchParams(window.location.search);
     return p.get("dados_faturamento") || p.get("faturamento_dados") || p.get("cadastro_recibo") || p.get("recibo_dados");
   });
+  const [publicDocumentoId, setPublicDocumentoId] = useState<string | null>(() => {
+    const p = new URLSearchParams(window.location.search);
+    return p.get("documento") || p.get("doc") || p.get("documento_id");
+  });
+  const [publicDocumentoCodigo, setPublicDocumentoCodigo] = useState<string | null>(() => {
+    const p = new URLSearchParams(window.location.search);
+    return p.get("codigo") || p.get("verificar") || p.get("num");
+  });
 
   const [currentView, setCurrentView] = useState<
     | "landing"
@@ -462,6 +471,8 @@ export default function App() {
         p.get("cadastro_recibo") ||
         p.get("recibo_dados")
       );
+      setPublicDocumentoId(p.get("documento") || p.get("doc") || p.get("documento_id"));
+      setPublicDocumentoCodigo(p.get("codigo") || p.get("verificar") || p.get("num"));
       const v = p.get("view");
       if (
         window.location.pathname.includes("cadastro_externo") ||
@@ -576,6 +587,8 @@ export default function App() {
     setPublicPortalEmpresaId(null);
     setPublicArtigoId(null);
     setPublicFaturamentoId(null);
+    setPublicDocumentoId(null);
+    setPublicDocumentoCodigo(null);
     setCurrentView("landing");
   };
 
@@ -633,6 +646,16 @@ export default function App() {
           setReturnFromProfUid(null);
           setPublicProfUid(uid);
         }}
+      />
+    );
+  }
+
+  if (publicDocumentoId || publicDocumentoCodigo) {
+    return (
+      <DocumentoPublicoView
+        documentoId={publicDocumentoId || undefined}
+        codigoVerificacao={publicDocumentoCodigo || undefined}
+        onGoHome={handleGoToLanding}
       />
     );
   }

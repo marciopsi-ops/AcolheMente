@@ -1659,52 +1659,6 @@ export function ProfissionalMeuPerfilView({
               <div className="space-y-4">
                 <div>
                   <h3 className="font-serif text-lg font-bold text-forest">
-                    Chave PIX Principal & Referência Padrão
-                  </h3>
-                  <p className="text-xs text-forest/60 mt-0.5">
-                    Dados rápidos de recebimento padrão sincronizados com seus recibos e cobranças.
-                  </p>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                  <div>
-                    <label className="text-xs uppercase font-bold tracking-wider text-forest/70">
-                      Chave PIX Principal (Recebimento de Serviços)
-                    </label>
-                    <FastInput
-                      type="text"
-                      value={profile.pixKey || profile.chavePix || ""}
-                      placeholder="CPF, E-mail, Celular ou Chave Aleatória"
-                      onImmediateTrack={(val) => {
-                        trackField("pixKey", val);
-                        trackField("chavePix", val);
-                      }}
-                      onChange={(val) =>
-                        updateProfileField({ pixKey: val, chavePix: val })
-                      }
-                      className="w-full mt-1.5 px-4 py-2.5 bg-warm/40 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors text-sm text-forest font-mono"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-xs uppercase font-bold tracking-wider text-forest/70">
-                      CPF Titular de Referência
-                    </label>
-                    <FastInput
-                      type="text"
-                      value={profile.cpf || ""}
-                      placeholder="000.000.000-00"
-                      onImmediateTrack={(val) => trackField("cpf", val)}
-                      onChange={(val) => updateProfileField({ cpf: val })}
-                      className="w-full mt-1.5 px-4 py-2.5 bg-warm/40 border border-soft rounded-xl focus:outline-none focus:border-sun-dark transition-colors text-sm text-forest font-mono tabular-nums"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-6 border-t border-soft/80 space-y-4">
-                <div>
-                  <h3 className="font-serif text-lg font-bold text-forest">
                     Carteira de Perfis de Faturamento & Contas de Recebimento
                   </h3>
                   <p className="text-xs text-forest/65 mt-0.5 leading-relaxed">

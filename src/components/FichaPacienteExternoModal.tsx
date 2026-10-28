@@ -29,6 +29,7 @@ import {
   Lock,
   RotateCcw,
   Check,
+  X,
 } from "lucide-react";
 import { doc, getDoc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { db, handleFirestoreError, OperationType } from "../lib/firebase";
@@ -553,6 +554,44 @@ export function FichaPacienteExternoModal({
   const tipoLinkCadastro = isCorporativo ? "corporativo" : "externo";
   const urlAtualizacaoCadastro = `${window.location.origin}/?view=cadastro_externo&prof=${profUidForLink}&paciente=${currentPaciente.id}&tipo=${tipoLinkCadastro}`;
 
+  const [seccoesModalOpen, setSeccoesModalOpen] = useState(false);
+  const [pendingActionType, setPendingActionType] = useState<"copy" | "whatsapp" | "open">("copy");
+  const [formSeccoes, setFormSeccoes] = useState({
+    pessoais: true,
+    endereco: true,
+    queixa: true,
+    disponibilidade: true,
+    emergencia: true,
+  });
+
+  const getUrlAtualizacaoComSeccoes = () => {
+    const activeSections = Object.entries(formSeccoes)
+      .filter(([_, active]) => active)
+      .map(([key]) => key)
+      .join(",");
+    return `${urlAtualizacaoCadastro}&sections=${activeSections}`;
+  };
+
+  const handleTriggerUpdateLink = (actionType: "copy" | "whatsapp" | "open") => {
+    setPendingActionType(actionType);
+    setSeccoesModalOpen(true);
+  };
+
+  const handleExecuteUpdateLink = () => {
+    const finalUrl = getUrlAtualizacaoComSeccoes();
+
+    if (pendingActionType === "copy") {
+      navigator.clipboard.writeText(finalUrl);
+      showToast("Link de atualização cadastral (com seções selecionadas) copiado!", "success");
+    } else if (pendingActionType === "whatsapp") {
+      const msg = `Olá ${nomeDisplay}! Tudo bem? Para mantermos seus dados cadastrais e fiscais sempre atualizados para emissão de recibos e contrato terapêutico, por favor acesse este link seguro para conferir e atualizar seu cadastro quando puder:\n\n${finalUrl}\n\nQualquer dúvida estou à disposição!`;
+      openWhatsApp(msg);
+    } else if (pendingActionType === "open") {
+      window.open(finalUrl, "_blank", "noopener,noreferrer");
+    }
+    setSeccoesModalOpen(false);
+  };
+
   // Cálculos de Sessões & Faturamento
   const sessoes: SessaoFaturamentoItem[] = Array.isArray(currentPaciente.historicoSessoes)
     ? currentPaciente.historicoSessoes
@@ -874,36 +913,29 @@ export function FichaPacienteExternoModal({
             <div className="flex items-center gap-0.5 bg-emerald-50/70 p-0.5 rounded-lg sm:rounded-xl border border-emerald-300/80 shadow-2xs shrink-0">
               <button
                 type="button"
-                onClick={() => {
-                  navigator.clipboard.writeText(urlAtualizacaoCadastro);
-                  showToast("Link de atualização cadastral copiado para a área de transferência!", "success");
-                }}
+                onClick={() => handleTriggerUpdateLink("copy")}
                 className="flex items-center gap-1 sm:gap-1.5 text-[10px] sm:text-xs font-bold text-emerald-900 hover:bg-emerald-100/80 px-2 sm:px-2.5 py-1 rounded-md sm:rounded-lg transition-colors whitespace-nowrap cursor-pointer"
-                title="Copiar link para o paciente conferir e atualizar seu cadastro"
+                title="Copiar link com escolha de seções para o paciente conferir e atualizar seu cadastro"
               >
                 <RefreshCw className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
                 <span>Atualização de Cadastro</span>
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  const msg = `Olá ${nomeDisplay}! Tudo bem? Para mantermos seus dados cadastrais e fiscais sempre atualizados para emissão de recibos e contrato terapêutico, por favor acesse este link seguro para conferir e atualizar seu cadastro quando puder:\n\n${urlAtualizacaoCadastro}\n\nQualquer dúvida estou à disposição!`;
-                  openWhatsApp(msg);
-                }}
+                onClick={() => handleTriggerUpdateLink("whatsapp")}
                 className="p-1 sm:p-1.5 text-emerald-700 hover:text-emerald-950 hover:bg-emerald-100/80 rounded-md sm:rounded-lg transition-colors cursor-pointer"
                 title="Enviar link de atualização cadastral via WhatsApp"
               >
                 <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
               </button>
-              <a
-                href={urlAtualizacaoCadastro}
-                target="_blank"
-                rel="noopener noreferrer"
+              <button
+                type="button"
+                onClick={() => handleTriggerUpdateLink("open")}
                 className="p-1 sm:p-1.5 text-emerald-700 hover:text-emerald-950 hover:bg-emerald-100/80 rounded-md sm:rounded-lg transition-colors cursor-pointer inline-flex items-center justify-center"
                 title="Abrir formulário de atualização em nova aba"
               >
                 <ExternalLink className="w-3.5 h-3.5 text-emerald-700" />
-              </a>
+              </button>
             </div>
 
             {onNavigateToAgenda && (
@@ -1095,10 +1127,7 @@ export function FichaPacienteExternoModal({
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    navigator.clipboard.writeText(urlAtualizacaoCadastro);
-                    showToast("Link de atualização cadastral copiado!", "success");
-                  }}
+                  onClick={() => handleTriggerUpdateLink("copy")}
                   className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-[11px] font-bold transition-colors cursor-pointer whitespace-nowrap"
                 >
                   Copiar Link
@@ -2809,6 +2838,122 @@ export function FichaPacienteExternoModal({
           tipoAcolhimento={isCorporativo ? "corporativo" : undefined}
           showToast={showToast}
         />
+      )}
+
+      {/* MODAL DE SELEÇÃO DE SEÇÕES PARA ATUALIZAÇÃO CADASTRAL */}
+      {seccoesModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-forest/75 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl max-w-md w-full shadow-2xl border border-soft overflow-hidden flex flex-col">
+            <div className="px-6 py-4 bg-warm/40 border-b border-soft flex items-center justify-between">
+              <div>
+                <h3 className="font-serif text-base font-bold text-forest">
+                  Escolher Seções do Formulário
+                </h3>
+                <p className="text-xs text-forest/60 mt-0.5">
+                  Selecione quais seções você quer que o paciente preencha:
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSeccoesModalOpen(false)}
+                className="p-1.5 text-forest/40 hover:text-forest rounded-full cursor-pointer transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-3.5 text-xs text-forest">
+              <label className="flex items-center gap-3 p-3 rounded-2xl bg-warm/20 hover:bg-warm/40 border border-soft cursor-pointer transition-colors">
+                <input
+                  type="checkbox"
+                  checked={formSeccoes.pessoais}
+                  onChange={(e) => setFormSeccoes({ ...formSeccoes, pessoais: e.target.checked })}
+                  className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                />
+                <div>
+                  <span className="font-bold block text-forest">1. Identificação Pessoal</span>
+                  <span className="text-[11px] text-forest/60">Nome, E-mail, WhatsApp, CPF, Nascimento</span>
+                </div>
+              </label>
+
+              <label className="flex items-center gap-3 p-3 rounded-2xl bg-warm/20 hover:bg-warm/40 border border-soft cursor-pointer transition-colors">
+                <input
+                  type="checkbox"
+                  checked={formSeccoes.endereco}
+                  onChange={(e) => setFormSeccoes({ ...formSeccoes, endereco: e.target.checked })}
+                  className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                />
+                <div>
+                  <span className="font-bold block text-forest">2. Endereço Residencial</span>
+                  <span className="text-[11px] text-forest/60">CEP, Logradouro, Número, Bairro, Cidade</span>
+                </div>
+              </label>
+
+              <label className="flex items-center gap-3 p-3 rounded-2xl bg-warm/20 hover:bg-warm/40 border border-soft cursor-pointer transition-colors">
+                <input
+                  type="checkbox"
+                  checked={formSeccoes.queixa}
+                  onChange={(e) => setFormSeccoes({ ...formSeccoes, queixa: e.target.checked })}
+                  className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                />
+                <div>
+                  <span className="font-bold block text-forest">3. Motivo da Consulta e Histórico Clínico</span>
+                  <span className="text-[11px] text-forest/60">Queixa principal, terapia anterior, medicação</span>
+                </div>
+              </label>
+
+              <label className="flex items-center gap-3 p-3 rounded-2xl bg-warm/20 hover:bg-warm/40 border border-soft cursor-pointer transition-colors">
+                <input
+                  type="checkbox"
+                  checked={formSeccoes.disponibilidade}
+                  onChange={(e) => setFormSeccoes({ ...formSeccoes, disponibilidade: e.target.checked })}
+                  className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                />
+                <div>
+                  <span className="font-bold block text-forest">4. Preferências de Atendimento</span>
+                  <span className="text-[11px] text-forest/60">Modalidade, Turno e Dias preferidos</span>
+                </div>
+              </label>
+
+              <label className="flex items-center gap-3 p-3 rounded-2xl bg-warm/20 hover:bg-warm/40 border border-soft cursor-pointer transition-colors">
+                <input
+                  type="checkbox"
+                  checked={formSeccoes.emergencia}
+                  onChange={(e) => setFormSeccoes({ ...formSeccoes, emergencia: e.target.checked })}
+                  className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                />
+                <div>
+                  <span className="font-bold block text-forest">5. Contato de Emergência</span>
+                  <span className="text-[11px] text-forest/60">Nome, parentesco e telefone de confiança</span>
+                </div>
+              </label>
+            </div>
+
+            <div className="px-6 py-4 bg-warm/30 border-t border-soft flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setSeccoesModalOpen(false)}
+                className="px-4 py-2 text-xs font-semibold text-forest/70 hover:text-forest cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleExecuteUpdateLink}
+                className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md transition-all cursor-pointer flex items-center gap-2"
+              >
+                <Check className="w-4 h-4" />
+                <span>
+                  {pendingActionType === "copy"
+                    ? "Confirmar & Copiar Link"
+                    : pendingActionType === "whatsapp"
+                    ? "Confirmar & Enviar no WhatsApp"
+                    : "Confirmar & Abrir Link"}
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

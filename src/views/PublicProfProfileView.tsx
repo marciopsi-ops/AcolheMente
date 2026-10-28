@@ -53,6 +53,23 @@ import {
   EnderecoPresencialData,
 } from "../components/SocialBrandIcons";
 
+function getStandardServiceDescription(name: string): string {
+  const lower = name.toLowerCase();
+  if (lower.includes("individual") || lower.includes("terapia") || lower.includes("psicoterapia")) {
+    return "Espaço seguro de autoconhecimento e escuta empática para lidar com ansiedade, emoções e desafios cotidianos.";
+  }
+  if (lower.includes("casal") || lower.includes("relacionamento")) {
+    return "Apoio especializado para melhoria da comunicação, resolução de conflitos e fortalecimento do vínculo afetivo.";
+  }
+  if (lower.includes("adolescente") || lower.includes("infantil")) {
+    return "Acolhimento humanizado voltado ao desenvolvimento emocional, transições e desafios da juventude.";
+  }
+  if (lower.includes("orientação") || lower.includes("carreira") || lower.includes("profissional")) {
+    return "Direcionamento estratégico para transição de carreira, autoconhecimento laboral e gestão de estresse.";
+  }
+  return "Sessão individualizada focada em saúde mental, escuta qualificada e desenvolvimento pessoal com total sigilo.";
+}
+
 export function PublicProfProfileView({ 
   profUid, 
   initialArtigoId,
@@ -1095,6 +1112,7 @@ export function PublicProfProfileView({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {customServices.map((srv: any, idx: number) => {
                     const srvTitle = srv.title || srv.titulo || "Atendimento";
+                    const srvDesc = srv.description || getStandardServiceDescription(srvTitle);
                     const srvWaUrl = whatsAppNumber
                       ? `https://api.whatsapp.com/send?phone=${whatsAppNumber}&text=${encodeURIComponent(
                           `Olá ${formattedName}! Gostaria de agendar / saber mais sobre: ${srvTitle}.`,
@@ -1109,11 +1127,9 @@ export function PublicProfProfileView({
                           <h4 className="font-serif text-base font-bold text-slate-900">
                             {srvTitle}
                           </h4>
-                          {srv.description && (
-                            <p className="text-xs text-slate-600 mt-1.5 leading-relaxed">
-                              {srv.description}
-                            </p>
-                          )}
+                          <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                            {srvDesc}
+                          </p>
                         </div>
                         <div className="flex items-center justify-between pt-3 border-t border-slate-200/70 text-xs gap-2 flex-wrap">
                           <div className="flex items-center gap-2">
@@ -1146,21 +1162,43 @@ export function PublicProfProfileView({
 
                   {customServices.length === 0 &&
                     prof.servicosOferecidos &&
-                    prof.servicosOferecidos.map((srv: string, idx: number) => (
-                      <div
-                        key={`std-srv-${idx}`}
-                        className="p-5 rounded-2xl bg-slate-50/80 border border-slate-200/90 flex items-center justify-between gap-2"
-                      >
-                        <h4 className="font-serif text-base font-bold text-slate-900">
-                          {srv === "Outros"
-                            ? prof.outrosServicos || "Atendimento Especializado"
-                            : srv}
-                        </h4>
-                        <span className="text-xs font-semibold text-slate-500 shrink-0">
-                          Particular
-                        </span>
-                      </div>
-                    ))}
+                    prof.servicosOferecidos.map((srvItem: string, idx: number) => {
+                      const srvName = srvItem === "Outros" ? prof.outrosServicos || "Atendimento Especializado" : srvItem;
+                      const srvDesc = getStandardServiceDescription(srvName);
+                      const srvWaUrl = whatsAppNumber
+                        ? `https://api.whatsapp.com/send?phone=${whatsAppNumber}&text=${encodeURIComponent(
+                            `Olá ${formattedName}! Gostaria de agendar / saber mais sobre: ${srvName}.`,
+                          )}`
+                        : "";
+                      return (
+                        <div
+                          key={`std-srv-${idx}`}
+                          className="p-5 rounded-2xl bg-slate-50/80 border border-slate-200/90 flex flex-col justify-between gap-3 hover:bg-white hover:shadow-sm transition-all"
+                        >
+                          <div>
+                            <h4 className="font-serif text-base font-bold text-slate-900">
+                              {srvName}
+                            </h4>
+                            <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                              {srvDesc}
+                            </p>
+                          </div>
+                          {srvWaUrl && (
+                            <div className="pt-3 border-t border-slate-200/70 text-xs flex justify-end">
+                              <a
+                                href={srvWaUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-[11px] font-bold text-[#19964B] hover:underline inline-flex items-center gap-1"
+                              >
+                                <WhatsAppBrandIcon className="w-3.5 h-3.5" />
+                                Agendar
+                              </a>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                 </div>
               )}
             </section>

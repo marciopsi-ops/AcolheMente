@@ -61,6 +61,9 @@ export function ExternalPatientLandingView({
     "";
   const paramTipo = urlParams.get("tipo") || "externo";
   const isModoAtualizacao = Boolean(paramPacienteId);
+  const paramSections = urlParams.get("sections");
+  const activeSectionsList = paramSections ? paramSections.split(",") : null;
+  const showSection = (key: string) => !activeSectionsList || activeSectionsList.includes(key);
 
   const [resolvedProfUid, setResolvedProfUid] = useState<string | null>(
     initialProfUid
@@ -1221,284 +1224,286 @@ export function ExternalPatientLandingView({
           )}
 
           {/* SEÇÃO 01: IDENTIFICAÇÃO PESSOAL */}
-          <div className="space-y-4">
-            <div className="border-b border-slate-100 pb-2.5 flex items-baseline justify-between gap-2">
-              <h2 className="text-sm sm:text-base font-semibold text-slate-900">
-                <span
-                  className="font-mono text-xs mr-1.5 tabular-nums"
-                  style={{ color: primaryColor }}
-                >
-                  {secNumIdentificacao}.
+          {showSection("pessoais") && (
+            <div className="space-y-4">
+              <div className="border-b border-slate-100 pb-2.5 flex items-baseline justify-between gap-2">
+                <h2 className="text-sm sm:text-base font-semibold text-slate-900">
+                  <span
+                    className="font-mono text-xs mr-1.5 tabular-nums"
+                    style={{ color: primaryColor }}
+                  >
+                    {secNumIdentificacao}.
+                  </span>
+                  Identificação Pessoal
+                </h2>
+                <span className="text-[11px] text-slate-400">
+                  Campos com * são obrigatórios
                 </span>
-                Identificação Pessoal
-              </h2>
-              <span className="text-[11px] text-slate-400">
-                Campos com * são obrigatórios
-              </span>
-            </div>
-
-            {/* Nome Completo */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                Nome Completo <span className="text-rose-500">*</span>
-              </label>
-              <input
-                type="text"
-                required
-                value={nome}
-                onChange={(e) => setNome(e.target.value)}
-                placeholder="Digite seu nome completo civil"
-                className={inputBaseClass}
-              />
-            </div>
-
-            {/* Nome Social */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                Nome Social / Como prefere ser chamado(a){" "}
-                <span className="text-slate-400 font-normal">(Opcional)</span>
-              </label>
-              <input
-                type="text"
-                value={nomeSocial}
-                onChange={(e) => setNomeSocial(e.target.value)}
-                placeholder="Preencha caso utilize um nome diferente do registro civil"
-                className={inputBaseClass}
-              />
-            </div>
-
-            {/* E-mail e Telefone */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  E-mail{" "}
-                  {!isModoAtualizacao && (
-                    <span className="text-rose-500">*</span>
-                  )}
-                </label>
-                <input
-                  type="email"
-                  required={!isModoAtualizacao}
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="seu.email@exemplo.com"
-                  className={inputBaseClass}
-                />
               </div>
 
+              {/* Nome Completo */}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  WhatsApp / Celular <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="tel"
-                  required
-                  value={telefone}
-                  onChange={(e) => setTelefone(formatPhone(e.target.value))}
-                  placeholder="(00) 00000-0000"
-                  className={`${inputBaseClass} tabular-nums`}
-                />
-              </div>
-            </div>
-
-            {/* Data de Nascimento e CPF */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  Data de Nascimento <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="date"
-                  required
-                  value={dataNascimento}
-                  onChange={(e) => setDataNascimento(e.target.value)}
-                  className={`${inputBaseClass} tabular-nums`}
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  CPF <span className="text-rose-500">*</span>
+                  Nome Completo <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="text"
                   required
-                  value={cpf}
-                  onChange={(e) => setCpf(formatCpf(e.target.value))}
-                  placeholder="000.000.000-00"
-                  className={`${inputBaseClass} tabular-nums`}
+                  value={nome}
+                  onChange={(e) => setNome(e.target.value)}
+                  placeholder="Digite seu nome completo civil"
+                  className={inputBaseClass}
                 />
               </div>
-            </div>
 
-            {/* Gênero e Profissão */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-2">
+              {/* Nome Social */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  Nome Social / Como prefere ser chamado(a){" "}
+                  <span className="text-slate-400 font-normal">(Opcional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={nomeSocial}
+                  onChange={(e) => setNomeSocial(e.target.value)}
+                  placeholder="Preencha caso utilize um nome diferente do registro civil"
+                  className={inputBaseClass}
+                />
+              </div>
+
+              {/* E-mail e Telefone */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                    Gênero
+                    E-mail{" "}
+                    {!isModoAtualizacao && (
+                      <span className="text-rose-500">*</span>
+                    )}
                   </label>
-                  <select
-                    value={genero}
-                    onChange={(e) => setGenero(e.target.value)}
-                    className={`${inputBaseClass} cursor-pointer`}
-                  >
-                    <option value="">Selecione...</option>
-                    {genero &&
-                      !(GENERO_OPCOES as readonly string[]).includes(genero) && (
-                        <option value={genero}>{genero}</option>
-                      )}
-                    {GENERO_OPCOES.map((opt) => (
-                      <option key={opt} value={opt}>
-                        {opt}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {genero === "Outro" && (
                   <input
-                    type="text"
-                    value={generoOutro}
-                    onChange={(e) => setGeneroOutro(e.target.value)}
-                    placeholder="Como prefere especificar? (Opcional)"
+                    type="email"
+                    required={!isModoAtualizacao}
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="seu.email@exemplo.com"
                     className={inputBaseClass}
                   />
-                )}
-              </div>
+                </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  Profissão / Ocupação
-                </label>
-                <input
-                  type="text"
-                  value={profissao}
-                  onChange={(e) => setProfissao(e.target.value)}
-                  placeholder="Ex: Arquiteta, Estudante, Analista..."
-                  className={inputBaseClass}
-                />
-              </div>
-            </div>
-
-            {/* Responsável Legal (Menor de 18 anos ou toggle manual) */}
-            <div className="pt-2">
-              <label className="inline-flex items-center gap-2.5 cursor-pointer select-none text-xs font-medium text-slate-700 hover:text-slate-900">
-                <input
-                  type="checkbox"
-                  checked={isMenorIdade}
-                  onChange={(e) => {
-                    setIsMenorIdade(e.target.checked);
-                    setMenorManualOverride(e.target.checked);
-                  }}
-                  style={{ accentColor: primaryColor }}
-                  className="w-4 h-4 rounded cursor-pointer shrink-0"
-                />
-                <span>
-                  Paciente menor de 18 anos ou representado por responsável
-                  legal
-                </span>
-              </label>
-            </div>
-
-            {isMenorIdade && (
-              <div className="p-4 sm:p-5 bg-slate-50 rounded-2xl border border-slate-200 flex flex-col gap-3.5">
-                <div className="flex items-center gap-2">
-                  <AlertCircle
-                    className="w-4 h-4 shrink-0"
-                    style={{ color: primaryColor }}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    WhatsApp / Celular <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="tel"
+                    required
+                    value={telefone}
+                    onChange={(e) => setTelefone(formatPhone(e.target.value))}
+                    placeholder="(00) 00000-0000"
+                    className={`${inputBaseClass} tabular-nums`}
                   />
-                  <span className="font-semibold text-xs text-slate-900">
-                    Dados do Responsável Legal
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      Nome do Responsável Legal{" "}
-                      <span className="text-rose-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      required={isMenorIdade}
-                      value={nomeResponsavel}
-                      onChange={(e) => setNomeResponsavel(e.target.value)}
-                      placeholder="Nome completo do responsável"
-                      className={inputBaseClass}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      Parentesco / Grau de Guarda{" "}
-                      <span className="text-rose-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      required={isMenorIdade}
-                      value={parentescoResponsavel}
-                      onChange={(e) => setParentescoResponsavel(e.target.value)}
-                      placeholder="Ex: Mãe, Pai, Responsável Legal..."
-                      className={inputBaseClass}
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      CPF do Responsável{" "}
-                      <span className="text-rose-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      required={isMenorIdade}
-                      value={cpfResponsavel}
-                      onChange={(e) =>
-                        setCpfResponsavel(formatCpf(e.target.value))
-                      }
-                      placeholder="000.000.000-00"
-                      className={`${inputBaseClass} tabular-nums`}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      WhatsApp / Telefone{" "}
-                      <span className="text-rose-500">*</span>
-                    </label>
-                    <input
-                      type="tel"
-                      required={isMenorIdade}
-                      value={telefoneResponsavel}
-                      onChange={(e) =>
-                        setTelefoneResponsavel(formatPhone(e.target.value))
-                      }
-                      placeholder="(00) 00000-0000"
-                      className={`${inputBaseClass} tabular-nums`}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      E-mail do Responsável
-                    </label>
-                    <input
-                      type="email"
-                      value={emailResponsavel}
-                      onChange={(e) => setEmailResponsavel(e.target.value)}
-                      placeholder="email@exemplo.com"
-                      className={inputBaseClass}
-                    />
-                  </div>
                 </div>
               </div>
-            )}
-          </div>
+
+              {/* Data de Nascimento e CPF */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Data de Nascimento <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={dataNascimento}
+                    onChange={(e) => setDataNascimento(e.target.value)}
+                    className={`${inputBaseClass} tabular-nums`}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    CPF <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={cpf}
+                    onChange={(e) => setCpf(formatCpf(e.target.value))}
+                    placeholder="000.000.000-00"
+                    className={`${inputBaseClass} tabular-nums`}
+                  />
+                </div>
+              </div>
+
+              {/* Gênero e Profissão */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                      Gênero
+                    </label>
+                    <select
+                      value={genero}
+                      onChange={(e) => setGenero(e.target.value)}
+                      className={`${inputBaseClass} cursor-pointer`}
+                    >
+                      <option value="">Selecione...</option>
+                      {genero &&
+                        !(GENERO_OPCOES as readonly string[]).includes(genero) && (
+                          <option value={genero}>{genero}</option>
+                        )}
+                      {GENERO_OPCOES.map((opt) => (
+                        <option key={opt} value={opt}>
+                          {opt}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {genero === "Outro" && (
+                    <input
+                      type="text"
+                      value={generoOutro}
+                      onChange={(e) => setGeneroOutro(e.target.value)}
+                      placeholder="Como prefere especificar? (Opcional)"
+                      className={inputBaseClass}
+                    />
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Profissão / Ocupação
+                  </label>
+                  <input
+                    type="text"
+                    value={profissao}
+                    onChange={(e) => setProfissao(e.target.value)}
+                    placeholder="Ex: Arquiteta, Estudante, Analista..."
+                    className={inputBaseClass}
+                  />
+                </div>
+              </div>
+
+              {/* Responsável Legal (Menor de 18 anos ou toggle manual) */}
+              <div className="pt-2">
+                <label className="inline-flex items-center gap-2.5 cursor-pointer select-none text-xs font-medium text-slate-700 hover:text-slate-900">
+                  <input
+                    type="checkbox"
+                    checked={isMenorIdade}
+                    onChange={(e) => {
+                      setIsMenorIdade(e.target.checked);
+                      setMenorManualOverride(e.target.checked);
+                    }}
+                    style={{ accentColor: primaryColor }}
+                    className="w-4 h-4 rounded cursor-pointer shrink-0"
+                  />
+                  <span>
+                    Paciente menor de 18 anos ou representado por responsável
+                    legal
+                  </span>
+                </label>
+              </div>
+
+              {isMenorIdade && (
+                <div className="p-4 sm:p-5 bg-slate-50 rounded-2xl border border-slate-200 flex flex-col gap-3.5">
+                  <div className="flex items-center gap-2">
+                    <AlertCircle
+                      className="w-4 h-4 shrink-0"
+                      style={{ color: primaryColor }}
+                    />
+                    <span className="font-semibold text-xs text-slate-900">
+                      Dados do Responsável Legal
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        Nome do Responsável Legal{" "}
+                        <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required={isMenorIdade}
+                        value={nomeResponsavel}
+                        onChange={(e) => setNomeResponsavel(e.target.value)}
+                        placeholder="Nome completo do responsável"
+                        className={inputBaseClass}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        Parentesco / Grau de Guarda{" "}
+                        <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required={isMenorIdade}
+                        value={parentescoResponsavel}
+                        onChange={(e) => setParentescoResponsavel(e.target.value)}
+                        placeholder="Ex: Mãe, Pai, Responsável Legal..."
+                        className={inputBaseClass}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        CPF do Responsável{" "}
+                        <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required={isMenorIdade}
+                        value={cpfResponsavel}
+                        onChange={(e) =>
+                          setCpfResponsavel(formatCpf(e.target.value))
+                        }
+                        placeholder="000.000.000-00"
+                        className={`${inputBaseClass} tabular-nums`}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        WhatsApp / Telefone{" "}
+                        <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="tel"
+                        required={isMenorIdade}
+                        value={telefoneResponsavel}
+                        onChange={(e) =>
+                          setTelefoneResponsavel(formatPhone(e.target.value))
+                        }
+                        placeholder="(00) 00000-0000"
+                        className={`${inputBaseClass} tabular-nums`}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        E-mail do Responsável
+                      </label>
+                      <input
+                        type="email"
+                        value={emailResponsavel}
+                        onChange={(e) => setEmailResponsavel(e.target.value)}
+                        placeholder="email@exemplo.com"
+                        className={inputBaseClass}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* SEÇÃO: ENDEREÇO RESIDENCIAL (Parametrizável) */}
-          {solicitarEndereco && (
+          {solicitarEndereco && showSection("endereco") && (
             <div className="space-y-4 pt-2 border-t border-slate-100">
               <div className="flex items-baseline justify-between gap-2">
                 <h2 className="text-sm sm:text-base font-semibold text-slate-900">
@@ -1628,7 +1633,7 @@ export function ExternalPatientLandingView({
           )}
 
           {/* SEÇÃO: MOTIVO DA CONSULTA & INFORMAÇÕES CLÍNICAS (Parametrizável) */}
-          {solicitarQueixaPrincipal && (
+          {solicitarQueixaPrincipal && showSection("queixa") && (
             <div className="space-y-4 pt-2 border-t border-slate-100">
               <h2 className="text-sm sm:text-base font-semibold text-slate-900">
                 <span
@@ -1698,7 +1703,8 @@ export function ExternalPatientLandingView({
           )}
 
           {/* SEÇÃO: PREFERÊNCIAS DE ATENDIMENTO & DISPONIBILIDADE */}
-          <div className="space-y-4 pt-2 border-t border-slate-100">
+          {showSection("disponibilidade") && (
+            <div className="space-y-4 pt-2 border-t border-slate-100">
             <h2 className="text-sm sm:text-base font-semibold text-slate-900">
               <span
                 className="font-mono text-xs mr-1.5 tabular-nums"
@@ -1821,7 +1827,7 @@ export function ExternalPatientLandingView({
             )}
 
             {/* Contato de Emergência (Parametrizável) */}
-            {solicitarContatoEmergencia && (
+            {solicitarContatoEmergencia && showSection("emergencia") && (
               <div className="pt-2 space-y-2.5">
                 <label className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
                   <Phone
@@ -1851,6 +1857,7 @@ export function ExternalPatientLandingView({
               </div>
             )}
           </div>
+          )}
 
           {/* SEÇÃO: ORIGEM / INDICAÇÃO */}
           <div className="space-y-3 pt-2 border-t border-slate-100">

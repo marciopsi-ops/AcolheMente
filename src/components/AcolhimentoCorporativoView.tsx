@@ -450,22 +450,18 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
   const [isLoggingContact, setIsLoggingContact] = useState(false);
   const [contactSuccessAlert, setContactSuccessAlert] = useState(false);
 
-  // 9. Modal de Configuração Obrigatória de Foco, Temas & Turno antes de abrir WhatsApp + Ficha de Bordo
+  // 9. Modal de Configuração Obrigatória de Foco & Turno antes de abrir WhatsApp + Ficha de Bordo
   const [modalConfigurarContato, setModalConfigurarContato] = useState<{
     isOpen: boolean;
     prof: ProfissionalItem | null;
     servicoId: string;
     turno: string;
-    queixa: string;
-    temasSelecionados: string[];
     erroValidacao?: string;
   }>({
     isOpen: false,
     prof: null,
     servicoId: "",
     turno: "",
-    queixa: "",
-    temasSelecionados: [],
     erroValidacao: "",
   });
 
@@ -999,15 +995,13 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
       prof,
       servicoId: servicoInicial,
       turno: turnoInicial,
-      queixa: "",
-      temasSelecionados: [],
       erroValidacao: "",
     });
   };
 
   // Confirmação final no modal: Grava Ficha de Bordo em triagem_corporativa com status "solicitacao_servico" e abre WhatsApp
   const handleConfirmarEAbrirWhatsApp = async () => {
-    const { prof, servicoId, turno, queixa, temasSelecionados } = modalConfigurarContato;
+    const { prof, servicoId, turno } = modalConfigurarContato;
     if (!prof) return;
     if (!empresaValidated?.id || !empresaValidated?.codigoAcesso) {
       setEmpresaValidated(null);
@@ -1030,14 +1024,6 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
       return;
     }
 
-    if ((!temasSelecionados || temasSelecionados.length === 0) && !queixa.trim()) {
-      setModalConfigurarContato((prev) => ({
-        ...prev,
-        erroValidacao: "Por favor, selecione ao menos um tema/motivo da busca ou relate brevemente sua queixa.",
-      }));
-      return;
-    }
-
     setIsLoggingContact(true);
     try {
       const cargoObj = cargosDisponiveis.find((c) => c.id === selectedCargoId);
@@ -1048,14 +1034,14 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
 
       const turnoLabel = TURNOS_OPCOES.find((t) => t.id === turno)?.label || turno;
 
-      const temasObjetos = (temasSelecionados || [])
+      const temasObjetos = (triagemTemasSelecionados || [])
         .map((tId) => TEMAS_QUEIXAS_CORPORATIVAS.find((t) => t.id === tId))
         .filter(Boolean) as any[];
       const temasLabels = temasObjetos.map((t) => t.label);
-      const temaPrincipal = temasLabels[0] || queixa.trim() || "Saúde Emocional Geral";
+      const temaPrincipal = temasLabels[0] || triagemOutrasTexto.trim() || "Saúde Emocional Geral";
 
-      const queixaFinal = queixa.trim()
-        ? (temasLabels.length > 0 ? `[${temasLabels.join(" • ")}] ${queixa.trim()}` : queixa.trim())
+      const queixaFinal = triagemOutrasTexto.trim()
+        ? (temasLabels.length > 0 ? `[${temasLabels.join(" • ")}] ${triagemOutrasTexto.trim()}` : triagemOutrasTexto.trim())
         : temasLabels.join(" • ");
 
       // 1. CRIAÇÃO DA FICHA DE BORDO NA TRIAGEM CORPORATIVA (status: solicitacao_servico)
@@ -1077,11 +1063,11 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
         turnoPreferencia: turnoLabel,
         queixa: queixaFinal,
         temas: temasLabels,
-        temasIds: temasSelecionados || [],
+        temasIds: triagemTemasSelecionados || [],
         temaPrincipal: temaPrincipal,
         tipoOrigemDemanda: triagemOrigem || "trabalho",
         outrasDemandasTexto: triagemOutrasTexto.trim(),
-        prefiroNaoComentar: (temasSelecionados || []).includes("prefiro_nao_comentar"),
+        prefiroNaoComentar: (triagemTemasSelecionados || []).includes("prefiro_nao_comentar"),
         valorSessao: precoInfo.valorSessao,
         frequenciaRecomendada: precoInfo.frequenciaRecomendada,
         profissionalId: prof.id,
@@ -1119,7 +1105,7 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
         turnoPreferencia: turnoLabel,
         queixa: queixaFinal,
         temas: temasLabels,
-        temasIds: temasSelecionados || [],
+        temasIds: triagemTemasSelecionados || [],
         temaPrincipal: temaPrincipal,
         profissionalId: prof.id,
         profissionalNome: prof.name,
@@ -1145,8 +1131,6 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
         prof: null,
         servicoId: "",
         turno: "",
-        queixa: "",
-        temasSelecionados: [],
         erroValidacao: "",
       });
       setContactSuccessAlert(true);
@@ -2976,8 +2960,6 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
                     prof: null,
                     servicoId: "",
                     turno: "",
-                    queixa: "",
-                    temasSelecionados: [],
                     erroValidacao: "",
                   })
                 }
@@ -3119,98 +3101,6 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
                   })}
                 </div>
               </div>
-
-              {/* PASSO 3: TEMAS, QUEIXAS OU MOTIVO DA BUSCA - OBRIGATÓRIO */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold text-forest flex items-center gap-1.5">
-                    <span className="w-5 h-5 rounded-full bg-forest text-white text-[11px] font-bold flex items-center justify-center">
-                      3
-                    </span>
-                    Temas & Motivo Principal da Busca *
-                  </label>
-                  <span className="text-[10px] font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-                    Selecione 1 ou mais
-                  </span>
-                </div>
-
-                <p className="text-[11px] text-forest/70 leading-relaxed">
-                  Clique nas opções que melhor descrevem sua necessidade atual (essenciais para direcionamento do cuidado):
-                </p>
-
-                {/* Chips Estruturados com Emojis */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                  {TEMAS_QUEIXAS_CORPORATIVAS.map((item) => {
-                    const isSelected = modalConfigurarContato.temasSelecionados.includes(item.id);
-
-                    return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => {
-                          setModalConfigurarContato((prev) => {
-                            const jaExiste = prev.temasSelecionados.includes(item.id);
-                            const newTemas = jaExiste
-                              ? prev.temasSelecionados.filter((t) => t !== item.id)
-                              : [...prev.temasSelecionados, item.id];
-                            return {
-                              ...prev,
-                              temasSelecionados: newTemas,
-                              erroValidacao: "",
-                            };
-                          });
-                        }}
-                        className={`p-2.5 rounded-xl border text-left transition-all flex items-center justify-between gap-2 cursor-pointer text-xs ${
-                          isSelected
-                            ? "bg-emerald-600 text-white font-bold border-emerald-700 shadow-2xs"
-                            : "bg-white hover:bg-warm/60 text-forest/90 border-soft font-medium"
-                        }`}
-                      >
-                        <span className="flex items-center gap-1.5 min-w-0">
-                          <span className="text-sm shrink-0">{item.iconeEmoji}</span>
-                          <span className="truncate">{item.label}</span>
-                        </span>
-                        <span
-                          className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
-                            isSelected
-                              ? "bg-white text-emerald-800 border-white"
-                              : "border-soft bg-warm/30"
-                          }`}
-                        >
-                          {isSelected && <Check className="w-2.5 h-2.5 stroke-[3]" />}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Campo de Texto Livre Opcional */}
-                <div className="space-y-1 pt-1">
-                  <label className="text-[11px] font-bold text-forest/70 block">
-                    Observações ou detalhes adicionais (Opcional):
-                  </label>
-                  <textarea
-                    value={modalConfigurarContato.queixa}
-                    onChange={(e) =>
-                      setModalConfigurarContato((prev) => ({
-                        ...prev,
-                        queixa: e.target.value,
-                        erroValidacao: "",
-                      }))
-                    }
-                    placeholder="Se desejar, descreva com suas palavras outros detalhes do seu momento..."
-                    rows={2}
-                    className="w-full p-3 bg-warm/20 rounded-xl text-xs text-forest border border-soft focus:border-forest/50 outline-none transition-all placeholder:text-forest/40 resize-none"
-                  />
-                </div>
-
-                {modalConfigurarContato.temasSelecionados.length === 0 && (
-                  <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-xs flex items-center gap-2 animate-in fade-in">
-                    <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-                    <span>Selecione ao menos 1 motivo ou queixa acima para habilitar o contato.</span>
-                  </div>
-                )}
-              </div>
             </div>
 
             {/* Footer com Botão de Confirmação & WhatsApp */}
@@ -3223,8 +3113,6 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
                     prof: null,
                     servicoId: "",
                     turno: "",
-                    queixa: "",
-                    temasSelecionados: [],
                     erroValidacao: "",
                   })
                 }
@@ -3238,8 +3126,7 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
                 disabled={
                   isLoggingContact ||
                   !modalConfigurarContato.servicoId ||
-                  !modalConfigurarContato.turno ||
-                  modalConfigurarContato.temasSelecionados.length === 0
+                  !modalConfigurarContato.turno
                 }
                 onClick={handleConfirmarEAbrirWhatsApp}
                 className="w-full sm:w-auto px-6 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:bg-forest/20 disabled:text-forest/40 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
