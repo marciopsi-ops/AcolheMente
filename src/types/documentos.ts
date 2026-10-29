@@ -46,6 +46,9 @@ export interface DocumentoPsicologicoItem {
   dataEmissao: string;
   numeroEmissao: string;
   status: "emitido" | "rascunho";
+  whiteLabelEnabled?: boolean;
+  whiteLabelConfig?: any;
+  companyData?: any;
   createdAt: any;
   updatedAt: any;
 }

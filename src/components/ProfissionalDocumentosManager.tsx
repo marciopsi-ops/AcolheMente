@@ -406,6 +406,9 @@ export const ProfissionalDocumentosManager: React.FC<ProfissionalDocumentosManag
         finalidade: finalidadeDoc,
         dataEmissao: agoraStr,
         numeroEmissao: numEmissao,
+        whiteLabelEnabled: profissionalProfile?.whiteLabelEnabled || false,
+        whiteLabelConfig: profissionalProfile?.whiteLabelConfig || null,
+        companyData: profissionalProfile?.companyData || null,
         status: "emitido",
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
@@ -551,68 +554,64 @@ export const ProfissionalDocumentosManager: React.FC<ProfissionalDocumentosManag
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className="space-y-2.5">
           {docsFiltrados.map((docItem) => {
             const dataFmt = new Date(docItem.dataEmissao || docItem.createdAt?.toDate?.() || Date.now()).toLocaleDateString("pt-BR");
             return (
               <div
                 key={docItem.id}
-                className="bg-white p-4 rounded-2xl border border-soft shadow-2xs hover:border-emerald-300 hover:shadow-xs transition-all flex flex-col justify-between gap-3"
+                className="bg-white px-4 py-3 rounded-2xl border border-soft shadow-2xs hover:border-emerald-300 hover:shadow-xs transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3"
               >
-                <div>
-                  <div className="flex items-center justify-between gap-2 mb-1.5">
-                    <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 text-emerald-800 uppercase tracking-wide border border-emerald-200">
-                      {docItem.tipo}
-                    </span>
-                    <span className="text-[11px] font-mono tabular-nums text-forest/55">
-                      {docItem.numeroEmissao} · {dataFmt}
-                    </span>
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                  <div className="w-9 h-9 rounded-xl bg-forest/10 text-forest font-bold flex items-center justify-center text-xs shrink-0 font-serif">
+                    {docItem.pacienteNome?.charAt(0) || "P"}
                   </div>
-                  <h3 className="font-serif font-bold text-forest text-sm sm:text-base">
-                    {docItem.titulo}
-                  </h3>
-                  <p className="text-xs font-semibold text-forest/80 mt-1">
-                    Paciente: <span className="font-normal text-forest">{docItem.pacienteNome}</span>
-                  </p>
-                  <p className="text-[11px] text-forest/60 mt-1 line-clamp-2 bg-warm/40 p-2 rounded-xl border border-soft/60">
-                    {docItem.conteudo}
-                  </p>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-bold text-forest text-xs sm:text-sm truncate">
+                        {docItem.pacienteNome}
+                      </span>
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 text-emerald-800 uppercase tracking-wide border border-emerald-200 shrink-0">
+                        {docItem.tipo}
+                      </span>
+                      <span className="text-[11px] font-mono tabular-nums text-forest/50">
+                        {docItem.numeroEmissao} · {dataFmt}
+                      </span>
+                    </div>
+                    <p className="text-xs text-forest/80 font-medium truncate mt-0.5">
+                      {docItem.titulo}
+                    </p>
+                  </div>
                 </div>
 
-                <div className="pt-2 border-t border-soft/80 flex items-center justify-between gap-2">
-                  <span className="text-[10px] text-forest/50 truncate max-w-[160px]">
-                    Finalidade: {docItem.finalidade}
-                  </span>
+                <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => gerarLinkPublico(docItem)}
+                    className="p-1.5 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 rounded-lg transition-colors cursor-pointer"
+                    title="Copiar Link Seguro com Código de Acesso"
+                  >
+                    <Share2 className="w-4 h-4" />
+                  </button>
 
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => gerarLinkPublico(docItem)}
-                      className="p-1.5 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 rounded-lg transition-colors cursor-pointer"
-                      title="Copiar Link Seguro com Código de Acesso"
-                    >
-                      <Share2 className="w-4 h-4" />
-                    </button>
+                  <button
+                    type="button"
+                    onClick={() => setDocumentoVisualizar(docItem)}
+                    className="px-3 py-1.5 bg-forest text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 hover:bg-forest/90 transition-all cursor-pointer shadow-2xs"
+                    title="Visualizar Page A4"
+                  >
+                    <FileText className="w-3.5 h-3.5 text-sun" />
+                    <span>Visualizar / A4</span>
+                  </button>
 
-                    <button
-                      type="button"
-                      onClick={() => setDocumentoVisualizar(docItem)}
-                      className="px-2.5 py-1 bg-forest text-white rounded-lg text-xs font-semibold flex items-center gap-1 hover:bg-forest/90 transition-all cursor-pointer shadow-2xs"
-                      title="Visualizar Page A4"
-                    >
-                      <FileText className="w-3.5 h-3.5 text-sun" />
-                      <span>Visualizar Page</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleExcluirDocumento(docItem.id)}
-                      className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                      title="Excluir documento"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleExcluirDocumento(docItem.id)}
+                    className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                    title="Excluir documento"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
             );
@@ -1074,38 +1073,93 @@ export const ProfissionalDocumentosManager: React.FC<ProfissionalDocumentosManag
 
             {/* A4 Sheet Container */}
             <div className="p-4 sm:p-8 overflow-y-auto bg-slate-100 flex justify-center flex-1">
-              <div className="w-full max-w-[210mm] min-h-[297mm] bg-white p-8 sm:p-14 shadow-xl rounded-xl border border-slate-200 flex flex-col justify-between text-slate-900 print:shadow-none print:border-none print:p-0">
+              <div 
+                className="w-full max-w-[210mm] min-h-[297mm] bg-white p-8 sm:p-14 shadow-xl rounded-xl border border-slate-200 flex flex-col justify-between text-slate-900 print:shadow-none print:border-none print:p-0"
+                style={{
+                  backgroundColor: documentoVisualizar.whiteLabelEnabled || profissionalProfile?.whiteLabelEnabled
+                    ? (documentoVisualizar.whiteLabelConfig?.backgroundColor || profissionalProfile?.whiteLabelConfig?.backgroundColor || "#FFFFFF")
+                    : "#FFFFFF"
+                }}
+              >
                 <div>
                   {/* Timbrado Header */}
-                  <div className="flex items-center justify-between pb-6 border-b-2 border-forest/20 mb-8">
+                  <div 
+                    className="flex items-center justify-between pb-6 border-b-2 mb-8"
+                    style={{ 
+                      borderColor: documentoVisualizar.whiteLabelEnabled || profissionalProfile?.whiteLabelEnabled
+                        ? (documentoVisualizar.whiteLabelConfig?.primaryColor || profissionalProfile?.whiteLabelConfig?.primaryColor || "#1b3022") + "33"
+                        : "#1b302233" 
+                    }}
+                  >
                     <div className="flex items-center gap-3.5">
-                      <div className="w-12 h-12 rounded-full bg-forest text-white font-bold flex items-center justify-center text-lg shrink-0">
-                        {(documentoVisualizar.perfilProfissionalUsado?.nome || "P").charAt(0)}
-                      </div>
+                      {documentoVisualizar.companyData?.logoEmpresaUrl || profissionalProfile?.companyData?.logoEmpresaUrl ? (
+                        <img
+                          src={documentoVisualizar.companyData?.logoEmpresaUrl || profissionalProfile?.companyData?.logoEmpresaUrl}
+                          alt="Logo da Empresa"
+                          className="w-12 h-12 rounded-full object-cover border border-slate-200 shrink-0"
+                        />
+                      ) : (
+                        <div 
+                          className="w-12 h-12 rounded-full text-white font-bold flex items-center justify-center text-lg shrink-0"
+                          style={{
+                            backgroundColor: documentoVisualizar.whiteLabelEnabled || profissionalProfile?.whiteLabelEnabled
+                              ? (documentoVisualizar.whiteLabelConfig?.primaryColor || profissionalProfile?.whiteLabelConfig?.primaryColor || "#1b3022")
+                              : "#1b3022"
+                          }}
+                        >
+                          {(documentoVisualizar.perfilProfissionalUsado?.nome || "P").charAt(0)}
+                        </div>
+                      )}
                       <div>
-                        <h1 className="font-serif font-bold text-base sm:text-lg text-forest">
-                          {documentoVisualizar.perfilProfissionalUsado?.nome || "Profissional de Saúde"}
+                        <h1 
+                          className="font-serif font-bold text-base sm:text-lg"
+                          style={{
+                            color: documentoVisualizar.whiteLabelEnabled || profissionalProfile?.whiteLabelEnabled
+                              ? (documentoVisualizar.whiteLabelConfig?.primaryColor || profissionalProfile?.whiteLabelConfig?.primaryColor || "#1b3022")
+                              : "#1b3022"
+                          }}
+                        >
+                          {documentoVisualizar.companyData?.razaoSocial || documentoVisualizar.perfilProfissionalUsado?.nome || "Profissional de Saúde"}
                         </h1>
                         <p className="text-xs text-slate-600 font-mono">
                           CRP {documentoVisualizar.perfilProfissionalUsado?.crp || "00/00000"} · {documentoVisualizar.perfilProfissionalUsado?.profissao || "Psicólogo(a)"}
                         </p>
-                        {documentoVisualizar.perfilProfissionalUsado?.nomeEmpresa && (
+                        {(documentoVisualizar.companyData?.razaoSocial || documentoVisualizar.perfilProfissionalUsado?.nomeEmpresa) && (
                           <p className="text-[11px] text-slate-500">
-                            {documentoVisualizar.perfilProfissionalUsado.nomeEmpresa} {documentoVisualizar.perfilProfissionalUsado.cnpj ? `(CNPJ: ${documentoVisualizar.perfilProfissionalUsado.cnpj})` : ""}
+                            {documentoVisualizar.companyData?.razaoSocial || documentoVisualizar.perfilProfissionalUsado.nomeEmpresa} {documentoVisualizar.perfilProfissionalUsado?.cnpj || documentoVisualizar.companyData?.cnpj ? `(CNPJ: ${documentoVisualizar.companyData?.cnpj || documentoVisualizar.perfilProfissionalUsado.cnpj})` : ""}
                           </p>
                         )}
                       </div>
                     </div>
 
                     <div className="text-right text-[11px] text-slate-500 font-mono">
-                      <p className="font-bold text-forest">{documentoVisualizar.numeroEmissao}</p>
+                      <p 
+                        className="font-bold"
+                        style={{
+                          color: documentoVisualizar.whiteLabelEnabled || profissionalProfile?.whiteLabelEnabled
+                            ? (documentoVisualizar.whiteLabelConfig?.primaryColor || profissionalProfile?.whiteLabelConfig?.primaryColor || "#1b3022")
+                            : "#1b3022"
+                        }}
+                      >
+                        {documentoVisualizar.numeroEmissao}
+                      </p>
                       <p>{new Date(documentoVisualizar.dataEmissao).toLocaleDateString("pt-BR")}</p>
                     </div>
                   </div>
 
                   {/* Título */}
                   <div className="text-center my-8">
-                    <h2 className="text-lg sm:text-xl font-bold font-serif uppercase tracking-wider text-forest underline decoration-sun decoration-2 underline-offset-8">
+                    <h2 
+                      className="text-lg sm:text-xl font-bold font-serif uppercase tracking-wider underline decoration-2 underline-offset-8"
+                      style={{
+                        color: documentoVisualizar.whiteLabelEnabled || profissionalProfile?.whiteLabelEnabled
+                          ? (documentoVisualizar.whiteLabelConfig?.primaryColor || profissionalProfile?.whiteLabelConfig?.primaryColor || "#1b3022")
+                          : "#1b3022",
+                        textDecorationColor: documentoVisualizar.whiteLabelEnabled || profissionalProfile?.whiteLabelEnabled
+                          ? (documentoVisualizar.whiteLabelConfig?.secondaryColor || profissionalProfile?.whiteLabelConfig?.secondaryColor || "#f59e0b")
+                          : "#f59e0b"
+                      }}
+                    >
                       {documentoVisualizar.titulo}
                     </h2>
                     <p className="text-xs text-slate-500 mt-2">
@@ -1115,7 +1169,16 @@ export const ProfissionalDocumentosManager: React.FC<ProfissionalDocumentosManag
 
                   {/* Paciente Destinatário */}
                   <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 mb-6 text-xs text-slate-700 space-y-1">
-                    <p className="font-bold text-forest mb-1 uppercase text-[10px] tracking-wider">Destinatário(a) / Paciente:</p>
+                    <p 
+                      className="font-bold mb-1 uppercase text-[10px] tracking-wider"
+                      style={{
+                        color: documentoVisualizar.whiteLabelEnabled || profissionalProfile?.whiteLabelEnabled
+                          ? (documentoVisualizar.whiteLabelConfig?.primaryColor || profissionalProfile?.whiteLabelConfig?.primaryColor || "#1b3022")
+                          : "#1b3022"
+                      }}
+                    >
+                      Destinatário(a) / Paciente:
+                    </p>
                     <p className="font-bold text-sm text-slate-900">{documentoVisualizar.pacienteNome}</p>
                   </div>
 
