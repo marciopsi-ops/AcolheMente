@@ -3,7 +3,8 @@ export type TipoDocumentoPsicologico =
   | "atestado" 
   | "relatorio" 
   | "laudo" 
-  | "parecer";
+  | "parecer"
+  | "certificado";
 
 export interface SecaoDocumento {
   id: string;

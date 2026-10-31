@@ -183,11 +183,12 @@ service cloud.firestore {
       allow update, delete: if isSignedIn() && (isMaster() || isTriagem() || (resource.data.autorUid == request.auth.uid));
     }
 
-    // Documentos Psicológicos do Profissional
+    // Documentos Psicológicos e Certificados do Profissional
     match /documentos_psicologicos/{docId} {
-      allow read: if isSignedIn() && (resource.data.profissionalId == request.auth.uid || isMaster());
-      allow create: if isSignedIn() && request.resource.data.profissionalId == request.auth.uid;
-      allow update, delete: if isSignedIn() && (resource.data.profissionalId == request.auth.uid || isMaster());
+      allow get: if isValidId(docId);
+      allow list: if isSignedIn() && (resource.data.profissionalId == request.auth.uid || isMaster());
+      allow create: if isSignedIn() && isValidId(docId) && request.resource.data.profissionalId == request.auth.uid;
+      allow update, delete: if isSignedIn() && isValidId(docId) && (resource.data.profissionalId == request.auth.uid || isMaster());
     }
 
     // Auditoria de Acessos e Gestão
@@ -243,6 +244,7 @@ service cloud.firestore {
                'historicoServicos',
                'registrosBordo',
                'propostaContrato',
+               'reajusteAnual',
                'observacoesGerais',
                'createdAt',
                'updatedAt'
@@ -273,6 +275,7 @@ service cloud.firestore {
              (!('historicoServicos' in data) || (data.historicoServicos is list && data.historicoServicos.size() <= 500)) &&
              (!('registrosBordo' in data) || (data.registrosBordo is list && data.registrosBordo.size() <= 500)) &&
              (!('propostaContrato' in data) || (data.propostaContrato is map && data.propostaContrato.keys().size() <= 20)) &&
+             (!('reajusteAnual' in data) || (data.reajusteAnual is map && data.reajusteAnual.keys().size() <= 15)) &&
              (!('observacoesGerais' in data) || (data.observacoesGerais is string && data.observacoesGerais.size() <= 5000));
     }
 
@@ -317,6 +320,7 @@ service cloud.firestore {
                          'historicoServicos',
                          'registrosBordo',
                          'propostaContrato',
+                         'reajusteAnual',
                          'observacoesGerais',
                          'updatedAt'
                        ]);

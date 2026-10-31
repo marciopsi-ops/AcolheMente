@@ -37,6 +37,11 @@ import { PacienteProntuarioModal, ProntuarioRegistroItem } from "./PacientePront
 import { PacienteFaturamentoSpreadsheet, SessaoFaturamentoItem } from "./PacienteFaturamentoSpreadsheet";
 import { ContratoGeradorModal } from "./ContratoGeradorModal";
 import { PerfisFaturamentoManagerModal } from "./PerfisFaturamentoManagerModal";
+import { PainelReajusteAnualContrato } from "./PainelReajusteAnualContrato";
+import {
+  ConfigReajusteAnual,
+  parseValorMonetarioSeguro,
+} from "../utils/reajusteAnual";
 import {
   extractLegacySyncFields,
   normalizePerfisFaturamento,
@@ -611,6 +616,85 @@ export function FichaPacienteExternoModal({
   const statusCorp = currentPaciente.status || "paciente";
 
   const canEditTabelaConvenio = !isCorporativo || effectiveRole !== "profissional";
+
+  // Governança de Reajuste Anual de Contrato
+  const apenasIndicesOficiaisReajuste =
+    isCorporativo ||
+    currentPaciente?.tipo === "acolhimento" ||
+    currentPaciente?.viaAcesso === "Triagem Acessível" ||
+    currentPaciente?.viaAcesso === "Corporativo";
+
+  const origemContratoReajusteLabel = isCorporativo
+    ? "Convênio Corporativo"
+    : apenasIndicesOficiaisReajuste
+    ? "Triagem Acessível"
+    : "Carteira Particular / Externa";
+
+  const valorAtualSessaoNum = parseValorMonetarioSeguro(
+    currentPaciente?.valorSessao,
+    100
+  );
+
+  const qtdSessoesFuturasReajuste = sessoes.filter((s) => {
+    if (s.statusAtendimento !== "agendada" || s.statusPagamento === "pago") {
+      return false;
+    }
+    const hojeIso = new Date().toISOString().split("T")[0];
+    return !s.data || s.data >= hojeIso;
+  }).length;
+
+  const handleSaveReajustePaciente = async (
+    novaConfig: ConfigReajusteAnual,
+    opcoesAplicacao?: {
+      novoValorBase?: number;
+      atualizarAgendadosFuturos?: boolean;
+      vigenciaAnoMes?: string;
+      sessoesJaAtualizadasNaPlanilha?: boolean;
+    }
+  ) => {
+    const patch: Record<string, any> = {
+      reajusteAnual: novaConfig,
+    };
+
+    let sessoesParaSync: SessaoFaturamentoItem[] | null = null;
+
+    if (opcoesAplicacao?.novoValorBase !== undefined) {
+      patch.valorSessao = isCorporativo
+        ? opcoesAplicacao.novoValorBase
+        : String(opcoesAplicacao.novoValorBase);
+
+      if (
+        opcoesAplicacao.atualizarAgendadosFuturos &&
+        !opcoesAplicacao.sessoesJaAtualizadasNaPlanilha
+      ) {
+        const hojeIso = new Date().toISOString().split("T")[0];
+        const vigMes = opcoesAplicacao.vigenciaAnoMes || "";
+        let alterou = false;
+        const novasSessoes = sessoes.map((s) => {
+          const isFuturaElegivel =
+            s.statusAtendimento === "agendada" &&
+            s.statusPagamento !== "pago" &&
+            (!s.data ||
+              (vigMes && s.data.substring(0, 7) >= vigMes) ||
+              s.data >= hojeIso);
+          if (isFuturaElegivel) {
+            alterou = true;
+            return { ...s, valor: opcoesAplicacao.novoValorBase! };
+          }
+          return s;
+        });
+        if (alterou) {
+          patch.historicoSessoes = novasSessoes;
+          sessoesParaSync = novasSessoes;
+        }
+      }
+    }
+
+    await handlePatchFields(patch, true);
+    if (sessoesParaSync) {
+      await syncSessoesToAgendamentos(sessoesParaSync);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center px-1 sm:px-4 bg-forest/25 backdrop-blur-sm animate-in fade-in py-1 sm:py-3">
@@ -2209,6 +2293,28 @@ export function FichaPacienteExternoModal({
                 <span className="text-lg font-extrabold text-amber-900">R$ {totalPendente.toFixed(2)}</span>
               </div>
             </div>
+
+            {/* Reajuste Anual de Contrato (Configuração Direta na Ficha Financeira) */}
+            <PainelReajusteAnualContrato
+              tipoCliente="paciente"
+              clienteNome={nomeDisplay}
+              contatoNome={nomeDisplay}
+              contatoTelefone={telDisplay}
+              valorAtual={valorAtualSessaoNum}
+              apenasIndicesOficiais={apenasIndicesOficiaisReajuste}
+              origemContratoLabel={origemContratoReajusteLabel}
+              config={currentPaciente.reajusteAnual}
+              profissionalNome={
+                profReferencia?.name ||
+                profReferencia?.nome ||
+                currentPaciente.profissionalNome ||
+                "Profissional"
+              }
+              profissionalCrp={profReferencia?.crp || currentPaciente.profissionalCrp}
+              qtdLancamentosFuturos={qtdSessoesFuturasReajuste}
+              onSave={handleSaveReajustePaciente}
+              showToast={showToast}
+            />
           </div>
 
           {/* 7. PRONTUÁRIO CLÍNICO & EVOLUÇÕES RÁPIDAS (PROTEGIDO POR SIGILO CFP) */}
@@ -2767,6 +2873,7 @@ export function FichaPacienteExternoModal({
                   companyData: profReferencia?.companyData,
                   faturamentoPadrao: profReferencia?.faturamentoPadrao,
                   perfisFaturamento: profReferencia?.perfisFaturamento,
+                  assinatura: profReferencia?.assinatura,
                 }}
                 showToast={showToast}
                 onAbrirProntuarioModal={
@@ -2777,6 +2884,10 @@ export function FichaPacienteExternoModal({
                       }
                     : undefined
                 }
+                reajusteAnual={currentPaciente.reajusteAnual}
+                apenasIndicesOficiaisReajuste={apenasIndicesOficiaisReajuste}
+                origemContratoLabel={origemContratoReajusteLabel}
+                onSaveReajusteAnual={handleSaveReajustePaciente}
               />
             </div>
           </div>

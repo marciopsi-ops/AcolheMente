@@ -22,6 +22,7 @@
         "motivo": { "type": "string" },
         "status": { "type": "string", "enum": ["Aguardando Avaliação", "Triado"] },
         "valorRef": { "type": "number" },
+        "reajusteAnual": { "type": "object" },
         "createdAt": { "type": "timestamp" }
       },
       "required": ["nome", "email", "viaAcesso", "motivo", "createdAt", "status"]
@@ -147,6 +148,7 @@
         "profissionalId": { "type": "string" },
         "profissionalNome": { "type": "string" },
         "status": { "type": "string", "enum": ["solicitacao_servico", "paciente", "alta", "interrupcao"] },
+        "reajusteAnual": { "type": "object" },
         "createdAt": { "type": "timestamp" }
       },
       "required": ["colaboradorNome", "colaboradorWhatsapp", "empresaId", "servicoId", "profissionalId", "status", "createdAt"]
@@ -251,6 +253,7 @@
         "profissionalId": { "type": "string" },
         "status": { "type": "string" },
         "statusTratamento": { "type": "string" },
+        "reajusteAnual": { "type": "object" },
         "createdAt": { "type": "timestamp" },
         "updatedAt": { "type": "timestamp" }
       },
@@ -286,6 +289,7 @@
         "historicoServicos": { "type": "array" },
         "registrosBordo": { "type": "array" },
         "propostaContrato": { "type": "object" },
+        "reajusteAnual": { "type": "object" },
         "observacoesGerais": { "type": "string", "maxLength": 5000 },
         "createdAt": { "type": "timestamp" },
         "updatedAt": { "type": "timestamp" }
@@ -303,6 +307,8 @@
         "descricao": { "type": "string" },
         "data": { "type": "string" },
         "hora": { "type": "string" },
+        "ofereceCertificado": { "type": "boolean" },
+        "cargaHoraria": { "type": "string" },
         "vagas": { "type": "string" },
         "isGratuito": { "type": "boolean" },
         "valor": { "type": "string" },

@@ -144,6 +144,16 @@ export const DocumentoPublicoView: React.FC<DocumentoPublicoViewProps> = ({
   }
 
   const prof = (documento.perfilProfissionalUsado || {}) as any;
+  const isCertificado = documento.tipo === "certificado";
+  const cargaHorariaCert = (documento as any).cargaHoraria as string | undefined;
+  const wlEnabled = Boolean(documento.whiteLabelEnabled);
+  const primaryColor = wlEnabled
+    ? (documento.whiteLabelConfig?.primaryColor || "#1b3022")
+    : "#1b3022";
+  const secondaryColor = wlEnabled
+    ? (documento.whiteLabelConfig?.secondaryColor || "#f59e0b")
+    : "#f59e0b";
+  const logoUrl = wlEnabled ? (documento.companyData?.logoUrl || "") : "";
 
   return (
     <div className="min-h-screen bg-slate-200 py-8 px-4 flex flex-col items-center justify-start print:bg-white print:p-0">
@@ -152,8 +162,14 @@ export const DocumentoPublicoView: React.FC<DocumentoPublicoViewProps> = ({
         <div className="flex items-center gap-2.5">
           <ShieldCheck className="w-6 h-6 text-emerald-400" />
           <div>
-            <h3 className="font-bold font-serif text-sm">Documento Verificado e Autêntico</h3>
-            <p className="text-[11px] text-emerald-100/80">Emitido em conformidade com as normas CFP</p>
+            <h3 className="font-bold font-serif text-sm">
+              {isCertificado ? "Certificado Verificado e Autêntico" : "Documento Verificado e Autêntico"}
+            </h3>
+            <p className="text-[11px] text-emerald-100/80">
+              {isCertificado
+                ? "Autenticidade e carga horária validadas digitalmente"
+                : "Emitido em conformidade com as normas CFP"}
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -177,33 +193,52 @@ export const DocumentoPublicoView: React.FC<DocumentoPublicoViewProps> = ({
       <div className="w-full max-w-[210mm] min-h-[297mm] bg-white p-8 sm:p-14 shadow-2xl rounded-2xl border border-slate-300 flex flex-col justify-between text-slate-900 print:shadow-none print:border-none print:p-0">
         <div>
           {/* Header Timbrado */}
-          <div className="flex items-center justify-between pb-6 border-b-2 border-forest/20 mb-8">
+          <div
+            className="flex items-center justify-between pb-6 border-b-2 mb-8"
+            style={{ borderColor: `${primaryColor}33` }}
+          >
             <div className="flex items-center gap-3.5">
-              <div className="w-12 h-12 rounded-full bg-forest text-white font-bold flex items-center justify-center text-lg shrink-0">
-                {(prof.nome || "P").charAt(0)}
-              </div>
+              {logoUrl ? (
+                <img src={logoUrl} alt="Logo" className="h-12 max-w-[160px] object-contain" />
+              ) : (
+                <div
+                  className="w-12 h-12 rounded-full text-white font-bold flex items-center justify-center text-lg shrink-0"
+                  style={{ backgroundColor: primaryColor }}
+                >
+                  {(prof.nome || "P").charAt(0)}
+                </div>
+              )}
               <div>
-                <h1 className="font-serif font-bold text-base sm:text-lg text-forest">
-                  {prof.nome || "Profissional de Saúde"}
+                <h1
+                  className="font-serif font-bold text-base sm:text-lg"
+                  style={{ color: primaryColor }}
+                >
+                  {prof.nomeEmpresa || prof.nome || "Profissional de Saúde"}
                 </h1>
                 <p className="text-xs text-slate-600 font-mono">
-                  CRP {prof.crp || "00/00000"} · {prof.profissao || "Psicólogo(a)"}
+                  {prof.profissao || "Psicólogo(a)"}
+                  {prof.crp ? ` · CRP ${prof.crp}` : ""}
                 </p>
-                {prof.nomeEmpresa && (
-                  <p className="text-[11px] text-slate-500">{prof.nomeEmpresa} {prof.cnpj ? `(CNPJ: ${prof.cnpj})` : ""}</p>
+                {prof.nomeEmpresa && prof.nome && (
+                  <p className="text-[11px] text-slate-500">
+                    Resp.: {prof.nome} {prof.cnpj ? `(CNPJ: ${prof.cnpj})` : ""}
+                  </p>
                 )}
               </div>
             </div>
 
             <div className="text-right text-[11px] text-slate-500 font-mono">
-              <p className="font-bold text-forest">{documento.numeroEmissao}</p>
+              <p className="font-bold" style={{ color: primaryColor }}>{documento.numeroEmissao}</p>
               <p>{new Date(documento.dataEmissao).toLocaleDateString("pt-BR")}</p>
             </div>
           </div>
 
           {/* Título */}
           <div className="text-center my-8">
-            <h2 className="text-lg sm:text-xl font-bold font-serif uppercase tracking-wider text-forest underline decoration-sun decoration-2 underline-offset-8">
+            <h2
+              className="text-lg sm:text-xl font-bold font-serif uppercase tracking-wider underline decoration-2 underline-offset-8"
+              style={{ color: primaryColor, textDecorationColor: secondaryColor }}
+            >
               {documento.titulo}
             </h2>
             <p className="text-xs text-slate-500 mt-2">
@@ -211,10 +246,20 @@ export const DocumentoPublicoView: React.FC<DocumentoPublicoViewProps> = ({
             </p>
           </div>
 
-          {/* Dados do Paciente Incluídos */}
+          {/* Dados do Destinatário / Participante */}
           <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 mb-6 text-xs text-slate-700 space-y-1">
-            <p className="font-bold text-forest mb-1 uppercase text-[10px] tracking-wider">Destinatário(a) / Paciente:</p>
+            <p
+              className="font-bold mb-1 uppercase text-[10px] tracking-wider"
+              style={{ color: primaryColor }}
+            >
+              {isCertificado ? "Participante Certificado(a):" : "Destinatário(a) / Paciente:"}
+            </p>
             <p className="font-bold text-sm text-slate-900">{documento.pacienteNome}</p>
+            {isCertificado && cargaHorariaCert && (
+              <p className="text-xs text-slate-600 pt-0.5">
+                Carga Horária Total: <strong className="text-slate-900">{cargaHorariaCert}</strong>
+              </p>
+            )}
           </div>
 
           {/* Seções ou Conteúdo Principal */}
@@ -222,7 +267,10 @@ export const DocumentoPublicoView: React.FC<DocumentoPublicoViewProps> = ({
             <div className="space-y-6 my-6">
               {documento.secoes.map((secao, idx) => (
                 <div key={secao.id || idx} className="space-y-2">
-                  <h3 className="font-serif font-bold text-sm text-forest uppercase tracking-wide border-b border-slate-200 pb-1">
+                  <h3
+                    className="font-serif font-bold text-sm uppercase tracking-wide border-b border-slate-200 pb-1"
+                    style={{ color: primaryColor }}
+                  >
                     {idx + 1}. {secao.titulo}
                   </h3>
                   <p className="text-sm leading-relaxed text-slate-800 text-justify whitespace-pre-line pl-2">
@@ -256,7 +304,8 @@ export const DocumentoPublicoView: React.FC<DocumentoPublicoViewProps> = ({
               {prof.nome || documento.profissionalId}
             </p>
             <p className="text-xs text-slate-600 font-mono">
-              CRP {prof.crp || "00/00000"}
+              {prof.profissao || "Psicólogo(a)"}
+              {prof.crp ? ` · CRP ${prof.crp}` : ""}
             </p>
             {prof.contato && <p className="text-[11px] text-slate-500 mt-0.5">{prof.contato}</p>}
           </div>

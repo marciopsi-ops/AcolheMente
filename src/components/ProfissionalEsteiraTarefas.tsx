@@ -33,8 +33,19 @@ import {
   UserCheck,
   AlertCircle,
   RefreshCw,
-  Lock
+  Lock,
+  TrendingUp,
+  Building2,
 } from "lucide-react";
+import type { EmpresaClienteB2B } from "../types/empresaB2B";
+import {
+  avaliarStatusLembreteReajuste,
+  buildReajusteAlertItemId,
+  formatMoedaInteiraOuDecimal,
+  getNomeMesReajuste,
+  isRegistroAtivoParaReajuste,
+  parseValorMonetarioSeguro,
+} from "../utils/reajusteAnual";
 export interface UserProfile {
   uid?: string;
   id?: string;
@@ -60,7 +71,14 @@ export interface Acolhimento {
   [key: string]: any;
 }
 
-export type ProfDemandType = "assignment" | "contract" | "alert" | "system" | "profile" | "inactivation";
+export type ProfDemandType =
+  | "assignment"
+  | "contract"
+  | "alert"
+  | "system"
+  | "profile"
+  | "inactivation"
+  | "reajuste";
 
 export interface ProfDemandItem {
   id: string;
@@ -72,18 +90,26 @@ export interface ProfDemandItem {
   treated: boolean;
   priority?: "alta" | "media" | "baixa";
   patientObj?: Acolhimento;
-  actionType?: "accept" | "contract" | "profile" | "view_patient" | "whatsapp";
+  actionType?: "accept" | "contract" | "profile" | "view_patient" | "whatsapp" | "reajuste";
 }
 
 export interface ProfEntityCard {
   entityId: string;
-  entityType: "paciente" | "perfil_profissional";
+  entityType:
+    | "paciente"
+    | "paciente_externo"
+    | "paciente_corporativo"
+    | "empresa_b2b"
+    | "perfil_profissional";
   entityName: string;
   entitySubtitle: string;
   entityContact?: string;
   entityEmail?: string;
   entityBadge?: string;
   patientObj?: Acolhimento;
+  externalPatientObj?: any;
+  corporateFichaObj?: any;
+  empresaB2BObj?: EmpresaClienteB2B;
   items: ProfDemandItem[];
   oldestTimestamp: number;
   newestTimestamp: number;
@@ -93,11 +119,17 @@ export interface ProfEntityCard {
 
 interface ProfissionalEsteiraTarefasProps {
   meusPacientes: Acolhimento[];
+  pacientesExternos?: any[];
+  fichasCorporativas?: any[];
+  empresasB2B?: EmpresaClienteB2B[];
   profile: UserProfile;
   treatedItemIds: Set<string>;
   onToggleTreatedItem: (id: string) => void;
   onMarkAllEntityTreated: (itemIds: string[]) => void;
   onSelectPaciente: (paciente: Acolhimento) => void;
+  onSelectPacienteExterno?: (paciente: any) => void;
+  onSelectFichaCorporativa?: (ficha: any) => void;
+  onSelectEmpresaB2B?: (empresa: EmpresaClienteB2B) => void;
   onNavigateToTab: (tab: any) => void;
   onAcceptPaciente: (paciente: Acolhimento) => Promise<void> | void;
   onDevolverPaciente: (paciente: Acolhimento) => void;
@@ -107,11 +139,17 @@ interface ProfissionalEsteiraTarefasProps {
 
 export function ProfissionalEsteiraTarefas({
   meusPacientes,
+  pacientesExternos = [],
+  fichasCorporativas = [],
+  empresasB2B = [],
   profile,
   treatedItemIds,
   onToggleTreatedItem,
   onMarkAllEntityTreated,
   onSelectPaciente,
+  onSelectPacienteExterno,
+  onSelectFichaCorporativa,
+  onSelectEmpresaB2B,
   onNavigateToTab,
   onAcceptPaciente,
   onDevolverPaciente,
@@ -287,6 +325,36 @@ export function ProfissionalEsteiraTarefas({
         });
       }
 
+      // 1.6 Lembrete de Reajuste Anual (1 mês antes ou mês vigente)
+      if (isRegistroAtivoParaReajuste("acessivel", p)) {
+        const av = avaliarStatusLembreteReajuste(p.reajusteAnual);
+        if (av.precisaAcao) {
+          const itemId = buildReajusteAlertItemId("acessivel", p.id, av.anoCiclo);
+          const mesNome = getNomeMesReajuste(av.mesReajuste);
+          const valAtual = formatMoedaInteiraOuDecimal(
+            parseValorMonetarioSeguro(p.valorSessao, 100)
+          );
+          items.push({
+            id: itemId,
+            type: "reajuste",
+            title:
+              av.status === "aviso_previo"
+                ? `Aviso Prévio de Reajuste Anual (${mesNome}/${av.anoCiclo})`
+                : `Mês de Reajuste Anual em Curso (${mesNome}/${av.anoCiclo})`,
+            desc:
+              av.status === "aviso_previo"
+                ? `Falta 1 mês para o reajuste anual deste atendimento (valor atual ${valAtual}). Índices oficiais aplicáveis: IPCA ou INPC. Envie o aviso prévio de 30 dias pela área financeira da ficha.`
+                : `Estamos no mês base de reajuste contratual (${mesNome}/${av.anoCiclo} · valor atual ${valAtual}). Acesse o financeiro da ficha para simular pelo IPCA/INPC e aplicar o novo valor arredondado.`,
+            date: `${mesNome}/${av.anoCiclo}`,
+            timestamp: Date.now() + 25000,
+            treated: treatedItemIds.has(itemId),
+            priority: av.status === "mes_vigente" ? "alta" : "media",
+            patientObj: p,
+            actionType: "reajuste",
+          });
+        }
+      }
+
       if (items.length > 0) {
         const timestamps = items.map((i) => i.timestamp);
         const oldest = Math.min(...timestamps);
@@ -311,6 +379,152 @@ export function ProfissionalEsteiraTarefas({
           isPendingAcceptance: isPending,
         });
       }
+    });
+
+    // 1B. REAJUSTES ANUAIS DE PACIENTES DA CARTEIRA EXTERNA (PARTICULAR)
+    pacientesExternos.forEach((p) => {
+      if (!isRegistroAtivoParaReajuste("externo", p)) return;
+      const av = avaliarStatusLembreteReajuste(p.reajusteAnual);
+      if (!av.precisaAcao) return;
+
+      const pName = p.nomeDesejado || p.nomeCivil || p.nome || "Paciente Particular";
+      const itemId = buildReajusteAlertItemId("externo", p.id, av.anoCiclo);
+      const mesNome = getNomeMesReajuste(av.mesReajuste);
+      const valAtual = formatMoedaInteiraOuDecimal(
+        parseValorMonetarioSeguro(p.valorSessao, 120)
+      );
+      const item: ProfDemandItem = {
+        id: itemId,
+        type: "reajuste",
+        title:
+          av.status === "aviso_previo"
+            ? `Aviso Prévio de Reajuste Particular (${mesNome}/${av.anoCiclo})`
+            : `Mês de Reajuste Anual Particular (${mesNome}/${av.anoCiclo})`,
+        desc:
+          av.status === "aviso_previo"
+            ? `Falta 1 mês para o reajuste anual de ${pName} (valor atual ${valAtual}). Defina livremente índice (%), valor fixo direto em R$, IPCA ou INPC e envie o aviso prévio de 30 dias.`
+            : `Mês base de reajuste contratual (${mesNome}/${av.anoCiclo} · valor atual ${valAtual}). Abra a Ficha de Bordo para aplicar o novo valor arredondado.`,
+        date: `${mesNome}/${av.anoCiclo}`,
+        timestamp: Date.now() + 24000,
+        treated: treatedItemIds.has(itemId),
+        priority: av.status === "mes_vigente" ? "alta" : "media",
+        actionType: "reajuste",
+      };
+
+      cards.push({
+        entityId: `paciente-ext-${p.id}`,
+        entityType: "paciente_externo",
+        entityName: pName,
+        entitySubtitle: `Carteira Particular / Externa • Sessão atual: ${valAtual}`,
+        entityContact: p.whatsapp || p.telefone || "",
+        entityEmail: p.email || "",
+        entityBadge: "Carteira Externa",
+        externalPatientObj: p,
+        items: [item],
+        oldestTimestamp: item.timestamp,
+        newestTimestamp: item.timestamp,
+        hasCriticalAlert: item.priority === "alta" && !item.treated,
+      });
+    });
+
+    // 1C. REAJUSTES ANUAIS DE PACIENTES DO CONVÊNIO CORPORATIVO
+    fichasCorporativas.forEach((f) => {
+      if (!isRegistroAtivoParaReajuste("corporativo", f)) return;
+      const av = avaliarStatusLembreteReajuste(f.reajusteAnual);
+      if (!av.precisaAcao) return;
+
+      const fName =
+        f.nomeCivil ||
+        f.pacienteNomeCompleto ||
+        (f.beneficiarioTipo === "dependente" && f.dependenteInfo
+          ? f.dependenteInfo
+          : f.colaboradorNome) ||
+        "Paciente Corporativo";
+      const itemId = buildReajusteAlertItemId("corporativo", f.id, av.anoCiclo);
+      const mesNome = getNomeMesReajuste(av.mesReajuste);
+      const valAtual = formatMoedaInteiraOuDecimal(
+        parseValorMonetarioSeguro(f.valorSessao, 100)
+      );
+      const item: ProfDemandItem = {
+        id: itemId,
+        type: "reajuste",
+        title:
+          av.status === "aviso_previo"
+            ? `Aviso Prévio de Reajuste Corporativo (${mesNome}/${av.anoCiclo})`
+            : `Mês de Reajuste Anual Corporativo (${mesNome}/${av.anoCiclo})`,
+        desc:
+          av.status === "aviso_previo"
+            ? `Falta 1 mês para o reajuste anual deste atendimento corporativo (valor atual ${valAtual}). Índices oficiais permitidos: IPCA ou INPC.`
+            : `Mês base de reajuste contratual (${mesNome}/${av.anoCiclo} · valor atual ${valAtual}). Abra a Ficha de Bordo para aplicar o índice oficial IPCA/INPC.`,
+        date: `${mesNome}/${av.anoCiclo}`,
+        timestamp: Date.now() + 23500,
+        treated: treatedItemIds.has(itemId),
+        priority: av.status === "mes_vigente" ? "alta" : "media",
+        actionType: "reajuste",
+      };
+
+      cards.push({
+        entityId: `paciente-corp-${f.id}`,
+        entityType: "paciente_corporativo",
+        entityName: fName,
+        entitySubtitle: `Convênio Corporativo • Sessão atual: ${valAtual}`,
+        entityContact: f.colaboradorWhatsapp || f.telefone || "",
+        entityEmail: f.colaboradorEmail || f.email || "",
+        entityBadge: "Corporativo",
+        corporateFichaObj: f,
+        items: [item],
+        oldestTimestamp: item.timestamp,
+        newestTimestamp: item.timestamp,
+        hasCriticalAlert: item.priority === "alta" && !item.treated,
+      });
+    });
+
+    // 1D. REAJUSTES ANUAIS DE EMPRESAS CLIENTES B2B DO PROFISSIONAL
+    empresasB2B.forEach((emp) => {
+      if (!isRegistroAtivoParaReajuste("empresa_b2b", emp)) return;
+      const av = avaliarStatusLembreteReajuste(emp.reajusteAnual);
+      if (!av.precisaAcao) return;
+
+      const empName = emp.nomeFantasia || emp.razaoSocial || "Empresa B2B";
+      const itemId = buildReajusteAlertItemId("empresa_b2b", emp.id, av.anoCiclo);
+      const mesNome = getNomeMesReajuste(av.mesReajuste);
+      const valAtual = formatMoedaInteiraOuDecimal(
+        Number(emp.valorServicoPadrao) > 0
+          ? Number(emp.valorServicoPadrao)
+          : Number(emp.propostaContrato?.valorAcordadoPadrao) || 0
+      );
+      const item: ProfDemandItem = {
+        id: itemId,
+        type: "reajuste",
+        title:
+          av.status === "aviso_previo"
+            ? `Aviso Prévio de Reajuste Contratual B2B (${mesNome}/${av.anoCiclo})`
+            : `Mês de Reajuste de Contrato B2B (${mesNome}/${av.anoCiclo})`,
+        desc:
+          av.status === "aviso_previo"
+            ? `Falta 1 mês para o aniversário de reajuste da empresa ${empName} (valor base atual ${valAtual}). Alinhe o índice (%), valor fixo direto em R$, IPCA ou INPC com ${emp.contatoNome || "o responsável"}.`
+            : `Mês base de reajuste contratual da empresa ${empName} (${mesNome}/${av.anoCiclo} · valor atual ${valAtual}). Acesse o financeiro da empresa para aplicar o novo valor arredondado.`,
+        date: `${mesNome}/${av.anoCiclo}`,
+        timestamp: Date.now() + 23000,
+        treated: treatedItemIds.has(itemId),
+        priority: av.status === "mes_vigente" ? "alta" : "media",
+        actionType: "reajuste",
+      };
+
+      cards.push({
+        entityId: `empresa-b2b-${emp.id}`,
+        entityType: "empresa_b2b",
+        entityName: empName,
+        entitySubtitle: `Empresa Cliente B2B • Contato: ${emp.contatoNome || "Não informado"} • Base: ${valAtual}`,
+        entityContact: emp.contatoTelefone || "",
+        entityEmail: emp.contatoEmail || emp.emailFinanceiroNf || "",
+        entityBadge: "Empresa B2B",
+        empresaB2BObj: emp,
+        items: [item],
+        oldestTimestamp: item.timestamp,
+        newestTimestamp: item.timestamp,
+        hasCriticalAlert: item.priority === "alta" && !item.treated,
+      });
     });
 
     // 2. CARD DO PERFIL DO PROFISSIONAL (PENDÊNCIAS CADASTRAIS)
@@ -429,6 +643,10 @@ export function ProfissionalEsteiraTarefas({
     (sum, c) => sum + c.items.filter((i) => i.type === "profile" && !i.treated).length,
     0
   );
+  const pendingReajustesCount = allCards.reduce(
+    (sum, c) => sum + c.items.filter((i) => i.type === "reajuste" && !i.treated).length,
+    0
+  );
 
   // Filtered and Sorted Cards
   const filteredCards = (() => {
@@ -442,6 +660,7 @@ export function ProfissionalEsteiraTarefas({
         // Category filter
         if (filterCategory === "assignment" && item.type !== "assignment") return false;
         if (filterCategory === "contract" && item.type !== "contract") return false;
+        if (filterCategory === "reajuste" && item.type !== "reajuste") return false;
         if (filterCategory === "alert" && item.type !== "alert") return false;
         if (filterCategory === "system" && item.type !== "system") return false;
         if (filterCategory === "profile" && item.type !== "profile") return false;
@@ -506,6 +725,8 @@ export function ProfissionalEsteiraTarefas({
         return "bg-amber-50 text-amber-800 border-amber-200";
       case "contract":
         return "bg-blue-50 text-blue-800 border-blue-200";
+      case "reajuste":
+        return "bg-amber-50 text-amber-900 border-amber-200";
       case "alert":
         return "bg-red-50 text-red-800 border-red-200";
       case "inactivation":
@@ -524,6 +745,8 @@ export function ProfissionalEsteiraTarefas({
         return "Novo Encaminhamento";
       case "contract":
         return "Contrato Pendente";
+      case "reajuste":
+        return "Reajuste Anual";
       case "alert":
         return "Alerta da Coordenação";
       case "inactivation":
@@ -542,6 +765,8 @@ export function ProfissionalEsteiraTarefas({
         return <UserCheck className="w-3.5 h-3.5 text-amber-600" />;
       case "contract":
         return <FileSignature className="w-3.5 h-3.5 text-blue-600" />;
+      case "reajuste":
+        return <TrendingUp className="w-3.5 h-3.5 text-amber-700" />;
       case "alert":
         return <AlertTriangle className="w-3.5 h-3.5 text-red-600" />;
       case "inactivation":
@@ -551,6 +776,28 @@ export function ProfissionalEsteiraTarefas({
       case "system":
       default:
         return <Layers className="w-3.5 h-3.5 text-slate-600" />;
+    }
+  };
+
+  const handleOpenEntityDetails = (card: ProfEntityCard) => {
+    if (card.entityType === "empresa_b2b" && card.empresaB2BObj) {
+      onSelectEmpresaB2B?.(card.empresaB2BObj);
+      onNavigateToTab("empresasB2B");
+      return;
+    }
+    if (card.entityType === "paciente_corporativo" && card.corporateFichaObj) {
+      onSelectFichaCorporativa?.(card.corporateFichaObj);
+      onNavigateToTab("pacientes");
+      return;
+    }
+    if (card.entityType === "paciente_externo" && card.externalPatientObj) {
+      onSelectPacienteExterno?.(card.externalPatientObj);
+      onNavigateToTab("pacientes");
+      return;
+    }
+    if (card.patientObj) {
+      onSelectPaciente(card.patientObj);
+      onNavigateToTab("pacientes");
     }
   };
 
@@ -763,6 +1010,7 @@ export function ProfissionalEsteiraTarefas({
               {[
                 { id: "all", name: "Todos os Tipos" },
                 { id: "assignment", name: "Novos Pacientes", count: pendingAcceptanceCount },
+                { id: "reajuste", name: "Reajustes Anuais", count: pendingReajustesCount },
                 { id: "contract", name: "Contratos", count: pendingContractsCount },
                 { id: "alert", name: "Alertas Gestão", count: pendingAlertsCount },
                 { id: "system", name: "Movimentações" },
@@ -909,6 +1157,8 @@ export function ProfissionalEsteiraTarefas({
                         className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm shrink-0 uppercase shadow-xs ${
                           card.entityType === "perfil_profissional"
                             ? "bg-orange-100 text-orange-800 border border-orange-200"
+                            : card.entityType === "empresa_b2b"
+                            ? "bg-emerald-50 text-emerald-900 border border-emerald-200"
                             : card.isPendingAcceptance
                             ? "bg-amber-500 text-white animate-pulse"
                             : "bg-forest text-white"
@@ -916,6 +1166,8 @@ export function ProfissionalEsteiraTarefas({
                       >
                         {card.entityType === "perfil_profissional" ? (
                           <User className="w-5 h-5" />
+                        ) : card.entityType === "empresa_b2b" ? (
+                          <Building2 className="w-5 h-5" />
                         ) : (
                           card.entityName.slice(0, 2)
                         )}
@@ -953,7 +1205,7 @@ export function ProfissionalEsteiraTarefas({
                         <button
                           onClick={() => openWhatsApp(card.entityContact!, card.entityName)}
                           className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-semibold transition-colors flex items-center gap-1 shadow-xs"
-                          title="Abrir conversa no WhatsApp com o paciente"
+                          title="Abrir conversa no WhatsApp com o cliente"
                         >
                           <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
                           WhatsApp
@@ -977,16 +1229,16 @@ export function ProfissionalEsteiraTarefas({
                           <User className="w-3.5 h-3.5" />
                           Editar Meu Perfil
                         </button>
-                      ) : card.patientObj ? (
+                      ) : card.patientObj ||
+                        card.externalPatientObj ||
+                        card.corporateFichaObj ||
+                        card.empresaB2BObj ? (
                         <button
-                          onClick={() => {
-                            onSelectPaciente(card.patientObj!);
-                            onNavigateToTab("pacientes");
-                          }}
+                          onClick={() => handleOpenEntityDetails(card)}
                           className="px-3 py-1.5 bg-white hover:bg-warm text-forest border border-soft rounded-xl text-xs font-semibold transition-colors flex items-center gap-1 shadow-xs"
                         >
                           <FileText className="w-3.5 h-3.5 text-forest/70" />
-                          Ver Ficha
+                          {card.entityType === "empresa_b2b" ? "Abrir Empresa" : "Ver Ficha"}
                         </button>
                       ) : null}
 
@@ -1135,6 +1387,17 @@ export function ProfissionalEsteiraTarefas({
                                 </button>
                               )}
 
+                              {/* Special action for Reajuste Anual */}
+                              {item.type === "reajuste" && (
+                                <button
+                                  onClick={() => handleOpenEntityDetails(card)}
+                                  className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 rounded-xl text-xs font-semibold transition-colors flex items-center gap-1 shadow-xs"
+                                >
+                                  <TrendingUp className="w-3.5 h-3.5 text-amber-700" />
+                                  Revisar Reajuste
+                                </button>
+                              )}
+
                               {/* Special action for Profile */}
                               {item.type === "profile" && (
                                 <button
@@ -1147,18 +1410,22 @@ export function ProfissionalEsteiraTarefas({
                               )}
 
                               {/* Generic View Patient Action */}
-                              {item.type !== "assignment" && item.type !== "contract" && item.type !== "profile" && card.patientObj && (
-                                <button
-                                  onClick={() => {
-                                    onSelectPaciente(card.patientObj!);
-                                    onNavigateToTab("pacientes");
-                                  }}
-                                  className="px-2.5 py-1 text-xs text-forest/70 hover:text-forest hover:underline flex items-center gap-1"
-                                >
-                                  <Eye className="w-3.5 h-3.5" />
-                                  Abrir Caso
-                                </button>
-                              )}
+                              {item.type !== "assignment" &&
+                                item.type !== "contract" &&
+                                item.type !== "reajuste" &&
+                                item.type !== "profile" &&
+                                card.patientObj && (
+                                  <button
+                                    onClick={() => {
+                                      onSelectPaciente(card.patientObj!);
+                                      onNavigateToTab("pacientes");
+                                    }}
+                                    className="px-2.5 py-1 text-xs text-forest/70 hover:text-forest hover:underline flex items-center gap-1"
+                                  >
+                                    <Eye className="w-3.5 h-3.5" />
+                                    Abrir Caso
+                                  </button>
+                                )}
                             </div>
                           </div>
                         );

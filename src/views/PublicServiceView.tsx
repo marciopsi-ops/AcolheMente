@@ -17,6 +17,7 @@ import {
   ZoomIn,
   X,
   Check,
+  Award,
 } from "lucide-react";
 import {
   doc,
@@ -615,6 +616,12 @@ export function PublicServiceView({
                 <span className={item.isGratuito ? "text-emerald-700 font-bold" : ""}>
                   {item.isGratuito ? "Gratuito" : item.valor || "Sob consulta"}
                 </span>
+              </span>
+            )}
+            {item.ofereceCertificado && item.cargaHoraria && (
+              <span className="inline-flex items-center gap-1.5 font-semibold text-emerald-700">
+                <Award className="w-4 h-4 shrink-0" />
+                Certificado incluso ({item.cargaHoraria})
               </span>
             )}
             {maxVagas !== null ? (

@@ -37,6 +37,8 @@ import {
 import { doc, getDoc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { PerfisFaturamentoManagerModal } from "./PerfisFaturamentoManagerModal";
+import { PainelReajusteAnualContrato } from "./PainelReajusteAnualContrato";
+import type { ConfigReajusteAnual } from "../utils/reajusteAnual";
 
 export interface SessaoFaturamentoItem {
   id: string;
@@ -120,6 +122,10 @@ export interface ProfissionalLogadoFaturamento {
   companyData?: any;
   faturamentoPadrao?: "PF" | "PJ";
   perfisFaturamento?: PerfilFaturamentoItem[];
+  assinatura?: {
+    tipo: "desenhada" | "imagem";
+    dados: string;
+  };
 }
 
 export interface PacienteFaturamentoSpreadsheetProps {
@@ -149,6 +155,18 @@ export interface PacienteFaturamentoSpreadsheetProps {
     titulo?: string;
   }[];
   onAbrirProntuarioModal?: (sessaoId?: string) => void;
+  reajusteAnual?: ConfigReajusteAnual | null;
+  apenasIndicesOficiaisReajuste?: boolean;
+  origemContratoLabel?: string;
+  onSaveReajusteAnual?: (
+    novaConfig: ConfigReajusteAnual,
+    opcoesAplicacao?: {
+      novoValorBase?: number;
+      atualizarAgendadosFuturos?: boolean;
+      vigenciaAnoMes?: string;
+      sessoesJaAtualizadasNaPlanilha?: boolean;
+    }
+  ) => Promise<void> | void;
 }
 
 export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreadsheetProps> = ({
@@ -173,6 +191,10 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
   empresaNome = "",
   registrosProntuario = [],
   onAbrirProntuarioModal,
+  reajusteAnual,
+  apenasIndicesOficiaisReajuste = false,
+  origemContratoLabel,
+  onSaveReajusteAnual,
 }) => {
   const parseValorNumerico = (v: any): number => {
     if (!v) return 100;
@@ -934,6 +956,81 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
         </div>
       </div>
 
+      {/* 1.5 REAJUSTE ANUAL DE CONTRATO (MÊS BASE, LEMBRETE 30 DIAS E SIMULADOR) */}
+      {onSaveReajusteAnual && (
+        <div className="px-3.5 py-2.5 sm:px-4 sm:py-3 bg-white border-b border-soft">
+          <PainelReajusteAnualContrato
+            tipoCliente="paciente"
+            clienteNome={pacienteNome}
+            contatoNome={pacienteNome}
+            contatoTelefone={pacienteTelefone}
+            valorAtual={valorBase}
+            apenasIndicesOficiais={apenasIndicesOficiaisReajuste || isCorporativo}
+            origemContratoLabel={
+              origemContratoLabel ||
+              (isCorporativo
+                ? "Convênio Corporativo"
+                : apenasIndicesOficiaisReajuste
+                ? "Triagem Acessível"
+                : "Carteira Particular / Externa")
+            }
+            config={reajusteAnual}
+            profissionalNome={
+              profissionalLogado?.nome || profissionalLogado?.name || "Profissional"
+            }
+            profissionalCrp={profissionalLogado?.crp}
+            qtdLancamentosFuturos={
+              itensSessoes.filter((s) => {
+                if (s.statusAtendimento !== "agendada" || s.statusPagamento === "pago") {
+                  return false;
+                }
+                const hojeIso = new Date().toISOString().split("T")[0];
+                return !s.data || s.data >= hojeIso;
+              }).length
+            }
+            onSave={async (novaConfig, opcoesAplicacao) => {
+              let atualizouPlanilha = false;
+              if (
+                opcoesAplicacao?.novoValorBase !== undefined &&
+                opcoesAplicacao.atualizarAgendadosFuturos
+              ) {
+                const hojeIso = new Date().toISOString().split("T")[0];
+                const vigMes = opcoesAplicacao.vigenciaAnoMes || "";
+                let alterouAlguma = false;
+                const novasSessoes = itensSessoes.map((s) => {
+                  const isFuturaElegivel =
+                    s.statusAtendimento === "agendada" &&
+                    s.statusPagamento !== "pago" &&
+                    (!s.data ||
+                      (vigMes && s.data.substring(0, 7) >= vigMes) ||
+                      s.data >= hojeIso);
+                  if (isFuturaElegivel) {
+                    alterouAlguma = true;
+                    return { ...s, valor: opcoesAplicacao.novoValorBase! };
+                  }
+                  return s;
+                });
+                if (alterouAlguma) {
+                  setItensSessoes(novasSessoes);
+                  await onSaveSessoes(novasSessoes);
+                  atualizouPlanilha = true;
+                }
+              }
+              await onSaveReajusteAnual(
+                novaConfig,
+                opcoesAplicacao
+                  ? {
+                      ...opcoesAplicacao,
+                      sessoesJaAtualizadasNaPlanilha: atualizouPlanilha,
+                    }
+                  : undefined
+              );
+            }}
+            showToast={showToast}
+          />
+        </div>
+      )}
+
       {/* 2. CARDS RESUMO / MÉTRICAS DO PERÍODO SELECIONADO */}
       <div className="px-3.5 py-2.5 sm:px-4 sm:py-3 bg-warm/15 border-b border-soft grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
         <div className="bg-white p-2.5 rounded-xl border border-soft shadow-2xs">
@@ -1550,7 +1647,18 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
                 <p className="text-[11px] text-forest/60">
                   Documento emitido em {new Date().toLocaleDateString("pt-BR")}
                 </p>
-                <div className="w-48 border-b border-forest/40 pt-6" />
+                {profissionalLogado?.assinatura?.dados ? (
+                  <div className="pt-2 flex flex-col items-center">
+                    <img
+                      src={profissionalLogado.assinatura.dados}
+                      alt="Assinatura Profissional"
+                      className="max-h-16 max-w-[220px] object-contain mx-auto mb-1"
+                    />
+                    <div className="w-56 border-b border-forest/40" />
+                  </div>
+                ) : (
+                  <div className="w-48 border-b border-forest/40 pt-6" />
+                )}
                 <p className="text-[11px] font-bold text-forest">
                   {perfilDoReciboAtual.via === "PJ" &&
                   (perfilDoReciboAtual.razaoSocial || perfilDoReciboAtual.nomeFantasia)

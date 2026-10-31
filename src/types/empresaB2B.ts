@@ -1,3 +1,5 @@
+import type { ConfigReajusteAnual } from "../utils/reajusteAnual";
+
 export type StatusEmpresaB2B =
   | "ativa_recorrente"
   | "projeto_pontual"
@@ -91,6 +93,7 @@ export interface EmpresaClienteB2B {
   historicoServicos?: ServicoB2BFaturamentoItem[];
   registrosBordo?: RegistroBordoEmpresaB2B[];
   propostaContrato?: PropostaContratoB2B;
+  reajusteAnual?: ConfigReajusteAnual;
   observacoesGerais?: string;
   createdAt?: any;
   updatedAt?: any;

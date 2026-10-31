@@ -162,6 +162,8 @@ import {
   reauthenticateWithPopup,
   EmailAuthProvider,
   linkWithCredential,
+  linkWithPopup,
+  unlink,
 } from "firebase/auth";
 import {
   doc,
@@ -237,6 +239,13 @@ import {
   formatPerfilSelectOption,
   getPerfilDocumentoCurto,
 } from "../types/faturamento";
+import {
+  avaliarStatusLembreteReajuste,
+  buildReajusteAlertItemId,
+  ConfigReajusteAnual,
+  getNomeCurtoMesReajuste,
+  isRegistroAtivoParaReajuste,
+} from "../utils/reajusteAnual";
 
 const safeLocalStorage = {
   getItem: (key: string): string | null => {
@@ -447,9 +456,46 @@ interface UserProfile {
   uid?: string;
   id?: string;
   role: Role;
+  roles?: Role[];
   name: string;
   email?: string;
   [key: string]: any;
+}
+
+function hasUserRole(
+  u: Partial<UserProfile> | null | undefined,
+  targetRole: Role,
+): boolean {
+  if (!u) return false;
+  return (
+    u.role === targetRole ||
+    (Array.isArray(u.roles) && u.roles.includes(targetRole))
+  );
+}
+
+function isUserProfissional(
+  u: Partial<UserProfile> | null | undefined,
+): boolean {
+  return hasUserRole(u, "profissional");
+}
+
+function formatUserRolesLabel(
+  u: Partial<UserProfile> | null | undefined,
+): string {
+  if (!u) return "";
+  const roleMap: Record<Role, string> = {
+    master: "Gestão",
+    triagem: "Triagem",
+    profissional: "Profissional",
+  };
+  const list: Role[] =
+    Array.isArray(u.roles) && u.roles.length > 0
+      ? u.roles
+      : u.role
+        ? [u.role]
+        : [];
+  if (list.length === 0) return "";
+  return list.map((r) => roleMap[r] || r).join(" + ");
 }
 
 interface Acolhimento {
@@ -1539,7 +1585,7 @@ export function DashboardView({
     currentlyPago: boolean,
     profNome?: string
   ) => {
-    if (!uid || profile?.role !== "master") return;
+    if (!uid || !hasUserRole(profile, "master")) return;
     try {
       const novoStatus = currentlyPago ? "pendente" : "pago";
       const updates: Record<string, any> = {
@@ -2561,7 +2607,8 @@ export function DashboardView({
 
     for (const prof of profsList) {
       try {
-        if (!prof || prof.role !== "profissional") continue;
+        if (!prof || !isUserProfissional(prof) || hasUserRole(prof, "master"))
+          continue;
         const isPago =
           prof.statusPagamento === "pago" || prof.statusPagamento === "paga";
         const isIsento = isExemptFromPlatformBilling(prof);
@@ -2628,7 +2675,8 @@ export function DashboardView({
   useEffect(() => {
     if (
       profile &&
-      profile.role === "profissional" &&
+      isUserProfissional(profile) &&
+      !hasUserRole(profile, "master") &&
       !profile.checkoutTrial7DiasEnviado
     ) {
       checkAndSendTrialCheckoutLinks([profile], globalConfigs);
@@ -2715,6 +2763,9 @@ export function DashboardView({
           unsubProfile = onSnapshot(doc(db, "users", u.uid), (userSnap) => {
             if (userSnap.exists()) {
               const liveData = { ...userSnap.data(), uid: u.uid } as UserProfile;
+              if (!liveData.roles || !Array.isArray(liveData.roles)) {
+                liveData.roles = [liveData.role || "profissional"];
+              }
               setProfile((prev) => (prev ? { ...prev, ...liveData } : liveData));
             }
           });
@@ -2904,6 +2955,29 @@ export function DashboardView({
               } catch (e) {}
             },
           );
+          unsubEmpresas = onSnapshot(
+            query(collection(db, "empresa_leads")),
+            (snapshot) => {
+              const list: EmpresaLead[] = [];
+              snapshot.forEach((d) =>
+                list.push({ id: d.id, ...d.data() } as EmpresaLead),
+              );
+              list.sort(
+                (a, b) =>
+                  b.createdAt?.toMillis?.() - a.createdAt?.toMillis?.() || 0,
+              );
+              setEmpresasLeads(list);
+            },
+            (error) => {
+              console.error("Error loading empresa_leads:", error);
+              try {
+                handleFirestoreError(error, OperationType.GET, "empresa_leads");
+              } catch (e) {}
+            },
+          );
+        }
+
+        if (hasMaster || hasTriagem) {
           unsubProLeads = onSnapshot(
             query(collection(db, "profissionais_leads")),
             (snapshot) => {
@@ -2936,8 +3010,11 @@ export function DashboardView({
               snapshot.forEach((d) => {
                 const data = d.data() as UserProfile;
                 data.uid = d.id;
+                if (!data.roles || !Array.isArray(data.roles)) {
+                  data.roles = [data.role || "profissional"];
+                }
                 listAll.push(data);
-                if (data.role === "profissional") listProfs.push(data);
+                if (isUserProfissional(data)) listProfs.push(data);
               });
               setProfissionaisAtivos(listProfs);
               setAllUsers(listAll);
@@ -2949,29 +3026,6 @@ export function DashboardView({
               } catch (e) {}
             },
           );
-          unsubEmpresas = onSnapshot(
-            query(collection(db, "empresa_leads")),
-            (snapshot) => {
-              const list: EmpresaLead[] = [];
-              snapshot.forEach((d) =>
-                list.push({ id: d.id, ...d.data() } as EmpresaLead),
-              );
-              list.sort(
-                (a, b) =>
-                  b.createdAt?.toMillis?.() - a.createdAt?.toMillis?.() || 0,
-              );
-              setEmpresasLeads(list);
-            },
-            (error) => {
-              console.error("Error loading empresa_leads:", error);
-              try {
-                handleFirestoreError(error, OperationType.GET, "empresa_leads");
-              } catch (e) {}
-            },
-          );
-        }
-
-        if (hasMaster || hasTriagem) {
           unsubComplianceMsg = onSnapshot(
             query(collection(db, "compliance")),
             (snapshot) => {
@@ -3442,9 +3496,15 @@ export function DashboardView({
     setAuthError("");
     try {
       const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: "select_account" });
       const result = await signInWithPopup(auth, provider);
-      const googleEmail = (result.user.email || "").toLowerCase().trim();
-      
+      const googleProviderEmail = result.user.providerData.find(
+        (p) => p.providerId === "google.com"
+      )?.email;
+      const googleEmail = (googleProviderEmail || result.user.email || "")
+        .toLowerCase()
+        .trim();
+
       if (!googleEmail) {
         await signOut(auth);
         setAuthError("Não foi possível obter o e-mail da sua conta Google.");
@@ -3527,7 +3587,10 @@ export function DashboardView({
         setAuthError(
           "Este e-mail já está vinculado a outra forma de login (como senha). Por favor, use a opção correspondente ou vincule as contas.",
         );
-      } else if (err.code === "auth/popup-closed-by-user") {
+      } else if (
+        err.code === "auth/popup-closed-by-user" ||
+        err.code === "auth/cancelled-popup-request"
+      ) {
         // Usuário fechou o pop-up, não exibe erro alarmante
       } else {
         setAuthError(err.message || "Erro de autenticação com Google.");
@@ -3624,6 +3687,10 @@ export function DashboardView({
 
   // Estados para Gestão de E-mail e Autenticação do Usuário
   const [showChangeEmailModal, setShowChangeEmailModal] = useState(false);
+  const [changeEmailMode, setChangeEmailMode] = useState<"standard" | "switch_google">("standard");
+  const [emailConfirmAuthMethod, setEmailConfirmAuthMethod] = useState<"password" | "google">("password");
+  const [googleSwitchStep, setGoogleSwitchStep] = useState<1 | 2>(1);
+  const [pendingUnlinkedGoogleEmail, setPendingUnlinkedGoogleEmail] = useState("");
   const [newEmailInput, setNewEmailInput] = useState("");
   const [confirmEmailInput, setConfirmEmailInput] = useState("");
   const [currentPasswordInput, setCurrentPasswordInput] = useState("");
@@ -3637,8 +3704,73 @@ export function DashboardView({
   const [confirmDirectPassword, setConfirmDirectPassword] = useState("");
   const [isCreatingDirectPassword, setIsCreatingDirectPassword] = useState(false);
   const [directPasswordError, setDirectPasswordError] = useState("");
+  const [directPasswordNeedsReauth, setDirectPasswordNeedsReauth] = useState(false);
 
   const [showAccountDetailsModal, setShowAccountDetailsModal] = useState(false);
+
+  const getLinkedGoogleEmail = (u: FirebaseUser | null | undefined): string => {
+    if (!u) return "";
+    const googleEntry = u.providerData.find((p) => p.providerId === "google.com");
+    return (googleEntry?.email || u.email || "").toLowerCase().trim();
+  };
+
+  const formatAuthEmailError = (err: any, expectedGoogleEmail?: string): string => {
+    const code = err?.code || "";
+    if (code === "auth/user-mismatch") {
+      if (expectedGoogleEmail) {
+        return `A conta Google selecionada na janela não corresponde à conta conectada atualmente (${expectedGoogleEmail}). Na confirmação de segurança, selecione "${expectedGoogleEmail}". Se deseja passar a entrar com outra conta Google, utilize a opção "Trocar Conta Google" acima.`;
+      }
+      return "A conta selecionada na janela de confirmação não corresponde ao usuário conectado nesta sessão.";
+    }
+    if (code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request") {
+      return "A janela de confirmação do Google foi fechada antes de concluir. Clique novamente para continuar.";
+    }
+    if (code === "auth/popup-blocked") {
+      return "O navegador bloqueou a janela do Google. Permita pop-ups para esta página e tente novamente.";
+    }
+    if (code === "auth/wrong-password" || code === "auth/invalid-credential") {
+      return "Senha atual incorreta. Verifique a senha digitada.";
+    }
+    if (
+      code === "auth/email-already-in-use" ||
+      code === "auth/credential-already-in-use" ||
+      code === "auth/account-exists-with-different-credential"
+    ) {
+      return "Este e-mail ou conta Google já está vinculado a outro cadastro na plataforma.";
+    }
+    if (code === "auth/requires-recent-login") {
+      return "Por segurança, sua sessão precisa ser revalidada. Confirme sua identidade novamente para prosseguir.";
+    }
+    if (code === "auth/invalid-email") {
+      return "Formato de e-mail inválido.";
+    }
+    if (code === "auth/too-many-requests") {
+      return "Muitas tentativas seguidas. Aguarde alguns instantes antes de tentar novamente.";
+    }
+    if (code === "auth/operation-not-allowed") {
+      return "Operação restrita pelo provedor de autenticação. Caso utilize login com Google, use a opção 'Trocar Conta Google'.";
+    }
+    return err?.message || "Não foi possível concluir a alteração de e-mail.";
+  };
+
+  useEffect(() => {
+    if (showChangeEmailModal && auth.currentUser) {
+      const hasGoogle = auth.currentUser.providerData.some(
+        (p) => p.providerId === "google.com"
+      );
+      const hasPwd = auth.currentUser.providerData.some(
+        (p) => p.providerId === "password"
+      );
+      setEmailConfirmAuthMethod(hasPwd ? "password" : "google");
+      if (pendingUnlinkedGoogleEmail) {
+        setChangeEmailMode("switch_google");
+        setGoogleSwitchStep(2);
+      } else {
+        setChangeEmailMode(hasGoogle && !hasPwd ? "switch_google" : "standard");
+        setGoogleSwitchStep(1);
+      }
+    }
+  }, [showChangeEmailModal]);
 
   // Estados para Apoio de Acesso na Gestão
   const [selectedUserForApoio, setSelectedUserForApoio] = useState<UserProfile | null>(null);
@@ -3650,6 +3782,168 @@ export function DashboardView({
   const [isUpdatingEmailFromApoio, setIsUpdatingEmailFromApoio] = useState(false);
   const [apoioSuccessMessage, setApoioSuccessMessage] = useState("");
   const [apoioErrorMessage, setApoioErrorMessage] = useState("");
+
+  const handleStartGoogleSwitch = async () => {
+    setChangeEmailError("");
+    setChangeEmailSuccess("");
+
+    if (!auth.currentUser) {
+      setChangeEmailError("Sessão não identificada. Por favor, recarregue a página.");
+      return;
+    }
+
+    const currentGoogleEmail = getLinkedGoogleEmail(auth.currentUser);
+    const hintNewEmail = newEmailInput.trim().toLowerCase();
+    if (hintNewEmail && hintNewEmail === currentGoogleEmail) {
+      setChangeEmailError("O novo e-mail Google informado é igual à conta Google já conectada.");
+      return;
+    }
+
+    const googleProvider = new GoogleAuthProvider();
+    googleProvider.setCustomParameters({
+      prompt: "select_account",
+      ...(currentGoogleEmail ? { login_hint: currentGoogleEmail } : {}),
+    });
+
+    setIsChangingEmail(true);
+    try {
+      await reauthenticateWithPopup(auth.currentUser, googleProvider);
+      await unlink(auth.currentUser, "google.com");
+      setPendingUnlinkedGoogleEmail(
+        currentGoogleEmail || (profile?.email || "").toLowerCase().trim()
+      );
+      setGoogleSwitchStep(2);
+    } catch (err: any) {
+      console.warn("Aviso ao validar conta Google atual para troca:", err);
+      setChangeEmailError(formatAuthEmailError(err, currentGoogleEmail));
+    } finally {
+      setIsChangingEmail(false);
+    }
+  };
+
+  const handleCompleteGoogleSwitch = async () => {
+    setChangeEmailError("");
+    setChangeEmailSuccess("");
+
+    if (!auth.currentUser) {
+      setChangeEmailError("Sessão não identificada. Por favor, recarregue a página.");
+      return;
+    }
+
+    const hintEmail = newEmailInput.trim().toLowerCase();
+    const newGoogleProvider = new GoogleAuthProvider();
+    newGoogleProvider.setCustomParameters({
+      prompt: "select_account",
+      ...(hintEmail && hintEmail.includes("@") ? { login_hint: hintEmail } : {}),
+    });
+
+    setIsChangingEmail(true);
+    try {
+      const linkRes = await linkWithPopup(auth.currentUser, newGoogleProvider);
+      const linkedEmail = getLinkedGoogleEmail(linkRes.user) || hintEmail;
+
+      if (!linkedEmail) {
+        setChangeEmailError("Não foi possível identificar o e-mail da nova conta Google.");
+        setIsChangingEmail(false);
+        return;
+      }
+
+      if ((linkRes.user.email || "").toLowerCase().trim() !== linkedEmail) {
+        try {
+          await updateEmail(linkRes.user, linkedEmail);
+        } catch {
+          // O provedor google.com já está vinculado ao mesmo UID; updateEmail direto pode estar desabilitado por proteção contra enumeração
+        }
+      }
+
+      const previousEmail =
+        pendingUnlinkedGoogleEmail ||
+        (profile?.email || "").toLowerCase().trim();
+
+      const userRef = doc(db, "users", linkRes.user.uid);
+      await updateDoc(userRef, {
+        email: linkedEmail,
+        googleLinked: true,
+        emailUpdatedAt: serverTimestamp(),
+      });
+
+      if (profile) {
+        setProfile({ ...profile, email: linkedEmail });
+      }
+
+      try {
+        await addDoc(collection(db, "auditoria_gestao"), {
+          tipo: "usuario_trocou_conta_google",
+          usuarioAlvoUid: linkRes.user.uid,
+          usuarioAlvoNome: profile?.name || "Usuário",
+          emailAnterior: previousEmail,
+          emailNovo: linkedEmail,
+          executadoPorUid: linkRes.user.uid,
+          executadoPorEmail: linkedEmail,
+          data: serverTimestamp(),
+        });
+      } catch (auditErr) {
+        console.warn("Log auditoria opcional:", auditErr);
+      }
+
+      setPendingUnlinkedGoogleEmail("");
+      setGoogleSwitchStep(1);
+      setChangeEmailSuccess(
+        `Nova conta Google (${linkedEmail}) vinculada com sucesso! Seu UID e todos os seus dados permanecem preservados.`
+      );
+      showToast("Conta Google de acesso atualizada com sucesso!", "success");
+
+      setTimeout(() => {
+        setShowChangeEmailModal(false);
+        setNewEmailInput("");
+        setConfirmEmailInput("");
+        setCurrentPasswordInput("");
+        setChangeEmailSuccess("");
+      }, 2500);
+    } catch (err: any) {
+      console.warn("Aviso ao vincular nova conta Google:", err);
+      setChangeEmailError(formatAuthEmailError(err));
+    } finally {
+      setIsChangingEmail(false);
+    }
+  };
+
+  const handleRestorePreviousGoogle = async () => {
+    setChangeEmailError("");
+    if (!auth.currentUser) return;
+
+    const restoreProvider = new GoogleAuthProvider();
+    restoreProvider.setCustomParameters({
+      prompt: "select_account",
+      ...(pendingUnlinkedGoogleEmail
+        ? { login_hint: pendingUnlinkedGoogleEmail }
+        : {}),
+    });
+
+    setIsChangingEmail(true);
+    try {
+      const linkRes = await linkWithPopup(auth.currentUser, restoreProvider);
+      const restoredEmail =
+        getLinkedGoogleEmail(linkRes.user) || pendingUnlinkedGoogleEmail;
+      if (restoredEmail) {
+        await updateDoc(doc(db, "users", linkRes.user.uid), {
+          email: restoredEmail,
+          googleLinked: true,
+        });
+        if (profile) {
+          setProfile({ ...profile, email: restoredEmail });
+        }
+      }
+      setPendingUnlinkedGoogleEmail("");
+      setGoogleSwitchStep(1);
+      showToast("Conta Google anterior mantida com segurança.", "success");
+    } catch (err: any) {
+      console.warn("Aviso ao restaurar conta Google anterior:", err);
+      setChangeEmailError(formatAuthEmailError(err));
+    } finally {
+      setIsChangingEmail(false);
+    }
+  };
 
   const handleUserChangeEmail = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -3677,29 +3971,44 @@ export function DashboardView({
       return;
     }
 
+    const isGoogleAuth = auth.currentUser.providerData.some(
+      (p) => p.providerId === "google.com"
+    );
+    const hasPassword = auth.currentUser.providerData.some(
+      (p) => p.providerId === "password"
+    );
+    const currentGoogleEmail = getLinkedGoogleEmail(auth.currentUser);
+    const usePasswordAuth =
+      hasPassword && (!isGoogleAuth || emailConfirmAuthMethod === "password");
+
+    if (usePasswordAuth && !currentPasswordInput) {
+      setChangeEmailError("Digite sua senha atual para confirmar a alteração com segurança.");
+      return;
+    }
+
     setIsChangingEmail(true);
     try {
-      const isGoogleAuth = auth.currentUser.providerData.some(
-        (p) => p.providerId === "google.com"
-      );
-      const hasPassword = auth.currentUser.providerData.some(
-        (p) => p.providerId === "password"
-      );
-
-      // Reautenticação necessária pelo Firebase Auth
-      if (hasPassword) {
-        if (!currentPasswordInput) {
-          setChangeEmailError("Digite sua senha atual para confirmar a alteração com segurança.");
-          setIsChangingEmail(false);
-          return;
-        }
+      // Reautenticação necessária pelo Firebase Auth (executada antes de qualquer await anterior para evitar bloqueio de pop-up)
+      if (usePasswordAuth) {
+        const authEmailForPassword = (
+          auth.currentUser.providerData.find((p) => p.providerId === "password")
+            ?.email ||
+          auth.currentUser.email ||
+          currentEmail
+        )
+          .toLowerCase()
+          .trim();
         const cred = EmailAuthProvider.credential(
-          auth.currentUser.email || currentEmail,
+          authEmailForPassword,
           currentPasswordInput
         );
         await reauthenticateWithCredential(auth.currentUser, cred);
       } else if (isGoogleAuth) {
         const googleProvider = new GoogleAuthProvider();
+        googleProvider.setCustomParameters({
+          prompt: "select_account",
+          ...(currentGoogleEmail ? { login_hint: currentGoogleEmail } : {}),
+        });
         await reauthenticateWithPopup(auth.currentUser, googleProvider);
       }
 
@@ -3713,12 +4022,12 @@ export function DashboardView({
           updatedDirectly = true;
         }
       } catch (authErr: any) {
-        console.warn("verifyBeforeUpdateEmail error, fallback to updateEmail:", authErr);
-        try {
+        // Só faz fallback para updateEmail caso verifyBeforeUpdateEmail não seja suportado; caso contrário preserva o erro real
+        if (authErr?.code === "auth/operation-not-allowed") {
           await updateEmail(auth.currentUser, newEmailClean);
           updatedDirectly = true;
-        } catch (directErr: any) {
-          throw directErr;
+        } else {
+          throw authErr;
         }
       }
 
@@ -3753,7 +4062,7 @@ export function DashboardView({
       setChangeEmailSuccess(
         updatedDirectly
           ? "E-mail de acesso atualizado com sucesso no seu perfil e no login!"
-          : `E-mail atualizado no seu perfil! Um link de confirmação foi enviado para ${newEmailClean}.`
+          : `E-mail atualizado no seu perfil! Um link de confirmação foi enviado para ${newEmailClean} para concluir a ativação no login por senha.`
       );
       showToast("E-mail de acesso atualizado com sucesso!", "success");
 
@@ -3763,20 +4072,10 @@ export function DashboardView({
         setConfirmEmailInput("");
         setCurrentPasswordInput("");
         setChangeEmailSuccess("");
-      }, 2500);
+      }, 2800);
     } catch (err: any) {
-      console.error("Erro ao alterar e-mail:", err);
-      if (err.code === "auth/wrong-password") {
-        setChangeEmailError("Senha atual incorreta.");
-      } else if (err.code === "auth/email-already-in-use") {
-        setChangeEmailError("Este endereço de e-mail já está sendo utilizado em outra conta.");
-      } else if (err.code === "auth/requires-recent-login") {
-        setChangeEmailError("Por segurança, esta operação requer login recente. Saia e faça login novamente para continuar.");
-      } else if (err.code === "auth/invalid-email") {
-        setChangeEmailError("Formato de e-mail inválido.");
-      } else {
-        setChangeEmailError(err.message || "Não foi possível concluir a alteração de e-mail.");
-      }
+      console.warn("Aviso ao alterar e-mail:", err);
+      setChangeEmailError(formatAuthEmailError(err, currentGoogleEmail));
     } finally {
       setIsChangingEmail(false);
     }
@@ -3785,6 +4084,7 @@ export function DashboardView({
   const handleCreateDirectPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setDirectPasswordError("");
+    setDirectPasswordNeedsReauth(false);
     if (newDirectPassword.length < 6) {
       setDirectPasswordError("A senha deve ter pelo menos 6 caracteres.");
       return;
@@ -3793,7 +4093,13 @@ export function DashboardView({
       setDirectPasswordError("As senhas digitadas não coincidem.");
       return;
     }
-    const targetEmail = auth.currentUser?.email || profile?.email;
+    const targetEmail = (
+      profile?.email ||
+      auth.currentUser?.email ||
+      getLinkedGoogleEmail(auth.currentUser)
+    )
+      .toLowerCase()
+      .trim();
     if (!auth.currentUser || !targetEmail) {
       setDirectPasswordError("E-mail da conta não localizado.");
       return;
@@ -3808,14 +4114,51 @@ export function DashboardView({
       setNewDirectPassword("");
       setConfirmDirectPassword("");
     } catch (err: any) {
-      console.error("Erro ao vincular senha direta:", err);
+      console.warn("Aviso ao vincular senha direta:", err);
       if (err.code === "auth/provider-already-linked") {
         setDirectPasswordError("Sua conta já possui uma senha vinculada.");
       } else if (err.code === "auth/requires-recent-login") {
-        setDirectPasswordError("Por segurança, faça login novamente com o Google para autorizar o vínculo da senha.");
+        setDirectPasswordNeedsReauth(true);
+        setDirectPasswordError("Por segurança, confirme sua conta Google abaixo para autorizar a criação da senha.");
       } else {
-        setDirectPasswordError(err.message || "Erro ao vincular senha direta.");
+        setDirectPasswordError(formatAuthEmailError(err));
       }
+    } finally {
+      setIsCreatingDirectPassword(false);
+    }
+  };
+
+  const handleReauthGoogleAndLinkPassword = async () => {
+    setDirectPasswordError("");
+    if (!auth.currentUser) return;
+    const currentGoogleEmail = getLinkedGoogleEmail(auth.currentUser);
+    const targetEmail = (
+      profile?.email ||
+      auth.currentUser.email ||
+      currentGoogleEmail
+    )
+      .toLowerCase()
+      .trim();
+
+    const googleProvider = new GoogleAuthProvider();
+    googleProvider.setCustomParameters({
+      prompt: "select_account",
+      ...(currentGoogleEmail ? { login_hint: currentGoogleEmail } : {}),
+    });
+
+    setIsCreatingDirectPassword(true);
+    try {
+      await reauthenticateWithPopup(auth.currentUser, googleProvider);
+      const cred = EmailAuthProvider.credential(targetEmail, newDirectPassword);
+      await linkWithCredential(auth.currentUser, cred);
+      setDirectPasswordNeedsReauth(false);
+      showToast("Senha de acesso direto criada com sucesso! Agora você pode entrar com Google ou com sua senha.", "success");
+      setShowCreatePasswordModal(false);
+      setNewDirectPassword("");
+      setConfirmDirectPassword("");
+    } catch (err: any) {
+      console.warn("Aviso ao revalidar Google para senha direta:", err);
+      setDirectPasswordError(formatAuthEmailError(err, currentGoogleEmail));
     } finally {
       setIsCreatingDirectPassword(false);
     }
@@ -3831,7 +4174,7 @@ export function DashboardView({
       await sendPasswordResetEmail(auth, targetEmail);
       showToast(`Link de redefinição de senha enviado para ${targetEmail}!`, "success");
     } catch (err: any) {
-      console.error("Erro ao enviar reset de senha:", err);
+      console.warn("Aviso ao enviar reset de senha:", err);
       showToast(err.message || "Erro ao disparar e-mail de redefinição.", "error");
     }
   };
@@ -4393,6 +4736,7 @@ export function DashboardView({
         name: formatProfessionalName(newProfName),
         email: newProfEmail,
         role: newProfRole,
+        roles: [newProfRole],
         requirePasswordChange: true,
         dataAdmissao: nowAdmissao.toISOString(),
         vencimentoPagamento: vencimentoPagamento.toISOString(),
@@ -4456,8 +4800,23 @@ export function DashboardView({
         );
         if (existingUser) {
           try {
+            const prevRoles: Role[] =
+              Array.isArray(existingUser.roles) && existingUser.roles.length > 0
+                ? existingUser.roles
+                : existingUser.role
+                  ? [existingUser.role]
+                  : [];
+            const mergedRoles = Array.from(
+              new Set<Role>([...prevRoles, newProfRole]),
+            );
+            const nextPrimaryRole: Role = mergedRoles.includes("master")
+              ? "master"
+              : mergedRoles.includes("triagem")
+                ? "triagem"
+                : "profissional";
             const existingUpdates: any = {
-              role: newProfRole,
+              role: nextPrimaryRole,
+              roles: mergedRoles,
               statusUpdatedAt: serverTimestamp(),
             };
 
@@ -5275,6 +5634,18 @@ export function DashboardView({
 
   const profNotifications = getProfissionalNotifications();
 
+  const minhasFichasCorporativasProf = fichasCorporativas.filter((f) => {
+    if (!profile?.uid) return false;
+    return (
+      f.profissionalId === profile.uid ||
+      Boolean(
+        f.profissionalNome &&
+          profile.name &&
+          f.profissionalNome.trim().toLowerCase() === profile.name.trim().toLowerCase()
+      )
+    );
+  });
+
   const calculateUntreatedProfCount = () => {
     let count = 0;
     meusPacientes.forEach((p) => {
@@ -5293,6 +5664,36 @@ export function DashboardView({
           if (!profTreatedItemIds.has(`prof-notif-${p.id}-${idx}`)) count++;
         });
       }
+      if (isRegistroAtivoParaReajuste("acessivel", p)) {
+        const av = avaliarStatusLembreteReajuste((p as any).reajusteAnual);
+        if (av.precisaAcao && !profTreatedItemIds.has(buildReajusteAlertItemId("acessivel", p.id, av.anoCiclo))) {
+          count++;
+        }
+      }
+    });
+
+    pacientesExternos.forEach((p) => {
+      if (!isRegistroAtivoParaReajuste("externo", p)) return;
+      const av = avaliarStatusLembreteReajuste((p as any).reajusteAnual);
+      if (av.precisaAcao && !profTreatedItemIds.has(buildReajusteAlertItemId("externo", p.id, av.anoCiclo))) {
+        count++;
+      }
+    });
+
+    minhasFichasCorporativasProf.forEach((f) => {
+      if (!isRegistroAtivoParaReajuste("corporativo", f)) return;
+      const av = avaliarStatusLembreteReajuste((f as any).reajusteAnual);
+      if (av.precisaAcao && !profTreatedItemIds.has(buildReajusteAlertItemId("corporativo", f.id, av.anoCiclo))) {
+        count++;
+      }
+    });
+
+    empresasProfissionalB2B.forEach((emp) => {
+      if (!isRegistroAtivoParaReajuste("empresa_b2b", emp)) return;
+      const av = avaliarStatusLembreteReajuste(emp.reajusteAnual);
+      if (av.precisaAcao && !profTreatedItemIds.has(buildReajusteAlertItemId("empresa_b2b", emp.id, av.anoCiclo))) {
+        count++;
+      }
     });
 
     if (profile) {
@@ -5306,6 +5707,70 @@ export function DashboardView({
   };
 
   const pendingProfNotificationsCount = calculateUntreatedProfCount();
+
+  const handleSaveReajusteSelectedCard = async (
+    novaConfig: ConfigReajusteAnual,
+    opcoesAplicacao?: {
+      novoValorBase?: number;
+      atualizarAgendadosFuturos?: boolean;
+      vigenciaAnoMes?: string;
+      sessoesJaAtualizadasNaPlanilha?: boolean;
+    }
+  ) => {
+    if (!selectedCard) return;
+    const cardId = selectedCard.id;
+    const patch: Record<string, any> = {
+      reajusteAnual: novaConfig,
+    };
+
+    if (opcoesAplicacao?.novoValorBase !== undefined) {
+      patch.valorSessao = String(opcoesAplicacao.novoValorBase);
+
+      if (
+        opcoesAplicacao.atualizarAgendadosFuturos &&
+        !opcoesAplicacao.sessoesJaAtualizadasNaPlanilha &&
+        Array.isArray(selectedCard.historicoSessoes)
+      ) {
+        const hojeIso = new Date().toISOString().split("T")[0];
+        const vigMes = opcoesAplicacao.vigenciaAnoMes || "";
+        let alterou = false;
+        const novasSessoes = selectedCard.historicoSessoes.map((s: any) => {
+          const isFuturaElegivel =
+            s.statusAtendimento === "agendada" &&
+            s.statusPagamento !== "pago" &&
+            (!s.data ||
+              (vigMes && String(s.data).substring(0, 7) >= vigMes) ||
+              s.data >= hojeIso);
+          if (isFuturaElegivel) {
+            alterou = true;
+            return { ...s, valor: opcoesAplicacao.novoValorBase! };
+          }
+          return s;
+        });
+        if (alterou) {
+          patch.historicoSessoes = novasSessoes;
+        }
+      }
+    }
+
+    setSelectedCard((prev: any) => (prev && prev.id === cardId ? { ...prev, ...patch } : prev));
+    setAcolhimentos((prev) =>
+      prev.map((a) => (a.id === cardId ? ({ ...a, ...patch } as any) : a))
+    );
+    setMeusPacientes((prev) =>
+      prev.map((a) => (a.id === cardId ? ({ ...a, ...patch } as any) : a))
+    );
+
+    try {
+      await updateDoc(doc(db, "acolhimentos", cardId), {
+        ...patch,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (err) {
+      console.error("Erro ao salvar configuração de reajuste anual:", err);
+      showToast("Erro ao salvar reajuste anual no banco de dados.", "error");
+    }
+  };
 
   const handleProfAcceptPaciente = async (paciente: Acolhimento) => {
     const notifAnterior = paciente.notificacao ? paciente.notificacao + "\n\n" : "";
@@ -5356,6 +5821,11 @@ export function DashboardView({
       (p.name || "").toLowerCase().includes(lowerQuery) ||
       (p.email || "").toLowerCase().includes(lowerQuery) ||
       (p.role || "").toLowerCase().includes(lowerQuery) ||
+      formatUserRolesLabel(p).toLowerCase().includes(lowerQuery) ||
+      (Array.isArray(p.roles) &&
+        p.roles.some((r: string) =>
+          (r || "").toLowerCase().includes(lowerQuery),
+        )) ||
       (Array.isArray(p.servicosOferecidos) &&
         p.servicosOferecidos.some((s: string) =>
           s.toLowerCase().includes(lowerQuery)
@@ -5387,10 +5857,10 @@ export function DashboardView({
     if (loadingObj) return;
 
     const prev = prevDataLengths.current;
-    const isMaster = profile?.role === "master";
-    const isTriagem = profile?.role === "triagem";
+    const isMaster = hasUserRole(profile, "master");
+    const isTriagem = hasUserRole(profile, "triagem");
     const isMasterOrTriagem = isMaster || isTriagem;
-    const isProf = profile?.role === "profissional";
+    const isProf = isUserProfissional(profile);
     const canNotify =
       "Notification" in window && Notification.permission === "granted";
 
@@ -5537,6 +6007,7 @@ export function DashboardView({
     meusPacientes.length,
     loadingObj,
     profile?.role,
+    profile?.roles,
   ]);
 
   if (loadingObj) {
@@ -6834,7 +7305,16 @@ export function DashboardView({
                 <span>Empresas</span>
               </button>
 
-              {/* 5. Meu Perfil */}
+              {/* 5. Documentos Psicológicos */}
+              <button
+                onClick={() => setActiveTab("documentosPsicologicos")}
+                className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap shrink-0 relative flex items-center gap-1.5 cursor-pointer ${activeTab === "documentosPsicologicos" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70 hover:text-forest"}`}
+              >
+                <FileSignature className="w-3.5 h-3.5 text-forest/70" />
+                <span>Documentos</span>
+              </button>
+
+              {/* 6. Meu Perfil */}
               <button
                 onClick={() => setActiveTab("perfil")}
                 className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap shrink-0 relative flex items-center gap-1.5 cursor-pointer ${activeTab === "perfil" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70 hover:text-forest"}`}
@@ -6843,7 +7323,7 @@ export function DashboardView({
                 <span>Meu Perfil</span>
               </button>
 
-              {/* 6. Alertas e Pendências */}
+              {/* 7. Alertas e Pendências */}
               <button
                 onClick={() => setActiveTab("tarefasProfissional")}
                 className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap shrink-0 relative flex items-center gap-1.5 cursor-pointer ${activeTab === "tarefasProfissional" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70 hover:text-forest"}`}
@@ -6857,7 +7337,7 @@ export function DashboardView({
                 )}
               </button>
 
-              {/* 7. Rede Profissional */}
+              {/* 8. Rede Profissional */}
               <button
                 onClick={() => setActiveTab("redeProfissional")}
                 className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap shrink-0 relative flex items-center gap-1.5 cursor-pointer ${activeTab === "redeProfissional" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70 hover:text-forest"}`}
@@ -6866,7 +7346,7 @@ export function DashboardView({
                 <span>Rede Profissional</span>
               </button>
 
-              {/* 8. Meus Artigos */}
+              {/* 9. Meus Artigos */}
               <button
                 onClick={() => setActiveTab("artigosProfissional")}
                 className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap shrink-0 relative flex items-center gap-1.5 cursor-pointer ${activeTab === "artigosProfissional" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70 hover:text-forest"}`}
@@ -6875,16 +7355,7 @@ export function DashboardView({
                 <span>Meus Artigos</span>
               </button>
 
-              {/* 8.5 Documentos Psicológicos */}
-              <button
-                onClick={() => setActiveTab("documentosPsicologicos")}
-                className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap shrink-0 relative flex items-center gap-1.5 cursor-pointer ${activeTab === "documentosPsicologicos" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70 hover:text-forest"}`}
-              >
-                <FileSignature className="w-3.5 h-3.5 text-forest/70" />
-                <span>Documentos</span>
-              </button>
-
-              {/* 9. Status / Plano */}
+              {/* 10. Status / Plano */}
               <button
                 onClick={() => setActiveTab("pagamentosProfissional")}
                 className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap shrink-0 relative flex items-center gap-1.5 cursor-pointer ${activeTab === "pagamentosProfissional" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70 hover:text-forest"}`}
@@ -6907,7 +7378,7 @@ export function DashboardView({
                 })()}
               </button>
 
-              {/* 10. Eventos e Parcerias */}
+              {/* 11. Eventos e Parcerias */}
               <button
                 onClick={() => setActiveTab("eventos")}
                 className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap shrink-0 relative flex items-center gap-1.5 cursor-pointer ${activeTab === "eventos" || activeTab === "servicos" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70 hover:text-forest"}`}
@@ -6916,7 +7387,7 @@ export function DashboardView({
                 <span>Eventos e Parcerias</span>
               </button>
 
-              {/* 11. Backup & Custódia */}
+              {/* 12. Backup & Custódia */}
               <button
                 onClick={() => setActiveTab("backup")}
                 className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap shrink-0 relative flex items-center gap-1.5 cursor-pointer ${activeTab === "backup" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70 hover:text-forest"}`}
@@ -10556,6 +11027,32 @@ export function DashboardView({
                                     <span className="font-mono tabular-nums text-forest/75">
                                       {perfilAtivoRow.via} · {formatPerfilCurtoLabel(perfilAtivoRow)}
                                     </span>
+                                    {(() => {
+                                      const avExt = avaliarStatusLembreteReajuste((p as any).reajusteAnual);
+                                      if (avExt.precisaAcao) {
+                                        return (
+                                          <>
+                                            <span aria-hidden="true" className="text-forest/35">·</span>
+                                            <span className="font-semibold text-amber-800">
+                                              {avExt.status === "aviso_previo"
+                                                ? `Aviso reajuste ${getNomeCurtoMesReajuste(avExt.mesReajuste)}/${avExt.anoCiclo}`
+                                                : `Reajuste ${getNomeCurtoMesReajuste(avExt.mesReajuste)}/${avExt.anoCiclo}`}
+                                            </span>
+                                          </>
+                                        );
+                                      }
+                                      if ((p as any).reajusteAnual?.mesReajuste) {
+                                        return (
+                                          <>
+                                            <span aria-hidden="true" className="text-forest/35">·</span>
+                                            <span className="text-forest/55">
+                                              Reajuste {getNomeCurtoMesReajuste((p as any).reajusteAnual.mesReajuste)}
+                                            </span>
+                                          </>
+                                        );
+                                      }
+                                      return null;
+                                    })()}
                                   </div>
                                 </div>
                               </div>
@@ -11251,6 +11748,32 @@ export function DashboardView({
                               <span className="text-[11px] font-mono tabular-nums text-forest/75">
                                 {perfilAtivoAcess.via} · {formatPerfilCurtoLabel(perfilAtivoAcess)}
                               </span>
+                              {(() => {
+                                const avAc = avaliarStatusLembreteReajuste((p as any).reajusteAnual);
+                                if (avAc.precisaAcao) {
+                                  return (
+                                    <>
+                                      <span aria-hidden="true" className="text-forest/35">·</span>
+                                      <span className="text-[11px] font-semibold text-amber-800">
+                                        {avAc.status === "aviso_previo"
+                                          ? `Aviso reajuste ${getNomeCurtoMesReajuste(avAc.mesReajuste)}/${avAc.anoCiclo}`
+                                          : `Reajuste ${getNomeCurtoMesReajuste(avAc.mesReajuste)}/${avAc.anoCiclo}`}
+                                      </span>
+                                    </>
+                                  );
+                                }
+                                if ((p as any).reajusteAnual?.mesReajuste) {
+                                  return (
+                                    <>
+                                      <span aria-hidden="true" className="text-forest/35">·</span>
+                                      <span className="text-[11px] text-forest/55">
+                                        Reajuste {getNomeCurtoMesReajuste((p as any).reajusteAnual.mesReajuste)}
+                                      </span>
+                                    </>
+                                  );
+                                }
+                                return null;
+                              })()}
                             </div>
                           </div>
 
@@ -11368,6 +11891,9 @@ export function DashboardView({
         activeTab === "tarefasProfissional" ? (
         <ProfissionalEsteiraTarefas
           meusPacientes={meusPacientes}
+          pacientesExternos={pacientesExternos}
+          fichasCorporativas={minhasFichasCorporativasProf}
+          empresasB2B={empresasProfissionalB2B}
           profile={profile!}
           treatedItemIds={profTreatedItemIds}
           onToggleTreatedItem={handleToggleProfTreatedItem}
@@ -11375,6 +11901,16 @@ export function DashboardView({
           onSelectPaciente={(paciente) => {
             setSelectedCard(paciente as any);
             setActiveTab("pacientes");
+            setSubTabPacientes("acessiveis");
+          }}
+          onSelectPacienteExterno={(pacExt) => {
+            setSelectedPacienteExterno(pacExt);
+          }}
+          onSelectFichaCorporativa={(fichaCorp) => {
+            setSelectedFichaCorporativa(fichaCorp);
+          }}
+          onSelectEmpresaB2B={(emp) => {
+            setSelectedEmpresaB2B(emp);
           }}
           onNavigateToTab={(tab) => setActiveTab(tab)}
           onAcceptPaciente={handleProfAcceptPaciente}
@@ -13339,25 +13875,30 @@ export function DashboardView({
                           </button>
                         )}
 
-                        {lead.status === "Aguardando Acesso" && (
-                          <button
-                            onClick={() => {
-                              setNewProfName(lead.nome);
-                              setNewProfEmail(lead.email);
-                              setNewProfPassword(
-                                Math.random().toString(36).slice(-8),
-                              );
-                              setLeadIdToConvert(lead.id);
-                              setShowNewProfissionalModal(true);
-                            }}
-                            className="w-full sm:w-auto text-xs font-bold px-4 py-2 bg-forest text-white rounded-xl flex items-center justify-center gap-2 transition-colors hover:bg-forest/90"
-                          >
-                            <User className="w-4 h-4" /> Criar Acesso na
-                            Plataforma
-                          </button>
-                        )}
+                        {lead.status === "Aguardando Acesso" &&
+                          (currentRole === "master" ? (
+                            <button
+                              onClick={() => {
+                                setNewProfName(lead.nome);
+                                setNewProfEmail(lead.email);
+                                setNewProfPassword(
+                                  Math.random().toString(36).slice(-8),
+                                );
+                                setLeadIdToConvert(lead.id);
+                                setShowNewProfissionalModal(true);
+                              }}
+                              className="w-full sm:w-auto text-xs font-bold px-4 py-2 bg-forest text-white rounded-xl flex items-center justify-center gap-2 transition-colors hover:bg-forest/90"
+                            >
+                              <User className="w-4 h-4" /> Criar Acesso na
+                              Plataforma
+                            </button>
+                          ) : (
+                            <span className="w-full sm:w-auto text-xs font-semibold px-3.5 py-2 bg-warm text-forest/70 rounded-xl border border-soft text-center">
+                              Aguardando liberação pela Gestão
+                            </span>
+                          ))}
 
-                        {profile?.role === "master" && (
+                        {currentRole === "master" && (
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
@@ -13463,87 +14004,89 @@ export function DashboardView({
                               Agendar Entrevista (WhatsApp)
                             </a>
 
-                            <div className="grid grid-cols-2 gap-2">
-                              <button
-                                onClick={async () => {
-                                  if (
-                                    !confirm(
-                                      `Confirma a conclusão da entrevista e o encerramento do vínculo de ${p.name}? A conta do profissional será inativada.`
-                                    )
-                                  )
-                                    return;
-                                  try {
-                                    const profId = p.uid || p.id;
-                                    await updateDoc(doc(db, "users", profId), {
-                                      ativo: false,
-                                      statusPagamento: "desligado",
-                                      solicitacaoCancelamento: false,
-                                      dataDesligamentoConcluido: new Date().toISOString(),
-                                      notificacao: `Desligamento efetuado pela Gestão após entrevista em ${new Date().toLocaleDateString("pt-BR")}.`,
-                                    });
-                                    setProfissionaisAtivos((prev) =>
-                                      prev.map((item) =>
-                                        item.uid === profId || item.id === profId
-                                          ? {
-                                              ...item,
-                                              ativo: false,
-                                              statusPagamento: "desligado",
-                                              solicitacaoCancelamento: false,
-                                            }
-                                          : item
+                            {currentRole === "master" && (
+                              <div className="grid grid-cols-2 gap-2">
+                                <button
+                                  onClick={async () => {
+                                    if (
+                                      !confirm(
+                                        `Confirma a conclusão da entrevista e o encerramento do vínculo de ${p.name}? A conta do profissional será inativada.`
                                       )
-                                    );
-                                    alert(`Desligamento de ${p.name} concluído com sucesso! Perfil inativado.`);
-                                  } catch (err) {
-                                    alert("Erro ao concluir desligamento.");
-                                  }
-                                }}
-                                className="py-2 px-2 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded-xl text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer"
-                                title="Concluir processo e inativar conta"
-                              >
-                                <XCircle className="w-3.5 h-3.5" />
-                                Inativar Conta
-                              </button>
+                                    )
+                                      return;
+                                    try {
+                                      const profId = p.uid || p.id;
+                                      await updateDoc(doc(db, "users", profId), {
+                                        ativo: false,
+                                        statusPagamento: "desligado",
+                                        solicitacaoCancelamento: false,
+                                        dataDesligamentoConcluido: new Date().toISOString(),
+                                        notificacao: `Desligamento efetuado pela Gestão após entrevista em ${new Date().toLocaleDateString("pt-BR")}.`,
+                                      });
+                                      setProfissionaisAtivos((prev) =>
+                                        prev.map((item) =>
+                                          item.uid === profId || item.id === profId
+                                            ? {
+                                                ...item,
+                                                ativo: false,
+                                                statusPagamento: "desligado",
+                                                solicitacaoCancelamento: false,
+                                              }
+                                            : item
+                                        )
+                                      );
+                                      alert(`Desligamento de ${p.name} concluído com sucesso! Perfil inativado.`);
+                                    } catch (err) {
+                                      alert("Erro ao concluir desligamento.");
+                                    }
+                                  }}
+                                  className="py-2 px-2 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded-xl text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer"
+                                  title="Concluir processo e inativar conta"
+                                >
+                                  <XCircle className="w-3.5 h-3.5" />
+                                  Inativar Conta
+                                </button>
 
-                              <button
-                                onClick={async () => {
-                                  if (
-                                    !confirm(
-                                      `Deseja cancelar a solicitação de saída e manter ${p.name} ativo no projeto?`
-                                    )
-                                  )
-                                    return;
-                                  try {
-                                    const profId = p.uid || p.id;
-                                    await updateDoc(doc(db, "users", profId), {
-                                      solicitacaoCancelamento: false,
-                                      motivoCancelamento: "",
-                                      statusPagamento: "ativo",
-                                    });
-                                    setProfissionaisAtivos((prev) =>
-                                      prev.map((item) =>
-                                        item.uid === profId || item.id === profId
-                                          ? {
-                                              ...item,
-                                              solicitacaoCancelamento: false,
-                                              motivoCancelamento: "",
-                                              statusPagamento: "ativo",
-                                            }
-                                          : item
+                                <button
+                                  onClick={async () => {
+                                    if (
+                                      !confirm(
+                                        `Deseja cancelar a solicitação de saída e manter ${p.name} ativo no projeto?`
                                       )
-                                    );
-                                    alert(`Solicitação de saída de ${p.name} desfeita com sucesso.`);
-                                  } catch (err) {
-                                    alert("Erro ao reverter solicitação.");
-                                  }
-                                }}
-                                className="py-2 px-2 bg-warm hover:bg-soft text-forest border border-soft rounded-xl text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer"
-                                title="Manter profissional no projeto"
-                              >
-                                <RefreshCw className="w-3.5 h-3.5 text-forest/70" />
-                                Manter Ativo
-                              </button>
-                            </div>
+                                    )
+                                      return;
+                                    try {
+                                      const profId = p.uid || p.id;
+                                      await updateDoc(doc(db, "users", profId), {
+                                        solicitacaoCancelamento: false,
+                                        motivoCancelamento: "",
+                                        statusPagamento: "ativo",
+                                      });
+                                      setProfissionaisAtivos((prev) =>
+                                        prev.map((item) =>
+                                          item.uid === profId || item.id === profId
+                                            ? {
+                                                ...item,
+                                                solicitacaoCancelamento: false,
+                                                motivoCancelamento: "",
+                                                statusPagamento: "ativo",
+                                              }
+                                            : item
+                                        )
+                                      );
+                                      alert(`Solicitação de saída de ${p.name} desfeita com sucesso.`);
+                                    } catch (err) {
+                                      alert("Erro ao reverter solicitação.");
+                                    }
+                                  }}
+                                  className="py-2 px-2 bg-warm hover:bg-soft text-forest border border-soft rounded-xl text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer"
+                                  title="Manter profissional no projeto"
+                                >
+                                  <RefreshCw className="w-3.5 h-3.5 text-forest/70" />
+                                  Manter Ativo
+                                </button>
+                              </div>
+                            )}
                           </div>
                         </div>
                       );
@@ -13592,23 +14135,27 @@ export function DashboardView({
                   )}
                 </button>
 
-                <button
-                  onClick={handleReconcileExistingProfs}
-                  disabled={isReconciling}
-                  className="px-4 py-2 bg-purple-50 text-purple-700 hover:bg-purple-100 disabled:opacity-50 text-sm font-semibold rounded-full transition-colors flex items-center gap-2 border border-purple-200/50"
-                  title="Sincronizar dados preenchidos no formulário de inscrição para o perfil ativo dos profissionais"
-                >
-                  <RefreshCw
-                    className={`w-4 h-4 ${isReconciling ? "animate-spin" : ""}`}
-                  />
-                  {isReconciling ? "Sincronizando..." : "Sincronizar Leads"}
-                </button>
-                <button
-                  onClick={() => setShowNewProfissionalModal(true)}
-                  className="px-4 py-2 bg-sun-dark text-forest text-sm font-semibold rounded-full hover:bg-sun-dark-dark transition-colors flex items-center gap-2"
-                >
-                  <Plus className="w-4 h-4" /> Nova Conta de Profissional
-                </button>
+                {currentRole === "master" && (
+                  <>
+                    <button
+                      onClick={handleReconcileExistingProfs}
+                      disabled={isReconciling}
+                      className="px-4 py-2 bg-purple-50 text-purple-700 hover:bg-purple-100 disabled:opacity-50 text-sm font-semibold rounded-full transition-colors flex items-center gap-2 border border-purple-200/50"
+                      title="Sincronizar dados preenchidos no formulário de inscrição para o perfil ativo dos profissionais"
+                    >
+                      <RefreshCw
+                        className={`w-4 h-4 ${isReconciling ? "animate-spin" : ""}`}
+                      />
+                      {isReconciling ? "Sincronizando..." : "Sincronizar Leads"}
+                    </button>
+                    <button
+                      onClick={() => setShowNewProfissionalModal(true)}
+                      className="px-4 py-2 bg-sun-dark text-forest text-sm font-semibold rounded-full hover:bg-sun-dark-dark transition-colors flex items-center gap-2"
+                    >
+                      <Plus className="w-4 h-4" /> Nova Conta de Profissional
+                    </button>
+                  </>
+                )}
               </div>
             </div>
 
@@ -13722,7 +14269,16 @@ export function DashboardView({
                               >
                                 {p.ativo === false ? "Inativo" : "Ativo"}
                               </span>
-                              {p.role === "profissional" && (() => {
+                              {((Array.isArray(p.roles) && p.roles.length > 1) ||
+                                (p.role && p.role !== "profissional")) && (
+                                <span
+                                  className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-forest/10 text-forest border border-forest/20 shrink-0"
+                                  title={`Papeis acumulados: ${formatUserRolesLabel(p)}`}
+                                >
+                                  {formatUserRolesLabel(p)}
+                                </span>
+                              )}
+                              {isUserProfissional(p) && (() => {
                                 const cred = getCredentialBadgeMeta(p);
                                 const planLabel = getPlanDisplayName(
                                   p,
@@ -13944,10 +14500,10 @@ export function DashboardView({
                                 Identificação & Vínculo
                               </span>
                               <div className="space-y-1.5 text-forest/80">
-                                <p className="flex justify-between items-center">
+                                <p className="flex justify-between items-center gap-2">
                                   <strong className="text-forest/60">Papel:</strong>
-                                  <span className="capitalize font-semibold text-forest">
-                                    {p.role}
+                                  <span className="font-semibold text-forest text-right">
+                                    {formatUserRolesLabel(p)}
                                   </span>
                                 </p>
                                 <div className="flex flex-col gap-1.5 pt-1 border-t border-soft/40">
@@ -13985,7 +14541,7 @@ export function DashboardView({
 
                                       return (
                                         <select
-                                          disabled={profile?.role !== "master"}
+                                          disabled={currentRole !== "master"}
                                           value={selectedCanon}
                                           onChange={(e) =>
                                             handleUpdateProfissionalPlan(
@@ -14089,7 +14645,7 @@ export function DashboardView({
                                     );
                                   })()
                                 ) : p.statusPagamento === "pago" ? (
-                                  profile?.role === "master" ? (
+                                  currentRole === "master" ? (
                                     <button
                                       type="button"
                                       onClick={(e) => {
@@ -14126,7 +14682,7 @@ export function DashboardView({
                                       : new Date(admDate.getTime() + 7 * 86400000);
                                     const now = new Date();
                                     const isTrial = vencDate.getTime() > now.getTime();
-                                    if (profile?.role === "master") {
+                                    if (currentRole === "master") {
                                       return isTrial ? (
                                         <button
                                           type="button"
@@ -14177,7 +14733,7 @@ export function DashboardView({
                                   })()}
                               </div>
 
-                              {profile?.role === "master" && (
+                              {currentRole === "master" && (
                                 <div className="pt-2 border-t border-soft/50 space-y-2">
                                   <div className="flex flex-col gap-1">
                                     <span className="text-[10px] font-bold uppercase text-forest/60">
@@ -14234,7 +14790,7 @@ export function DashboardView({
                           </div>
 
                           {/* Serviços Oferecidos */}
-                          {p.role === "profissional" && p.servicosOferecidos && p.servicosOferecidos.length > 0 && (
+                          {isUserProfissional(p) && p.servicosOferecidos && p.servicosOferecidos.length > 0 && (
                             <div className="flex flex-col gap-1.5 bg-white p-3.5 rounded-xl border border-soft shadow-2xs">
                               <span className="text-[10px] font-bold text-forest/50 uppercase tracking-wider">
                                 Serviços & Modalidades Cadastradas:
@@ -14271,7 +14827,7 @@ export function DashboardView({
                               <FileText className="w-4 h-4" /> Abrir Ficha de Bordo Completa
                             </button>
 
-                            {profile?.role === "master" && (
+                            {currentRole === "master" && (
                               <button
                                 onClick={() => handleDeleteProfissional(p.uid!, "ativos")}
                                 className="px-3 py-2 bg-red-50 text-red-600 rounded-xl hover:bg-red-100 border border-red-200/40 text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer"
@@ -16515,7 +17071,12 @@ export function DashboardView({
                         <UserCheck className="w-4 h-4 text-forest" /> Atribuir a Profissional Parceiro
                       </h5>
                       <span className="text-[11px] font-semibold text-forest/60">
-                        {profissionaisAtivos.filter(p => p.role === "profissional").length} profissionais ativos disponíveis
+                        {
+                          profissionaisAtivos.filter(
+                            (p) => isUserProfissional(p) && p.ativo !== false,
+                          ).length
+                        }{" "}
+                        profissionais ativos disponíveis
                       </span>
                     </div>
 
@@ -16536,9 +17097,15 @@ export function DashboardView({
                       </div>
 
                       {profissionaisAtivos.map((p) => {
-                        if (p.role !== "profissional") return null;
+                        if (
+                          !isUserProfissional(p) ||
+                          (p.ativo === false && selectedCard.profissionalId !== p.uid)
+                        ) {
+                          return null;
+                        }
                         const stats = getProfStats(p.uid!);
                         const isSelected = selectedCard.profissionalId === p.uid;
+                        const isSelfProf = Boolean(user?.uid && p.uid === user.uid);
                         return (
                           <div
                             key={p.uid}
@@ -16547,10 +17114,17 @@ export function DashboardView({
                           >
                             <div className="flex items-center gap-2.5 min-w-0">
                               <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 ${isSelected ? "bg-emerald-700 text-white" : "bg-warm text-forest/70"}`}>
-                                {p.name.charAt(0).toUpperCase()}
+                                {(p.name || p.email || "P").charAt(0).toUpperCase()}
                               </div>
                               <div className="flex flex-col truncate">
-                                <span className="text-xs font-bold text-forest truncate">{p.name || p.email}</span>
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  <span className="text-xs font-bold text-forest truncate">{p.name || p.email}</span>
+                                  {isSelfProf && (
+                                    <span className="px-1.5 py-0.2 rounded-full text-[8px] font-extrabold uppercase bg-forest text-white shrink-0">
+                                      Você
+                                    </span>
+                                  )}
+                                </div>
                                 <span className="text-[9px] uppercase font-bold text-forest/50">CRP: {p.crp || "Inscrito"}</span>
                               </div>
                             </div>
@@ -16835,6 +17409,7 @@ export function DashboardView({
                           companyData: profile?.companyData,
                           faturamentoPadrao: profile?.faturamentoPadrao || "PF",
                           perfisFaturamento: profile?.perfisFaturamento,
+                          assinatura: profile?.assinatura,
                         };
                       }
                       if (selectedCard.profissionalId) {
@@ -16857,12 +17432,14 @@ export function DashboardView({
                             companyData: (matchedProf as any).companyData,
                             faturamentoPadrao: (matchedProf as any).faturamentoPadrao || "PF",
                             perfisFaturamento: (matchedProf as any).perfisFaturamento,
+                            assinatura: (matchedProf as any).assinatura,
                           };
                         }
                       }
                       return {
                         name: profile?.name || "Profissional Responsável",
                         crp: profile?.crp,
+                        assinatura: profile?.assinatura,
                         cpf: profile?.cpf,
                         especialidade: profile?.especialidade,
                         chavePix: profile?.chavePix || profile?.pixKey,
@@ -16879,6 +17456,20 @@ export function DashboardView({
                   empresaNome={selectedCard.empresaNome || ""}
                   registrosProntuario={Array.isArray(selectedCard.prontuarioClinico) ? selectedCard.prontuarioClinico : []}
                   onAbrirProntuarioModal={() => setShowProntuarioModal(true)}
+                  reajusteAnual={(selectedCard as any).reajusteAnual}
+                  apenasIndicesOficiaisReajuste={
+                    (selectedCard as any).tipo !== "externo" &&
+                    selectedCard.viaAcesso !== "Carteira Externa"
+                  }
+                  origemContratoLabel={
+                    Boolean(selectedCard.empresaNome)
+                      ? "Convênio Corporativo"
+                      : (selectedCard as any).tipo === "externo" ||
+                        selectedCard.viaAcesso === "Carteira Externa"
+                      ? "Carteira Particular / Externa"
+                      : "Triagem Acessível"
+                  }
+                  onSaveReajusteAnual={handleSaveReajusteSelectedCard}
                 />
               </div>
 
@@ -17850,6 +18441,7 @@ export function DashboardView({
                         companyData: profile?.companyData,
                         faturamentoPadrao: profile?.faturamentoPadrao || "PF",
                         perfisFaturamento: profile?.perfisFaturamento,
+                        assinatura: profile?.assinatura,
                       };
                     }
                     const matchedProf = allUsers.find(
@@ -17870,15 +18462,32 @@ export function DashboardView({
                       companyData: (matchedProf as any)?.companyData || profile?.companyData,
                       faturamentoPadrao: (matchedProf as any)?.faturamentoPadrao || profile?.faturamentoPadrao || "PF",
                       perfisFaturamento: (matchedProf as any)?.perfisFaturamento || profile?.perfisFaturamento,
+                      assinatura: (matchedProf as any)?.assinatura || profile?.assinatura,
                     };
                   })()
                 }
                 showToast={showToast}
+                isCorporativo={Boolean(selectedCard.empresaNome)}
+                empresaNome={selectedCard.empresaNome || ""}
                 registrosProntuario={Array.isArray(selectedCard.prontuarioClinico) ? selectedCard.prontuarioClinico : []}
                 onAbrirProntuarioModal={() => {
                   setShowFaturamentoModal(false);
                   setShowProntuarioModal(true);
                 }}
+                reajusteAnual={(selectedCard as any).reajusteAnual}
+                apenasIndicesOficiaisReajuste={
+                  (selectedCard as any).tipo !== "externo" &&
+                  selectedCard.viaAcesso !== "Carteira Externa"
+                }
+                origemContratoLabel={
+                  Boolean(selectedCard.empresaNome)
+                    ? "Convênio Corporativo"
+                    : (selectedCard as any).tipo === "externo" ||
+                      selectedCard.viaAcesso === "Carteira Externa"
+                    ? "Carteira Particular / Externa"
+                    : "Triagem Acessível"
+                }
+                onSaveReajusteAnual={handleSaveReajusteSelectedCard}
               />
             </div>
           </div>
@@ -21263,14 +21872,18 @@ export function DashboardView({
               )}
 
               <div className="flex items-center gap-4 ml-4">
-                <button
-                  onClick={() => setIsEditingCard(!isEditingCard)}
-                  className="flex items-center gap-2 text-amber-500 font-semibold text-sm hover:bg-amber-50 px-3 py-1.5 rounded-lg transition-colors"
-                >
-                  <Edit3 className="w-4 h-4" />{" "}
-                  {isEditingCard ? "Salvar Edição" : "Editar"}
-                </button>
-                <div className="w-px h-4 bg-soft"></div>
+                {("nome" in selectedProfissional || currentRole === "master") && (
+                  <>
+                    <button
+                      onClick={() => setIsEditingCard(!isEditingCard)}
+                      className="flex items-center gap-2 text-amber-500 font-semibold text-sm hover:bg-amber-50 px-3 py-1.5 rounded-lg transition-colors"
+                    >
+                      <Edit3 className="w-4 h-4" />{" "}
+                      {isEditingCard ? "Salvar Edição" : "Editar"}
+                    </button>
+                    <div className="w-px h-4 bg-soft"></div>
+                  </>
+                )}
                 <button
                   onClick={() => {
                     const profName =
@@ -21377,7 +21990,7 @@ export function DashboardView({
                         isEditing={isEditingCard}
                       />
                       {/* Bloco Padronizado de Plano & Credencial na Ficha de Bordo */}
-                      {!("nome" in selectedProfissional) && profile?.role === "master" && (() => {
+                      {!("nome" in selectedProfissional) && currentRole === "master" && (() => {
                         const targetProfId = selectedProfissional.uid || selectedProfissional.id;
                         const planosAtivosModal = getActivePlansForSelector(
                           globalConfigs.planosProfissionais,
@@ -21476,7 +22089,7 @@ export function DashboardView({
                         );
                       })()}
 
-                      {!isExemptFromPlatformBilling(selectedProfissional) && (
+                      {!isExemptFromPlatformBilling(selectedProfissional) && currentRole === "master" && (
                         <div className="mt-3 p-3 bg-warm/80 border border-soft rounded-xl space-y-2 text-xs text-forest">
                           <div className="flex items-center justify-between">
                             <span className="font-semibold text-forest/70">Período de Teste (7 dias):</span>
@@ -24629,6 +25242,23 @@ export function DashboardView({
                   <span className="text-sm font-medium text-forest truncate block">
                     {profile?.email || auth.currentUser?.email}
                   </span>
+                  {(() => {
+                    const gEmail = getLinkedGoogleEmail(auth.currentUser);
+                    const pEmail = (profile?.email || "").toLowerCase().trim();
+                    if (
+                      auth.currentUser?.providerData.some((p) => p.providerId === "google.com") &&
+                      gEmail &&
+                      pEmail &&
+                      gEmail !== pEmail
+                    ) {
+                      return (
+                        <span className="text-[11px] text-blue-700 truncate block mt-0.5">
+                          Google vinculado: {gEmail}
+                        </span>
+                      );
+                    }
+                    return null;
+                  })()}
                 </div>
                 {auth.currentUser?.providerData.some((p) => p.providerId === "google.com") ? (
                   <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200 shrink-0">
@@ -24708,6 +25338,7 @@ export function DashboardView({
                     setNewDirectPassword("");
                     setConfirmDirectPassword("");
                     setDirectPasswordError("");
+                    setDirectPasswordNeedsReauth(false);
                     setShowCreatePasswordModal(true);
                   }}
                   className="flex-1 py-2.5 px-4 bg-warm hover:bg-forest/10 text-forest text-xs font-semibold rounded-xl border border-soft transition-colors flex items-center justify-center gap-2 cursor-pointer"
@@ -24724,10 +25355,10 @@ export function DashboardView({
       {/* Modal 2: Alteração de E-mail pelo Próprio Usuário (Self-Service) */}
       {showChangeEmailModal && (
         <div className="fixed inset-0 bg-forest/50 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-lg rounded-3xl p-6 sm:p-8 shadow-2xl border border-soft animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-start justify-between mb-6">
+          <div className="bg-white w-full max-w-lg rounded-3xl p-6 sm:p-8 shadow-2xl border border-soft animate-in fade-in zoom-in-95 duration-200 max-h-[92vh] overflow-y-auto">
+            <div className="flex items-start justify-between mb-5">
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-sun-light flex items-center justify-center text-forest">
+                <div className="w-12 h-12 rounded-2xl bg-sun-light flex items-center justify-center text-forest shrink-0">
                   <Mail className="w-6 h-6 text-sun-dark" />
                 </div>
                 <div>
@@ -24735,141 +25366,370 @@ export function DashboardView({
                     Alterar E-mail de Acesso
                   </h3>
                   <p className="text-xs text-forest/60">
-                    Atualize seu e-mail de login com segurança e autonomia
+                    Atualize seu e-mail de login mantendo seu UID e histórico intactos
                   </p>
                 </div>
               </div>
               <button
                 type="button"
-                onClick={() => setShowChangeEmailModal(false)}
+                onClick={() => {
+                  if (pendingUnlinkedGoogleEmail) {
+                    setChangeEmailError(
+                      `Conclua a seleção da nova conta Google abaixo ou clique em "Manter ${pendingUnlinkedGoogleEmail}" antes de fechar.`
+                    );
+                    return;
+                  }
+                  setShowChangeEmailModal(false);
+                }}
                 className="p-2 text-forest/40 hover:text-forest hover:bg-warm rounded-full transition-colors cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleUserChangeEmail} className="flex flex-col gap-4">
-              <div>
-                <label className="text-xs uppercase font-bold tracking-wider text-forest/60 block mb-1">
-                  E-mail Atual
-                </label>
-                <input
-                  type="text"
-                  disabled
-                  value={profile?.email || auth.currentUser?.email || ""}
-                  className="w-full px-4 py-2.5 bg-warm/80 border border-soft rounded-xl text-forest/60 text-sm cursor-not-allowed"
-                />
-              </div>
+            {(() => {
+              const hasGoogleProvider =
+                !!auth.currentUser?.providerData.some((p) => p.providerId === "google.com") ||
+                !!pendingUnlinkedGoogleEmail;
+              const hasPasswordProvider = !!auth.currentUser?.providerData.some(
+                (p) => p.providerId === "password"
+              );
+              const linkedGoogleEmail =
+                getLinkedGoogleEmail(auth.currentUser) || pendingUnlinkedGoogleEmail;
 
-              <div>
-                <label className="text-xs uppercase font-bold tracking-wider text-forest/80 block mb-1">
-                  Novo E-mail de Login *
-                </label>
-                <input
-                  type="email"
-                  required
-                  value={newEmailInput}
-                  onChange={(e) => setNewEmailInput(e.target.value)}
-                  placeholder="exemplo@novodominio.com"
-                  className="w-full px-4 py-2.5 bg-white border border-soft rounded-xl text-forest text-sm focus:outline-none focus:border-sun-dark focus:ring-1 focus:ring-sun-dark"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs uppercase font-bold tracking-wider text-forest/80 block mb-1">
-                  Confirmar Novo E-mail *
-                </label>
-                <input
-                  type="email"
-                  required
-                  value={confirmEmailInput}
-                  onChange={(e) => setConfirmEmailInput(e.target.value)}
-                  placeholder="Repita o novo e-mail"
-                  className="w-full px-4 py-2.5 bg-white border border-soft rounded-xl text-forest text-sm focus:outline-none focus:border-sun-dark focus:ring-1 focus:ring-sun-dark"
-                />
-              </div>
-
-              {auth.currentUser?.providerData.some((p) => p.providerId === "password") ? (
-                <div>
-                  <label className="text-xs uppercase font-bold tracking-wider text-forest/80 block mb-1">
-                    Sua Senha Atual (Confirmação de Segurança) *
-                  </label>
-                  <div className="relative">
-                    <input
-                      type={showPasswordInModal ? "text" : "password"}
-                      required
-                      value={currentPasswordInput}
-                      onChange={(e) => setCurrentPasswordInput(e.target.value)}
-                      placeholder="Digite sua senha atual"
-                      className="w-full px-4 py-2.5 pr-10 bg-white border border-soft rounded-xl text-forest text-sm focus:outline-none focus:border-sun-dark focus:ring-1 focus:ring-sun-dark"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPasswordInModal(!showPasswordInModal)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-forest/40 hover:text-forest"
-                    >
-                      {showPasswordInModal ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="p-3 bg-blue-50 rounded-xl border border-blue-200 text-xs text-blue-800 flex items-center gap-2">
-                  <Globe className="w-4 h-4 shrink-0 text-blue-600" />
-                  <span>
-                    Como sua conta está vinculada ao Google, uma confirmação com sua conta Google será solicitada para prosseguir.
-                  </span>
-                </div>
-              )}
-
-              {changeEmailError && (
-                <div className="p-3 bg-red-50 rounded-xl border border-red-200 text-xs text-red-700 flex items-start gap-2">
-                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                  <span>{changeEmailError}</span>
-                </div>
-              )}
-
-              {changeEmailSuccess && (
-                <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 text-xs text-emerald-800 flex items-start gap-2">
-                  <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600" />
-                  <span>{changeEmailSuccess}</span>
-                </div>
-              )}
-
-              <div className="p-3 bg-warm/60 rounded-xl border border-soft text-[11px] text-forest/60 flex items-start gap-2">
-                <Info className="w-4 h-4 text-forest/50 shrink-0 mt-0.5" />
-                <span>
-                  Ao salvar, seu novo e-mail será associado ao seu perfil e seu identificador (UID) continuará o mesmo.
-                </span>
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-soft mt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowChangeEmailModal(false)}
-                  disabled={isChangingEmail}
-                  className="px-4 py-2 text-xs font-semibold text-forest/70 hover:text-forest hover:bg-warm rounded-xl transition-colors cursor-pointer"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={isChangingEmail}
-                  className="px-5 py-2.5 bg-forest hover:bg-forest/90 text-white text-xs font-semibold rounded-xl shadow-xs transition-colors flex items-center gap-2 cursor-pointer disabled:opacity-50"
-                >
-                  {isChangingEmail ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Atualizando...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Check className="w-4 h-4" />
-                      <span>Salvar Novo E-mail</span>
-                    </>
+              return (
+                <div className="flex flex-col gap-4">
+                  {hasGoogleProvider && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 p-1 bg-warm rounded-2xl border border-soft">
+                      <button
+                        type="button"
+                        disabled={isChangingEmail || !!pendingUnlinkedGoogleEmail}
+                        onClick={() => {
+                          setChangeEmailMode("switch_google");
+                          setChangeEmailError("");
+                        }}
+                        className={`py-2.5 px-3 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-60 ${
+                          changeEmailMode === "switch_google"
+                            ? "bg-white text-forest shadow-xs border border-soft"
+                            : "text-forest/65 hover:text-forest"
+                        }`}
+                      >
+                        <Globe className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                        <span>Trocar Conta Google</span>
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isChangingEmail || !!pendingUnlinkedGoogleEmail}
+                        onClick={() => {
+                          setChangeEmailMode("standard");
+                          setChangeEmailError("");
+                        }}
+                        className={`py-2.5 px-3 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-60 ${
+                          changeEmailMode === "standard"
+                            ? "bg-white text-forest shadow-xs border border-soft"
+                            : "text-forest/65 hover:text-forest"
+                        }`}
+                      >
+                        <Mail className="w-3.5 h-3.5 text-sun-dark shrink-0" />
+                        <span>Outro E-mail (Link / Senha)</span>
+                      </button>
+                    </div>
                   )}
-                </button>
-              </div>
-            </form>
+
+                  {hasGoogleProvider && changeEmailMode === "switch_google" ? (
+                    <div className="flex flex-col gap-4">
+                      <div>
+                        <label className="text-xs uppercase font-bold tracking-wider text-forest/60 block mb-1">
+                          Conta Google Atual Conectada
+                        </label>
+                        <input
+                          type="text"
+                          disabled
+                          value={linkedGoogleEmail || profile?.email || ""}
+                          className="w-full px-4 py-2.5 bg-warm/80 border border-soft rounded-xl text-forest/70 text-sm cursor-not-allowed"
+                        />
+                      </div>
+
+                      {googleSwitchStep === 1 ? (
+                        <>
+                          <div>
+                            <label className="text-xs uppercase font-bold tracking-wider text-forest/80 block mb-1">
+                              Novo E-mail Google (Opcional — para sugerir na seleção)
+                            </label>
+                            <input
+                              type="email"
+                              value={newEmailInput}
+                              onChange={(e) => setNewEmailInput(e.target.value)}
+                              placeholder="novoemail@gmail.com ou @suaempresa.com"
+                              className="w-full px-4 py-2.5 bg-white border border-soft rounded-xl text-forest text-sm focus:outline-none focus:border-sun-dark focus:ring-1 focus:ring-sun-dark"
+                            />
+                          </div>
+
+                          <div className="p-3.5 bg-blue-50 rounded-2xl border border-blue-200 text-xs text-blue-900 space-y-1.5 leading-relaxed">
+                            <div className="font-bold flex items-center gap-1.5 text-blue-800">
+                              <Globe className="w-4 h-4 shrink-0 text-blue-600" />
+                              <span>Troca segura em 2 passos (mantendo seu UID):</span>
+                            </div>
+                            <p>
+                              <strong>Passo 1 (agora):</strong> Ao clicar abaixo, selecione sua conta <strong>ATUAL ({linkedGoogleEmail})</strong> apenas para confirmar sua identidade.
+                            </p>
+                            <p>
+                              <strong>Passo 2 (em seguida):</strong> Você selecionará a <strong>NOVA conta Google</strong> que passará a acessar seu painel.
+                            </p>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-200 text-xs text-emerald-900 space-y-2 leading-relaxed">
+                          <div className="font-bold flex items-center gap-1.5 text-emerald-800">
+                            <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+                            <span>Passo 1 concluído! Identidade confirmada.</span>
+                          </div>
+                          <p>
+                            Clique agora em <strong>Selecionar Nova Conta Google</strong> abaixo e escolha na janela do Google a nova conta que ficará vinculada ao seu perfil.
+                          </p>
+                        </div>
+                      )}
+
+                      {changeEmailError && (
+                        <div className="p-3 bg-red-50 rounded-xl border border-red-200 text-xs text-red-700 flex items-start gap-2">
+                          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                          <span>{changeEmailError}</span>
+                        </div>
+                      )}
+
+                      {changeEmailSuccess && (
+                        <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 text-xs text-emerald-800 flex items-start gap-2">
+                          <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600" />
+                          <span>{changeEmailSuccess}</span>
+                        </div>
+                      )}
+
+                      <div className="flex flex-wrap items-center justify-end gap-2.5 pt-3 border-t border-soft mt-1">
+                        {googleSwitchStep === 1 ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => setShowChangeEmailModal(false)}
+                              disabled={isChangingEmail}
+                              className="px-4 py-2 text-xs font-semibold text-forest/70 hover:text-forest hover:bg-warm rounded-xl transition-colors cursor-pointer"
+                            >
+                              Cancelar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleStartGoogleSwitch}
+                              disabled={isChangingEmail}
+                              className="px-5 py-2.5 bg-forest hover:bg-forest/90 text-white text-xs font-semibold rounded-xl shadow-xs transition-colors flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                            >
+                              {isChangingEmail ? (
+                                <>
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                  <span>Confirmando...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Globe className="w-4 h-4" />
+                                  <span>Passo 1: Confirmar Conta Atual</span>
+                                </>
+                              )}
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            {pendingUnlinkedGoogleEmail && (
+                              <button
+                                type="button"
+                                onClick={handleRestorePreviousGoogle}
+                                disabled={isChangingEmail}
+                                className="px-3.5 py-2 text-xs font-semibold text-forest/75 hover:text-forest bg-warm hover:bg-forest/10 border border-soft rounded-xl transition-colors cursor-pointer disabled:opacity-50"
+                              >
+                                Manter {pendingUnlinkedGoogleEmail}
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={handleCompleteGoogleSwitch}
+                              disabled={isChangingEmail}
+                              className="px-5 py-2.5 bg-forest hover:bg-forest/90 text-white text-xs font-semibold rounded-xl shadow-xs transition-colors flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                            >
+                              {isChangingEmail ? (
+                                <>
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                  <span>Vinculando...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Check className="w-4 h-4" />
+                                  <span>Passo 2: Selecionar Nova Conta Google</span>
+                                </>
+                              )}
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <form onSubmit={handleUserChangeEmail} className="flex flex-col gap-4">
+                      <div>
+                        <label className="text-xs uppercase font-bold tracking-wider text-forest/60 block mb-1">
+                          E-mail Atual
+                        </label>
+                        <input
+                          type="text"
+                          disabled
+                          value={profile?.email || auth.currentUser?.email || ""}
+                          className="w-full px-4 py-2.5 bg-warm/80 border border-soft rounded-xl text-forest/60 text-sm cursor-not-allowed"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-xs uppercase font-bold tracking-wider text-forest/80 block mb-1">
+                          Novo E-mail de Login *
+                        </label>
+                        <input
+                          type="email"
+                          required
+                          value={newEmailInput}
+                          onChange={(e) => setNewEmailInput(e.target.value)}
+                          placeholder="exemplo@novodominio.com"
+                          className="w-full px-4 py-2.5 bg-white border border-soft rounded-xl text-forest text-sm focus:outline-none focus:border-sun-dark focus:ring-1 focus:ring-sun-dark"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-xs uppercase font-bold tracking-wider text-forest/80 block mb-1">
+                          Confirmar Novo E-mail *
+                        </label>
+                        <input
+                          type="email"
+                          required
+                          value={confirmEmailInput}
+                          onChange={(e) => setConfirmEmailInput(e.target.value)}
+                          placeholder="Repita o novo e-mail"
+                          className="w-full px-4 py-2.5 bg-white border border-soft rounded-xl text-forest text-sm focus:outline-none focus:border-sun-dark focus:ring-1 focus:ring-sun-dark"
+                        />
+                      </div>
+
+                      {hasPasswordProvider && hasGoogleProvider && (
+                        <div className="flex items-center justify-between gap-2 text-xs text-forest/70 bg-warm/60 px-3 py-2 rounded-xl border border-soft">
+                          <span>Confirmar identidade usando:</span>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setEmailConfirmAuthMethod("password")}
+                              className={`px-2.5 py-1 rounded-lg font-semibold cursor-pointer ${
+                                emailConfirmAuthMethod === "password"
+                                  ? "bg-forest text-white"
+                                  : "bg-white text-forest/70 border border-soft"
+                              }`}
+                            >
+                              Senha
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEmailConfirmAuthMethod("google")}
+                              className={`px-2.5 py-1 rounded-lg font-semibold cursor-pointer ${
+                                emailConfirmAuthMethod === "google"
+                                  ? "bg-forest text-white"
+                                  : "bg-white text-forest/70 border border-soft"
+                              }`}
+                            >
+                              Google
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {hasPasswordProvider &&
+                      (!hasGoogleProvider || emailConfirmAuthMethod === "password") ? (
+                        <div>
+                          <label className="text-xs uppercase font-bold tracking-wider text-forest/80 block mb-1">
+                            Sua Senha Atual (Confirmação de Segurança) *
+                          </label>
+                          <div className="relative">
+                            <input
+                              type={showPasswordInModal ? "text" : "password"}
+                              required
+                              value={currentPasswordInput}
+                              onChange={(e) => setCurrentPasswordInput(e.target.value)}
+                              placeholder="Digite sua senha atual"
+                              className="w-full px-4 py-2.5 pr-10 bg-white border border-soft rounded-xl text-forest text-sm focus:outline-none focus:border-sun-dark focus:ring-1 focus:ring-sun-dark"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowPasswordInModal(!showPasswordInModal)}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-forest/40 hover:text-forest"
+                            >
+                              {showPasswordInModal ? (
+                                <EyeOff className="w-4 h-4" />
+                              ) : (
+                                <Eye className="w-4 h-4" />
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="p-3.5 bg-blue-50 rounded-xl border border-blue-200 text-xs text-blue-900 flex items-start gap-2.5 leading-relaxed">
+                          <Globe className="w-4 h-4 shrink-0 text-blue-600 mt-0.5" />
+                          <span>
+                            Ao salvar, uma janela do Google será aberta por segurança: selecione sua conta <strong>ATUAL ({linkedGoogleEmail})</strong> para autorizar o envio do link de verificação ao novo e-mail.
+                          </span>
+                        </div>
+                      )}
+
+                      {changeEmailError && (
+                        <div className="p-3 bg-red-50 rounded-xl border border-red-200 text-xs text-red-700 flex items-start gap-2">
+                          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                          <span>{changeEmailError}</span>
+                        </div>
+                      )}
+
+                      {changeEmailSuccess && (
+                        <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 text-xs text-emerald-800 flex items-start gap-2">
+                          <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600" />
+                          <span>{changeEmailSuccess}</span>
+                        </div>
+                      )}
+
+                      <div className="p-3 bg-warm/60 rounded-xl border border-soft text-[11px] text-forest/60 flex items-start gap-2">
+                        <Info className="w-4 h-4 text-forest/50 shrink-0 mt-0.5" />
+                        <span>
+                          Ao salvar, seu novo e-mail será associado ao seu perfil e seu identificador (UID) continuará o mesmo.
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-end gap-3 pt-3 border-t border-soft mt-2">
+                        <button
+                          type="button"
+                          onClick={() => setShowChangeEmailModal(false)}
+                          disabled={isChangingEmail}
+                          className="px-4 py-2 text-xs font-semibold text-forest/70 hover:text-forest hover:bg-warm rounded-xl transition-colors cursor-pointer"
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={isChangingEmail}
+                          className="px-5 py-2.5 bg-forest hover:bg-forest/90 text-white text-xs font-semibold rounded-xl shadow-xs transition-colors flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                        >
+                          {isChangingEmail ? (
+                            <>
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                              <span>Atualizando...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Check className="w-4 h-4" />
+                              <span>Salvar Novo E-mail</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </form>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}
@@ -24931,9 +25791,25 @@ export function DashboardView({
               </div>
 
               {directPasswordError && (
-                <div className="p-3 bg-red-50 rounded-xl border border-red-200 text-xs text-red-700 flex items-start gap-2">
-                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                  <span>{directPasswordError}</span>
+                <div className="p-3 bg-red-50 rounded-xl border border-red-200 text-xs text-red-700 flex flex-col gap-2">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                    <span>{directPasswordError}</span>
+                  </div>
+                  {directPasswordNeedsReauth &&
+                    auth.currentUser?.providerData.some((p) => p.providerId === "google.com") && (
+                      <button
+                        type="button"
+                        onClick={handleReauthGoogleAndLinkPassword}
+                        disabled={isCreatingDirectPassword}
+                        className="mt-1 py-2 px-3 bg-white hover:bg-red-100/50 text-forest border border-red-200 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <Globe className="w-3.5 h-3.5 text-blue-600" />
+                        <span>
+                          Confirmar com Google ({getLinkedGoogleEmail(auth.currentUser)}) e Criar Senha
+                        </span>
+                      </button>
+                    )}
                 </div>
               )}
 

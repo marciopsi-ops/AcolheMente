@@ -142,6 +142,16 @@ const MODELOS_PADRAO: Record<TipoDocumentoPsicologico, { titulo: string; secoes:
       },
     ],
   },
+  certificado: {
+    titulo: "Certificado de Participação",
+    secoes: [
+      {
+        id: "1",
+        titulo: "Certificação de Participação em Evento / Workshop",
+        conteudo: "Certificamos para os devidos fins que [NOME_PACIENTE], portador(a) do CPF [CPF_PACIENTE], participou com aproveitamento da atividade / evento formativo realizado sob nossa coordenação técnica, com carga horária total de 4 horas.",
+      },
+    ],
+  },
 };
 
 export const ProfissionalDocumentosManager: React.FC<ProfissionalDocumentosManagerProps> = ({
@@ -384,9 +394,9 @@ export const ProfissionalDocumentosManager: React.FC<ProfissionalDocumentosManag
       }));
 
       const conteudoResumo = secoesProcessadas.map((s) => `${s.titulo}\n${s.conteudo}`).join("\n\n");
-      const assinaturaFinal: AssinaturaDocumento = {
-        tipo: assinaturaTipo,
-        dados: assinaturaTipo === "desenhada" ? assinaturaDesenhadaData : assinaturaImagemData,
+      const assinaturaFinal: AssinaturaDocumento = profissionalProfile?.assinatura || {
+        tipo: "desenhada",
+        dados: "",
       };
 
       const docPayload = {
@@ -521,6 +531,7 @@ export const ProfissionalDocumentosManager: React.FC<ProfissionalDocumentosManag
             { id: "relatorio", label: "Relatório" },
             { id: "laudo", label: "Laudo" },
             { id: "parecer", label: "Parecer" },
+            { id: "certificado", label: "Certificado" },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -933,78 +944,24 @@ export const ProfissionalDocumentosManager: React.FC<ProfissionalDocumentosManag
                 </div>
               </div>
 
-              {/* Seção 4: Opções de Assinatura (Manuscrita ou Imagem PNG Transparente) */}
-              <div className="bg-warm/40 p-4 rounded-2xl border border-soft space-y-4">
+              {/* Seção 4: Assinatura Digital do Profissional (Centralizada no Perfil) */}
+              <div className="bg-warm/40 p-4 rounded-2xl border border-soft space-y-3">
                 <h4 className="font-serif font-bold text-forest text-sm flex items-center gap-2">
                   <FileSignature className="w-4 h-4 text-forest" />
-                  <span>4. Assinatura Digital do Profissional</span>
+                  <span>4. Assinatura Digital Padrão (Configurada no Perfil)</span>
                 </h4>
-
-                <div className="flex items-center gap-4">
-                  <label className="flex items-center gap-2 text-xs font-bold text-forest cursor-pointer">
-                    <input
-                      type="radio"
-                      name="assinaturaTipo"
-                      checked={assinaturaTipo === "desenhada"}
-                      onChange={() => setAssinaturaTipo("desenhada")}
-                      className="text-forest cursor-pointer"
-                    />
-                    <span>Desenhar em Tela</span>
-                  </label>
-                  <label className="flex items-center gap-2 text-xs font-bold text-forest cursor-pointer">
-                    <input
-                      type="radio"
-                      name="assinaturaTipo"
-                      checked={assinaturaTipo === "imagem"}
-                      onChange={() => setAssinaturaTipo("imagem")}
-                      className="text-forest cursor-pointer"
-                    />
-                    <span>Subir Imagem PNG (Fundo Transparente)</span>
-                  </label>
-                </div>
-
-                {assinaturaTipo === "desenhada" ? (
-                  <div className="space-y-2">
-                    <div className="border-2 border-dashed border-forest/30 bg-white rounded-2xl p-2 flex flex-col items-center">
-                      <canvas
-                        ref={signatureCanvasRef}
-                        width={500}
-                        height={130}
-                        onMouseDown={startDrawing}
-                        onMouseMove={draw}
-                        onMouseUp={stopDrawing}
-                        onMouseLeave={stopDrawing}
-                        onTouchStart={startDrawing}
-                        onTouchMove={draw}
-                        onTouchEnd={stopDrawing}
-                        className="w-full max-w-[500px] h-[130px] cursor-crosshair bg-warm/20 rounded-xl border border-soft touch-none"
-                      />
-                      <div className="flex items-center justify-between w-full max-w-[500px] mt-2 px-1">
-                        <span className="text-[10px] text-forest/60">Desenhe sua assinatura com o mouse ou dedo.</span>
-                        <button
-                          type="button"
-                          onClick={clearCanvas}
-                          className="px-2 py-1 bg-rose-50 text-rose-700 hover:bg-rose-100 rounded-lg text-xs font-semibold cursor-pointer"
-                        >
-                          Limpar Assinatura
-                        </button>
-                      </div>
+                {profissionalProfile?.assinatura?.dados ? (
+                  <div className="flex items-center gap-4 bg-white p-3.5 rounded-xl border border-soft">
+                    <img src={profissionalProfile.assinatura.dados} alt="Assinatura Padrão" className="h-14 object-contain" />
+                    <div>
+                      <p className="text-xs font-bold text-emerald-800">Assinatura padrão carregada com sucesso do seu perfil!</p>
+                      <p className="text-[11px] text-forest/60">Utilizada automaticamente em todos os seus documentos, recibos e certificados.</p>
                     </div>
                   </div>
                 ) : (
-                  <div className="space-y-2">
-                    <label className="border-2 border-dashed border-forest/30 bg-white rounded-2xl p-6 flex flex-col items-center justify-center cursor-pointer hover:bg-warm/30 transition-all">
-                      <Upload className="w-8 h-8 text-forest/50 mb-2" />
-                      <span className="text-xs font-bold text-forest">Clique para enviar imagem PNG da assinatura</span>
-                      <span className="text-[10px] text-forest/60 mt-1">Recomendado fundo transparente (PNG)</span>
-                      <input type="file" accept="image/png, image/jpeg" onChange={handleImageUpload} className="hidden" />
-                    </label>
-                    {assinaturaImagemData && (
-                      <div className="flex items-center gap-3 bg-white p-3 rounded-xl border border-soft">
-                        <img src={assinaturaImagemData} alt="Prévia Assinatura" className="h-12 object-contain" />
-                        <span className="text-xs text-emerald-700 font-bold">Assinatura carregada com sucesso!</span>
-                      </div>
-                    )}
+                  <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 space-y-1">
+                    <p className="font-bold">Aviso: Nenhuma assinatura configurada no seu perfil.</p>
+                    <p>Acesse a aba <strong>Meu Perfil</strong> para cadastrar sua assinatura manuscrita ou imagem PNG transparente uma única vez.</p>
                   </div>
                 )}
               </div>
@@ -1167,7 +1124,7 @@ export const ProfissionalDocumentosManager: React.FC<ProfissionalDocumentosManag
                     </p>
                   </div>
 
-                  {/* Paciente Destinatário */}
+                  {/* Paciente Destinatário / Participante */}
                   <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 mb-6 text-xs text-slate-700 space-y-1">
                     <p 
                       className="font-bold mb-1 uppercase text-[10px] tracking-wider"
@@ -1177,9 +1134,16 @@ export const ProfissionalDocumentosManager: React.FC<ProfissionalDocumentosManag
                           : "#1b3022"
                       }}
                     >
-                      Destinatário(a) / Paciente:
+                      {documentoVisualizar.tipo === "certificado"
+                        ? "Participante Certificado(a):"
+                        : "Destinatário(a) / Paciente:"}
                     </p>
                     <p className="font-bold text-sm text-slate-900">{documentoVisualizar.pacienteNome}</p>
+                    {documentoVisualizar.tipo === "certificado" && (documentoVisualizar as any).cargaHoraria && (
+                      <p className="text-xs text-slate-600 pt-0.5">
+                        Carga Horária Total: <strong className="text-slate-900">{(documentoVisualizar as any).cargaHoraria}</strong>
+                      </p>
+                    )}
                   </div>
 
                   {/* Seções ou Conteúdo */}

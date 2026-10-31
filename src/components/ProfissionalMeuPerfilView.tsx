@@ -23,6 +23,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Copy,
+  FileSignature,
 } from "lucide-react";
 import { User as FirebaseUser } from "firebase/auth";
 import { doc, updateDoc, serverTimestamp } from "firebase/firestore";
@@ -318,6 +319,10 @@ export function ProfissionalMeuPerfilView({
 
   // Instant field overrides so clicking Save immediately after typing never misses a character
   const liveOverridesRef = useRef<Record<string, any>>({});
+  const signatureCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const isDrawingSigRef = useRef(false);
+  const lastExportedSigRef = useRef<string>("");
+
   const trackField = (field: string, val: any) => {
     liveOverridesRef.current[field] = val;
   };
@@ -329,7 +334,43 @@ export function ProfissionalMeuPerfilView({
   // Clear live overrides whenever profile prop updates externally
   useEffect(() => {
     liveOverridesRef.current = {};
+    lastExportedSigRef.current = "";
   }, [profile?.uid]);
+
+  // Sync saved/cleared signature with canvas when in draw mode
+  useEffect(() => {
+    if (activeSubTab !== "identificacao") return;
+    const sig = profile?.assinatura;
+    if (sig && sig.tipo !== "desenhada") return;
+    const canvas = signatureCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const dados = sig?.dados || "";
+    if (!dados) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      lastExportedSigRef.current = "";
+      return;
+    }
+
+    if (isDrawingSigRef.current || dados === lastExportedSigRef.current) {
+      return;
+    }
+
+    const img = new Image();
+    img.onload = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const scale = Math.min(canvas.width / img.width, canvas.height / img.height, 1);
+      const drawW = img.width * scale;
+      const drawH = img.height * scale;
+      const offsetX = (canvas.width - drawW) / 2;
+      const offsetY = (canvas.height - drawH) / 2;
+      ctx.drawImage(img, offsetX, offsetY, drawW, drawH);
+      lastExportedSigRef.current = dados;
+    };
+    img.src = dados;
+  }, [activeSubTab, profile?.assinatura?.tipo, profile?.assinatura?.dados]);
 
   // Essential completeness checks per sub-tab (mirrors getProfissionalNotifications)
   const missingIdentificacao = [
@@ -538,6 +579,7 @@ export function ProfissionalMeuPerfilView({
           uf: "",
           referencia: "",
         },
+        assinatura: merged.assinatura || profile?.assinatura || { tipo: "desenhada", dados: "" },
       });
       liveOverridesRef.current = {};
     } finally {
@@ -712,37 +754,6 @@ export function ProfissionalMeuPerfilView({
                   {subTabs[currentTabIndex]?.shortDesc}
                 </p>
               </div>
-            </div>
-
-            <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
-              <a
-                href={`?prof=${profile?.uid || profile?.id || ""}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 bg-warm hover:bg-soft text-forest rounded-xl text-xs font-bold border border-soft transition-colors whitespace-nowrap shrink-0"
-              >
-                <Eye className="w-3.5 h-3.5 text-forest/75" />
-                <span>Ver Página</span>
-              </a>
-
-              <button
-                type="button"
-                disabled={isSaving}
-                onClick={handleSaveAll}
-                className="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-forest hover:bg-forest/90 text-white rounded-xl text-xs font-bold transition-colors shadow-2xs cursor-pointer disabled:opacity-60 whitespace-nowrap shrink-0"
-              >
-                {isSaving ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin text-sun" />
-                    <span>Salvando...</span>
-                  </>
-                ) : (
-                  <>
-                    <Check className="w-3.5 h-3.5 text-sun" />
-                    <span>Salvar Alterações</span>
-                  </>
-                )}
-              </button>
             </div>
           </div>
 
@@ -1170,6 +1181,209 @@ export function ProfissionalMeuPerfilView({
                       .
                     </p>
                   </div>
+                </div>
+              </div>
+
+              {/* Bloco 1.4: Assinatura Digital Padrão */}
+              <div className="pt-6 border-t border-soft/80 space-y-4">
+                <div>
+                  <h3 className="font-serif text-lg font-bold text-forest flex items-center gap-2">
+                    <FileSignature className="w-5 h-5 text-forest" />
+                    <span>Assinatura Digital Padrão (Documentos, Recibos & Certificados)</span>
+                  </h3>
+                  <p className="text-xs text-forest/60 mt-0.5">
+                    Cadastre sua assinatura uma única vez. Ela será aplicada automaticamente em todos os documentos oficiais, recibos e certificados emitidos.
+                  </p>
+                </div>
+
+                <div className="bg-warm/40 p-4 sm:p-5 rounded-2xl border border-soft space-y-4">
+                  {(() => {
+                    const sigData = profile?.assinatura || { tipo: "desenhada", dados: "" };
+                    return (
+                      <div className="space-y-4">
+                        <div className="flex flex-wrap items-center gap-4">
+                          <label className="flex items-center gap-2 text-xs font-bold text-forest cursor-pointer">
+                            <input
+                              type="radio"
+                              name="profileAssinaturaTipo"
+                              checked={sigData.tipo === "desenhada"}
+                              onChange={() => {
+                                lastExportedSigRef.current = "";
+                                updateProfileField({
+                                  assinatura: { ...sigData, tipo: "desenhada" },
+                                });
+                              }}
+                              className="text-forest cursor-pointer"
+                            />
+                            <span>Desenhar em Tela</span>
+                          </label>
+                          <label className="flex items-center gap-2 text-xs font-bold text-forest cursor-pointer">
+                            <input
+                              type="radio"
+                              name="profileAssinaturaTipo"
+                              checked={sigData.tipo === "imagem"}
+                              onChange={() =>
+                                updateProfileField({
+                                  assinatura: { ...sigData, tipo: "imagem" },
+                                })
+                              }
+                              className="text-forest cursor-pointer"
+                            />
+                            <span>Subir Imagem PNG (Fundo Transparente)</span>
+                          </label>
+                        </div>
+
+                        {sigData.tipo === "desenhada" ? (
+                          <div className="border-2 border-dashed border-forest/30 bg-white rounded-2xl p-4 sm:p-5 flex flex-col items-center">
+                            <canvas
+                              ref={signatureCanvasRef}
+                              width={840}
+                              height={260}
+                              onPointerDown={(e) => {
+                                e.preventDefault();
+                                const canvas = e.currentTarget;
+                                const ctx = canvas.getContext("2d");
+                                if (!ctx) return;
+                                try {
+                                  canvas.setPointerCapture(e.pointerId);
+                                } catch {}
+                                isDrawingSigRef.current = true;
+                                const rect = canvas.getBoundingClientRect();
+                                const scaleX = canvas.width / rect.width;
+                                const scaleY = canvas.height / rect.height;
+                                const x = (e.clientX - rect.left) * scaleX;
+                                const y = (e.clientY - rect.top) * scaleY;
+                                ctx.strokeStyle = "#1b3022";
+                                ctx.fillStyle = "#1b3022";
+                                ctx.lineWidth = 2.8;
+                                ctx.lineCap = "round";
+                                ctx.lineJoin = "round";
+                                ctx.beginPath();
+                                ctx.arc(x, y, 1.4, 0, Math.PI * 2);
+                                ctx.fill();
+                                ctx.beginPath();
+                                ctx.moveTo(x, y);
+                              }}
+                              onPointerMove={(e) => {
+                                if (!isDrawingSigRef.current) return;
+                                e.preventDefault();
+                                const canvas = e.currentTarget;
+                                const ctx = canvas.getContext("2d");
+                                if (!ctx) return;
+                                const rect = canvas.getBoundingClientRect();
+                                const scaleX = canvas.width / rect.width;
+                                const scaleY = canvas.height / rect.height;
+                                const x = (e.clientX - rect.left) * scaleX;
+                                const y = (e.clientY - rect.top) * scaleY;
+                                ctx.lineTo(x, y);
+                                ctx.strokeStyle = "#1b3022";
+                                ctx.lineWidth = 2.8;
+                                ctx.lineCap = "round";
+                                ctx.lineJoin = "round";
+                                ctx.stroke();
+                              }}
+                              onPointerUp={(e) => {
+                                if (!isDrawingSigRef.current) return;
+                                e.preventDefault();
+                                isDrawingSigRef.current = false;
+                                const canvas = e.currentTarget;
+                                try {
+                                  if (canvas.hasPointerCapture(e.pointerId)) {
+                                    canvas.releasePointerCapture(e.pointerId);
+                                  }
+                                } catch {}
+                                const dataUrl = canvas.toDataURL("image/png");
+                                lastExportedSigRef.current = dataUrl;
+                                updateProfileField({
+                                  assinatura: { tipo: "desenhada", dados: dataUrl },
+                                });
+                              }}
+                              onPointerCancel={(e) => {
+                                if (!isDrawingSigRef.current) return;
+                                isDrawingSigRef.current = false;
+                                const canvas = e.currentTarget;
+                                try {
+                                  if (canvas.hasPointerCapture(e.pointerId)) {
+                                    canvas.releasePointerCapture(e.pointerId);
+                                  }
+                                } catch {}
+                                const dataUrl = canvas.toDataURL("image/png");
+                                lastExportedSigRef.current = dataUrl;
+                                updateProfileField({
+                                  assinatura: { tipo: "desenhada", dados: dataUrl },
+                                });
+                              }}
+                              className="w-full max-w-[780px] h-[220px] sm:h-[260px] cursor-crosshair bg-warm/20 rounded-xl border border-soft touch-none select-none"
+                            />
+                            <div className="flex items-center justify-between w-full max-w-[780px] mt-3 px-1 gap-3">
+                              <span className="text-[11px] text-forest/65">
+                                Desenhe sua assinatura com o mouse, caneta ou dedo no quadro ampliado acima.
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  isDrawingSigRef.current = false;
+                                  lastExportedSigRef.current = "";
+                                  const canvas = signatureCanvasRef.current;
+                                  if (canvas) {
+                                    const ctx = canvas.getContext("2d");
+                                    ctx?.clearRect(0, 0, canvas.width, canvas.height);
+                                  }
+                                  updateProfileField({
+                                    assinatura: { tipo: "desenhada", dados: "" },
+                                  });
+                                }}
+                                className="px-3.5 py-1.5 bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200/70 rounded-xl text-xs font-semibold transition-colors cursor-pointer shrink-0"
+                              >
+                                Limpar Assinatura
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            <label className="border-2 border-dashed border-forest/30 bg-white rounded-2xl p-6 flex flex-col items-center justify-center cursor-pointer hover:bg-warm/30 transition-all">
+                              <Upload className="w-8 h-8 text-forest/50 mb-2" />
+                              <span className="text-xs font-bold text-forest">Clique para enviar imagem PNG da assinatura</span>
+                              <span className="text-[10px] text-forest/60 mt-1">Recomendado fundo transparente (PNG)</span>
+                              <input
+                                type="file"
+                                accept="image/png, image/jpeg"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (!file) return;
+                                  const reader = new FileReader();
+                                  reader.onload = (event) => {
+                                    const result = event.target?.result as string;
+                                    updateProfileField({ assinatura: { tipo: "imagem", dados: result } });
+                                  };
+                                  reader.readAsDataURL(file);
+                                  e.target.value = "";
+                                }}
+                                className="hidden"
+                              />
+                            </label>
+                            {sigData.dados && (
+                              <div className="flex items-center justify-between gap-3 bg-white p-3 rounded-xl border border-soft">
+                                <div className="flex items-center gap-3">
+                                  <img src={sigData.dados} alt="Prévia Assinatura" className="h-14 max-w-[220px] object-contain" />
+                                  <span className="text-xs text-emerald-700 font-bold">Assinatura configurada com sucesso!</span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    updateProfileField({ assinatura: { tipo: "imagem", dados: "" } })
+                                  }
+                                  className="px-3 py-1.5 bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200/70 rounded-xl text-xs font-semibold transition-colors cursor-pointer shrink-0"
+                                >
+                                  Limpar Assinatura
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             </div>

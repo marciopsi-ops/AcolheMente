@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from "react";
 import { collection, query, onSnapshot, addDoc, deleteDoc, doc, updateDoc, serverTimestamp, orderBy, where } from "firebase/firestore";
-import { db } from "../lib/firebase";
-import { Calendar, Clock, Plus, Trash2, Briefcase, X, Edit3, User, Share2, ExternalLink, CreditCard, ImagePlus, Loader2, Check, Maximize2 } from "lucide-react";
+import { db, handleFirestoreError, OperationType } from "../lib/firebase";
+import { Calendar, Clock, Plus, Trash2, Briefcase, X, Edit3, User, Share2, ExternalLink, CreditCard, ImagePlus, Loader2, Check, Maximize2, Award, Printer, ShieldCheck, Copy, AlertCircle } from "lucide-react";
 import { compressThematicImage, formatEventDateDisplay } from "../utils/eventImageHelper";
+import { DocumentoPsicologicoItem } from "../types/documentos";
 
 interface UserProfile {
   id?: string;
@@ -43,6 +44,13 @@ export function EventosServicosView({ profile, activeSection = "eventos_e_parcer
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [imageUploadError, setImageUploadError] = useState<string | null>(null);
   const [copiedShareId, setCopiedShareId] = useState<string | null>(null);
+  const [certificadosEmitidos, setCertificadosEmitidos] = useState<(DocumentoPsicologicoItem & { eventoServicoId?: string; cargaHoraria?: string; inscricaoId?: string })[]>([]);
+  const [certificadoVisualizar, setCertificadoVisualizar] = useState<(DocumentoPsicologicoItem & { eventoServicoId?: string; cargaHoraria?: string }) | null>(null);
+  const [avulsoCertModalItem, setAvulsoCertModalItem] = useState<any | null>(null);
+  const [avulsoParticipanteNome, setAvulsoParticipanteNome] = useState("");
+  const [avulsoParticipanteCpf, setAvulsoParticipanteCpf] = useState("");
+  const [isEmittingCertKey, setIsEmittingCertKey] = useState<string | null>(null);
+  const [copiedCertLink, setCopiedCertLink] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Formulário Padrão Unificado (O mais completo, abrangendo Eventos e Serviços)
@@ -53,6 +61,8 @@ export function EventosServicosView({ profile, activeSection = "eventos_e_parcer
     descricao: "",
     data: "",
     hora: "",
+    ofereceCertificado: false,
+    cargaHoraria: "",
     vagas: "" as string | number,
     isGratuito: false,
     valor: "",
@@ -77,6 +87,8 @@ export function EventosServicosView({ profile, activeSection = "eventos_e_parcer
       descricao: "",
       data: "",
       hora: "",
+      ofereceCertificado: false,
+      cargaHoraria: "",
       vagas: "",
       isGratuito: false,
       valor: "",
@@ -144,12 +156,112 @@ export function EventosServicosView({ profile, activeSection = "eventos_e_parcer
       console.error("Error in inscricoes snapshot:", error);
     });
 
+    const qCertificados = uid
+      ? query(collection(db, "documentos_psicologicos"), where("profissionalId", "==", uid))
+      : null;
+    const unsubCertificados = qCertificados
+      ? onSnapshot(
+          qCertificados,
+          (snap) => {
+            const lista = snap.docs
+              .map((d) => ({ id: d.id, ...(d.data() as any) }))
+              .filter((d) => d.tipo === "certificado");
+            setCertificadosEmitidos(lista);
+          },
+          (error) => {
+            console.error("Error in certificados snapshot:", error);
+          }
+        )
+      : () => {};
+
     return () => {
       unsubEventos();
       unsubServicos();
       unsubInscricoes();
+      unsubCertificados();
     };
   }, [profile.uid, profile.id, profile.role]);
+
+  const handleEmitirCertificado = async (
+    item: any,
+    participante: { id?: string; nome: string; cpf?: string; email?: string }
+  ) => {
+    const uid = profile.uid || profile.id;
+    if (!uid || !participante.nome.trim()) return;
+
+    const emitKey = `${item.id}_${participante.id || participante.nome.trim()}`;
+    setIsEmittingCertKey(emitKey);
+    try {
+      const cargaHorariaTexto = (item.cargaHoraria || "").trim() || "Carga horária conforme programação";
+      const dataEventoTexto = item.data ? formatEventDateDisplay(item.data) : "";
+      const profNome = profile.name || item.criadorNome || "Profissional Responsável";
+      const numeroEmissao = `CERT-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
+      const cpfTrecho = participante.cpf?.trim()
+        ? `, inscrito(a) no CPF sob o nº ${participante.cpf.trim()},`
+        : "";
+      const tipoAtividadeLabel =
+        item.categoria === "servico"
+          ? `da atividade / formação "${item.titulo}"`
+          : `do evento "${item.titulo}"`;
+      const dataTrecho = dataEventoTexto ? `, realizado(a) em ${dataEventoTexto}` : "";
+
+      const conteudoCertificado = `Certificamos, para os devidos fins, que ${participante.nome.trim()}${cpfTrecho} participou com aproveitamento ${tipoAtividadeLabel}${item.tipo ? ` (${item.tipo})` : ""}, promovido(a) por ${profNome}${dataTrecho}, totalizando carga horária de ${cargaHorariaTexto}.`;
+
+      const novoDoc: Record<string, any> = {
+        profissionalId: uid,
+        pacienteId: participante.id || "participante_evento",
+        pacienteNome: participante.nome.trim(),
+        tipo: "certificado",
+        titulo: "CERTIFICADO DE PARTICIPAÇÃO",
+        numeroEmissao,
+        dataEmissao: new Date().toISOString(),
+        finalidade: `${item.titulo} • Carga Horária: ${cargaHorariaTexto}`,
+        conteudo: conteudoCertificado,
+        configuracaoPaginas: 1,
+        eventoServicoId: item.id,
+        inscricaoId: participante.id || "",
+        cargaHoraria: cargaHorariaTexto,
+        perfilProfissionalUsado: {
+          nome: profNome,
+          crp: profile.crp || "",
+          profissao: profile.profissao || "Psicólogo(a)",
+          registroConselho: profile.crp || "",
+          nomeEmpresa:
+            profile.companyData?.companyName ||
+            profile.dadosPJ?.nomeFantasia ||
+            profile.dadosPJ?.razaoSocial ||
+            "",
+          cnpj: profile.companyData?.cnpj || profile.dadosPJ?.cnpj || "",
+          contato: profile.email || profile.telefone || "",
+        },
+        whiteLabelEnabled: Boolean(profile.whiteLabelEnabled),
+        whiteLabelConfig: profile.whiteLabelConfig || null,
+        companyData: profile.companyData || null,
+        createdAt: serverTimestamp(),
+      };
+
+      if (profile.assinatura?.dados) {
+        novoDoc.assinatura = {
+          tipo: profile.assinatura.tipo || "desenhada",
+          dados: profile.assinatura.dados,
+        };
+      }
+
+      const docRef = await addDoc(collection(db, "documentos_psicologicos"), novoDoc);
+      const savedCert = {
+        ...(novoDoc as any),
+        id: docRef.id,
+      };
+      setCertificadoVisualizar(savedCert);
+      setAvulsoCertModalItem(null);
+      setAvulsoParticipanteNome("");
+      setAvulsoParticipanteCpf("");
+    } catch (err) {
+      handleFirestoreError(err, OperationType.CREATE, "documentos_psicologicos");
+    } finally {
+      setIsEmittingCertKey(null);
+    }
+  };
 
   const handleSaveUnifiedItem = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -166,6 +278,8 @@ export function EventosServicosView({ profile, activeSection = "eventos_e_parcer
         descricao: unifiedForm.descricao.trim(),
         data: unifiedForm.data || "",
         hora: unifiedForm.hora || "",
+        ofereceCertificado: Boolean(unifiedForm.ofereceCertificado),
+        cargaHoraria: unifiedForm.ofereceCertificado ? unifiedForm.cargaHoraria.trim() : "",
         vagas: unifiedForm.vagas || "",
         isGratuito: unifiedForm.isGratuito,
         valor: unifiedForm.isGratuito ? "" : (unifiedForm.valor || ""),
@@ -253,6 +367,8 @@ export function EventosServicosView({ profile, activeSection = "eventos_e_parcer
       descricao: item.descricao || "",
       data: item.data || "",
       hora: item.hora || "",
+      ofereceCertificado: Boolean(item.ofereceCertificado),
+      cargaHoraria: item.cargaHoraria || "",
       vagas: item.vagas || "",
       isGratuito: !!item.isGratuito,
       valor: item.valor || "",
@@ -503,6 +619,15 @@ export function EventosServicosView({ profile, activeSection = "eventos_e_parcer
                     <span className="font-semibold text-forest/90">{ev.hora || "A combinar"}</span>
                   </div>
 
+                  {ev.ofereceCertificado && ev.cargaHoraria && (
+                    <div className="flex items-center justify-between py-1 border-b border-soft/30">
+                      <span className="text-forest/50 font-medium flex items-center gap-1.5">
+                        <Award className="w-3.5 h-3.5 text-emerald-600" /> Certificado:
+                      </span>
+                      <span className="font-semibold text-emerald-700">Incluso ({ev.cargaHoraria})</span>
+                    </div>
+                  )}
+
                   <div className="flex items-center justify-between py-1">
                     <span className="text-forest/50 font-medium flex items-center gap-1.5">
                       <User className="w-3.5 h-3.5 text-forest/40" /> Criador:
@@ -540,29 +665,87 @@ export function EventosServicosView({ profile, activeSection = "eventos_e_parcer
                             {isFull && <span className="text-[10px] uppercase bg-red-100 px-2 py-0.5 rounded font-bold">Esgotado</span>}
                           </div>
 
+                          {ev.ofereceCertificado && ev.cargaHoraria && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAvulsoCertModalItem(ev);
+                                setAvulsoParticipanteNome("");
+                                setAvulsoParticipanteCpf("");
+                              }}
+                              className="w-full py-1.5 px-3 text-[11px] font-bold text-emerald-900 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                            >
+                              <Award className="w-3.5 h-3.5 text-emerald-700" />
+                              <span>Emitir Certificado ({ev.cargaHoraria})</span>
+                            </button>
+                          )}
+
                           {itemInscricoes.length > 0 && (
                             <div className="flex flex-col gap-1.5">
                               <button 
                                 type="button"
                                 onClick={() => setExpandedItemId(expandedItemId === ev.id ? null : ev.id)}
-                                className="w-full text-center py-1.5 text-[11px] font-bold text-forest bg-warm hover:bg-soft rounded-lg transition-colors border border-soft"
+                                className="w-full text-center py-1.5 text-[11px] font-bold text-forest bg-warm hover:bg-soft rounded-lg transition-colors border border-soft cursor-pointer"
                               >
                                 {expandedItemId === ev.id ? "Ocultar Inscritos" : `Ver Dados dos Inscritos (${itemInscricoes.length})`}
                               </button>
 
                               {expandedItemId === ev.id && (
-                                <div className="max-h-[200px] overflow-y-auto border border-soft rounded-lg bg-warm/25 p-2 flex flex-col gap-2 custom-scrollbar">
-                                  {itemInscricoes.map((ins, index) => (
-                                    <div key={ins.id} className="text-[11px] bg-white p-2 rounded-md border border-soft/50 shadow-sm">
-                                      <div className="font-semibold text-forest">#{index + 1} - {ins.nomeCompleto}</div>
-                                      <div className="text-forest/70 mt-0.5">
-                                        <p>📞 {ins.whatsapp}</p>
-                                        <p>✉️ {ins.email}</p>
-                                        <p>💼 {ins.profissao}</p>
-                                        {ins.mensagem && <p className="italic mt-1 bg-warm/40 p-1 rounded text-[10px]">💬 {ins.mensagem}</p>}
+                                <div className="max-h-[240px] overflow-y-auto border border-soft rounded-lg bg-warm/25 p-2 flex flex-col gap-2 custom-scrollbar">
+                                  {itemInscricoes.map((ins, index) => {
+                                    const certExistente = certificadosEmitidos.find(
+                                      (c) =>
+                                        c.eventoServicoId === ev.id &&
+                                        (c.inscricaoId === ins.id ||
+                                          c.pacienteNome?.toLowerCase() === (ins.nomeCompleto || "").trim().toLowerCase())
+                                    );
+                                    const emitKey = `${ev.id}_${ins.id || ins.nomeCompleto}`;
+                                    return (
+                                      <div key={ins.id} className="text-[11px] bg-white p-2.5 rounded-md border border-soft/50 shadow-sm space-y-1.5">
+                                        <div className="font-semibold text-forest">#{index + 1} - {ins.nomeCompleto}</div>
+                                        <div className="text-forest/70">
+                                          <p>📞 {ins.whatsapp}</p>
+                                          <p>✉️ {ins.email}</p>
+                                          <p>💼 {ins.profissao}</p>
+                                          {ins.mensagem && <p className="italic mt-1 bg-warm/40 p-1 rounded text-[10px]">💬 {ins.mensagem}</p>}
+                                        </div>
+                                        {ev.ofereceCertificado && ev.cargaHoraria && (
+                                          <div className="pt-1.5 border-t border-soft/50 flex items-center justify-end gap-1.5">
+                                            {certExistente ? (
+                                              <button
+                                                type="button"
+                                                onClick={() => setCertificadoVisualizar(certExistente)}
+                                                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-[10px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                                              >
+                                                <Award className="w-3 h-3" />
+                                                <span>Ver Certificado Emitido</span>
+                                              </button>
+                                            ) : (
+                                              <button
+                                                type="button"
+                                                disabled={isEmittingCertKey === emitKey}
+                                                onClick={() =>
+                                                  handleEmitirCertificado(ev, {
+                                                    id: ins.id,
+                                                    nome: ins.nomeCompleto || "Participante",
+                                                    email: ins.email,
+                                                  })
+                                                }
+                                                className="px-2.5 py-1 bg-forest hover:bg-forest/90 text-white rounded-md text-[10px] font-bold flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-50"
+                                              >
+                                                {isEmittingCertKey === emitKey ? (
+                                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                                ) : (
+                                                  <Award className="w-3 h-3 text-sun" />
+                                                )}
+                                                <span>Emitir Certificado</span>
+                                              </button>
+                                            )}
+                                          </div>
+                                        )}
                                       </div>
-                                    </div>
-                                  ))}
+                                    );
+                                  })}
                                 </div>
                               )}
                             </div>
@@ -733,6 +916,15 @@ export function EventosServicosView({ profile, activeSection = "eventos_e_parcer
                       </span>
                     </div>
 
+                    {svc.ofereceCertificado && svc.cargaHoraria && (
+                      <div className="flex items-center justify-between py-1 border-b border-soft/30">
+                        <span className="text-forest/50 font-medium flex items-center gap-1.5">
+                          <Award className="w-3.5 h-3.5 text-emerald-600" /> Certificado:
+                        </span>
+                        <span className="font-semibold text-emerald-700">Incluso ({svc.cargaHoraria})</span>
+                      </div>
+                    )}
+
                     {(svc.contatoEmail || svc.contatoTelefone) ? (
                       <div className="py-1 flex flex-col gap-1">
                         <span className="text-forest/50 font-medium flex items-center gap-1.5 mb-0.5 block">
@@ -800,29 +992,87 @@ export function EventosServicosView({ profile, activeSection = "eventos_e_parcer
                               {isFull && <span className="text-[10px] uppercase bg-red-100 px-2 py-0.5 rounded font-bold">Esgotado</span>}
                             </div>
 
+                            {svc.ofereceCertificado && svc.cargaHoraria && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setAvulsoCertModalItem(svc);
+                                  setAvulsoParticipanteNome("");
+                                  setAvulsoParticipanteCpf("");
+                                }}
+                                className="w-full py-1.5 px-3 text-[11px] font-bold text-emerald-900 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                              >
+                                <Award className="w-3.5 h-3.5 text-emerald-700" />
+                                <span>Emitir Certificado ({svc.cargaHoraria})</span>
+                              </button>
+                            )}
+
                             {itemInscricoes.length > 0 && (
                               <div className="flex flex-col gap-1.5">
                                 <button 
                                   type="button"
                                   onClick={() => setExpandedItemId(expandedItemId === svc.id ? null : svc.id)}
-                                  className="w-full text-center py-1.5 text-[11px] font-bold text-forest bg-warm hover:bg-soft rounded-lg transition-colors border border-soft"
+                                  className="w-full text-center py-1.5 text-[11px] font-bold text-forest bg-warm hover:bg-soft rounded-lg transition-colors border border-soft cursor-pointer"
                                 >
                                   {expandedItemId === svc.id ? "Ocultar Inscritos" : `Ver Dados dos Inscritos (${itemInscricoes.length})`}
                                 </button>
 
                                 {expandedItemId === svc.id && (
-                                  <div className="max-h-[200px] overflow-y-auto border border-soft rounded-lg bg-warm/25 p-2 flex flex-col gap-2 custom-scrollbar">
-                                    {itemInscricoes.map((ins, index) => (
-                                      <div key={ins.id} className="text-[11px] bg-white p-2 rounded-md border border-soft/50 shadow-sm">
-                                        <div className="font-semibold text-forest">#{index + 1} - {ins.nomeCompleto}</div>
-                                        <div className="text-forest/70 mt-0.5">
-                                          <p>📞 {ins.whatsapp}</p>
-                                          <p>✉️ {ins.email}</p>
-                                          <p>💼 {ins.profissao}</p>
-                                          {ins.mensagem && <p className="italic mt-1 bg-warm/40 p-1 rounded text-[10px]">💬 {ins.mensagem}</p>}
+                                  <div className="max-h-[240px] overflow-y-auto border border-soft rounded-lg bg-warm/25 p-2 flex flex-col gap-2 custom-scrollbar">
+                                    {itemInscricoes.map((ins, index) => {
+                                      const certExistente = certificadosEmitidos.find(
+                                        (c) =>
+                                          c.eventoServicoId === svc.id &&
+                                          (c.inscricaoId === ins.id ||
+                                            c.pacienteNome?.toLowerCase() === (ins.nomeCompleto || "").trim().toLowerCase())
+                                      );
+                                      const emitKey = `${svc.id}_${ins.id || ins.nomeCompleto}`;
+                                      return (
+                                        <div key={ins.id} className="text-[11px] bg-white p-2.5 rounded-md border border-soft/50 shadow-sm space-y-1.5">
+                                          <div className="font-semibold text-forest">#{index + 1} - {ins.nomeCompleto}</div>
+                                          <div className="text-forest/70">
+                                            <p>📞 {ins.whatsapp}</p>
+                                            <p>✉️ {ins.email}</p>
+                                            <p>💼 {ins.profissao}</p>
+                                            {ins.mensagem && <p className="italic mt-1 bg-warm/40 p-1 rounded text-[10px]">💬 {ins.mensagem}</p>}
+                                          </div>
+                                          {svc.ofereceCertificado && svc.cargaHoraria && (
+                                            <div className="pt-1.5 border-t border-soft/50 flex items-center justify-end gap-1.5">
+                                              {certExistente ? (
+                                                <button
+                                                  type="button"
+                                                  onClick={() => setCertificadoVisualizar(certExistente)}
+                                                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-[10px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                                                >
+                                                  <Award className="w-3 h-3" />
+                                                  <span>Ver Certificado Emitido</span>
+                                                </button>
+                                              ) : (
+                                                <button
+                                                  type="button"
+                                                  disabled={isEmittingCertKey === emitKey}
+                                                  onClick={() =>
+                                                    handleEmitirCertificado(svc, {
+                                                      id: ins.id,
+                                                      nome: ins.nomeCompleto || "Participante",
+                                                      email: ins.email,
+                                                    })
+                                                  }
+                                                  className="px-2.5 py-1 bg-forest hover:bg-forest/90 text-white rounded-md text-[10px] font-bold flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-50"
+                                                >
+                                                  {isEmittingCertKey === emitKey ? (
+                                                    <Loader2 className="w-3 h-3 animate-spin" />
+                                                  ) : (
+                                                    <Award className="w-3 h-3 text-sun" />
+                                                  )}
+                                                  <span>Emitir Certificado</span>
+                                                </button>
+                                              )}
+                                            </div>
+                                          )}
                                         </div>
-                                      </div>
-                                    ))}
+                                      );
+                                    })}
                                   </div>
                                 )}
                               </div>
@@ -1163,6 +1413,50 @@ export function EventosServicosView({ profile, activeSection = "eventos_e_parcer
                 </div>
               </div>
 
+              {/* Certificado de Participação & Carga Horária (Somente na criação/edição) */}
+              <div className="p-4 bg-emerald-50/50 border border-emerald-200/80 rounded-2xl space-y-3">
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={unifiedForm.ofereceCertificado}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setUnifiedForm({
+                        ...unifiedForm,
+                        ofereceCertificado: checked,
+                        cargaHoraria: checked ? unifiedForm.cargaHoraria : "",
+                      });
+                    }}
+                    className="w-4 h-4 mt-0.5 accent-forest cursor-pointer"
+                  />
+                  <div className="space-y-0.5">
+                    <span className="text-xs font-bold text-forest flex items-center gap-1.5">
+                      <Award className="w-4 h-4 text-emerald-700" />
+                      Oferecer Certificado de Participação com Carga Horária
+                    </span>
+                    <p className="text-[11px] text-forest/65 leading-snug">
+                      A emissão do certificado puxará automaticamente estes dados e sua assinatura digital padrão cadastrada no Meu Perfil.
+                    </p>
+                  </div>
+                </label>
+
+                {unifiedForm.ofereceCertificado && (
+                  <div className="pt-1">
+                    <label className="text-xs font-bold uppercase tracking-wider text-forest/75 mb-1.5 block">
+                      Carga Horária Total *
+                    </label>
+                    <input
+                      required={unifiedForm.ofereceCertificado}
+                      type="text"
+                      placeholder="Ex: 4 horas, 8 horas, 12h..."
+                      value={unifiedForm.cargaHoraria}
+                      onChange={(e) => setUnifiedForm({ ...unifiedForm, cargaHoraria: e.target.value })}
+                      className="w-full px-4 py-2.5 bg-white border border-emerald-200 rounded-xl focus:outline-none focus:border-forest transition-all text-sm text-forest font-semibold"
+                    />
+                  </div>
+                )}
+              </div>
+
               {/* Descrição */}
               <div>
                 <label className="text-xs font-bold uppercase tracking-wider text-forest/70 mb-2 block">
@@ -1378,6 +1672,290 @@ export function EventosServicosView({ profile, activeSection = "eventos_e_parcer
           </div>
         </div>
       )}
+
+      {/* MODAL PARA EMISSÃO DE CERTIFICADO (SELECIONAR INSCRITO OU AVULSO — PUXANDO DADOS AUTOMATICAMENTE) */}
+      {avulsoCertModalItem && (
+        <div className="fixed inset-0 bg-forest/30 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white max-w-lg w-full rounded-[2rem] p-6 sm:p-8 shadow-2xl border border-soft space-y-5 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full inline-flex items-center gap-1">
+                  <Award className="w-3 h-3" /> Emissão Automática
+                </span>
+                <h3 className="text-lg sm:text-xl font-serif font-bold text-forest mt-1.5">
+                  Emitir Certificado de Participação
+                </h3>
+                <p className="text-xs text-forest/65 mt-0.5">
+                  Título, data ({avulsoCertModalItem.data ? formatEventDateDisplay(avulsoCertModalItem.data) : "conforme evento"}), carga horária (<strong>{avulsoCertModalItem.cargaHoraria}</strong>) e assinatura padrão são preenchidos automaticamente.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAvulsoCertModalItem(null)}
+                className="p-1.5 rounded-full text-forest/50 hover:text-forest hover:bg-warm transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {!profile.assinatura?.dados && (
+              <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 flex items-start gap-2.5 text-xs text-amber-900">
+                <AlertCircle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                <span>
+                  Você ainda não cadastrou sua assinatura única em <strong>Meu Perfil → Dados & Conta</strong>. O certificado será gerado com linha de assinatura até que você a cadastre uma única vez no perfil.
+                </span>
+              </div>
+            )}
+
+            {(() => {
+              const listaInscritosItem = inscricoes.filter((i) => i.itemId === avulsoCertModalItem.id);
+              return listaInscritosItem.length > 0 ? (
+                <div className="space-y-2">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-forest/70">
+                    Inscritos pela Plataforma ({listaInscritosItem.length})
+                  </label>
+                  <div className="max-h-44 overflow-y-auto border border-soft rounded-xl divide-y divide-soft/60 bg-warm/20">
+                    {listaInscritosItem.map((ins) => {
+                      const certJa = certificadosEmitidos.find(
+                        (c) =>
+                          c.eventoServicoId === avulsoCertModalItem.id &&
+                          (c.inscricaoId === ins.id ||
+                            c.pacienteNome?.toLowerCase() === (ins.nomeCompleto || "").trim().toLowerCase())
+                      );
+                      const emitKey = `${avulsoCertModalItem.id}_${ins.id || ins.nomeCompleto}`;
+                      return (
+                        <div key={ins.id} className="p-2.5 px-3 flex items-center justify-between gap-2 text-xs">
+                          <div className="min-w-0">
+                            <p className="font-bold text-forest truncate">{ins.nomeCompleto}</p>
+                            <p className="text-[11px] text-forest/60 truncate">{ins.email}</p>
+                          </div>
+                          {certJa ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAvulsoCertModalItem(null);
+                                setCertificadoVisualizar(certJa);
+                              }}
+                              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold shrink-0 cursor-pointer"
+                            >
+                              Ver Certificado
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled={isEmittingCertKey === emitKey}
+                              onClick={() =>
+                                handleEmitirCertificado(avulsoCertModalItem, {
+                                  id: ins.id,
+                                  nome: ins.nomeCompleto || "Participante",
+                                  email: ins.email,
+                                })
+                              }
+                              className="px-3 py-1.5 bg-forest hover:bg-forest/90 text-white rounded-lg text-[11px] font-bold shrink-0 cursor-pointer disabled:opacity-50 flex items-center gap-1"
+                            >
+                              {isEmittingCertKey === emitKey && <Loader2 className="w-3 h-3 animate-spin" />}
+                              <span>Emitir</span>
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null;
+            })()}
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!avulsoParticipanteNome.trim()) return;
+                handleEmitirCertificado(avulsoCertModalItem, {
+                  nome: avulsoParticipanteNome.trim(),
+                  cpf: avulsoParticipanteCpf.trim() || undefined,
+                });
+              }}
+              className="space-y-3 pt-2 border-t border-soft"
+            >
+              <label className="block text-xs font-bold uppercase tracking-wider text-forest/70">
+                Emitir para Participante (Inscrição Direta / Externa)
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="sm:col-span-2">
+                  <input
+                    required
+                    type="text"
+                    placeholder="Nome completo do(a) participante *"
+                    value={avulsoParticipanteNome}
+                    onChange={(e) => setAvulsoParticipanteNome(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-warm border border-soft rounded-xl text-xs text-forest font-semibold focus:outline-none focus:border-forest"
+                  />
+                </div>
+                <div>
+                  <input
+                    type="text"
+                    placeholder="CPF (opcional)"
+                    value={avulsoParticipanteCpf}
+                    onChange={(e) => setAvulsoParticipanteCpf(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-warm border border-soft rounded-xl text-xs text-forest focus:outline-none focus:border-forest"
+                  />
+                </div>
+              </div>
+              <button
+                type="submit"
+                disabled={!avulsoParticipanteNome.trim() || Boolean(isEmittingCertKey)}
+                className="w-full py-3 bg-forest hover:bg-forest/90 text-white rounded-xl text-xs font-bold transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {isEmittingCertKey ? <Loader2 className="w-4 h-4 animate-spin" /> : <Award className="w-4 h-4 text-sun" />}
+                <span>Gerar Certificado Oficial ({avulsoCertModalItem.cargaHoraria})</span>
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE VISUALIZAÇÃO / IMPRESSÃO / LINK PÚBLICO DO CERTIFICADO EMITIDO */}
+      {certificadoVisualizar && (() => {
+        const wlEnabled = Boolean(certificadoVisualizar.whiteLabelEnabled || profile.whiteLabelEnabled);
+        const primaryColor = wlEnabled
+          ? (certificadoVisualizar.whiteLabelConfig?.primaryColor || profile.whiteLabelConfig?.primaryColor || "#1b3022")
+          : "#1b3022";
+        const secondaryColor = wlEnabled
+          ? (certificadoVisualizar.whiteLabelConfig?.secondaryColor || profile.whiteLabelConfig?.secondaryColor || "#f59e0b")
+          : "#f59e0b";
+        const logoUrl = wlEnabled
+          ? (certificadoVisualizar.companyData?.logoUrl || profile.companyData?.logoUrl || "")
+          : "";
+        const profInfo = (certificadoVisualizar.perfilProfissionalUsado || {}) as any;
+        const linkVerificacao = `${window.location.origin}/?documento=${certificadoVisualizar.id}&codigo=${encodeURIComponent(certificadoVisualizar.numeroEmissao)}`;
+
+        return (
+          <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-6 overflow-y-auto print:bg-white print:p-0">
+            <div className="w-full max-w-4xl flex flex-col gap-3 my-auto">
+              {/* Barra de Ações (Oculta na impressão) */}
+              <div className="bg-forest text-white px-4 py-3 rounded-2xl shadow-lg flex flex-wrap items-center justify-between gap-2 print:hidden">
+                <div className="flex items-center gap-2">
+                  <Award className="w-5 h-5 text-sun" />
+                  <span className="text-xs sm:text-sm font-serif font-bold">
+                    Certificado Emitido • {certificadoVisualizar.numeroEmissao}
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(linkVerificacao);
+                      setCopiedCertLink(true);
+                      setTimeout(() => setCopiedCertLink(false), 2500);
+                    }}
+                    className="px-3 py-1.5 bg-white/15 hover:bg-white/25 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    {copiedCertLink ? <Check className="w-3.5 h-3.5 text-emerald-300" /> : <Copy className="w-3.5 h-3.5" />}
+                    <span>{copiedCertLink ? "Link Copiado!" : "Copiar Link do Participante"}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => window.print()}
+                    className="px-3.5 py-1.5 bg-sun text-forest hover:bg-sun/90 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                    <span>Imprimir / Salvar PDF</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCertificadoVisualizar(null)}
+                    className="p-1.5 bg-white/10 hover:bg-white/20 rounded-xl text-white transition-colors cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Folha do Certificado */}
+              <div
+                className="bg-white rounded-2xl shadow-2xl border-2 p-8 sm:p-14 flex flex-col justify-between min-h-[520px] text-slate-900 print:shadow-none print:border-slate-300"
+                style={{ borderColor: `${primaryColor}33` }}
+              >
+                <div className="flex items-center justify-between pb-6 border-b" style={{ borderColor: `${primaryColor}25` }}>
+                  <div className="flex items-center gap-3.5">
+                    {logoUrl ? (
+                      <img src={logoUrl} alt="Logo" className="h-12 max-w-[160px] object-contain" />
+                    ) : (
+                      <div
+                        className="w-11 h-11 rounded-full text-white font-bold flex items-center justify-center text-base shrink-0"
+                        style={{ backgroundColor: primaryColor }}
+                      >
+                        {(profInfo.nome || "P").charAt(0)}
+                      </div>
+                    )}
+                    <div>
+                      <h4 className="font-serif font-bold text-sm sm:text-base" style={{ color: primaryColor }}>
+                        {profInfo.nomeEmpresa || profInfo.nome || "Profissional Responsável"}
+                      </h4>
+                      <p className="text-[11px] text-slate-600 font-mono">
+                        {profInfo.profissao || "Psicólogo(a)"}
+                        {profInfo.crp ? ` • CRP ${profInfo.crp}` : ""}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right text-[11px] font-mono text-slate-500">
+                    <p className="font-bold" style={{ color: primaryColor }}>{certificadoVisualizar.numeroEmissao}</p>
+                    <p>{new Date(certificadoVisualizar.dataEmissao).toLocaleDateString("pt-BR")}</p>
+                  </div>
+                </div>
+
+                <div className="my-10 text-center space-y-6 px-2 sm:px-6">
+                  <div>
+                    <h2
+                      className="text-xl sm:text-3xl font-serif font-bold uppercase tracking-widest underline decoration-2 underline-offset-8"
+                      style={{ color: primaryColor, textDecorationColor: secondaryColor }}
+                    >
+                      {certificadoVisualizar.titulo}
+                    </h2>
+                    {certificadoVisualizar.cargaHoraria && (
+                      <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mt-3">
+                        Carga Horária Total Certificada: <span style={{ color: primaryColor }}>{certificadoVisualizar.cargaHoraria}</span>
+                      </p>
+                    )}
+                  </div>
+
+                  <p className="text-sm sm:text-base leading-relaxed text-slate-800 max-w-2xl mx-auto">
+                    {certificadoVisualizar.conteudo}
+                  </p>
+                </div>
+
+                <div className="pt-8 border-t border-slate-200 space-y-6">
+                  <div className="flex flex-col items-center justify-center text-center">
+                    {certificadoVisualizar.assinatura?.dados ? (
+                      <div className="mb-1.5 h-20 flex items-center justify-center">
+                        <img
+                          src={certificadoVisualizar.assinatura.dados}
+                          alt="Assinatura Profissional"
+                          className="max-h-20 max-w-[240px] object-contain"
+                        />
+                      </div>
+                    ) : (
+                      <div className="w-60 border-b border-slate-400 mb-2 h-10" />
+                    )}
+                    <p className="font-bold text-sm text-slate-900">{profInfo.nome}</p>
+                    <p className="text-xs text-slate-600 font-mono">
+                      {profInfo.profissao || "Psicólogo(a)"}
+                      {profInfo.crp ? ` • CRP ${profInfo.crp}` : ""}
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] text-slate-400 font-mono border-t border-slate-100 pt-3">
+                    <span className="flex items-center gap-1">
+                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Autenticidade verificável em {window.location.origin} • Código: {certificadoVisualizar.numeroEmissao}</span>
+                    </span>
+                    <span>Emitido em {new Date(certificadoVisualizar.dataEmissao).toLocaleDateString("pt-BR")}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

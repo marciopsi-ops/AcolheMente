@@ -39,6 +39,7 @@ import {
   serverTimestamp,
 } from "firebase/firestore";
 import { db, handleFirestoreError, OperationType } from "../lib/firebase";
+import { PainelReajusteAnualContrato } from "./PainelReajusteAnualContrato";
 import {
   EmpresaClienteB2B,
   ServicoB2BFaturamentoItem,
@@ -1410,6 +1411,79 @@ ${
                 </div>
               </div>
             </div>
+
+            {/* Painel Dedicado de Reajuste Anual de Contrato B2B */}
+            <PainelReajusteAnualContrato
+              tipoCliente="empresa"
+              clienteNome={
+                currentEmpresa.nomeFantasia ||
+                currentEmpresa.razaoSocial ||
+                "Empresa Cliente"
+              }
+              contatoNome={currentEmpresa.contatoNome}
+              contatoTelefone={currentEmpresa.contatoTelefone}
+              valorAtual={
+                Number(currentEmpresa.valorServicoPadrao) ||
+                Number(currentEmpresa.propostaContrato?.valorAcordadoPadrao) ||
+                0
+              }
+              apenasIndicesOficiais={false}
+              origemContratoLabel="Contrato Corporativo B2B Direto"
+              config={currentEmpresa.reajusteAnual}
+              profissionalNome={profNome}
+              profissionalCrp={profCrp}
+              qtdLancamentosFuturos={
+                servicos.filter(
+                  (s) =>
+                    s.statusExecucao === "agendado" &&
+                    s.statusPagamento !== "pago"
+                ).length
+              }
+              onSave={async (novaConfig, opcoesAplicacao) => {
+                const patch: Partial<EmpresaClienteB2B> = {
+                  reajusteAnual: novaConfig,
+                };
+
+                if (opcoesAplicacao?.novoValorBase !== undefined) {
+                  const novoVal = opcoesAplicacao.novoValorBase;
+                  patch.valorServicoPadrao = novoVal;
+                  patch.propostaContrato = {
+                    ...(currentEmpresa.propostaContrato || {}),
+                    valorAcordadoPadrao: novoVal,
+                  };
+
+                  if (opcoesAplicacao.atualizarAgendadosFuturos) {
+                    const hojeIso = new Date().toISOString().split("T")[0];
+                    const vigMes = opcoesAplicacao.vigenciaAnoMes || "";
+                    let alterouServicos = false;
+                    const novosServicos = servicos.map((s) => {
+                      const elegivelData =
+                        !s.data ||
+                        (vigMes && s.data.substring(0, 7) >= vigMes) ||
+                        s.data >= hojeIso;
+                      if (
+                        s.statusExecucao === "agendado" &&
+                        s.statusPagamento !== "pago" &&
+                        elegivelData
+                      ) {
+                        alterouServicos = true;
+                        return { ...s, valor: novoVal };
+                      }
+                      return s;
+                    });
+                    if (alterouServicos) {
+                      patch.historicoServicos = novosServicos;
+                      await handlePatchFields(patch, true);
+                      await syncServicosToAgendamentos(novosServicos);
+                      return;
+                    }
+                  }
+                }
+
+                await handlePatchFields(patch, true);
+              }}
+              showToast={showToast}
+            />
 
             {/* KPIs do Período Selecionado */}
             <div className="px-4 py-3 bg-warm/15 border-b border-soft grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">

@@ -40,6 +40,10 @@ import {
   STATUS_EMPRESA_B2B_LABELS,
 } from "../types/empresaB2B";
 import {
+  avaliarStatusLembreteReajuste,
+  getNomeCurtoMesReajuste,
+} from "../utils/reajusteAnual";
+import {
   PerfilFaturamentoItem,
   normalizePerfisFaturamento,
   resolvePerfilFaturamentoAtivo,
@@ -938,6 +942,36 @@ export const ProfissionalEmpresasB2BView: React.FC<ProfissionalEmpresasB2BViewPr
                               {STATUS_EMPRESA_B2B_LABELS[emp.statusComercial] ||
                                 "Ativa"}
                             </span>
+                            {(() => {
+                              const avReaj = avaliarStatusLembreteReajuste(
+                                emp.reajusteAnual
+                              );
+                              if (
+                                avReaj.precisaAcao &&
+                                emp.statusComercial !== "encerrada" &&
+                                emp.statusComercial !== "prospeccao"
+                              ) {
+                                return (
+                                  <span className="text-[11px] font-bold text-amber-800">
+                                    · {avReaj.rotuloCurto}
+                                  </span>
+                                );
+                              }
+                              if (
+                                emp.reajusteAnual?.ativo &&
+                                emp.reajusteAnual?.mesReajuste
+                              ) {
+                                return (
+                                  <span className="text-[11px] text-forest/55">
+                                    · Reajuste:{" "}
+                                    {getNomeCurtoMesReajuste(
+                                      emp.reajusteAnual.mesReajuste
+                                    )}
+                                  </span>
+                                );
+                              }
+                              return null;
+                            })()}
                           </div>
                           <div className="text-[11px] text-forest/65 flex items-center gap-2 flex-wrap mt-0.5 tabular-nums">
                             {emp.cnpj && (
