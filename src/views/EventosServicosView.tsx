@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { collection, query, onSnapshot, addDoc, deleteDoc, doc, updateDoc, serverTimestamp, orderBy, where } from "firebase/firestore";
+import { collection, query, onSnapshot, addDoc, deleteDoc, doc, updateDoc, serverTimestamp, orderBy, where, getDocs } from "firebase/firestore";
 import { db, handleFirestoreError, OperationType } from "../lib/firebase";
 import { Calendar, Clock, Plus, Trash2, Briefcase, X, Edit3, User, Share2, ExternalLink, CreditCard, ImagePlus, Loader2, Check, Maximize2, Award, Printer, ShieldCheck, Copy, AlertCircle } from "lucide-react";
 import { compressThematicImage, formatEventDateDisplay } from "../utils/eventImageHelper";
@@ -299,17 +299,19 @@ export function EventosServicosView({ profile, activeSection = "eventos_e_parcer
         criadorContato: criadorContato || "",
       };
 
+      let savedId = editingId;
       if (editingId) {
         // Se a categoria mudou na edição (ex: de evento para serviço ou vice-versa),
         // remove do antigo e insere no novo para manter integridade dos dados
         if (editingCategory !== unifiedForm.categoria) {
           const oldCollection = editingCategory === "evento" ? "eventos" : "servicos";
           await deleteDoc(doc(db, oldCollection, editingId));
-          await addDoc(collection(db, targetCollection), {
+          const newRef = await addDoc(collection(db, targetCollection), {
             ...payload,
             criadorId: profile.uid || profile.id,
             createdAt: serverTimestamp(),
           });
+          savedId = newRef.id;
         } else {
           await updateDoc(doc(db, targetCollection, editingId), {
             ...payload,
@@ -317,11 +319,16 @@ export function EventosServicosView({ profile, activeSection = "eventos_e_parcer
           });
         }
       } else {
-        await addDoc(collection(db, targetCollection), {
+        const newRef = await addDoc(collection(db, targetCollection), {
           ...payload,
           criadorId: profile.uid || profile.id,
           createdAt: serverTimestamp(),
         });
+        savedId = newRef.id;
+      }
+
+      if (savedId) {
+        await syncItemToAgenda(savedId, payload);
       }
 
       setIsModalOpen(false);
@@ -386,6 +393,65 @@ export function EventosServicosView({ profile, activeSection = "eventos_e_parcer
     setIsModalOpen(true);
   };
 
+  const syncItemToAgenda = async (itemId: string, payload: any) => {
+    const profId = profile.uid || profile.id;
+    if (!profId) return;
+
+    try {
+      const qAgenda = query(collection(db, "agendamentos"), where("eventId", "==", itemId));
+      const snapAgenda = await getDocs(qAgenda);
+
+      const hasDateAndTime = payload.data && payload.hora;
+      const pacienteNomeStr = `[${payload.categoria === "evento" ? "Evento" : "Serviço"}] ${payload.titulo}`;
+
+      if (hasDateAndTime) {
+        const agendaData = {
+          profissionalId: profId,
+          pacienteId: "avulso",
+          pacienteNome: pacienteNomeStr,
+          data: payload.data,
+          horario: payload.hora,
+          duracaoMinutos: 60,
+          modalidade: "online",
+          status: "agendada",
+          valor: parseFloat(String(payload.valor || "0").replace(",", ".")) || 0,
+          observacoes: payload.descricao || "",
+          eventId: itemId,
+          origemTipo: "evento_servico_criado",
+          updatedAt: serverTimestamp(),
+        };
+
+        if (!snapAgenda.empty) {
+          const agendaDocId = snapAgenda.docs[0].id;
+          await updateDoc(doc(db, "agendamentos", agendaDocId), agendaData);
+        } else {
+          await addDoc(collection(db, "agendamentos"), {
+            ...agendaData,
+            createdAt: serverTimestamp(),
+          });
+        }
+      } else {
+        if (!snapAgenda.empty) {
+          await Promise.all(snapAgenda.docs.map((d) => deleteDoc(doc(db, "agendamentos", d.id))));
+        }
+      }
+    } catch (err) {
+      console.error("Erro ao sincronizar evento/serviço com a agenda:", err);
+    }
+  };
+
+  const removeFromAgenda = async (itemId: string) => {
+    try {
+      const qAgenda = query(collection(db, "agendamentos"), where("eventId", "==", itemId));
+      const snapAgenda = await getDocs(qAgenda);
+      if (!snapAgenda.empty) {
+        await Promise.all(snapAgenda.docs.map((d) => deleteDoc(doc(db, "agendamentos", d.id))));
+      }
+    } catch (err) {
+      console.error("Erro ao remover item da agenda:", err);
+    }
+  };
+
   const handleRemoveUnifiedItem = async (id: string, category: "evento" | "servico", criadorId?: string) => {
     const profileId = profile.uid || profile.id;
     const canDelete = isGestor || (criadorId && criadorId === profileId);
@@ -395,6 +461,7 @@ export function EventosServicosView({ profile, activeSection = "eventos_e_parcer
     if (confirm(`Deseja realmente remover ${label}?`)) {
       const coll = category === "evento" ? "eventos" : "servicos";
       await deleteDoc(doc(db, coll, id));
+      await removeFromAgenda(id);
     }
   };
 

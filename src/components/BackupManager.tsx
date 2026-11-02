@@ -132,8 +132,12 @@ export const BackupManager: React.FC<BackupManagerProps> = ({
       const { email } = await connectGoogleDrive();
       setDriveEmail(email);
     } catch (err: any) {
-      console.error("Erro ao conectar Google Drive:", err);
-      setDriveUploadError(err.message || "Não foi possível conectar a conta Google.");
+      if (err.code === "auth/popup-closed-by-user" || err.message?.includes("popup-closed-by-user")) {
+        setDriveUploadError("Conexão com o Google Drive cancelada pelo usuário.");
+      } else {
+        console.error("Erro ao conectar Google Drive:", err);
+        setDriveUploadError(err.message || "Não foi possível conectar a conta Google.");
+      }
     } finally {
       setIsConnectingDrive(false);
     }

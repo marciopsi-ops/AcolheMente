@@ -81,6 +81,7 @@ export const TriagemCorporativaKanban: React.FC<TriagemCorporativaKanbanProps> =
   const [filtroEmpresa, setFiltroEmpresa] = useState<string>("todas");
   const [filtroProfissional, setFiltroProfissional] = useState<string>("todos");
   const [filtroPerfilFaturamento, setFiltroPerfilFaturamento] = useState<string>("todos");
+  const [sortOrder, setSortOrder] = useState<"fifo" | "recent" | "alfabetica">("alfabetica");
 
   // Estado de Expansão/Minimização dos Cards de Pacientes Corporativos
   const [expandedFichas, setExpandedFichas] = useState<Record<string, boolean>>({});
@@ -205,6 +206,20 @@ export const TriagemCorporativaKanban: React.FC<TriagemCorporativaKanbanProps> =
     const matchProf = isProfissional || filtroProfissional === "todos" || f.profissionalNome === filtroProfissional;
 
     return matchBusca && matchEmpresa && matchProf;
+  });
+
+  fichasFiltradas.sort((a, b) => {
+    if (sortOrder === "alfabetica") {
+      const nameA = (a.colaboradorNome || a.nome || "").toLowerCase();
+      const nameB = (b.colaboradorNome || b.nome || "").toLowerCase();
+      return nameA.localeCompare(nameB, 'pt-BR');
+    }
+    const timeA = a.createdAt?.toMillis?.() || new Date(a.createdAt || 0).getTime();
+    const timeB = b.createdAt?.toMillis?.() || new Date(b.createdAt || 0).getTime();
+    if (sortOrder === "recent") {
+      return timeB - timeA;
+    }
+    return timeA - timeB;
   });
 
   // Separação por colunas
@@ -569,6 +584,40 @@ export const TriagemCorporativaKanban: React.FC<TriagemCorporativaKanbanProps> =
               <X className="w-3.5 h-3.5" />
             </button>
           )}
+        </div>
+
+        {/* Seletor de Ordenação (A-Z, Antigos, Recentes) */}
+        <div className="flex items-center gap-1 bg-warm/60 p-0.5 rounded-xl border border-soft text-xs shrink-0">
+          <button
+            type="button"
+            onClick={() => setSortOrder("alfabetica")}
+            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+              sortOrder === "alfabetica" ? "bg-forest text-white shadow-2xs" : "text-forest/70 hover:text-forest"
+            }`}
+            title="Ordenar por Ordem Alfabética (A-Z)"
+          >
+            A-Z
+          </button>
+          <button
+            type="button"
+            onClick={() => setSortOrder("fifo")}
+            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+              sortOrder === "fifo" ? "bg-forest text-white shadow-2xs" : "text-forest/70 hover:text-forest"
+            }`}
+            title="Ordem de entrada (mais antigos primeiro)"
+          >
+            Antigos
+          </button>
+          <button
+            type="button"
+            onClick={() => setSortOrder("recent")}
+            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+              sortOrder === "recent" ? "bg-forest text-white shadow-2xs" : "text-forest/70 hover:text-forest"
+            }`}
+            title="Mais recentes primeiro"
+          >
+            Recentes
+          </button>
         </div>
 
         {/* Filtros de Empresa e Profissional (Ocultados para profissionais, visíveis apenas para gestão/triagem) */}

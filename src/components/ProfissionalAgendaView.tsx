@@ -45,8 +45,9 @@ import {
   where,
   serverTimestamp,
   getDoc,
+  getDocs,
 } from "firebase/firestore";
-import { db, handleFirestoreError, OperationType } from "../lib/firebase";
+import { db, auth, handleFirestoreError, OperationType } from "../lib/firebase";
 import { formatProfessionalName } from "../utils/formatters";
 import { Acolhimento } from "./ProfissionalEsteiraTarefas";
 import { hasIntegrarFeatures } from "../types/planosProfissionais";
@@ -999,65 +1000,86 @@ export function ProfissionalAgendaView({
     }
   };
 
-  // Exclusão de agendamento (e remoção espelhada no histórico financeiro da ficha)
-  const handleConfirmarExclusao = async () => {
+  // Exclusão de agendamento (apenas este ou todos dali pra frente)
+  const handleConfirmarExclusao = async (modo: "apenas_este" | "todos_dali_pra_frente") => {
     if (!agendamentoParaExcluir) return;
     try {
       const agId = agendamentoParaExcluir.id;
       const pacId = agendamentoParaExcluir.pacienteId;
-      await deleteDoc(doc(db, "agendamentos", agId));
+      const dataAlvo = agendamentoParaExcluir.data;
 
-      if (pacId && pacId !== "avulso") {
-        try {
-          let targetRef = doc(db, "acolhimentos", pacId);
-          let docSnap = await getDoc(targetRef);
-          if (!docSnap.exists()) {
-            const pacRef = doc(db, "pacientes", pacId);
-            const pacSnap = await getDoc(pacRef);
-            if (pacSnap.exists()) {
-              targetRef = pacRef;
-              docSnap = pacSnap;
+      if (modo === "apenas_este") {
+        await deleteDoc(doc(db, "agendamentos", agId));
+
+        if (pacId && pacId !== "avulso") {
+          try {
+            let targetRef = doc(db, "acolhimentos", pacId);
+            let docSnap = await getDoc(targetRef);
+            if (!docSnap.exists()) {
+              const pacRef = doc(db, "pacientes", pacId);
+              const pacSnap = await getDoc(pacRef);
+              if (pacSnap.exists()) {
+                targetRef = pacRef;
+                docSnap = pacSnap;
+              }
             }
-          }
-          if (!docSnap.exists()) {
-            const corpRef = doc(db, "triagem_corporativa", pacId);
-            const corpSnap = await getDoc(corpRef);
-            if (corpSnap.exists()) {
-              targetRef = corpRef;
-              docSnap = corpSnap;
+            if (!docSnap.exists()) {
+              const corpRef = doc(db, "triagem_corporativa", pacId);
+              const corpSnap = await getDoc(corpRef);
+              if (corpSnap.exists()) {
+                targetRef = corpRef;
+                docSnap = corpSnap;
+              }
             }
-          }
-          if (docSnap.exists()) {
-            const data = docSnap.data();
-            if (Array.isArray(data.historicoSessoes)) {
-              const filtrado = data.historicoSessoes
-                .filter((s: any) => s.id !== agId)
-                .map((s: any, idx: number) => ({ ...s, numeroSessao: idx + 1 }));
-              await updateDoc(targetRef, {
-                historicoSessoes: filtrado,
-                updatedAt: serverTimestamp(),
-              });
-            }
-          } else {
-            const empRef = doc(db, "empresas_profissional", pacId);
-            const empSnap = await getDoc(empRef);
-            if (empSnap.exists()) {
-              const empData = empSnap.data();
-              const srvId = agendamentoParaExcluir.servicoB2BId || agId;
-              if (Array.isArray(empData.historicoServicos)) {
-                const atualizadoB2B = empData.historicoServicos.map((s: any) =>
-                  s.id === srvId ? { ...s, horario: "" } : s
-                );
-                await updateDoc(empRef, {
-                  historicoServicos: atualizadoB2B,
+            if (docSnap.exists()) {
+              const data = docSnap.data();
+              if (Array.isArray(data.historicoSessoes)) {
+                const filtrado = data.historicoSessoes
+                  .filter((s: any) => s.id !== agId)
+                  .map((s: any, idx: number) => ({ ...s, numeroSessao: idx + 1 }));
+                await updateDoc(targetRef, {
+                  historicoSessoes: filtrado,
                   updatedAt: serverTimestamp(),
                 });
               }
+            } else {
+              const empRef = doc(db, "empresas_profissional", pacId);
+              const empSnap = await getDoc(empRef);
+              if (empSnap.exists()) {
+                const empData = empSnap.data();
+                const srvId = agendamentoParaExcluir.servicoB2BId || agId;
+                if (Array.isArray(empData.historicoServicos)) {
+                  const atualizadoB2B = empData.historicoServicos.map((s: any) =>
+                    s.id === srvId ? { ...s, horario: "" } : s
+                  );
+                  await updateDoc(empRef, {
+                    historicoServicos: atualizadoB2B,
+                    updatedAt: serverTimestamp(),
+                  });
+                }
+              }
             }
+          } catch (syncErr) {
+            console.warn("Aviso ao remover sessão do histórico da ficha:", syncErr);
           }
-        } catch (syncErr) {
-          console.warn("Aviso ao remover sessão do histórico da ficha:", syncErr);
         }
+      } else {
+        // Todos dali pra frente
+        const qFuture = query(
+          collection(db, "agendamentos"),
+          where("profissionalId", "==", profissionalUid || auth.currentUser?.uid),
+        );
+        const snapFuture = await getDocs(qFuture);
+        const batchDeletes: Promise<void>[] = [];
+        snapFuture.forEach((docSnap) => {
+          const dataAg = docSnap.data();
+          const isSamePatient = (pacId && pacId !== "avulso" && dataAg.pacienteId === pacId) ||
+                                (dataAg.paciente && dataAg.paciente === agendamentoParaExcluir.pacienteNome);
+          if (isSamePatient && dataAg.data && dataAg.data >= dataAlvo) {
+            batchDeletes.push(deleteDoc(doc(db, "agendamentos", docSnap.id)));
+          }
+        });
+        await Promise.all(batchDeletes);
       }
 
       setAgendamentoParaExcluir(null);
@@ -2982,31 +3004,49 @@ export function ProfissionalAgendaView({
       {/* 8. MODAL DE CONFIRMAÇÃO DE EXCLUSÃO */}
       {agendamentoParaExcluir && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
-          <div className="bg-white w-full max-w-sm rounded-2xl shadow-xl border border-soft p-5 animate-in fade-in zoom-in-95">
-            <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center mb-3">
-              <AlertTriangle className="w-5 h-5" />
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-xl border border-soft p-5 sm:p-6 animate-in fade-in zoom-in-95 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="font-bold text-forest text-sm sm:text-base">Excluir Agendamento</h4>
+                <p className="text-xs text-forest/70 mt-0.5">
+                  Paciente: <strong>{agendamentoParaExcluir.pacienteNome}</strong> ({agendamentoParaExcluir.data.split("-").reverse().join("/")} às {agendamentoParaExcluir.horario})
+                </p>
+              </div>
             </div>
-            <h4 className="font-bold text-forest text-sm sm:text-base">Excluir Agendamento?</h4>
-            <p className="text-xs text-forest/70 mt-1">
-              Deseja remover o agendamento de <strong>{agendamentoParaExcluir.pacienteNome}</strong> no dia{" "}
-              <strong>{agendamentoParaExcluir.data.split("-").reverse().join("/")}</strong> às{" "}
-              <strong>{agendamentoParaExcluir.horario}</strong>?
+
+            <p className="text-xs text-forest/80 bg-warm/50 p-3 rounded-xl border border-soft">
+              Como deseja proceder com a exclusão deste agendamento?
             </p>
 
-            <div className="mt-4 flex items-center justify-end gap-2">
+            <div className="flex flex-col gap-2.5 pt-1">
               <button
                 type="button"
-                onClick={() => setAgendamentoParaExcluir(null)}
-                className="px-3 py-1.5 rounded-lg border border-soft text-forest/70 text-xs font-semibold cursor-pointer"
+                onClick={() => handleConfirmarExclusao("apenas_este")}
+                className="w-full px-4 py-2.5 rounded-xl bg-white hover:bg-warm border border-soft text-forest text-xs font-bold transition-all cursor-pointer flex items-center justify-between shadow-2xs"
               >
-                Voltar
+                <span>Excluir apenas este agendamento</span>
+                <span className="text-[10px] text-forest/50 font-normal">Apenas esta data</span>
               </button>
               <button
                 type="button"
-                onClick={handleConfirmarExclusao}
-                className="px-3.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold cursor-pointer shadow-xs"
+                onClick={() => handleConfirmarExclusao("todos_dali_pra_frente")}
+                className="w-full px-4 py-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-900 border border-rose-200 text-xs font-bold transition-all cursor-pointer flex items-center justify-between shadow-2xs"
               >
-                Sim, Excluir
+                <span>Excluir este e todos dali pra frente</span>
+                <span className="text-[10px] text-rose-700 font-bold">Série futura</span>
+              </button>
+            </div>
+
+            <div className="mt-2 flex items-center justify-end">
+              <button
+                type="button"
+                onClick={() => setAgendamentoParaExcluir(null)}
+                className="px-4 py-2 rounded-xl border border-soft text-forest/70 hover:text-forest text-xs font-semibold cursor-pointer"
+              >
+                Cancelar
               </button>
             </div>
           </div>

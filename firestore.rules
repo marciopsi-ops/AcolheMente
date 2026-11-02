@@ -69,15 +69,14 @@ service cloud.firestore {
 
     // Pacientes (Unificada - Particulares, Acolhimentos, Externos)
     match /pacientes/{pacienteId} {
-      // Listagem isolada: Profissional lista apenas seus próprios pacientes; Master lista apenas acolhimento/particular (nunca externos de terceiros)
-      allow list: if (isSignedIn() && resource.data.profissionalId == request.auth.uid) ||
-                     (isMaster() && (resource.data.tipo == 'acolhimento' || resource.data.tipo == 'particular'));
+      // Listagem: Profissional lista seus próprios pacientes; Master lista todos
+      allow list: if (isSignedIn() && resource.data.profissionalId == request.auth.uid) || isMaster();
       // Leitura individual e atualização por ID único (necessário para links públicos de Atualização Cadastral, Contrato e Faturamento, além da Ficha de Bordo)
       allow get, create, update: if true;
-      // Exclusão restrita ao profissional responsável ou Master (exceto carteira externa de terceiros)
+      // Exclusão restrita ao profissional responsável ou Master
       allow delete: if isSignedIn() && (
         resource.data.profissionalId == request.auth.uid ||
-        (isMaster() && resource.data.tipo != 'externo')
+        isMaster()
       );
     }
 
@@ -279,10 +278,10 @@ service cloud.firestore {
              (!('observacoesGerais' in data) || (data.observacoesGerais is string && data.observacoesGerais.size() <= 5000));
     }
 
-    // Carteira Privada de Empresas Clientes B2B do Profissional (Isolamento estrito por profissionalId)
+    // Carteira Privada de Empresas Clientes B2B do Profissional (Isolamento estrito por profissionalId ou Master)
     match /empresas_profissional/{empresaId} {
-      allow list: if isSignedIn() && resource.data.profissionalId == request.auth.uid;
-      allow get, delete: if isSignedIn() && isValidId(empresaId) && resource.data.profissionalId == request.auth.uid;
+      allow list: if (isSignedIn() && resource.data.profissionalId == request.auth.uid) || isMaster();
+      allow get, delete: if isSignedIn() && isValidId(empresaId) && (resource.data.profissionalId == request.auth.uid || isMaster());
       allow create: if isSignedIn() &&
                        isValidId(empresaId) &&
                        isValidEmpresaProfissional(request.resource.data) &&

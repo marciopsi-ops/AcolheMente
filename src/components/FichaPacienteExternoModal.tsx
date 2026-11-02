@@ -30,8 +30,9 @@ import {
   RotateCcw,
   Check,
   X,
+  Trash2,
 } from "lucide-react";
-import { doc, getDoc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { doc, getDoc, updateDoc, serverTimestamp, collection, query, where, getDocs, deleteDoc } from "firebase/firestore";
 import { db, handleFirestoreError, OperationType } from "../lib/firebase";
 import { PacienteProntuarioModal, ProntuarioRegistroItem } from "./PacienteProntuarioModal";
 import { PacienteFaturamentoSpreadsheet, SessaoFaturamentoItem } from "./PacienteFaturamentoSpreadsheet";
@@ -129,6 +130,11 @@ export function FichaPacienteExternoModal({
   const [showFaturamentoModal, setShowFaturamentoModal] = useState(false);
   const [showContratoModal, setShowContratoModal] = useState(false);
   const [showGerenciarPerfisModal, setShowGerenciarPerfisModal] = useState(false);
+  const [showDesligamentoModal, setShowDesligamentoModal] = useState(false);
+  const [showExcluirSegurancaModal, setShowExcluirSegurancaModal] = useState(false);
+  const [confirmNomeExclusao, setConfirmNomeExclusao] = useState("");
+  const [desligamentoMotivo, setDesligamentoMotivo] = useState("");
+  const [desligamentoDetalhes, setDesligamentoDetalhes] = useState("");
   const [modalDesfechoCorp, setModalDesfechoCorp] = useState<{
     isOpen: boolean;
     tipo: "alta" | "interrupcao";
@@ -189,6 +195,48 @@ export function FichaPacienteExternoModal({
     return "";
   };
 
+  const cancelarProximosAgendamentosPaciente = async (pacienteId: string, pacienteNome?: string) => {
+    if (!pacienteId) return;
+    try {
+      const hojeStr = new Date().toISOString().slice(0, 10);
+      const q1 = query(collection(db, "agendamentos"), where("pacienteId", "==", pacienteId));
+      const snap1 = await getDocs(q1);
+
+      const docsToDelete: any[] = [];
+      snap1.forEach((docSnap) => {
+        const dataAg = docSnap.data();
+        if (dataAg.data && dataAg.data >= hojeStr && dataAg.status !== "realizada" && dataAg.status !== "cancelada") {
+          docsToDelete.push({ id: docSnap.id, ...dataAg });
+        }
+      });
+
+      if (pacienteNome) {
+        const q2 = query(collection(db, "agendamentos"), where("paciente", "==", pacienteNome));
+        const snap2 = await getDocs(q2);
+        snap2.forEach((docSnap) => {
+          if (!docsToDelete.some((d) => d.id === docSnap.id)) {
+            const dataAg = docSnap.data();
+            if (dataAg.data && dataAg.data >= hojeStr && dataAg.status !== "realizada" && dataAg.status !== "cancelada") {
+              docsToDelete.push({ id: docSnap.id, ...dataAg });
+            }
+          }
+        });
+      }
+
+      await Promise.all(
+        docsToDelete.map(async (ag) => {
+          try {
+            await deleteDoc(doc(db, "agendamentos", ag.id));
+          } catch (e) {
+            console.error("Erro ao remover agendamento futuro em desligamento:", e);
+          }
+        })
+      );
+    } catch (err) {
+      console.error("Erro ao cancelar próximos agendamentos:", err);
+    }
+  };
+
   const flushPendingUpdates = async (extraPatch?: Record<string, any>): Promise<boolean> => {
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
@@ -205,6 +253,23 @@ export function FichaPacienteExternoModal({
         ...patchToSave,
         updatedAt: serverTimestamp(),
       });
+
+      if (
+        patchToSave.ativo === false ||
+        patchToSave.desligado === true ||
+        patchToSave.status === "Alta" ||
+        patchToSave.status === "Encerrado" ||
+        patchToSave.status === "Desistência" ||
+        patchToSave.status === "alta" ||
+        patchToSave.status === "interrupcao" ||
+        patchToSave.status === "Quebra de Contrato"
+      ) {
+        await cancelarProximosAgendamentosPaciente(
+          targetId,
+          latestPacienteRef.current?.nome || latestPacienteRef.current?.nomeCivil || latestPacienteRef.current?.colaboradorNome
+        );
+      }
+
       onUpdatePaciente(latestPacienteRef.current);
       return true;
     } catch (err) {
@@ -884,6 +949,32 @@ export function FichaPacienteExternoModal({
                 >
                   <Phone className="w-3.5 h-3.5 text-white shrink-0" />
                   <span className="hidden sm:inline">WhatsApp</span>
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => {
+                  setDesligamentoMotivo("");
+                  setDesligamentoDetalhes("");
+                  setShowDesligamentoModal(true);
+                }}
+                className="flex items-center gap-1 font-bold text-[10px] sm:text-xs px-2 sm:px-3 py-1.5 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 transition-colors shadow-2xs whitespace-nowrap cursor-pointer"
+                title="Iniciar fluxo de desligamento do paciente"
+              >
+                <UserX className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                <span className="hidden sm:inline">Desligar</span>
+              </button>
+
+              {targetCollectionRef.current === "pacientes" && (
+                <button
+                  type="button"
+                  onClick={() => setShowExcluirSegurancaModal(true)}
+                  className="flex items-center gap-1 font-bold text-[10px] sm:text-xs px-2 sm:px-3 py-1.5 rounded-xl border border-rose-300 bg-rose-600 hover:bg-rose-700 text-white transition-colors shadow-2xs whitespace-nowrap cursor-pointer"
+                  title="Excluir permanentemente este cadastro externo"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-white shrink-0" />
+                  <span className="hidden sm:inline">Excluir Cadastro</span>
                 </button>
               )}
 
@@ -2082,13 +2173,14 @@ export function FichaPacienteExternoModal({
                 </span>
                 {isEditing ? (
                   <select
-                    value={currentPaciente.modalidade || "online"}
+                    value={currentPaciente.modalidade || "Online"}
                     onChange={(e) => handleUpdateField("modalidade", e.target.value)}
                     className="text-xs font-semibold text-forest border border-emerald-500 bg-white rounded-lg px-2 py-1.5 w-full focus:outline-none cursor-pointer"
                   >
-                    <option value="online">Online (Videochamada)</option>
-                    <option value="presencial">Presencial (Consultório)</option>
-                    <option value="hibrido">Híbrido</option>
+                    <option value="Online">Online (Videochamada)</option>
+                    <option value="Presencial">Presencial (Consultório)</option>
+                    <option value="Híbrido">Híbrido</option>
+                    <option value="A combinar">A combinar</option>
                   </select>
                 ) : (
                   <span className="text-sm font-semibold text-forest capitalize">
@@ -2103,7 +2195,7 @@ export function FichaPacienteExternoModal({
                   <span>Periodicidade das Sessões</span>
                   {!canEditTabelaConvenio && <Lock className="w-3 h-3 text-forest/40" />}
                 </span>
-                {isEditing && canEditTabelaConvenio ? (
+                {isEditing ? (
                   <select
                     value={frequenciaDisplay}
                     onChange={(e) => {
@@ -2115,10 +2207,11 @@ export function FichaPacienteExternoModal({
                     }}
                     className="text-xs font-semibold text-forest border border-emerald-500 bg-white rounded-lg px-2 py-1.5 w-full focus:outline-none cursor-pointer"
                   >
-                    <option value="Semanal">Semanal (1x por semana)</option>
+                    <option value="Semanal (1x por semana)">Semanal (1x por semana)</option>
                     <option value="Quinzenal">Quinzenal</option>
                     <option value="2x por semana">2x por semana</option>
                     <option value="Mensal">Mensal</option>
+                    <option value="A combinar">A combinar</option>
                   </select>
                 ) : (
                   <span className="text-sm font-semibold text-forest">
@@ -2135,13 +2228,19 @@ export function FichaPacienteExternoModal({
                   Forma de Pagamento
                 </span>
                 {isEditing ? (
-                  <input
-                    type="text"
-                    value={currentPaciente.formaPagamento || ""}
+                  <select
+                    value={currentPaciente.formaPagamento || "Pix"}
                     onChange={(e) => handleUpdateField("formaPagamento", e.target.value)}
-                    placeholder="Ex: Pix, Cartão, Dinheiro..."
-                    className="text-xs font-semibold text-forest border border-emerald-500 bg-white rounded-lg px-2.5 py-1.5 w-full focus:outline-none"
-                  />
+                    className="text-xs font-semibold text-forest border border-emerald-500 bg-white rounded-lg px-2 py-1.5 w-full focus:outline-none cursor-pointer"
+                  >
+                    <option value="Pix">Pix</option>
+                    <option value="Cartão de Crédito">Cartão de Crédito</option>
+                    <option value="Dinheiro">Dinheiro</option>
+                    <option value="Transferência Bancária">Transferência Bancária</option>
+                    <option value="Boleto">Boleto</option>
+                    <option value="A combinar">A combinar</option>
+                    <option value="Outro">Outro</option>
+                  </select>
                 ) : (
                   <span className="text-sm font-semibold text-forest">
                     {currentPaciente.formaPagamento || "Pix"}
@@ -3061,6 +3160,196 @@ export function FichaPacienteExternoModal({
                     ? "Confirmar & Enviar no WhatsApp"
                     : "Confirmar & Abrir Link"}
                 </span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Desligamento Modal */}
+      {showDesligamentoModal && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center px-4 bg-forest/30 backdrop-blur-sm animate-in fade-in py-4">
+          <div className="bg-white rounded-3xl w-full max-w-xl shadow-2xl border border-soft overflow-hidden animate-in zoom-in-95 flex flex-col">
+            <div className="px-6 py-4 border-b border-soft bg-gradient-to-r from-rose-50 via-white to-rose-50 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-rose-600 text-white rounded-xl shadow-xs">
+                  <UserX className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-serif text-lg font-bold text-forest">
+                    Fluxo de Desligamento de Paciente
+                  </h3>
+                  <p className="text-xs text-forest/60">
+                    Paciente: <strong className="text-forest font-bold">{nomeDisplay}</strong>
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowDesligamentoModal(false)}
+                className="p-1.5 text-forest/50 hover:text-rose-600 rounded-full hover:bg-rose-50 transition-colors cursor-pointer"
+              >
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
+              <div className="p-3 bg-rose-50/70 border border-rose-200 rounded-2xl text-xs text-rose-900 leading-relaxed">
+                <strong>Atenção:</strong> Ao concluir o desligamento, o atendimento do paciente será atualizado com a motivação registrada.
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold uppercase tracking-wider text-forest/80 flex items-center gap-1">
+                  Motivo do Desligamento <span className="text-rose-600 font-bold">*</span>
+                </label>
+                <select
+                  value={desligamentoMotivo}
+                  onChange={(e) => setDesligamentoMotivo(e.target.value)}
+                  className="w-full bg-white text-xs font-semibold text-forest border border-soft rounded-xl p-3 focus:outline-none focus:ring-2 focus:ring-rose-500 shadow-2xs cursor-pointer"
+                >
+                  <option value="">-- Selecione o Motivo --</option>
+                  <option value="Alta Clínica">Alta Clínica</option>
+                  <option value="Interrupção voluntária (Iniciativa do paciente)">Interrupção voluntária (Iniciativa do paciente)</option>
+                  <option value="Interrupção involuntária (Iniciativa do profissional)">Interrupção involuntária (Iniciativa do profissional)</option>
+                  <option value="Quebra de Contrato">Quebra de Contrato</option>
+                  <option value="Inadimplência">Inadimplência</option>
+                  <option value="Abandono de Tratamento">Abandono de Tratamento</option>
+                  <option value="Absenteismo (Faltas/ Ausências sem justificativa)">Absenteismo (Faltas/ Ausências sem justificativa)</option>
+                  <option value="Outro (descreva)">Outro (descreva)</option>
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold uppercase tracking-wider text-forest/80 flex items-center gap-1">
+                  Justificativa e Detalhes do Desligamento <span className="text-rose-600 font-bold">*</span>
+                </label>
+                <textarea
+                  rows={4}
+                  value={desligamentoDetalhes}
+                  onChange={(e) => setDesligamentoDetalhes(e.target.value)}
+                  placeholder="Comente e descreva os detalhes, motivo e observações do desligamento..."
+                  className="w-full bg-white text-xs text-forest p-3.5 border border-soft rounded-2xl focus:outline-none focus:ring-2 focus:ring-rose-500 resize-none leading-relaxed placeholder:text-forest/40"
+                />
+              </div>
+            </div>
+
+            <div className="p-4 px-6 border-t border-soft bg-warm/40 flex items-center justify-end gap-3 shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowDesligamentoModal(false)}
+                className="px-5 py-2 text-xs font-bold text-forest/70 hover:text-forest transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!desligamentoMotivo.trim()) {
+                    showToast("Por favor, selecione o motivo do desligamento.", "error");
+                    return;
+                  }
+                  if (!desligamentoDetalhes.trim()) {
+                    showToast("Por favor, preencha a justificativa e os detalhes do desligamento.", "error");
+                    return;
+                  }
+
+                  try {
+                    const nowIso = new Date().toISOString();
+                    const userIdent = profile?.name || user?.email || "Profissional";
+                    const motivoLower = desligamentoMotivo.toLowerCase();
+                    const isQuebra =
+                      desligamentoMotivo === "Quebra de Contrato" ||
+                      motivoLower.includes("inadimpl") ||
+                      motivoLower.includes("abandono") ||
+                      motivoLower.includes("absente");
+
+                    const finalStatus = isCorporativo
+                      ? (isQuebra ? "interrupcao" : "alta")
+                      : (isQuebra ? "Quebra de Contrato" : "Alta");
+
+                    const patchUpdates: any = {
+                      status: finalStatus,
+                      statusTratamento: finalStatus,
+                      ativo: false,
+                      statusInativacao: "Desligado",
+                      desligado: true,
+                      desligamentoMotivo: desligamentoMotivo,
+                      desligamentoDetalhes: desligamentoDetalhes,
+                      desligadoEm: nowIso,
+                      desligadoPor: userIdent,
+                      updatedAt: serverTimestamp(),
+                    };
+
+                    await handlePatchFields(patchUpdates, true);
+                    setShowDesligamentoModal(false);
+                    showToast("Desligamento registrado com sucesso!", "success");
+                  } catch (err) {
+                    console.error("Erro ao registrar desligamento:", err);
+                    showToast("Erro ao registrar desligamento.", "error");
+                  }
+                }}
+                className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all shadow-2xs flex items-center gap-2 cursor-pointer"
+              >
+                <CheckCircle2 className="w-4 h-4" /> Concluir Desligamento
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Modal de Segurança para Exclusão Permanente */}
+      {showExcluirSegurancaModal && (
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-rose-300 p-6 animate-in fade-in zoom-in-95 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                <AlertCircle className="w-6 h-6" />
+              </div>
+              <div>
+                <h4 className="font-bold text-rose-900 text-base">⚠️ Aviso de Segurança: Exclusão Permanente</h4>
+                <p className="text-xs text-rose-700 mt-0.5">
+                  Esta ação é irreversível e apagará todos os dados, prontuários, termos e histórico deste paciente externo.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3.5 bg-rose-50 rounded-xl border border-rose-200 text-xs text-rose-900 space-y-1">
+              <p className="font-bold">Para confirmar, digite o nome completo do paciente:</p>
+              <p className="font-serif italic text-forest font-semibold">{currentPaciente?.nome || currentPaciente?.nomeCivil || "Paciente"}</p>
+              <input
+                type="text"
+                placeholder="Digite o nome exato do paciente aqui..."
+                value={confirmNomeExclusao}
+                onChange={(e) => setConfirmNomeExclusao(e.target.value)}
+                className="w-full mt-2 p-2.5 bg-white border border-rose-300 rounded-xl text-xs text-forest focus:outline-none focus:ring-2 focus:ring-rose-500 font-semibold"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowExcluirSegurancaModal(false);
+                  setConfirmNomeExclusao("");
+                }}
+                className="px-4 py-2 rounded-xl border border-soft text-forest/70 text-xs font-semibold cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={confirmNomeExclusao.trim().toLowerCase() !== (currentPaciente?.nome || currentPaciente?.nomeCivil || "").trim().toLowerCase()}
+                onClick={async () => {
+                  try {
+                    await deleteDoc(doc(db, "pacientes", currentPaciente.id));
+                    showToast("Cadastro externo excluído permanentemente com sucesso.", "success");
+                    setShowExcluirSegurancaModal(false);
+                    onClose();
+                  } catch (err) {
+                    console.error("Erro ao excluir paciente externo:", err);
+                    showToast("Erro ao excluir cadastro.", "error");
+                  }
+                }}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white text-xs font-bold transition-all cursor-pointer shadow-xs"
+              >
+                Excluir Definitivamente
               </button>
             </div>
           </div>

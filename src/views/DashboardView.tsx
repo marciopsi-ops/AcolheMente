@@ -1364,6 +1364,8 @@ export function DashboardView({
   const [documentPreselectedPaciente, setDocumentPreselectedPaciente] = useState<any>(null);
   const [showPendenciasModal, setShowPendenciasModal] = useState(false);
   const [showDesligamentoModal, setShowDesligamentoModal] = useState(false);
+  const [showExcluirGestaoModal, setShowExcluirGestaoModal] = useState(false);
+  const [confirmNomeExclusaoGestao, setConfirmNomeExclusaoGestao] = useState("");
   const [desligamentoMotivo, setDesligamentoMotivo] = useState("");
   const [desligamentoDetalhes, setDesligamentoDetalhes] = useState("");
   const [showNewProfissionalModal, setShowNewProfissionalModal] =
@@ -2337,7 +2339,9 @@ export function DashboardView({
 
   const [meusPacientes, setMeusPacientes] = useState<Acolhimento[]>([]);
   const [pacientesExternos, setPacientesExternos] = useState<Acolhimento[]>([]);
-  const [patientSortOrder, setPatientSortOrder] = useState<"fifo" | "recent">("fifo");
+  const [patientSortOrder, setPatientSortOrder] = useState<"fifo" | "recent" | "alfabetica">("alfabetica");
+  const [acessiveisSortOrder, setAcessiveisSortOrder] = useState<"fifo" | "recent" | "alfabetica">("alfabetica");
+  const [empresasSortOrder, setEmpresasSortOrder] = useState<"alfabetica" | "recente">("alfabetica");
   const [pacienteExternoSearchTerm, setPacienteExternoSearchTerm] = useState("");
   const [filtroStatusExterno, setFiltroStatusExterno] = useState<"ativos" | "inativos">("ativos");
   const [filtroStatusAcessiveis, setFiltroStatusAcessiveis] = useState<"todos" | "ativos" | "pendentes" | "altas">("ativos");
@@ -3006,16 +3010,44 @@ export function DashboardView({
             query(collection(db, "users")),
             (snapshot) => {
               const listProfs: UserProfile[] = [];
-              const listAll: UserProfile[] = [];
+              const rawAll: UserProfile[] = [];
               snapshot.forEach((d) => {
                 const data = d.data() as UserProfile;
                 data.uid = d.id;
                 if (!data.roles || !Array.isArray(data.roles)) {
                   data.roles = [data.role || "profissional"];
                 }
-                listAll.push(data);
+                rawAll.push(data);
+              });
+
+              // Deduplicate by email (case-insensitive) to resolve email conflict
+              const emailMap: Record<string, UserProfile> = {};
+              rawAll.forEach((u) => {
+                const emailKey = (u.email || "").toLowerCase().trim();
+                if (!emailKey) {
+                  emailMap[u.uid!] = u;
+                  return;
+                }
+                if (emailMap[emailKey]) {
+                  const existing = emailMap[emailKey];
+                  const mergedRoles = Array.from(new Set([...(existing.roles || []), ...(u.roles || [])])) as Role[];
+                  const hasMaster = mergedRoles.includes("master") || existing.role === "master" || u.role === "master";
+                  emailMap[emailKey] = {
+                    ...existing,
+                    ...u,
+                    roles: mergedRoles,
+                    role: hasMaster ? "master" : (existing.role || u.role || "profissional"),
+                  };
+                } else {
+                  emailMap[emailKey] = u;
+                }
+              });
+
+              const listAll: UserProfile[] = Object.values(emailMap);
+              listAll.forEach((data) => {
                 if (isUserProfissional(data)) listProfs.push(data);
               });
+
               setProfissionaisAtivos(listProfs);
               setAllUsers(listAll);
             },
@@ -4650,8 +4682,10 @@ export function DashboardView({
 
   const handleCreateProfissional = async (e: React.FormEvent) => {
     e.preventDefault();
+    let actualLeadId: string | null = null;
+    let leadData: any = {};
     try {
-      let actualLeadId = leadIdToConvert;
+      actualLeadId = leadIdToConvert;
       if (!actualLeadId && newProfEmail) {
         const matched = profissionaisLeads.find(
           (l) =>
@@ -4662,7 +4696,6 @@ export function DashboardView({
         }
       }
 
-      let leadData: any = {};
       if (actualLeadId) {
         try {
           const leadDoc = await getDoc(
@@ -4904,8 +4937,37 @@ export function DashboardView({
             alert("Erro ao promover conta existente a Profissional.");
           }
         } else {
+          try {
+            const qUsers = query(collection(db, "users"), where("email", "==", newProfEmail.toLowerCase().trim()));
+            const snapUsers = await getDocs(qUsers);
+            if (!snapUsers.empty) {
+              const userDoc = snapUsers.docs[0];
+              const userId = userDoc.id;
+              await updateDoc(doc(db, "users", userId), {
+                role: newProfRole,
+                roles: Array.from(new Set([...(userDoc.data().roles || [userDoc.data().role].filter(Boolean)), newProfRole])),
+                statusUpdatedAt: serverTimestamp(),
+                ...leadData,
+              });
+              if (actualLeadId) {
+                await deleteDoc(doc(db, "profissionais_leads", actualLeadId));
+                setLeadIdToConvert(null);
+              }
+              alert("Conta encontrada no banco de dados e promovida a Profissional com sucesso!");
+              setShowNewProfissionalModal(false);
+              setNewProfName("");
+              setNewProfEmail("");
+              setNewProfPassword("");
+              setNewProfRole("profissional");
+              setUseGoogleLogin(false);
+              return;
+            }
+          } catch (qErr) {
+            console.error("Erro ao buscar usuário por e-mail no Firestore:", qErr);
+          }
+
           alert(
-            "Aviso: O e-mail informado já possui uma conta mas não configurou o perfil completamente. Peça para a pessoa realizar o login (via Google ou e-mail correspondente) na tela inicial, assim o cadastro será finalizado.",
+            "Aviso: O e-mail informado já possui uma conta de autenticação no Firebase. O profissional já pode acessar a plataforma.",
           );
         }
       } else {
@@ -5292,9 +5354,14 @@ export function DashboardView({
         a.telefone?.toLowerCase().includes(lowerQuery),
     )
     .sort((a, b) => {
+      if (acessiveisSortOrder === "alfabetica") {
+        const nameA = (a.nome || a.nomeCivil || "").toLowerCase();
+        const nameB = (b.nome || b.nomeCivil || "").toLowerCase();
+        return nameA.localeCompare(nameB, 'pt-BR');
+      }
       const timeA = getTimestampMillis(a.createdAt);
       const timeB = getTimestampMillis(b.createdAt);
-      if (patientSortOrder === "recent") {
+      if (acessiveisSortOrder === "recent") {
         return timeB - timeA;
       }
       return timeA - timeB;
@@ -5309,9 +5376,14 @@ export function DashboardView({
         p.telefone?.toLowerCase().includes(lowerQuery),
     )
     .sort((a, b) => {
+      if (acessiveisSortOrder === "alfabetica") {
+        const nameA = (a.nome || a.nomeCivil || "").toLowerCase();
+        const nameB = (b.nome || b.nomeCivil || "").toLowerCase();
+        return nameA.localeCompare(nameB, 'pt-BR');
+      }
       const timeA = getTimestampMillis(a.createdAt);
       const timeB = getTimestampMillis(b.createdAt);
-      if (patientSortOrder === "recent") {
+      if (acessiveisSortOrder === "recent") {
         return timeB - timeA;
       }
       return timeA - timeB;
@@ -10927,6 +10999,20 @@ export function DashboardView({
                       return nome.includes(term) || tel.includes(term) || cpf.includes(term) || email.includes(term);
                     });
 
+                    filtrados.sort((a, b) => {
+                      if (patientSortOrder === "alfabetica") {
+                        const nameA = (a.nome || a.nomeCivil || "").toLowerCase();
+                        const nameB = (b.nome || b.nomeCivil || "").toLowerCase();
+                        return nameA.localeCompare(nameB, 'pt-BR');
+                      }
+                      const timeA = getTimestampMillis(a.createdAt);
+                      const timeB = getTimestampMillis(b.createdAt);
+                      if (patientSortOrder === "recent") {
+                        return timeB - timeA;
+                      }
+                      return timeA - timeB;
+                    });
+
                     if (filtrados.length === 0) {
                       return (
                         <div className="w-full text-center p-8 bg-white rounded-2xl border border-dashed border-soft text-forest/70 text-xs sm:text-sm space-y-3">
@@ -15422,6 +15508,19 @@ export function DashboardView({
                         );
                       })}
                     </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const nextRoles: Role[] = ["master", "profissional"];
+                        handleRolesChange(u.uid!, nextRoles);
+                      }}
+                      className="mt-1 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 rounded-xl text-[11px] font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs"
+                      title="Atribuir acesso Técnico (Gestão + Profissional com Cortesia Plena VIP)"
+                    >
+                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-700" />
+                      <span>Técnico (Gestão + Profissional)</span>
+                    </button>
 
                     {/* Botão de Apoio de Acesso na Gestão */}
                     <button

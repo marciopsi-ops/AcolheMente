@@ -238,6 +238,19 @@ export function getActivePlansForSelector(
 
 export function resolveModalidadeCredencial(userOrProf: any): ModalidadeCredencial {
   if (!userOrProf) return "assinatura_padrao";
+
+  const roles = Array.isArray(userOrProf.roles)
+    ? userOrProf.roles
+    : (userOrProf.role ? [userOrProf.role] : []);
+
+  const hasMaster = roles.includes("master");
+  const hasProfissional = roles.includes("profissional");
+  const hasTriagem = roles.includes("triagem");
+
+  if (hasMaster && hasProfissional && !hasTriagem) {
+    return "cortesia_plena";
+  }
+
   const rawMod = String(userOrProf.modalidadeCredencial || "").trim();
   if (
     rawMod === "assinatura_padrao" ||
