@@ -435,6 +435,31 @@ export function getTimestampMillis(val: any): number {
   return 0;
 }
 
+export function formatElapsedAssignmentTime(val: any): {
+  label: string;
+  hours: number;
+  isOverdue24h: boolean;
+  isCritical48h: boolean;
+} {
+  const ms = getTimestampMillis(val);
+  if (!ms) {
+    return { label: "recente", hours: 0, isOverdue24h: false, isCritical48h: false };
+  }
+  const hours = Math.max(0, Math.floor((Date.now() - ms) / 3600000));
+  const label =
+    hours < 1
+      ? "há menos de 1h"
+      : hours < 48
+        ? `há ${hours}h`
+        : `há ${Math.floor(hours / 24)}d ${hours % 24}h`;
+  return {
+    label,
+    hours,
+    isOverdue24h: hours >= 24,
+    isCritical48h: hours >= 48,
+  };
+}
+
 type Role = "master" | "triagem" | "profissional";
 
 export const OPCOES_SERVICOS = [
@@ -658,6 +683,15 @@ export function buildCaseSummaryText(card: any) {
     ? `\n• Filhos: ${card.temFilhos || card.filhos}${card.faixaEtariaFilhos && card.faixaEtariaFilhos !== "Não se aplica (sem filhos)" ? ` (${card.faixaEtariaFilhos})` : ""}${card.filhosMoramJunto && card.filhosMoramJunto !== "Não se aplica (sem filhos)" ? ` - Residência: ${card.filhosMoramJunto}` : ""}`
     : "";
 
+  const origin =
+    typeof window !== "undefined" && window.location?.origin
+      ? window.location.origin
+      : "";
+  const directAceiteLink =
+    card.id && !card.isPacienteTeste
+      ? `\n\n🔗 Link direto para Aceite ou Devolução (login rápido):\n${origin}/?aceite_caso=${encodeURIComponent(card.id)}`
+      : "\n\nPara mais informações e aceite, acesse a ficha de bordo do paciente na plataforma.";
+
   return `📋 RESUMO DO CASO PARA ATENDIMENTO - PROJETO ACOLHEMENTE
 
 • Paciente: ${nome}
@@ -666,9 +700,7 @@ export function buildCaseSummaryText(card: any) {
 • Queixa / Motivo: ${queixa}
 • Melhores Períodos (Online): ${periodosStr}
 • Valor Proposto: ${valor}
-• Frequência Proposta: ${frequencia}
-
-Para mais informações e aceite, acesse a ficha de bordo do paciente na plataforma.`;
+• Frequência Proposta: ${frequencia}${directAceiteLink}`;
 }
 
 export interface PatientPendingItem {
@@ -692,13 +724,19 @@ export function getPatientPendingItems(card: any, currentRole?: string): Patient
     items.push({
       id: "pend-atribuicao",
       type: "atribuicao",
-      title: "Encaminhamento Aguardando Aceite",
-      description: "O paciente foi direcionado pela coordenação/triagem e aguarda a confirmação de aceite na ficha.",
+      title: "Encaminhamento Aguardando Aceite Autenticado",
+      description:
+        currentRole === "profissional"
+          ? "Revise o resumo clínico e confirme o aceite autenticado para liberar os contatos do paciente, contrato, agenda e faturamento."
+          : "O paciente foi direcionado ao profissional atribuído e aguarda confirmação formal de aceite autenticado.",
       shortLabel: "Aceite Pendente",
       severity: "high",
-      actionText: "Revisar & Aceitar",
-      actionType: "aceitar_atribuicao",
+      actionText: currentRole === "profissional" ? "Confirmar Aceite" : undefined,
+      actionType: currentRole === "profissional" ? "aceitar_atribuicao" : undefined,
     });
+    if (currentRole === "profissional") {
+      return items;
+    }
   }
 
   // 2. Contrato Terapêutico
@@ -3137,6 +3175,40 @@ export function DashboardView({
     };
   }, []);
 
+  // Auto-open ficha when redirected from AceiteCasoLandingView (?abrir_ficha=<id>)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const targetId = params.get("abrir_ficha");
+    if (!targetId || !user) return;
+    const found =
+      meusPacientes.find((p) => p.id === targetId) ||
+      acolhimentos.find((a) => a.id === targetId);
+    if (found) {
+      setSelectedCard(found);
+      if (currentRole === "profissional") {
+        setActiveTab("pacientes");
+      }
+      try {
+        params.delete("abrir_ficha");
+        const qs = params.toString();
+        const nextUrl = window.location.pathname + (qs ? `?${qs}` : "");
+        window.history.replaceState({}, "", nextUrl);
+      } catch (e) {}
+    }
+  }, [meusPacientes, acolhimentos, user, currentRole]);
+
+  // Prevent editing mode on unaccepted cases for professional role
+  useEffect(() => {
+    if (
+      currentRole === "profissional" &&
+      selectedCard &&
+      selectedCard.atribuicaoStatus !== "Aceito" &&
+      isEditingCard
+    ) {
+      setIsEditingCard(false);
+    }
+  }, [currentRole, selectedCard?.id, selectedCard?.atribuicaoStatus, isEditingCard]);
+
   const handleSaveConfiguracoes = async () => {
     try {
       const sanitizedConfigs = {
@@ -3690,8 +3762,17 @@ export function DashboardView({
         }
       }
 
-      if (newStatus === "Em Atendimento" && currentRole === "profissional") {
-        updates.profissionalId = user.uid;
+      if (newStatus === "Em Atendimento") {
+        if (
+          !currentPaciente?.profissionalId ||
+          currentPaciente?.atribuicaoStatus !== "Aceito"
+        ) {
+          showToast(
+            "Para mover para 'Em Atendimento', o profissional atribuído precisa confirmar o aceite autenticado do caso.",
+            "info",
+          );
+          return;
+        }
       }
 
       updates.notificacao = `${notifAnterior}[${nowStr}] Movido para "${newStatus}" por ${authName}.`;
@@ -4498,28 +4579,39 @@ export function DashboardView({
           ? currentPaciente.notificacao + "\n\n"
           : "";
         if (value) {
-          // Atribuído a alguém - permanece na Fila de Espera até aceite ou início de atendimento
-          updates.status = currentPaciente?.status === "Em Atendimento" || currentPaciente?.status === "Alta" ? currentPaciente.status : "Aprovado";
+          // Atribuído a alguém - permanece em Aguardando atribuição até aceite formal autenticado
+          const nowAssignIso = new Date().toISOString();
+          updates.status = currentPaciente?.status === "Alta" ? currentPaciente.status : "Aprovado";
           updates.atribuicaoStatus = "Pendente";
+          updates.atribuidoEm = nowAssignIso;
+          updates.aceitoEm = null;
+          updates.aceitoPorUid = null;
+          updates.aceitoPorNome = null;
+          updates.aceitoPorEmail = null;
+          updates.aceitoOrigem = null;
+          updates.aceiteAuditoria = null;
           const profObj =
             allUsers.find((u) => u.uid === value || u.id === value) ||
             profissionaisAtivos.find((p) => p.uid === value || p.id === value);
           const profName = profObj?.name || profObj?.email || "Parceiro";
           const profEmail = profObj?.email;
+          updates.profissionalNome = profName;
 
           const summaryText = buildCaseSummaryText({
             ...currentPaciente,
+            id,
             profissionalId: value,
           });
+          const aceiteLink = `${window.location.origin}/?aceite_caso=${encodeURIComponent(id)}`;
 
-          updates.notificacao = `${notifAnterior}[${nowStr}] Atribuído ao profissional ${profName}. Notificação automática com resumo enviada por e-mail.\n\n[Resumo Enviado]:\n${summaryText}`;
+          updates.notificacao = `${notifAnterior}[${nowStr}] Atribuído ao profissional ${profName}. Aguardando aceite autenticado. Notificação automática com resumo enviada por e-mail.\n\n[Resumo Enviado]:\n${summaryText}`;
 
           if (profEmail) {
             sendWebhookNotification({
               event: "atribuicao_paciente_resumo",
               recipientEmail: profEmail,
               recipientName: profName,
-              title: `Novo Caso Atribuído: ${currentPaciente?.nome || "Paciente"} - Projeto AcolheMente`,
+              title: `Novo Caso Aguardando Seu Aceite: ${currentPaciente?.nome || "Paciente"} - Projeto AcolheMente`,
               message: summaryText,
               data: {
                 pacienteId: id,
@@ -4529,7 +4621,8 @@ export function DashboardView({
                 melhoresPeriodos: currentPaciente?.melhoresPeriodos || "",
                 valorSessao: currentPaciente?.valorSessao || "",
                 frequenciaSessoes: currentPaciente?.frequenciaSessoes || "",
-                timestamp: new Date().toISOString(),
+                aceiteLink,
+                timestamp: nowAssignIso,
               },
             }).catch((err) =>
               console.error("Erro ao enviar email automatico do caso:", err)
@@ -4538,7 +4631,15 @@ export function DashboardView({
         } else {
           // Desatribuído
           updates.status = "Aguardando Avaliação";
+          updates.profissionalNome = "";
           updates.atribuicaoStatus = null;
+          updates.atribuidoEm = null;
+          updates.aceitoEm = null;
+          updates.aceitoPorUid = null;
+          updates.aceitoPorNome = null;
+          updates.aceitoPorEmail = null;
+          updates.aceitoOrigem = null;
+          updates.aceiteAuditoria = null;
           updates.notificacao = `${notifAnterior}[${nowStr}] Desatribuído do profissional pelo Gestor. Retornou à Triagem.`;
         }
       }
@@ -5844,16 +5945,111 @@ export function DashboardView({
     }
   };
 
-  const handleProfAcceptPaciente = async (paciente: Acolhimento) => {
-    const notifAnterior = paciente.notificacao ? paciente.notificacao + "\n\n" : "";
+  const handleConfirmarAceiteCaso = async (
+    paciente: Acolhimento,
+    origem: "ficha_bordo" | "esteira_tarefas" | "quadro_pendencias" = "ficha_bordo"
+  ) => {
+    if (!user || !paciente?.id) return;
+    if (paciente.profissionalId !== user.uid) {
+      showToast(
+        "Apenas o próprio profissional atribuído pode confirmar o aceite autenticado deste caso.",
+        "error"
+      );
+      return;
+    }
+
+    const nowIso = new Date().toISOString();
     const nowStr = new Date().toLocaleString("pt-BR");
-    const authName = profile?.name || "Parceiro";
-    const updates = {
-      atribuicaoStatus: "Aceito",
-      notificacao: `${notifAnterior}[${nowStr}] Encaminhamento ACEITO pelo profissional ${authName} via esteira de alertas e pendências.`,
+    const authName = profile?.name || profile?.nome || user.displayName || "Profissional";
+    const authEmail = (profile?.email || user.email || "").toLowerCase().trim();
+    const notifAnterior = paciente.notificacao ? paciente.notificacao + "\n\n" : "";
+
+    const origemLabel =
+      origem === "esteira_tarefas"
+        ? "Esteira de Tarefas"
+        : origem === "quadro_pendencias"
+          ? "Quadro de Pendências"
+          : "Ficha de Bordo";
+
+    const aceiteAuditoria = {
+      uid: user.uid,
+      nome: authName,
+      email: authEmail,
+      dataIso: nowIso,
+      origem,
+      userAgent: typeof navigator !== "undefined" ? navigator.userAgent : "",
     };
-    await updateDoc(doc(db, "acolhimentos", paciente.id), updates);
-    showToast(`Encaminhamento de ${paciente.nomeDesejado || paciente.nomeCivil || paciente.nome || "paciente"} aceito com sucesso!`, "success");
+
+    const updates: any = {
+      profissionalId: user.uid,
+      profissionalNome: authName,
+      atribuicaoStatus: "Aceito",
+      status: "Em Atendimento",
+      ativo: true,
+      statusInativacao: "Ativo",
+      desligado: false,
+      statusUpdatedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      aceitoEm: nowIso,
+      aceitoTimestamp: serverTimestamp(),
+      aceitoPorUid: user.uid,
+      aceitoPorNome: authName,
+      aceitoPorEmail: authEmail,
+      aceitoOrigem: origem,
+      aceiteAuditoria,
+      notificacao: `${notifAnterior}[${nowStr}] Encaminhamento ACEITO com autenticação verificada pelo profissional ${authName} (${authEmail}) via ${origemLabel}. Paciente movido para Em Atendimento.`,
+    };
+
+    try {
+      await updateDoc(doc(db, "acolhimentos", paciente.id), updates);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `acolhimentos/${paciente.id}`);
+    }
+
+    try {
+      await addDoc(collection(db, "auditoria_gestao"), {
+        tipo: "aceite_encaminhamento_clinico",
+        pacienteId: paciente.id,
+        pacienteNome:
+          paciente.nomeDesejado || paciente.nomeCivil || paciente.nome || "Paciente",
+        profissionalUid: user.uid,
+        profissionalNome: authName,
+        profissionalEmail: authEmail,
+        origem,
+        dataIso: nowIso,
+        data: serverTimestamp(),
+      });
+    } catch (auditErr) {
+      console.warn("Aviso ao registrar aceite em auditoria_gestao:", auditErr);
+    }
+
+    const localPatch = {
+      ...updates,
+      statusUpdatedAt: nowIso,
+      updatedAt: nowIso,
+      aceitoTimestamp: nowIso,
+    };
+
+    setSelectedCard((prev: any) =>
+      prev && prev.id === paciente.id ? { ...prev, ...localPatch } : prev
+    );
+    setMeusPacientes((prev) =>
+      prev.map((p) => (p.id === paciente.id ? { ...p, ...localPatch } : p))
+    );
+    setAcolhimentos((prev) =>
+      prev.map((a) => (a.id === paciente.id ? { ...a, ...localPatch } : a))
+    );
+
+    showToast(
+      `Aceite confirmado! Contatos e ferramentas clínicas de ${
+        paciente.nomeDesejado || paciente.nomeCivil || paciente.nome || "paciente"
+      } liberados.`,
+      "success"
+    );
+  };
+
+  const handleProfAcceptPaciente = async (paciente: Acolhimento) => {
+    await handleConfirmarAceiteCaso(paciente, "esteira_tarefas");
   };
 
   const filteredDoacoes = doacoes.filter(
@@ -6663,6 +6859,22 @@ export function DashboardView({
         a.atribuicaoStatus === "Recusado"
       ) {
         if (!treatedItemIds.has(`acolhimento-devolvido-${a.id}`)) count++;
+      }
+      if (
+        a.profissionalId &&
+        (!a.atribuicaoStatus || a.atribuicaoStatus === "Pendente") &&
+        a.status !== "Inativo" &&
+        a.status !== "Standby"
+      ) {
+        const elapsed = formatElapsedAssignmentTime(
+          a.atribuidoEm || a.updatedAt || a.createdAt
+        );
+        if (
+          elapsed.isOverdue24h &&
+          !treatedItemIds.has(`acolhimento-aguardando-aceite-prof-${a.id}`)
+        ) {
+          count++;
+        }
       }
       if (
         a.statusInativacao === "Solicitado" ||
@@ -9702,7 +9914,7 @@ export function DashboardView({
         <ProfissionalAgendaView
           profissionalUid={user?.uid || ""}
           profissionalNome={profile?.name || profile?.nome || "Profissional"}
-          pacientesAtivos={meusPacientes || []}
+          pacientesAtivos={(meusPacientes || []).filter((p) => p.atribuicaoStatus === "Aceito")}
           pacientesExternos={pacientesExternos || []}
           fichasCorporativas={minhasFichasCorporativas || []}
           empresasB2B={empresasProfissionalB2B || []}
@@ -9805,7 +10017,7 @@ export function DashboardView({
 
             {subAbaEstatisticas === "faturamento" ? (
               <ProfissionalFaturamentoDashboard
-                pacientesParticulares={meusPacientes || []}
+                pacientesParticulares={(meusPacientes || []).filter((p) => p.atribuicaoStatus === "Aceito")}
                 fichasCorporativas={minhasFichasCorporativas || []}
                 pacientesExternos={pacientesExternos || []}
                 empresasB2B={empresasProfissionalB2B || []}
@@ -9875,7 +10087,7 @@ export function DashboardView({
                 mode="consolidado"
                 profissionalId={profile?.uid || user?.uid || "prof_default"}
                 receitaBruta={receitaBrutaConsolidada}
-                pacientesParticulares={meusPacientes || []}
+                pacientesParticulares={(meusPacientes || []).filter((p) => p.atribuicaoStatus === "Aceito")}
                 fichasCorporativas={minhasFichasCorporativas || []}
                 pacientesExternos={pacientesExternos || []}
                 empresasB2B={empresasProfissionalB2B || []}
@@ -10486,8 +10698,14 @@ export function DashboardView({
 
         const pacsAcessPendentesCount = meusPacientes.filter(
           (a) =>
-            a.atribuicaoStatus === "Pendente" ||
-            (!a.atribuicaoStatus && a.status === "Aguardando Contato")
+            (!a.atribuicaoStatus || a.atribuicaoStatus === "Pendente") &&
+            a.status !== "Alta" &&
+            a.status !== "Rejeitado" &&
+            a.status !== "Encerrado" &&
+            a.status !== "Desistência" &&
+            a.status !== "Cancelado" &&
+            !a.desligado &&
+            a.ativo !== false
         ).length;
 
         const pacsAcessAltasCount = meusPacientes.filter(
@@ -11559,6 +11777,28 @@ export function DashboardView({
                   </button>
                 </div>
 
+                {pacsAcessPendentesCount > 0 && filtroStatusAcessiveis === "ativos" && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5 text-xs text-amber-950">
+                      <Clock className="w-4 h-4 text-amber-700 shrink-0" />
+                      <span>
+                        Você possui <strong className="tabular-nums">{pacsAcessPendentesCount}</strong>{" "}
+                        {pacsAcessPendentesCount === 1
+                          ? "encaminhamento aguardando seu aceite autenticado"
+                          : "encaminhamentos aguardando seu aceite autenticado"}
+                        . Revise o resumo clínico para liberar os contatos e iniciar os atendimentos.
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setFiltroStatusAcessiveis("pendentes")}
+                      className="px-3.5 py-1.5 bg-amber-700 hover:bg-amber-800 text-white rounded-xl text-xs font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                    >
+                      Revisar Pendentes ({pacsAcessPendentesCount})
+                    </button>
+                  </div>
+                )}
+
                 {/* Barra de Topo Enxuta com Contagem, Busca e Botão Expandir/Recolher Todos */}
                 <div className="flex flex-wrap items-center justify-between gap-3 bg-white px-4 sm:px-6 py-3.5 rounded-2xl shadow-xs border border-soft">
               <div className="flex items-center gap-2.5">
@@ -11694,8 +11934,14 @@ export function DashboardView({
                   if (!isAtivo) return false;
                 } else if (filtroStatusAcessiveis === "pendentes") {
                   const isPendente =
-                    p.atribuicaoStatus === "Pendente" ||
-                    (!p.atribuicaoStatus && p.status === "Aguardando Contato");
+                    (!p.atribuicaoStatus || p.atribuicaoStatus === "Pendente") &&
+                    p.status !== "Alta" &&
+                    p.status !== "Rejeitado" &&
+                    p.status !== "Encerrado" &&
+                    p.status !== "Desistência" &&
+                    p.status !== "Cancelado" &&
+                    !p.desligado &&
+                    p.ativo !== false;
                   if (!isPendente) return false;
                 } else if (filtroStatusAcessiveis === "altas") {
                   const isAlta =
@@ -11878,15 +12124,27 @@ export function DashboardView({
                               </a>
                             )}
 
-                            <button
-                              type="button"
-                              onClick={() => setSelectedCard(p)}
-                              className="px-2.5 py-1.5 bg-forest text-white font-semibold text-xs rounded-xl hover:bg-forest/90 transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs whitespace-nowrap shrink-0"
-                              title="Abrir Ficha do Paciente"
-                            >
-                              <FileText className="w-3.5 h-3.5 text-sun" />
-                              <span className="hidden sm:inline">Ficha do Paciente</span>
-                            </button>
+                            {(!p.atribuicaoStatus || p.atribuicaoStatus === "Pendente") ? (
+                              <button
+                                type="button"
+                                onClick={() => setSelectedCard(p)}
+                                className="px-3 py-1.5 bg-emerald-700 text-white font-semibold text-xs rounded-xl hover:bg-emerald-800 transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs whitespace-nowrap shrink-0"
+                                title="Revisar resumo clínico e confirmar aceite do caso"
+                              >
+                                <CheckCircle2 className="w-3.5 h-3.5 text-sun" />
+                                <span>Revisar e Aceitar</span>
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setSelectedCard(p)}
+                                className="px-2.5 py-1.5 bg-forest text-white font-semibold text-xs rounded-xl hover:bg-forest/90 transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs whitespace-nowrap shrink-0"
+                                title="Abrir Ficha do Paciente"
+                              >
+                                <FileText className="w-3.5 h-3.5 text-sun" />
+                                <span className="hidden sm:inline">Ficha do Paciente</span>
+                              </button>
+                            )}
 
                             <button
                               type="button"
@@ -12586,7 +12844,7 @@ export function DashboardView({
           <div className="max-w-6xl w-full mx-auto">
             <ProfissionalDocumentosManager
               profissionalProfile={profile!}
-              meusPacientes={meusPacientes || []}
+              meusPacientes={(meusPacientes || []).filter((p) => p.atribuicaoStatus === "Aceito")}
               pacientesExternos={pacientesExternos || []}
               showToast={showToast}
               preselectedPaciente={documentPreselectedPaciente}
@@ -12808,7 +13066,9 @@ export function DashboardView({
                             !isInactiveOrAlta &&
                             (cardStatus === "Aprovado" ||
                               cardStatus === "Aguardando atribuição" ||
-                              (a.propostaStatus === "Proposta aceita pelo paciente" && !a.profissionalId && cardStatus !== "Em Atendimento"))
+                              (a.propostaStatus === "Proposta aceita pelo paciente" &&
+                                a.atribuicaoStatus !== "Aceito" &&
+                                cardStatus !== "Em Atendimento"))
                           );
                         }
 
@@ -13078,6 +13338,42 @@ export function DashboardView({
                                     </span>
                                   )}
                                 </div>
+
+                                {/* 3.5 Status de Atribuição / Aceite na coluna Aprovado (Metadados sem Pílula) */}
+                                {col.id === "Aprovado" && (() => {
+                                  if (!card.profissionalId) {
+                                    return (
+                                      <div className="mb-2 text-[11px] font-medium text-forest/65 flex items-center gap-1.5">
+                                        <span>Sem profissional atribuído</span>
+                                      </div>
+                                    );
+                                  }
+                                  const assignedObj =
+                                    allUsers.find((u) => u.uid === card.profissionalId || u.id === card.profissionalId) ||
+                                    profissionaisAtivos.find((p) => p.uid === card.profissionalId || p.id === card.profissionalId);
+                                  const assignedLabel =
+                                    card.profissionalNome || assignedObj?.name || assignedObj?.email || "Profissional";
+                                  const elapsed = formatElapsedAssignmentTime(
+                                    card.atribuidoEm || card.updatedAt || card.propostaAceitaEm || card.createdAt
+                                  );
+                                  return (
+                                    <div
+                                      className={`mb-2 text-[11px] font-medium flex items-center gap-1.5 flex-wrap tabular-nums ${
+                                        elapsed.isCritical48h
+                                          ? "text-rose-700 font-semibold"
+                                          : elapsed.isOverdue24h
+                                            ? "text-amber-800 font-semibold"
+                                            : "text-emerald-800"
+                                      }`}
+                                    >
+                                      <span className="truncate max-w-[190px]">
+                                        Aguardando aceite · {assignedLabel}
+                                      </span>
+                                      <span aria-hidden="true">·</span>
+                                      <span className="font-mono tabular-nums">{elapsed.label}</span>
+                                    </div>
+                                  );
+                                })()}
 
                                 {/* 4. Rodapé Quando Minimizado */}
                                 {!isCardExpanded && (
@@ -15825,18 +16121,35 @@ export function DashboardView({
                     </button>
                   )}
 
-                  <button
-                    onClick={() => setIsEditingCard(!isEditingCard)}
-                    className={`flex items-center justify-center gap-1 font-bold text-[10px] sm:text-xs p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl border transition-all shadow-2xs shrink-0 ${
-                      isEditingCard
-                        ? "bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700"
-                        : "bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100"
-                    }`}
-                    title={isEditingCard ? "Salvar alterações da ficha" : "Editar dados da ficha"}
-                  >
-                    <Edit3 className="w-3.5 h-3.5" />
-                    <span className="hidden sm:inline">{isEditingCard ? "Salvar" : "Editar"}</span>
-                  </button>
+                  {currentRole === "profissional" && selectedCard.atribuicaoStatus !== "Aceito" ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        showToast(
+                          "Confirme o aceite do caso antes de editar dados cadastrais.",
+                          "info"
+                        )
+                      }
+                      className="flex items-center justify-center gap-1 font-bold text-[10px] sm:text-xs p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl border border-soft bg-warm/70 text-forest/50 cursor-not-allowed shrink-0"
+                      title="Edição liberada após o aceite autenticado do caso"
+                    >
+                      <Lock className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Editar</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => setIsEditingCard(!isEditingCard)}
+                      className={`flex items-center justify-center gap-1 font-bold text-[10px] sm:text-xs p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl border transition-all shadow-2xs shrink-0 ${
+                        isEditingCard
+                          ? "bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700"
+                          : "bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100"
+                      }`}
+                      title={isEditingCard ? "Salvar alterações da ficha" : "Editar dados da ficha"}
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">{isEditingCard ? "Salvar" : "Editar"}</span>
+                    </button>
+                  )}
 
                   <button
                     onClick={() => setSelectedCard(null)}
@@ -15960,6 +16273,25 @@ export function DashboardView({
             {/* Action Bar - Agrupada e Otimizada */}
             <div className="flex items-center justify-between gap-1.5 sm:gap-2 px-2.5 sm:px-6 py-1.5 sm:py-2 bg-white border-b border-soft shrink-0 overflow-x-auto scrollbar-none">
               {/* Left Group */}
+              {currentRole === "profissional" && selectedCard.atribuicaoStatus !== "Aceito" ? (
+                <div className="flex items-center gap-2 text-xs text-amber-900 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-xl shrink-0">
+                  <Lock className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                  <span className="whitespace-nowrap font-medium">
+                    Contrato, agenda, prontuário, faturamento e contato liberados após seu aceite
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      document
+                        .getElementById("sec-6-proposta")
+                        ?.scrollIntoView({ behavior: "smooth", block: "start" })
+                    }
+                    className="ml-1 px-2.5 py-0.5 bg-emerald-700 hover:bg-emerald-800 text-white font-semibold rounded-lg text-[11px] whitespace-nowrap cursor-pointer transition-colors"
+                  >
+                    Ir para Aceite
+                  </button>
+                </div>
+              ) : (
               <div className="flex items-center gap-1 sm:gap-2 shrink-0">
                 {/* Botão Notificar Compacto */}
                 <button
@@ -16146,12 +16478,13 @@ export function DashboardView({
                   </button>
                 </div>
               </div>
+              )}
 
               {/* Right Status Toggles & Desligar */}
               <div className="flex items-center gap-1 sm:gap-2 shrink-0">
 
                 {/* Botão de Desligamento de Paciente */}
-                {(currentRole === "profissional" || currentRole === "triagem" || currentRole === "master") && (
+                {((currentRole === "profissional" && selectedCard.atribuicaoStatus === "Aceito") || currentRole === "triagem" || currentRole === "master") && (
                   <button
                     type="button"
                     onClick={() => {
@@ -16240,6 +16573,48 @@ export function DashboardView({
 
             {/* Modal Scrollable Body - Organized in Distinct Sections */}
             <div className="flex-1 overflow-y-auto p-3 sm:p-6 lg:p-8 space-y-4 sm:space-y-7 bg-warm/10 custom-scrollbar">
+
+              {/* Banner de Decisão Rápida para Profissional com Aceite Pendente */}
+              {currentRole === "profissional" && selectedCard.atribuicaoStatus !== "Aceito" && (
+                <div className="w-full bg-amber-50 border border-amber-200 rounded-2xl p-4 sm:p-5 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
+                  <div className="space-y-1 max-w-2xl">
+                    <div className="flex items-center gap-2 text-xs font-bold text-amber-950">
+                      <ShieldCheck className="w-4 h-4 text-amber-700 shrink-0" />
+                      <span>Confirmação de Aceite Pendente (Acesso Autenticado)</span>
+                    </div>
+                    <p className="text-xs text-amber-900/85 leading-relaxed">
+                      Revise os dados clínicos e a proposta acordada abaixo. Ao confirmar o aceite, o WhatsApp, o e-mail, o CPF e todas as ferramentas clínicas (agenda, contrato, prontuário e faturamento) são liberados imediatamente com registro auditável.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+                    {selectedCard.profissionalId === user?.uid && (
+                      <button
+                        type="button"
+                        onClick={() => handleConfirmarAceiteCaso(selectedCard, "ficha_bordo")}
+                        className="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold flex items-center gap-2 transition-colors whitespace-nowrap cursor-pointer"
+                      >
+                        <CheckCircle2 className="w-4 h-4" />
+                        <span>Confirmar Aceite Agora</span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDevolverModalConfig({
+                          isOpen: true,
+                          pacienteId: selectedCard.id,
+                          pacienteName:
+                            (selectedCard as any).nomeCompleto || selectedCard.nome || "Paciente",
+                        });
+                      }}
+                      className="px-3.5 py-2.5 bg-white hover:bg-rose-50 text-rose-700 border border-rose-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors whitespace-nowrap cursor-pointer"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>Devolver para Triagem</span>
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Standby Resumption Banner */}
               {isCardInStandby(selectedCard) && (
@@ -16375,13 +16750,22 @@ export function DashboardView({
                     onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
                     isEditing={isEditingCard}
                   />
-                  <EditableField
-                    label="CPF"
-                    value={selectedCard.cpf}
-                    field="cpf"
-                    onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
-                    isEditing={isEditingCard}
-                  />
+                  {currentRole === "profissional" && selectedCard.atribuicaoStatus !== "Aceito" ? (
+                    <div className="p-3 bg-warm/30 rounded-xl border border-soft space-y-1">
+                      <span className="text-[10px] uppercase font-bold text-forest/50 block">CPF</span>
+                      <div className="flex items-center gap-1.5 text-xs text-forest/60 font-mono">
+                        <Lock className="w-3.5 h-3.5 text-amber-600" /> Oculto até o aceite
+                      </div>
+                    </div>
+                  ) : (
+                    <EditableField
+                      label="CPF"
+                      value={selectedCard.cpf}
+                      field="cpf"
+                      onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
+                      isEditing={isEditingCard}
+                    />
+                  )}
                   <EditableField
                     label="Data de Nascimento"
                     value={selectedCard.dataNascimento}
@@ -16466,13 +16850,22 @@ export function DashboardView({
                     onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
                     isEditing={isEditingCard}
                   />
-                  <EditableField
-                    label="CPF do Responsável"
-                    value={selectedCard.responsavelCpf || selectedCard.dadosContrato?.cpf}
-                    field="responsavelCpf"
-                    onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
-                    isEditing={isEditingCard}
-                  />
+                  {currentRole === "profissional" && selectedCard.atribuicaoStatus !== "Aceito" ? (
+                    <div className="p-3 bg-warm/30 rounded-xl border border-soft space-y-1">
+                      <span className="text-[10px] uppercase font-bold text-forest/50 block">CPF do Responsável</span>
+                      <div className="flex items-center gap-1.5 text-xs text-forest/60 font-mono">
+                        <Lock className="w-3.5 h-3.5 text-amber-600" /> Oculto até o aceite
+                      </div>
+                    </div>
+                  ) : (
+                    <EditableField
+                      label="CPF do Responsável"
+                      value={selectedCard.responsavelCpf || selectedCard.dadosContrato?.cpf}
+                      field="responsavelCpf"
+                      onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
+                      isEditing={isEditingCard}
+                    />
+                  )}
                 </div>
 
                 {selectedCard.dadosContrato?.menorIdade && (
@@ -17283,41 +17676,41 @@ export function DashboardView({
 
                       <div className="flex flex-wrap items-center gap-2.5 shrink-0">
                         <button
-                          disabled={selectedCard.atribuicaoStatus === "Aceito"}
-                          onClick={async () => {
-                            const notifAnterior = selectedCard.notificacao ? selectedCard.notificacao + "\n\n" : "";
-                            const nowStr = new Date().toLocaleString("pt-BR");
-                            const authName = profile?.name || "Parceiro";
-                            const updates: any = {
-                              atribuicaoStatus: "Aceito",
-                              status: "Em Atendimento",
-                              notificacao: `${notifAnterior}[${nowStr}] Encaminhamento ACEITO pelo profissional ${authName}. Paciente saiu de Aguardando atribuição e passou para a aba Pacientes (Em Atendimento).`,
-                            };
-                            await updateDoc(doc(db, "acolhimentos", selectedCard.id), updates);
-                            setSelectedCard({ ...selectedCard, ...updates });
-                            showToast("Paciente aceito no vínculo com sucesso!", "success");
-                          }}
-                          className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                          type="button"
+                          disabled={
+                            selectedCard.atribuicaoStatus === "Aceito" ||
+                            selectedCard.profissionalId !== user?.uid
+                          }
+                          onClick={() => handleConfirmarAceiteCaso(selectedCard, "ficha_bordo")}
+                          className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
                             selectedCard.atribuicaoStatus === "Aceito"
                               ? "bg-[#34A853] text-white shadow-2xs opacity-90 cursor-default"
-                              : "bg-[#34A853] hover:bg-[#2e9348] text-white shadow-sm hover:shadow"
+                              : selectedCard.profissionalId !== user?.uid
+                                ? "bg-warm text-forest/50 border border-soft cursor-not-allowed"
+                                : "bg-[#34A853] hover:bg-[#2e9348] text-white shadow-sm hover:shadow cursor-pointer"
                           }`}
                         >
                           <CheckCircle2 className="w-4 h-4" />
-                          {selectedCard.atribuicaoStatus === "Aceito" ? "Paciente Aceito no Vínculo" : "Confirmar Aceite do Caso"}
+                          {selectedCard.atribuicaoStatus === "Aceito"
+                            ? "Paciente Aceito no Vínculo"
+                            : "Confirmar Aceite do Caso"}
                         </button>
 
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setShowContratoModal(true);
-                          }}
-                          className="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold transition-all shadow-2xs flex items-center justify-center gap-2 cursor-pointer"
-                          title="Gerar ou editar o contrato terapêutico com aceite digital para este paciente"
-                        >
-                          <FileSignature className="w-4 h-4 text-sun" />
-                          {selectedCard.contratoAssinado ? "Ver Contrato Assinado" : "Gerar / Enviar Contrato"}
-                        </button>
+                        {selectedCard.atribuicaoStatus === "Aceito" && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowContratoModal(true);
+                            }}
+                            className="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold transition-all shadow-2xs flex items-center justify-center gap-2 cursor-pointer"
+                            title="Gerar ou editar o contrato terapêutico com aceite digital para este paciente"
+                          >
+                            <FileSignature className="w-4 h-4 text-sun" />
+                            {selectedCard.contratoAssinado
+                              ? "Ver Contrato Assinado"
+                              : "Gerar / Enviar Contrato"}
+                          </button>
+                        )}
 
                         <button
                           type="button"
@@ -17325,32 +17718,78 @@ export function DashboardView({
                             setDevolverModalConfig({
                               isOpen: true,
                               pacienteId: selectedCard.id,
-                              pacienteName: (selectedCard as any).nomeCompleto || selectedCard.nome || "Paciente",
+                              pacienteName:
+                                (selectedCard as any).nomeCompleto ||
+                                selectedCard.nome ||
+                                "Paciente",
                             });
                           }}
                           className="px-4 py-2.5 bg-white text-rose-600 border border-rose-200 hover:bg-rose-50 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
                         >
-                          {selectedCard.atribuicaoStatus === "Aceito" ? "Devolver / Desatribuir" : "Devolver Paciente"}
+                          {selectedCard.atribuicaoStatus === "Aceito"
+                            ? "Devolver / Desatribuir"
+                            : "Devolver Paciente"}
                         </button>
                       </div>
                     </div>
                   </div>
                 )}
 
-                {/* Card do Profissional Responsável (quando houver) */}
+                {/* Card do Profissional Responsável + Comprovante / Cobrança de Aceite */}
                 {selectedCard.profissionalId &&
                   (() => {
-                    const matchedProf = allUsers.find(
-                      (u) => u.uid === selectedCard.profissionalId || u.id === selectedCard.profissionalId,
+                    const matchedProf =
+                      allUsers.find(
+                        (u) =>
+                          u.uid === selectedCard.profissionalId ||
+                          u.id === selectedCard.profissionalId,
+                      ) ||
+                      profissionaisAtivos.find(
+                        (p) =>
+                          p.uid === selectedCard.profissionalId ||
+                          p.id === selectedCard.profissionalId,
+                      );
+                    const profNameDisplay =
+                      matchedProf?.name ||
+                      selectedCard.profissionalNome ||
+                      matchedProf?.email ||
+                      "Profissional Vinculado";
+                    const publicLink = matchedProf
+                      ? `${window.location.origin}?prof=${matchedProf.uid || matchedProf.id || ""}`
+                      : "";
+                    const directAceiteUrl = `${window.location.origin}/?aceite_caso=${encodeURIComponent(selectedCard.id)}`;
+                    const elapsed = formatElapsedAssignmentTime(
+                      selectedCard.atribuidoEm ||
+                        selectedCard.updatedAt ||
+                        selectedCard.propostaAceitaEm ||
+                        selectedCard.createdAt
                     );
-                    if (!matchedProf) return null;
-                    const publicLink = `${window.location.origin}?prof=${matchedProf.uid || matchedProf.id || ""}`;
+                    const rawProfPhone = matchedProf?.telefone || (matchedProf as any)?.whatsapp || "";
+                    const digitsProf = String(rawProfPhone).replace(/\D/g, "");
+                    const cleanProfPhone =
+                      digitsProf.length > 0
+                        ? digitsProf.startsWith("55")
+                          ? digitsProf
+                          : `55${digitsProf}`
+                        : "";
+
+                    const origemMap: Record<string, string> = {
+                      link_direto: "Link Direto Autenticado",
+                      ficha_bordo: "Ficha de Bordo",
+                      esteira_tarefas: "Esteira de Tarefas",
+                      quadro_pendencias: "Quadro de Pendências",
+                    };
+
                     return (
-                      <div className="bg-warm/30 p-5 rounded-2xl border border-soft space-y-3">
-                        <div className="flex items-center gap-3.5 border-b border-soft pb-3">
-                          <div className="w-12 h-12 rounded-2xl overflow-hidden bg-forest/10 border-2 border-sun shrink-0 flex items-center justify-center">
-                            {matchedProf.photoUrl ? (
-                              <img src={matchedProf.photoUrl} alt={matchedProf.name} className="w-full h-full object-cover" />
+                      <div className="bg-warm/30 p-5 rounded-2xl border border-soft space-y-4">
+                        <div className="flex items-center gap-3.5 border-b border-soft pb-3 flex-wrap">
+                          <div className="w-12 h-12 rounded-2xl overflow-hidden bg-forest/10 border border-soft shrink-0 flex items-center justify-center">
+                            {matchedProf?.photoUrl ? (
+                              <img
+                                src={matchedProf.photoUrl}
+                                alt={profNameDisplay}
+                                className="w-full h-full object-cover"
+                              />
                             ) : (
                               <User className="w-6 h-6 text-forest/70" />
                             )}
@@ -17359,24 +17798,127 @@ export function DashboardView({
                             <span className="text-[10px] font-bold text-sun-dark uppercase tracking-wider block">
                               Profissional Responsável Vinculado
                             </span>
-                            <h5 className="font-bold text-forest text-sm truncate">{matchedProf.name}</h5>
+                            <h5 className="font-bold text-forest text-sm truncate">
+                              {profNameDisplay}
+                            </h5>
                             <p className="text-xs text-forest/70 font-mono">
-                              {matchedProf.especialidade || "Psicólogo Clínico"} {matchedProf.crp ? `• CRP: ${matchedProf.crp}` : ""}
+                              {matchedProf?.especialidade || "Psicólogo Clínico"}{" "}
+                              {matchedProf?.crp ? `· CRP: ${matchedProf.crp}` : ""}
                             </p>
                           </div>
 
-                          <button
-                            onClick={() => {
-                              navigator.clipboard.writeText(publicLink);
-                              showToast("Link do profissional copiado!", "success");
-                            }}
-                            className="px-3 py-1.5 bg-white text-forest text-xs font-bold rounded-xl border border-soft hover:bg-warm transition-colors shrink-0 flex items-center gap-1.5"
-                          >
-                            <Copy className="w-3.5 h-3.5" /> Copiar Apresentação
-                          </button>
+                          {publicLink && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText(publicLink);
+                                showToast("Link do profissional copiado!", "success");
+                              }}
+                              className="px-3 py-1.5 bg-white text-forest text-xs font-bold rounded-xl border border-soft hover:bg-warm transition-colors shrink-0 flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <Copy className="w-3.5 h-3.5" /> Copiar Apresentação
+                            </button>
+                          )}
                         </div>
 
-                        {matchedProf.biografia && (
+                        {/* Rastreabilidade do Aceite ou Painel de Cobrança */}
+                        {selectedCard.atribuicaoStatus === "Aceito" ? (
+                          <div className="p-3.5 sm:p-4 bg-emerald-50/80 border border-emerald-200 rounded-xl space-y-1.5 text-xs">
+                            <div className="flex items-center justify-between gap-2 flex-wrap">
+                              <span className="font-bold text-emerald-950 flex items-center gap-1.5">
+                                <ShieldCheck className="w-4 h-4 text-emerald-700 shrink-0" />
+                                Comprovante de Aceite Autenticado
+                              </span>
+                              {selectedCard.aceitoEm && (
+                                <span className="font-mono tabular-nums text-emerald-800 font-semibold">
+                                  {formatDateTimeSafely(selectedCard.aceitoEm)}
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-emerald-900/90 flex items-center gap-2 flex-wrap">
+                              <span>
+                                Profissional:{" "}
+                                <strong>
+                                  {selectedCard.aceitoPorNome || profNameDisplay}
+                                </strong>
+                              </span>
+                              {selectedCard.aceitoPorEmail && (
+                                <>
+                                  <span aria-hidden="true">·</span>
+                                  <span className="font-mono">{selectedCard.aceitoPorEmail}</span>
+                                </>
+                              )}
+                              {selectedCard.aceitoOrigem && (
+                                <>
+                                  <span aria-hidden="true">·</span>
+                                  <span>
+                                    Via {origemMap[selectedCard.aceitoOrigem] || selectedCard.aceitoOrigem}
+                                  </span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        ) : currentRole !== "profissional" ? (
+                          <div
+                            className={`p-3.5 sm:p-4 rounded-xl border space-y-3 text-xs ${
+                              elapsed.isOverdue24h
+                                ? "bg-amber-50 border-amber-300 text-amber-950"
+                                : "bg-white border-soft text-forest"
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-3 flex-wrap">
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-2 flex-wrap font-bold">
+                                  <Clock className="w-4 h-4 text-amber-700 shrink-0" />
+                                  <span>Aguardando Aceite Autenticado do Profissional</span>
+                                  <span aria-hidden="true" className="text-forest/35">·</span>
+                                  <span className="font-mono tabular-nums text-amber-800">
+                                    Pendente {elapsed.label}
+                                  </span>
+                                </div>
+                                <p className="text-forest/75 leading-relaxed">
+                                  Por rastreabilidade clínica, o aceite somente pode ser registrado pelo próprio profissional com login verificado. Envie ou reforce o link direto de 1 clique abaixo:
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2 pt-1">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const nomePac =
+                                    selectedCard.nome || selectedCard.nomeCompleto || "Paciente";
+                                  const msgCobrar = `Olá, ${profNameDisplay}! Tudo bem? Passando para lembrar que o encaminhamento de *${nomePac}* no Projeto AcolheMente está aguardando a confirmação do seu aceite (ou devolução, caso esteja sem agenda) para liberarmos os dados de contato.\n\nVocê pode revisar o resumo e confirmar em 1 clique pelo link autenticado:\n${directAceiteUrl}`;
+                                  const waUrl = cleanProfPhone
+                                    ? `https://wa.me/${cleanProfPhone}?text=${encodeURIComponent(msgCobrar)}`
+                                    : `https://wa.me/?text=${encodeURIComponent(msgCobrar)}`;
+                                  window.open(waUrl, "_blank");
+                                }}
+                                className="px-3.5 py-2 bg-[#25D366] hover:bg-[#20b858] text-white font-bold rounded-xl flex items-center gap-1.5 transition-colors whitespace-nowrap cursor-pointer"
+                              >
+                                <Phone className="w-3.5 h-3.5" />
+                                <span>Cobrar Aceite no WhatsApp</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(directAceiteUrl);
+                                  showToast(
+                                    "Link direto de aceite copiado para a área de transferência!",
+                                    "success"
+                                  );
+                                }}
+                                className="px-3.5 py-2 bg-white hover:bg-warm text-forest border border-soft font-semibold rounded-xl flex items-center gap-1.5 transition-colors whitespace-nowrap cursor-pointer"
+                              >
+                                <Link2 className="w-3.5 h-3.5" />
+                                <span>Copiar Link de Aceite</span>
+                              </button>
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {matchedProf?.biografia && (
                           <div className="bg-white p-3 rounded-xl text-xs text-forest/80 italic leading-relaxed whitespace-pre-wrap max-h-24 overflow-y-auto custom-scrollbar border border-soft/60">
                             "{matchedProf.biografia}"
                           </div>
@@ -17388,6 +17930,23 @@ export function DashboardView({
 
               {/* ÁREA DE FATURAMENTO, SESSÕES & RECIBOS DO PACIENTE */}
               <div id="sec-faturamento-paciente" className="pt-2">
+                {currentRole === "profissional" && selectedCard.atribuicaoStatus !== "Aceito" ? (
+                  <div className="bg-white p-5 sm:p-6 rounded-2xl border border-soft flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                    <div className="flex items-start gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
+                        <Lock className="w-4 h-4" />
+                      </div>
+                      <div className="space-y-1">
+                        <h4 className="text-xs sm:text-sm font-bold text-forest">
+                          Sessões, Faturamento e Emissão de Recibos Bloqueados até o Aceite
+                        </h4>
+                        <p className="text-xs text-forest/70 leading-relaxed max-w-2xl">
+                          Confirme o aceite do caso na seção acima para habilitar o controle financeiro de sessões, CPF do paciente e emissão de recibos.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
                 <PacienteFaturamentoSpreadsheet
                   pacienteId={selectedCard.id}
                   pacienteNome={selectedCard.nome || (selectedCard as any).nomeCompleto || "Paciente"}
@@ -17570,6 +18129,7 @@ export function DashboardView({
                   }
                   onSaveReajusteAnual={handleSaveReajusteSelectedCard}
                 />
+                )}
               </div>
 
               {/* 7. NOTIFICAÇÃO E RESUMO DO CASO (Visível apenas para Gestão Master e Triagem) */}
@@ -17740,14 +18300,21 @@ export function DashboardView({
                       <ShieldCheck className="w-3 h-3 text-emerald-600" /> Sigilo Ético
                     </span>
 
-                    <button
-                      type="button"
-                      onClick={() => setShowProntuarioModal(true)}
-                      className="px-3 py-1.5 text-xs font-bold text-white bg-emerald-700 hover:bg-emerald-800 rounded-xl transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <BookOpen className="w-3.5 h-3.5" />
-                      <span>Abrir Prontuário Completo</span>
-                    </button>
+                    {currentRole === "profissional" && selectedCard.atribuicaoStatus !== "Aceito" ? (
+                      <span className="px-3 py-1.5 text-xs font-semibold text-forest/55 bg-warm border border-soft rounded-xl flex items-center gap-1.5">
+                        <Lock className="w-3.5 h-3.5 text-amber-700" />
+                        <span>Liberado após aceite</span>
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setShowProntuarioModal(true)}
+                        className="px-3 py-1.5 text-xs font-bold text-white bg-emerald-700 hover:bg-emerald-800 rounded-xl transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <BookOpen className="w-3.5 h-3.5" />
+                        <span>Abrir Prontuário Completo</span>
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -17846,14 +18413,16 @@ export function DashboardView({
                           <p className="text-xs text-forest/70">
                             Nenhum relatório ou evolução clínica registrado para este paciente ainda.
                           </p>
-                          <button
-                            type="button"
-                            onClick={() => setShowProntuarioModal(true)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-emerald-800 bg-white hover:bg-emerald-50 border border-emerald-300 rounded-xl shadow-2xs transition-colors cursor-pointer"
-                          >
-                            <Plus className="w-3.5 h-3.5 text-emerald-700" />
-                            Registrar Primeira Evolução no Prontuário
-                          </button>
+                          {!(currentRole === "profissional" && selectedCard.atribuicaoStatus !== "Aceito") && (
+                            <button
+                              type="button"
+                              onClick={() => setShowProntuarioModal(true)}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-emerald-800 bg-white hover:bg-emerald-50 border border-emerald-300 rounded-xl shadow-2xs transition-colors cursor-pointer"
+                            >
+                              <Plus className="w-3.5 h-3.5 text-emerald-700" />
+                              Registrar Primeira Evolução no Prontuário
+                            </button>
+                          )}
                         </div>
                       )}
                     </div>
@@ -18011,6 +18580,15 @@ export function DashboardView({
                   </div>
                 </div>
 
+                {currentRole === "profissional" && selectedCard.atribuicaoStatus !== "Aceito" ? (
+                  <div className="p-4 bg-amber-50/90 border border-amber-200 rounded-2xl flex items-start gap-3 text-xs text-amber-950">
+                    <Lock className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                    <span>
+                      Os canais de WhatsApp, e-mail e régua de disparo direto ao paciente são habilitados automaticamente após a confirmação do aceite do caso na seção 6.
+                    </span>
+                  </div>
+                ) : (
+                <>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {/* Card de Contato Atual do Paciente */}
                   <div className="p-4 bg-warm/30 border border-soft rounded-xl space-y-2">
@@ -18046,7 +18624,7 @@ export function DashboardView({
                       <div className="flex items-center justify-between">
                         <span className="text-forest/70">Contato de Boas-Vindas:</span>
                         <span className={`font-bold ${selectedCard.contatoEnviado ? "text-emerald-700" : "text-amber-700"}`}>
-                          {selectedCard.contatoEnviado ? `Sim (${selectedCard.contatoEnviadoEm ? formatDate(selectedCard.contatoEnviadoEm) : "Enviado"})` : "Pendente"}
+                          {selectedCard.contatoEnviado ? `Sim (${selectedCard.contatoEnviadoEm ? formatDate(selectedCard.contatoEnviadoEm) : "Enviada"})` : "Pendente"}
                         </span>
                       </div>
                     </div>
@@ -18235,6 +18813,8 @@ export function DashboardView({
                     </button>
                   </div>
                 </div>
+                </>
+                )}
               </div>
 
             </div>
@@ -18756,18 +19336,22 @@ export function DashboardView({
                                 {item.actionText || "Completar na Ficha"}
                               </button>
                             )}
-                            {item.actionType === "aceitar_atribuicao" && (
-                              <button
-                                type="button"
-                                onClick={async () => {
-                                  await handleProfAcceptPaciente(selectedCard as any);
-                                  setShowPendenciasModal(false);
-                                }}
-                                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-2xs whitespace-nowrap cursor-pointer"
-                              >
-                                {item.actionText || "Aceitar Encaminhamento"}
-                              </button>
-                            )}
+                            {item.actionType === "aceitar_atribuicao" &&
+                              selectedCard.profissionalId === user?.uid && (
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    await handleConfirmarAceiteCaso(
+                                      selectedCard as any,
+                                      "quadro_pendencias"
+                                    );
+                                    setShowPendenciasModal(false);
+                                  }}
+                                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-2xs whitespace-nowrap cursor-pointer"
+                                >
+                                  {item.actionText || "Confirmar Aceite"}
+                                </button>
+                              )}
                           </div>
                         )}
                       </div>
@@ -24727,37 +25311,65 @@ export function DashboardView({
                   const observacaoFinal = motivoDevolucaoOutro.trim();
 
                   try {
-                    const currentPaciente = acolhimentos.find(
-                      (a) => a.id === devolverModalConfig.pacienteId,
-                    );
+                    const currentPaciente =
+                      acolhimentos.find((a) => a.id === devolverModalConfig.pacienteId) ||
+                      meusPacientes.find((p) => p.id === devolverModalConfig.pacienteId);
                     const notificacaoAnterior = currentPaciente?.notificacao
                       ? currentPaciente.notificacao + "\n\n"
                       : "";
+                    const nowIso = new Date().toISOString();
                     const nowStr = new Date().toLocaleString("pt-BR");
+                    const authName = profile?.name || profile?.nome || user?.displayName || "Parceiro";
+                    const authEmail = (profile?.email || user?.email || "").toLowerCase().trim();
 
                     const textoMotivo = observacaoFinal
                       ? ` Observação: ${observacaoFinal}`
                       : "";
 
-                    const updates = {
+                    const updates: any = {
                       profissionalId: "",
-                      status: "Devolvido para triagem", // Novo Kanban Devolvido para triagem
+                      profissionalNome: "",
+                      status: "Devolvido para triagem",
                       atribuicaoStatus: "Devolvido",
-                      devolvidoMotivo: observacaoFinal || "Devolvido pelo profissional para nova atribuição",
-                      devolvidoPor: profile?.name || "Parceiro",
-                      devolvidoEm: new Date().toISOString(),
-                      notificacao: `${notificacaoAnterior}[${nowStr}] Atendimento devolvido pelo profissional ${profile?.name || "Parceiro"}.${textoMotivo} Retornou para a coluna "Devolvido para triagem" (Devolvido para nova atribuição).`,
+                      devolvidoMotivo:
+                        observacaoFinal || "Devolvido pelo profissional para nova atribuição",
+                      devolvidoPor: authName,
+                      devolvidoPorUid: user?.uid || "",
+                      devolvidoPorEmail: authEmail,
+                      devolvidoEm: nowIso,
+                      statusUpdatedAt: serverTimestamp(),
+                      updatedAt: serverTimestamp(),
+                      notificacao: `${notificacaoAnterior}[${nowStr}] Atendimento devolvido pelo profissional ${authName} (${authEmail}).${textoMotivo} Retornou para a coluna "Devolvido para triagem" (Devolvido para nova atribuição).`,
                     };
                     await updateDoc(
                       doc(db, "acolhimentos", devolverModalConfig.pacienteId),
                       updates,
                     );
+                    try {
+                      await addDoc(collection(db, "auditoria_gestao"), {
+                        tipo: "devolucao_encaminhamento_clinico",
+                        pacienteId: devolverModalConfig.pacienteId,
+                        pacienteNome: devolverModalConfig.pacienteName || "Paciente",
+                        profissionalUid: user?.uid || "",
+                        profissionalNome: authName,
+                        profissionalEmail: authEmail,
+                        motivo:
+                          observacaoFinal ||
+                          "Devolvido pelo profissional para nova atribuição",
+                        origem: "ficha_bordo",
+                        dataIso: nowIso,
+                        data: serverTimestamp(),
+                      });
+                    } catch (auditErr) {
+                      console.warn("Aviso ao registrar devolução em auditoria_gestao:", auditErr);
+                    }
                     setSelectedCard(null);
                     setDevolverModalConfig(null);
                     setMotivoDevolucaoOutro("");
+                    showToast("Caso devolvido para a equipe de triagem com sucesso.", "info");
                   } catch (e) {
                     console.error(e);
-                    alert("Erro ao devolver paciente.");
+                    showToast("Erro ao devolver paciente.", "error");
                   }
                 }}
                 className="flex-1 px-4 py-2.5 sm:py-3 bg-red-500 text-white rounded-xl font-semibold text-xs sm:text-sm hover:bg-red-600 transition-colors"

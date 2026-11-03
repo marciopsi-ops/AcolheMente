@@ -215,13 +215,14 @@ export function ProfissionalEsteiraTarefas({
 
       // 1.1 Novo Encaminhamento aguardando aceite
       if (isPending) {
+        const assignSource = p.atribuidoEm || p.updatedAt || p.createdAt || baseTime;
         items.push({
           id: `prof-assignment-${p.id}`,
           type: "assignment",
           title: "Novo Encaminhamento de Paciente",
           desc: `Paciente direcionado pela triagem (${p.viaAcesso || "Particular"}). Queixa principal: ${p.motivo || p.necessidade || "Ver detalhes na ficha"}. Revise a ficha clínica e decida pelo aceite ou devolução.`,
-          date: formatDateTimeSafely(p.updatedAt || p.createdAt || baseTime),
-          timestamp: getMillisVal(p.updatedAt || p.createdAt || baseTime),
+          date: formatDateTimeSafely(assignSource),
+          timestamp: getMillisVal(assignSource),
           treated: treatedItemIds.has(`prof-assignment-${p.id}`),
           priority: "alta",
           patientObj: p,
@@ -229,8 +230,8 @@ export function ProfissionalEsteiraTarefas({
         });
       }
 
-      // 1.2 Contrato pendente de assinatura
-      if (!p.contratoAssinado) {
+      // 1.2 Contrato pendente de assinatura (apenas após aceite formal do caso)
+      if (!isPending && !p.contratoAssinado) {
         items.push({
           id: `prof-contract-${p.id}`,
           type: "contract",
@@ -325,8 +326,8 @@ export function ProfissionalEsteiraTarefas({
         });
       }
 
-      // 1.6 Lembrete de Reajuste Anual (1 mês antes ou mês vigente)
-      if (isRegistroAtivoParaReajuste("acessivel", p)) {
+      // 1.6 Lembrete de Reajuste Anual (1 mês antes ou mês vigente, apenas após aceite)
+      if (!isPending && isRegistroAtivoParaReajuste("acessivel", p)) {
         const av = avaliarStatusLembreteReajuste(p.reajusteAnual);
         if (av.precisaAcao) {
           const itemId = buildReajusteAlertItemId("acessivel", p.id, av.anoCiclo);
@@ -1160,7 +1161,7 @@ export function ProfissionalEsteiraTarefas({
                             : card.entityType === "empresa_b2b"
                             ? "bg-emerald-50 text-emerald-900 border border-emerald-200"
                             : card.isPendingAcceptance
-                            ? "bg-amber-500 text-white animate-pulse"
+                            ? "bg-amber-600 text-white"
                             : "bg-forest text-white"
                         }`}
                       >

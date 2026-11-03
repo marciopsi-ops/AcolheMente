@@ -231,15 +231,27 @@ export function GestaoEsteiraTarefas({
         a.status !== "Standby"
       ) {
         const atribTime = getMillisVal(a.atribuidoEm || a.updatedAt || baseTime);
+        const elapsedHours =
+          atribTime > 0 ? Math.max(0, Math.floor((Date.now() - atribTime) / 3600000)) : 0;
+        const elapsedLabel =
+          elapsedHours >= 48
+            ? `há ${Math.floor(elapsedHours / 24)}d ${elapsedHours % 24}h`
+            : `há ${elapsedHours}h`;
+        const isOverdue24h = elapsedHours >= 24;
+
         items.push({
           id: `acolhimento-aguardando-aceite-prof-${a.id}`,
-          type: "pendency",
-          title: `Aguardando Aceite do Psicólogo (${a.profissionalNome || "Profissional"})`,
-          desc: `Caso encaminhado em ${formatDateSafely(a.atribuidoEm || a.updatedAt)}. Aguardando confirmação do profissional para início das sessões.`,
+          type: isOverdue24h ? "alert" : "pendency",
+          title: isOverdue24h
+            ? `Aceite Pendente ${elapsedLabel} (${a.profissionalNome || "Profissional"})`
+            : `Aguardando Aceite do Psicólogo (${a.profissionalNome || "Profissional"})`,
+          desc: isOverdue24h
+            ? `Caso atribuído em ${formatDateSafely(a.atribuidoEm || a.updatedAt)} sem confirmação de aceite autenticado (${elapsedLabel}). Recomendado cobrar aceite via link direto ou avaliar reatribuição.`
+            : `Caso encaminhado em ${formatDateSafely(a.atribuidoEm || a.updatedAt)} (${elapsedLabel}). Aguardando confirmação autenticada do profissional para liberar contatos e iniciar sessões.`,
           date: formatDateTimeSafely(a.atribuidoEm || atribTime),
           timestamp: atribTime,
           treated: treatedItemIds.has(`acolhimento-aguardando-aceite-prof-${a.id}`),
-          priority: "media",
+          priority: isOverdue24h ? "alta" : "media",
         });
       }
 

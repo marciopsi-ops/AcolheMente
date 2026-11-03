@@ -195,11 +195,20 @@ export async function sendProposalAcceptedToProfessionalEmail(
   profissionalEmail: string,
   profissionalNome: string,
   pacienteNome: string,
-  pacienteEmail: string,
-  pacienteTelefone: string,
+  _pacienteEmail: string,
+  _pacienteTelefone: string,
   valorSessao: string,
-  frequenciaSessoes: string
+  frequenciaSessoes: string,
+  propostaId?: string
 ) {
+  const origin =
+    typeof window !== "undefined" && window.location?.origin
+      ? window.location.origin
+      : "";
+  const aceiteUrl = propostaId
+    ? `${origin}/?aceite_caso=${encodeURIComponent(propostaId)}`
+    : `${origin}/?view=dashboard`;
+
   const dispatched = await dispatchNotificationEvent({
     eventId: "proposta_aceita_profissional",
     recipientEmail: profissionalEmail,
@@ -208,24 +217,25 @@ export async function sendProposalAcceptedToProfessionalEmail(
     variables: {
       nome: pacienteNome,
       profissional: profissionalNome,
-      email: pacienteEmail,
-      telefone: pacienteTelefone,
+      email: "Liberado após confirmação de aceite na plataforma",
+      telefone: "Liberado após confirmação de aceite na plataforma",
       valor_sessao: valorSessao,
       frequencia: frequenciaSessoes,
+      link_aceite: aceiteUrl,
     },
   });
 
   if (!dispatched.triggerFound) {
-    const subject = "Novo Paciente Atribuído - Projeto AcolheMente";
+    const subject = "Novo Caso Aguardando Seu Aceite - Projeto AcolheMente";
     const html = `
       <h3 style="font-family: 'Georgia', serif; font-size: 20px; color: #1e352f; margin-top: 0;">Olá, Dr(a). ${profissionalNome}!</h3>
-      <p>Gostaríamos de informar que o paciente <strong>${pacienteNome}</strong> revisou e <strong>ACEITOU</strong> a proposta de acompanhamento com você no Projeto AcolheMente.</p>
+      <p>Gostaríamos de informar que o paciente <strong>${pacienteNome}</strong> revisou e <strong>ACEITOU</strong> a proposta de acompanhamento vinculada ao seu perfil no Projeto AcolheMente.</p>
       
       <div style="background-color: #faf9f6; border: 1px solid #e2ded5; border-radius: 16px; padding: 20px; margin: 25px 0;">
-        <h4 style="margin-top: 0; color: #1e352f; font-family: 'Georgia', serif; font-size: 16px;">Detalhes do Alinhamento Clínico:</h4>
+        <h4 style="margin-top: 0; color: #1e352f; font-family: 'Georgia', serif; font-size: 16px;">Resumo do Alinhamento Clínico:</h4>
         <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
           <tr>
-            <td style="padding: 6px 0; color: #737c76; width: 140px;"><strong>Paciente:</strong></td>
+            <td style="padding: 6px 0; color: #737c76; width: 160px;"><strong>Paciente:</strong></td>
             <td style="padding: 6px 0; color: #1e352f;">${pacienteNome}</td>
           </tr>
           <tr>
@@ -237,22 +247,26 @@ export async function sendProposalAcceptedToProfessionalEmail(
             <td style="padding: 6px 0; color: #1e352f;">${frequenciaSessoes}</td>
           </tr>
           <tr>
-            <td style="padding: 6px 0; color: #737c76;"><strong>E-mail:</strong></td>
-            <td style="padding: 6px 0; color: #1e352f;">${pacienteEmail}</td>
-          </tr>
-          <tr>
-            <td style="padding: 6px 0; color: #737c76;"><strong>Telefone/Wpp:</strong></td>
-            <td style="padding: 6px 0; color: #1e352f;">${pacienteTelefone}</td>
+            <td style="padding: 6px 0; color: #737c76;"><strong>Contato do Paciente:</strong></td>
+            <td style="padding: 6px 0; color: #92400e;">Protegido — liberado imediatamente após seu aceite</td>
           </tr>
         </table>
       </div>
       
-      <div style="background-color: #fbf6eb; border-left: 4px solid #e8b056; padding: 15px 20px; margin: 25px 0; font-size: 14px;">
-        <strong>Orientação de Atendimento:</strong><br>
-        Por favor, faça contato com o paciente através do telefone ou e-mail acima em até 24-48 horas para agendar o primeiro acolhimento e estabelecer as regras do contrato terapêutico.
+      <div style="background-color: #fbf6eb; border: 1px solid #ebdcb9; border-radius: 14px; padding: 18px 20px; margin: 25px 0; font-size: 14px; color: #1e352f;">
+        <strong>Confirmação de Aceite Obrigatória (Acesso Autenticado):</strong><br>
+        Por governança ética e proteção de dados (LGPD/CFP), o WhatsApp e o e-mail do paciente são liberados assim que você revisar o resumo clínico e confirmar o aceite autenticado no link abaixo:
+        <div style="text-align: center; margin: 20px 0 8px;">
+          <a href="${aceiteUrl}" target="_blank" style="background-color: #1e352f; color: #ffffff; padding: 13px 26px; border-radius: 12px; text-decoration: none; font-weight: bold; font-size: 14px; display: inline-block;">
+            Revisar Resumo e Confirmar Aceite
+          </a>
+        </div>
+        <p style="font-size: 12px; color: #737c76; text-align: center; margin: 8px 0 0;">
+          Link direto: <a href="${aceiteUrl}" style="color: #1e352f;">${aceiteUrl}</a>
+        </p>
       </div>
       
-      <p>Agradecemos a sua dedicação e carinho no atendimento aos nossos acolhidos!</p>
+      <p>Após confirmar o aceite, entre em contato com o paciente em até 24–48 horas para agendar a primeira sessão.</p>
     `;
     await triggerEmail(profissionalEmail, subject, html);
   }

@@ -50,6 +50,7 @@ import { DoacaoView } from "./views/DoacaoView";
 import { ProfissionalLandingView } from "./views/ProfissionalLandingView";
 import { ContratoLandingView } from "./views/ContratoLandingView";
 import { PropostaLandingView } from "./views/PropostaLandingView";
+import { AceiteCasoLandingView } from "./views/AceiteCasoLandingView";
 import { FichaEmpresaLandingView } from "./views/FichaEmpresaLandingView";
 import { ExternalPatientLandingView } from "./views/ExternalPatientLandingView";
 import { PortalEmpresaView } from "./views/PortalEmpresaView";
@@ -365,6 +366,10 @@ export default function App() {
   const [publicPropostaId, setPublicPropostaId] = useState<string | null>(() => {
     return new URLSearchParams(window.location.search).get("proposta");
   });
+  const [publicAceiteCasoId, setPublicAceiteCasoId] = useState<string | null>(() => {
+    const p = new URLSearchParams(window.location.search);
+    return p.get("aceite_caso") || p.get("aceite");
+  });
   const [publicFichaEmpresaId, setPublicFichaEmpresaId] = useState<string | null>(() => {
     const p = new URLSearchParams(window.location.search);
     return (
@@ -457,6 +462,7 @@ export default function App() {
       setReturnFromProfUid(p.get("fromProf"));
       setPublicContratoId(p.get("contrato"));
       setPublicPropostaId(p.get("proposta"));
+      setPublicAceiteCasoId(p.get("aceite_caso") || p.get("aceite"));
       setPublicFichaEmpresaId(
         p.get("ficha_implantacao") ||
         p.get("implantacao") ||
@@ -517,6 +523,7 @@ export default function App() {
     publicContratoId,
     publicFaturamentoId,
     publicPropostaId,
+    publicAceiteCasoId,
     publicArtigoId,
   ]);
 
@@ -583,6 +590,7 @@ export default function App() {
     setReturnFromProfUid(null);
     setPublicContratoId(null);
     setPublicPropostaId(null);
+    setPublicAceiteCasoId(null);
     setPublicFichaEmpresaId(null);
     setPublicPortalEmpresaId(null);
     setPublicArtigoId(null);
@@ -675,6 +683,28 @@ export default function App() {
       <ColetaFaturamentoView
         fichaId={publicFaturamentoId}
         onGoHome={handleGoToLanding}
+      />
+    );
+  }
+
+  if (publicAceiteCasoId) {
+    return (
+      <AceiteCasoLandingView
+        casoId={publicAceiteCasoId}
+        onGoHome={handleGoToLanding}
+        onOpenInDashboard={(cardId) => {
+          setPublicAceiteCasoId(null);
+          try {
+            const url = new URL(window.location.origin + window.location.pathname);
+            if (cardId) {
+              url.searchParams.set("abrir_ficha", cardId);
+            }
+            window.history.pushState({}, "", url.toString());
+          } catch (e) {
+            console.error(e);
+          }
+          setCurrentView("dashboard");
+        }}
       />
     );
   }

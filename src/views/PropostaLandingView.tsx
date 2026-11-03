@@ -181,19 +181,34 @@ export function PropostaLandingView({
     }
   };
 
-  const handleAction = async (action: 'aceitar') => {
+  const [actionError, setActionError] = useState<string>("");
+
+  const handleAction = async (_action: 'aceitar') => {
     try {
+      setActionError("");
       setIsSubmitting(true);
       const newStatus = 'Proposta aceita pelo paciente';
+      const nowIso = new Date().toISOString();
       const nowStr = new Date().toLocaleString("pt-BR");
       const notifAnterior = data.notificacao ? data.notificacao + "\n\n" : "";
       
       const updateData: any = {
         propostaStatus: newStatus,
-        status: "Aprovado", // Passa automaticamente para a 3ª etapa da Triagem: "Aguardando atribuição"
-        propostaAceitaEm: new Date().toISOString(),
-        notificacao: `${notifAnterior}[${nowStr}] Proposta ACEITA pelo paciente através do link seguro. Movido para "Aguardando atribuição" na Triagem.`,
+        status: data?.atribuicaoStatus === "Aceito" ? "Em Atendimento" : "Aprovado",
+        propostaAceitaEm: nowIso,
+        notificacao: `${notifAnterior}[${nowStr}] Proposta ACEITA pelo paciente através do link seguro.${
+          data?.profissionalId && data?.atribuicaoStatus !== "Aceito"
+            ? " Aguardando aceite autenticado do profissional atribuído."
+            : ' Movido para "Aguardando atribuição" na Triagem.'
+        }`,
       };
+
+      if (data?.profissionalId && data?.atribuicaoStatus !== "Aceito") {
+        updateData.atribuicaoStatus = "Pendente";
+        if (!data.atribuidoEm) {
+          updateData.atribuidoEm = nowIso;
+        }
+      }
 
       await updateDoc(doc(db, "acolhimentos", propostaId), updateData);
 
@@ -220,27 +235,29 @@ export function PropostaLandingView({
         console.error("Error sending proposal acceptance email to patient:", emailErr);
       }
 
-      // 2. Email to Professional
+      // 2. Email to Professional (sem expor contato do paciente antes do aceite autenticado)
       if (profData && profData.email) {
         try {
           await sendProposalAcceptedToProfessionalEmail(
             profData.email,
             profData.name || "Profissional",
             data.nome,
-            data.email,
-            data.telefone || "Não informado",
+            "",
+            "",
             data.valorSessao || "A combinar",
-            data.frequenciaSessoes || "Semanal"
+            data.frequenciaSessoes || "Semanal",
+            propostaId
           );
         } catch (emailErr) {
           console.error("Error sending proposal acceptance email to professional:", emailErr);
         }
       }
 
+      setData((prev: any) => ({ ...prev, ...updateData }));
       setStatus(newStatus);
     } catch (err) {
       console.error(err);
-      alert("Erro ao enviar resposta.");
+      setActionError("Não foi possível registrar sua confirmação agora. Verifique sua conexão e tente novamente.");
     } finally {
       setIsSubmitting(false);
     }
@@ -532,6 +549,12 @@ export function PropostaLandingView({
           </div>
 
           <div className="flex flex-col gap-3 w-full">
+            {actionError && (
+              <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-xs text-rose-900 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>{actionError}</span>
+              </div>
+            )}
             <div className="flex flex-col sm:flex-row gap-4 w-full">
               <button
                 disabled={isSubmitting}
