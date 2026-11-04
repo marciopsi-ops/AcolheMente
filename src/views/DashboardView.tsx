@@ -523,6 +523,202 @@ function formatUserRolesLabel(
   return list.map((r) => roleMap[r] || r).join(" + ");
 }
 
+const CONTA_GESTAO_MARCIO_EMAIL = "marciopsi@elosolucoeshumanas.com";
+const CONTA_SEPARADA_MSR_EMAIL = "msr.rocha@gmail.com";
+const CONTAS_SEPARACAO_ALVO = new Set([
+  CONTA_GESTAO_MARCIO_EMAIL,
+  CONTA_SEPARADA_MSR_EMAIL,
+]);
+const DOC_SEPARADO_MARCIO_ID = "separado_marciopsi_elosolucoes";
+const DOC_SEPARADO_MSR_ID = "separado_msr_rocha_gmail";
+
+function isPlaceholderUserDocId(docId?: string | null, data?: any): boolean {
+  if (!docId) return false;
+  return (
+    docId.startsWith("pre_") ||
+    docId.startsWith("separado_") ||
+    Boolean(data?.preRegistered) ||
+    Boolean(data?.contaSeparada)
+  );
+}
+
+function extractAuthProviderDetails(u: FirebaseUser | null | undefined) {
+  const primaryEmail = (u?.email || "").toLowerCase().trim();
+  const googleEntry = u?.providerData.find((p) => p.providerId === "google.com");
+  const passwordEntry = u?.providerData.find((p) => p.providerId === "password");
+  const googleEmail = (googleEntry?.email || "").toLowerCase().trim();
+  const passwordEmail = (passwordEntry?.email || "").toLowerCase().trim();
+  const hasGoogle = Boolean(googleEntry);
+  const hasPassword = Boolean(passwordEntry);
+
+  const distinctEmails = Array.from(
+    new Set([primaryEmail, googleEmail, passwordEmail].filter(Boolean))
+  );
+
+  const hasCrossProviderMismatch =
+    distinctEmails.length > 1 ||
+    (hasGoogle && hasPassword && googleEmail !== passwordEmail) ||
+    (hasGoogle && Boolean(primaryEmail) && googleEmail !== primaryEmail);
+
+  const involvesSeparatedPair =
+    distinctEmails.includes(CONTA_GESTAO_MARCIO_EMAIL) &&
+    distinctEmails.includes(CONTA_SEPARADA_MSR_EMAIL);
+
+  return {
+    primaryEmail,
+    googleEmail,
+    passwordEmail,
+    hasGoogle,
+    hasPassword,
+    distinctEmails,
+    hasCrossProviderMismatch,
+    involvesSeparatedPair,
+  };
+}
+
+async function resolveSafeDashboardUserProfile(
+  u: FirebaseUser,
+  explicitLoginEmail?: string,
+  isGoogleLogin = false
+): Promise<{ profile: UserProfile | null; error?: string }> {
+  const authDetails = extractAuthProviderDetails(u);
+  const candidateEmail = (
+    explicitLoginEmail ||
+    (isGoogleLogin
+      ? authDetails.googleEmail || authDetails.primaryEmail
+      : authDetails.primaryEmail || authDetails.passwordEmail || authDetails.googleEmail) ||
+    ""
+  )
+    .toLowerCase()
+    .trim();
+
+  const userRef = doc(db, "users", u.uid);
+  const snap = await getDoc(userRef);
+
+  if (snap.exists()) {
+    const d = snap.data();
+    if (d.role === "profissional" && d.ativo === false) {
+      return {
+        profile: null,
+        error: "Sua conta está inativa. Entre em contato com a coordenação.",
+      };
+    }
+    // Só preenche e-mail/nome se estiverem em branco; nunca sobrescreve e-mail existente com outro provedor cruzado
+    if (!d.email || (!d.name && u.displayName)) {
+      const patch: Record<string, any> = {};
+      if (!d.email && candidateEmail) patch.email = candidateEmail;
+      if (!d.name && u.displayName) patch.name = u.displayName;
+      if (Object.keys(patch).length > 0) {
+        try {
+          await updateDoc(userRef, patch);
+          Object.assign(d, patch);
+        } catch (patchErr) {
+          console.warn("Aviso ao completar campos básicos do perfil:", patchErr);
+        }
+      }
+    }
+    return { profile: { ...d, uid: u.uid } as UserProfile };
+  }
+
+  if (!candidateEmail) {
+    return {
+      profile: null,
+      error: "Não foi possível obter o endereço de e-mail da sua sessão.",
+    };
+  }
+
+  const emailQuery = query(
+    collection(db, "users"),
+    where("email", "==", candidateEmail)
+  );
+  const emailSnap = await getDocs(emailQuery);
+  const placeholderDoc = emailSnap.docs.find((d) =>
+    isPlaceholderUserDocId(d.id, d.data())
+  );
+
+  if (placeholderDoc) {
+    const preData = placeholderDoc.data();
+    if (preData.role === "profissional" && preData.ativo === false) {
+      return {
+        profile: null,
+        error: "Sua conta está inativa. Entre em contato com a coordenação.",
+      };
+    }
+
+    const intendedRoles: Role[] = Array.isArray(preData.roles) && preData.roles.length > 0
+      ? preData.roles
+      : preData.role
+        ? [preData.role as Role]
+        : ["profissional"];
+    const needsElevatedRestore = intendedRoles.some((r) => r !== "profissional");
+
+    // Cria com role === 'profissional' para respeitar firestore.rules na criação inicial pelo próprio usuário
+    const migratedPayload: Record<string, any> = {
+      ...preData,
+      email: candidateEmail,
+      name: preData.name || u.displayName || "Profissional",
+      role: "profissional",
+      roles: ["profissional"],
+      preRegistered: false,
+      contaSeparada: false,
+      ...(isGoogleLogin ? { googleLinked: true } : {}),
+      ...(needsElevatedRestore ? { rolesPendentesRestauracao: intendedRoles } : {}),
+      updatedAt: serverTimestamp(),
+    };
+
+    await setDoc(userRef, migratedPayload);
+
+    if (placeholderDoc.id !== u.uid) {
+      try {
+        await deleteDoc(doc(db, "users", placeholderDoc.id));
+      } catch {
+        // Documento provisório será limpo automaticamente pela sessão de Gestão
+      }
+    }
+
+    return { profile: { ...migratedPayload, uid: u.uid } as UserProfile };
+  }
+
+  // Auto-recuperação limpa para as contas separadas marciopsi@elosolucoeshumanas.com e msr.rocha@gmail.com
+  if (CONTAS_SEPARACAO_ALVO.has(candidateEmail)) {
+    const defaultName =
+      u.displayName ||
+      (candidateEmail === CONTA_GESTAO_MARCIO_EMAIL
+        ? "Márcio Rocha (Gestão)"
+        : "Márcio Rocha");
+    const freshSeparatedProfile: Record<string, any> = {
+      name: defaultName,
+      email: candidateEmail,
+      role: "profissional",
+      roles: ["profissional"],
+      ativo: true,
+      googleLinked: isGoogleLogin,
+      separadoDeConflito: true,
+      modalidadeCredencial: "cortesia_plena",
+      isentoCobranca: true,
+      ...(candidateEmail === CONTA_GESTAO_MARCIO_EMAIL
+        ? { rolesPendentesRestauracao: ["master", "profissional"] }
+        : {}),
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    };
+    await setDoc(userRef, freshSeparatedProfile);
+    return { profile: { ...freshSeparatedProfile, uid: u.uid } as UserProfile };
+  }
+
+  if (!emailSnap.empty) {
+    return {
+      profile: null,
+      error: `O e-mail (${candidateEmail}) já está associado a outro identificador (UID) na plataforma. Utilize a forma de login original desta conta ou solicite apoio à coordenação.`,
+    };
+  }
+
+  return {
+    profile: null,
+    error: `Acesso não autorizado. O e-mail (${candidateEmail}) não possui cadastro prévio na plataforma. Se você é um profissional ou gestor, solicite seu acesso à coordenação.`,
+  };
+}
+
 interface Acolhimento {
   id: string;
   nome: string;
@@ -2742,25 +2938,33 @@ export function DashboardView({
     const unsub = onAuthStateChanged(auth, async (u) => {
       setUser(u);
       if (u) {
-        const snap = await getDoc(doc(db, "users", u.uid));
         let currentUserProfile: UserProfile | null = null;
-        if (snap.exists()) {
-          currentUserProfile = { ...snap.data(), uid: u.uid } as UserProfile;
-          if (
-            currentUserProfile.role === "profissional" &&
-            currentUserProfile.ativo === false
-          ) {
+        try {
+          const hasGoogleProv = u.providerData.some(
+            (p) => p.providerId === "google.com"
+          );
+          const resolved = await resolveSafeDashboardUserProfile(
+            u,
+            undefined,
+            hasGoogleProv
+          );
+          if (!resolved.profile) {
             await signOut(auth);
-            setAuthError(
-              "Sua conta está inativa. Entre em contato com o suporte.",
-            );
+            if (resolved.error) {
+              setAuthError(resolved.error);
+            }
             setUser(null);
             setProfile(null);
             setActiveRoleView(null);
             setLoadingObj(false);
             return;
           }
+          currentUserProfile = resolved.profile;
+        } catch (profileErr) {
+          console.error("Erro ao validar perfil autenticado:", profileErr);
+        }
 
+        if (currentUserProfile) {
           // Normalize roles array for legacy compatibility
           if (
             !currentUserProfile.roles ||
@@ -2801,7 +3005,7 @@ export function DashboardView({
           }
           setProfile(currentUserProfile);
 
-          // Escuta em tempo real do perfil do usuário (atualizações de plano feitas pelo Master refletem instantaneamente)
+          // Escuta em tempo real do perfil do usuário (atualizações de plano/papéis feitas pelo Master refletem instantaneamente)
           unsubProfile = onSnapshot(doc(db, "users", u.uid), (userSnap) => {
             if (userSnap.exists()) {
               const liveData = { ...userSnap.data(), uid: u.uid } as UserProfile;
@@ -3058,30 +3262,49 @@ export function DashboardView({
                 rawAll.push(data);
               });
 
-              // Deduplicate by email (case-insensitive) to resolve email conflict
-              const emailMap: Record<string, UserProfile> = {};
-              rawAll.forEach((u) => {
+              // Preserva cada UID real de forma independente (sem mesclar contas distintas pelo e-mail)
+              // Oculta apenas documentos provisórios (pre_ / separado_) quando já existe um UID real para o mesmo e-mail
+              const realUsers = rawAll.filter(
+                (u) => !isPlaceholderUserDocId(u.uid, u)
+              );
+              const placeholderUsers = rawAll.filter((u) =>
+                isPlaceholderUserDocId(u.uid, u)
+              );
+
+              const realEmailCounts: Record<string, number> = {};
+              realUsers.forEach((u) => {
                 const emailKey = (u.email || "").toLowerCase().trim();
-                if (!emailKey) {
-                  emailMap[u.uid!] = u;
-                  return;
-                }
-                if (emailMap[emailKey]) {
-                  const existing = emailMap[emailKey];
-                  const mergedRoles = Array.from(new Set([...(existing.roles || []), ...(u.roles || [])])) as Role[];
-                  const hasMaster = mergedRoles.includes("master") || existing.role === "master" || u.role === "master";
-                  emailMap[emailKey] = {
-                    ...existing,
-                    ...u,
-                    roles: mergedRoles,
-                    role: hasMaster ? "master" : (existing.role || u.role || "profissional"),
-                  };
-                } else {
-                  emailMap[emailKey] = u;
+                if (emailKey) {
+                  realEmailCounts[emailKey] = (realEmailCounts[emailKey] || 0) + 1;
                 }
               });
 
-              const listAll: UserProfile[] = Object.values(emailMap);
+              const listAll: UserProfile[] = realUsers.map((u) => {
+                const emailKey = (u.email || "").toLowerCase().trim();
+                return {
+                  ...u,
+                  hasDuplicateEmailConflict: Boolean(
+                    emailKey && realEmailCounts[emailKey] > 1
+                  ),
+                };
+              });
+
+              const seenPlaceholderEmails = new Set<string>();
+              placeholderUsers.forEach((pDoc) => {
+                const emailKey = (pDoc.email || "").toLowerCase().trim();
+                if (emailKey && realEmailCounts[emailKey]) {
+                  return;
+                }
+                if (emailKey) {
+                  if (seenPlaceholderEmails.has(emailKey)) return;
+                  seenPlaceholderEmails.add(emailKey);
+                }
+                listAll.push({
+                  ...pDoc,
+                  isPendingFirstLogin: true,
+                });
+              });
+
               listAll.forEach((data) => {
                 if (isUserProfissional(data)) listProfs.push(data);
               });
@@ -3520,59 +3743,32 @@ export function DashboardView({
     setAuthError("");
     try {
       if (isLogin) {
-        const cred = await signInWithEmailAndPassword(auth, email, password);
-        const userRef = doc(db, "users", cred.user.uid);
-        const snap = await getDoc(userRef);
-        if (snap.exists()) {
-          const d = snap.data();
-          if (d.role === "profissional" && d.ativo === false) {
-            await signOut(auth);
-            setAuthError(
-              "Sua conta está inativa. Entre em contato com a coordenação.",
-            );
-            return;
-          }
-          if (!d.email || (!d.name && cred.user.displayName)) {
-            await updateDoc(userRef, {
-              email: cred.user.email || email,
-              name: d.name || cred.user.displayName || "Usuário",
-            });
-          }
-        } else {
-          // Documento não existe pelo UID - checar por email se foi pré-cadastrado com outro UID
-          const emailQuery = query(
-            collection(db, "users"),
-            where("email", "==", (cred.user.email || email).toLowerCase().trim())
-          );
-          const emailSnap = await getDocs(emailQuery);
-          if (!emailSnap.empty) {
-            const existingDoc = emailSnap.docs[0];
-            const existingData = existingDoc.data();
-            // Migra para o UID atual do Auth
-            await setDoc(userRef, {
-              ...existingData,
-              email: cred.user.email || email,
-            });
-          } else {
-            // Conta não autorizada
-            await signOut(auth);
-            setAuthError(
+        const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
+        const resolved = await resolveSafeDashboardUserProfile(
+          cred.user,
+          cred.user.email || email,
+          false
+        );
+        if (!resolved.profile) {
+          await signOut(auth);
+          setAuthError(
+            resolved.error ||
               "Acesso não autorizado. Sua conta não possui perfil registrado na plataforma. Entre em contato com a coordenação."
-            );
-            return;
-          }
+          );
+          return;
         }
       } else {
         // Bloqueio de auto-registro como master/triagem
         const cred = await createUserWithEmailAndPassword(
           auth,
-          email,
+          email.trim(),
           password,
         );
         await setDoc(doc(db, "users", cred.user.uid), {
           role: "profissional",
+          roles: ["profissional"],
           name,
-          email: cred.user.email || email,
+          email: (cred.user.email || email).toLowerCase().trim(),
           createdAt: new Date(),
         });
       }
@@ -3589,7 +3785,14 @@ export function DashboardView({
         err.code === "auth/wrong-password" ||
         err.code === "auth/invalid-credential"
       ) {
-        setAuthError("E-mail ou senha incorretos.");
+        const typedEmail = email.trim().toLowerCase();
+        if (CONTAS_SEPARACAO_ALVO.has(typedEmail)) {
+          setAuthError(
+            `E-mail ou senha incorretos para ${typedEmail}. Como as contas foram separadas, utilize "Entrar com Google" selecionando ${typedEmail} ou clique em "Esqueci minha senha" para definir uma senha exclusiva desta conta.`
+          );
+        } else {
+          setAuthError("E-mail ou senha incorretos.");
+        }
       } else {
         setAuthError(err.message || "Erro de autenticação.");
       }
@@ -3615,68 +3818,19 @@ export function DashboardView({
         return;
       }
 
-      const userRef = doc(db, "users", result.user.uid);
-      const snap = await getDoc(userRef);
+      const resolved = await resolveSafeDashboardUserProfile(
+        result.user,
+        googleEmail,
+        true
+      );
 
-      if (snap.exists()) {
-        const d = snap.data();
-        if (d.role === "profissional" && d.ativo === false) {
-          await signOut(auth);
-          setAuthError(
-            "Sua conta está inativa. Entre em contato com a coordenação.",
-          );
-          return;
-        }
-        if (!d.email || (!d.name && result.user.displayName)) {
-          await updateDoc(userRef, {
-            email: googleEmail,
-            name: d.name || result.user.displayName || "Usuário",
-          });
-        }
-      } else {
-        // Busca na coleção users se este e-mail já foi pré-cadastrado pela Gestão
-        const emailQuery = query(
-          collection(db, "users"),
-          where("email", "==", googleEmail)
-        );
-        const emailSnap = await getDocs(emailQuery);
-
-        if (emailSnap.empty) {
-          // BARRAGEM DE SEGURANÇA: Usuário desconhecido não pode se auto-cadastrar nem acessar
-          await signOut(auth);
-          setAuthError(
+      if (!resolved.profile) {
+        await signOut(auth);
+        setAuthError(
+          resolved.error ||
             `Acesso não autorizado. O e-mail (${googleEmail}) não possui cadastro prévio na plataforma. Se você é um profissional ou gestor, solicite seu acesso à coordenação.`
-          );
-          return;
-        }
-
-        // Se o e-mail já existia pré-cadastrado com outro ID (ex: gerado provisoriamente), migra/vincula ao UID do Google
-        const preDoc = emailSnap.docs[0];
-        const preData = preDoc.data();
-        
-        if (preData.role === "profissional" && preData.ativo === false) {
-          await signOut(auth);
-          setAuthError(
-            "Sua conta está inativa. Entre em contato com a coordenação.",
-          );
-          return;
-        }
-
-        await setDoc(userRef, {
-          ...preData,
-          email: googleEmail,
-          name: preData.name || result.user.displayName || "Usuário",
-          googleLinked: true,
-          updatedAt: serverTimestamp(),
-        });
-
-        if (preDoc.id !== result.user.uid) {
-          try {
-            await deleteDoc(doc(db, "users", preDoc.id));
-          } catch (e) {
-            console.warn("Erro ao remover documento anterior pré-cadastrado:", e);
-          }
-        }
+        );
+        return;
       }
     } catch (err: any) {
       if (err.code === "auth/unauthorized-domain") {
@@ -3689,7 +3843,7 @@ export function DashboardView({
         );
       } else if (err.code === "auth/account-exists-with-different-credential") {
         setAuthError(
-          "Este e-mail já está vinculado a outra forma de login (como senha). Por favor, use a opção correspondente ou vincule as contas.",
+          "Este e-mail já possui acesso por senha na plataforma. Entre com seu e-mail e senha acima para acessar de forma independente.",
         );
       } else if (
         err.code === "auth/popup-closed-by-user" ||
@@ -3821,10 +3975,758 @@ export function DashboardView({
 
   const [showAccountDetailsModal, setShowAccountDetailsModal] = useState(false);
 
+  // Estados e Motor de Desvinculação / Separação de Contas em Conflito (marciopsi@elosolucoeshumanas.com <-> msr.rocha@gmail.com)
+  const [showSepararContasModal, setShowSepararContasModal] = useState(false);
+  const [isSeparatingAccounts, setIsSeparatingAccounts] = useState(false);
+  const [separacaoFeedback, setSeparacaoFeedback] = useState<{
+    type: "success" | "error" | "info";
+    text: string;
+  } | null>(null);
+  const [separacaoPwdInput, setSeparacaoPwdInput] = useState("");
+  const [separacaoPwdConfirm, setSeparacaoPwdConfirm] = useState("");
+  const [authProviderTick, setAuthProviderTick] = useState(0);
+  const hasAutoSeparatedFirestoreRef = useRef(false);
+  const hasAutoSeparatedAuthRef = useRef(false);
+
   const getLinkedGoogleEmail = (u: FirebaseUser | null | undefined): string => {
     if (!u) return "";
     const googleEntry = u.providerData.find((p) => p.providerId === "google.com");
     return (googleEntry?.email || u.email || "").toLowerCase().trim();
+  };
+
+  const checkEmailOwnedByAnotherUser = async (
+    targetEmailRaw: string,
+    currentUid: string
+  ): Promise<boolean> => {
+    const clean = targetEmailRaw.trim().toLowerCase();
+    if (!clean) return false;
+    const q = query(collection(db, "users"), where("email", "==", clean));
+    const snap = await getDocs(q);
+    return snap.docs.some((d) => d.id !== currentUid);
+  };
+
+  const activeSessionConflictInfo = useMemo(() => {
+    void authProviderTick;
+    const currentAuthUser = auth.currentUser || user;
+    const details = extractAuthProviderDetails(currentAuthUser);
+    const profileEmailNorm = (profile?.email || "").toLowerCase().trim();
+    const emailAnteriorGestao = (
+      (profile as any)?.emailAlteradoPorGestao?.emailAnterior || ""
+    )
+      .toLowerCase()
+      .trim();
+
+    const googleMismatchWithProfile =
+      details.hasGoogle &&
+      Boolean(details.googleEmail) &&
+      Boolean(profileEmailNorm) &&
+      details.googleEmail !== profileEmailNorm;
+
+    const passwordMismatchWithProfile =
+      details.hasPassword &&
+      Boolean(details.passwordEmail) &&
+      Boolean(profileEmailNorm) &&
+      details.passwordEmail !== profileEmailNorm;
+
+    const hasEntangledAuditTrail =
+      CONTAS_SEPARACAO_ALVO.has(profileEmailNorm) &&
+      CONTAS_SEPARACAO_ALVO.has(emailAnteriorGestao) &&
+      profileEmailNorm !== emailAnteriorGestao;
+
+    const hasConflict =
+      details.hasCrossProviderMismatch ||
+      googleMismatchWithProfile ||
+      passwordMismatchWithProfile ||
+      hasEntangledAuditTrail;
+
+    return {
+      ...details,
+      profileEmailNorm,
+      emailAnteriorGestao,
+      googleMismatchWithProfile,
+      passwordMismatchWithProfile,
+      hasEntangledAuditTrail,
+      hasConflict,
+      providerCount: currentAuthUser?.providerData.length || 0,
+    };
+  }, [user, profile, authProviderTick]);
+
+  const runFirestoreAccountsSeparation = async (
+    manualTrigger = false
+  ): Promise<{ actionsTaken: string[]; marcioReady: boolean; msrReady: boolean }> => {
+    const actionsTaken: string[] = [];
+    const isMasterSession = hasUserRole(profile, "master");
+    if (!isMasterSession) {
+      return { actionsTaken, marcioReady: false, msrReady: false };
+    }
+
+    const usersSnap = await getDocs(collection(db, "users"));
+    const docsList: Array<{ uid: string; [key: string]: any }> = usersSnap.docs.map((d) => ({
+      uid: d.id,
+      ...(d.data() as Record<string, any>),
+    }));
+
+    // Busca histórico em auditoria_gestao caso algum UID real tenha sido removido anteriormente
+    const historicalMarcioUids = new Set<string>();
+    const historicalMsrUids = new Set<string>();
+    try {
+      const auditSnap = await getDocs(collection(db, "auditoria_gestao"));
+      auditSnap.forEach((ad) => {
+        const a = ad.data();
+        const uidAlvo = String(a.usuarioAlvoUid || "").trim();
+        const emailAnt = String(a.emailAnterior || "").toLowerCase().trim();
+        const emailNov = String(a.emailNovo || a.usuarioAlvoEmail || "").toLowerCase().trim();
+        if (uidAlvo && !isPlaceholderUserDocId(uidAlvo)) {
+          if (emailAnt === CONTA_GESTAO_MARCIO_EMAIL) {
+            historicalMarcioUids.add(uidAlvo);
+          }
+          if (emailAnt === CONTA_SEPARADA_MSR_EMAIL) {
+            historicalMsrUids.add(uidAlvo);
+          }
+          if (emailNov === CONTA_GESTAO_MARCIO_EMAIL && emailAnt !== CONTA_SEPARADA_MSR_EMAIL) {
+            historicalMarcioUids.add(uidAlvo);
+          }
+          if (emailNov === CONTA_SEPARADA_MSR_EMAIL && emailAnt !== CONTA_GESTAO_MARCIO_EMAIL) {
+            historicalMsrUids.add(uidAlvo);
+          }
+        }
+      });
+    } catch (auditReadErr) {
+      console.warn("Aviso ao consultar auditoria_gestao para separação:", auditReadErr);
+    }
+
+    const realDocs = docsList.filter((d) => !isPlaceholderUserDocId(d.uid, d));
+    const placeholderDocs = docsList.filter((d) => isPlaceholderUserDocId(d.uid, d));
+
+    let realMarcioDocs = realDocs.filter(
+      (d) => (d.email || "").toLowerCase().trim() === CONTA_GESTAO_MARCIO_EMAIL
+    );
+    let realMsrDocs = realDocs.filter(
+      (d) => (d.email || "").toLowerCase().trim() === CONTA_SEPARADA_MSR_EMAIL
+    );
+
+    // 1. Se houver 2 UIDs reais com o mesmo e-mail (marciopsi ou msr.rocha), separa-os de forma determinística
+    if (realMarcioDocs.length > 1) {
+      const sorted = [...realMarcioDocs].sort((a, b) => {
+        const aWasMsr =
+          (a.emailAlteradoPorGestao?.emailAnterior || "").toLowerCase().trim() ===
+            CONTA_SEPARADA_MSR_EMAIL || historicalMsrUids.has(a.uid);
+        const bWasMsr =
+          (b.emailAlteradoPorGestao?.emailAnterior || "").toLowerCase().trim() ===
+            CONTA_SEPARADA_MSR_EMAIL || historicalMsrUids.has(b.uid);
+        if (aWasMsr !== bWasMsr) return aWasMsr ? 1 : -1;
+        return 0;
+      });
+      const keepMarcio = sorted[0];
+      const moveMsrList = sorted.slice(1);
+      for (const dup of moveMsrList) {
+        if (realMsrDocs.length === 0) {
+          await updateDoc(doc(db, "users", dup.uid), {
+            email: CONTA_SEPARADA_MSR_EMAIL,
+            emailAlteradoPorGestao: null,
+            conflitoContasSeparadoEm: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+          dup.email = CONTA_SEPARADA_MSR_EMAIL;
+          realMsrDocs.push(dup);
+          actionsTaken.push(
+            `UID ${dup.uid.slice(0, 8)}... reatribuído exclusivamente para ${CONTA_SEPARADA_MSR_EMAIL}.`
+          );
+        }
+      }
+      realMarcioDocs = [keepMarcio];
+    }
+
+    if (realMsrDocs.length > 1) {
+      const sorted = [...realMsrDocs].sort((a, b) => {
+        const aWasMarcio =
+          (a.emailAlteradoPorGestao?.emailAnterior || "").toLowerCase().trim() ===
+            CONTA_GESTAO_MARCIO_EMAIL || historicalMarcioUids.has(a.uid);
+        const bWasMarcio =
+          (b.emailAlteradoPorGestao?.emailAnterior || "").toLowerCase().trim() ===
+            CONTA_GESTAO_MARCIO_EMAIL || historicalMarcioUids.has(b.uid);
+        if (aWasMarcio !== bWasMarcio) return aWasMarcio ? -1 : 1;
+        return 0;
+      });
+      const candidateMarcio = sorted[0];
+      if (realMarcioDocs.length === 0) {
+        const mergedRoles: Role[] = Array.from(
+          new Set<Role>([
+            "master",
+            "profissional",
+            ...(Array.isArray(candidateMarcio.roles) ? candidateMarcio.roles : []),
+          ])
+        );
+        await updateDoc(doc(db, "users", candidateMarcio.uid), {
+          email: CONTA_GESTAO_MARCIO_EMAIL,
+          role: "master",
+          roles: mergedRoles,
+          emailAlteradoPorGestao: null,
+          conflitoContasSeparadoEm: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+        candidateMarcio.email = CONTA_GESTAO_MARCIO_EMAIL;
+        realMarcioDocs.push(candidateMarcio);
+        realMsrDocs = sorted.slice(1);
+        actionsTaken.push(
+          `UID ${candidateMarcio.uid.slice(0, 8)}... restaurado para ${CONTA_GESTAO_MARCIO_EMAIL}.`
+        );
+      }
+    }
+
+    // 2. Promove restauração pendente de Gestão em marciopsi@elosolucoeshumanas.com e limpa rastros cruzados
+    for (const mDoc of realMarcioDocs) {
+      const mRoles: Role[] = Array.isArray(mDoc.roles) ? mDoc.roles : [mDoc.role || "profissional"];
+      const needsMasterRole = !mRoles.includes("master") || mDoc.role !== "master" || Boolean(mDoc.rolesPendentesRestauracao);
+      const hadCrossRef =
+        (mDoc.emailAlteradoPorGestao?.emailAnterior || "").toLowerCase().trim() ===
+        CONTA_SEPARADA_MSR_EMAIL;
+      if (needsMasterRole || hadCrossRef) {
+        const nextRoles: Role[] = Array.from(
+          new Set<Role>(["master", "profissional", ...mRoles])
+        );
+        await updateDoc(doc(db, "users", mDoc.uid), {
+          role: "master",
+          roles: nextRoles,
+          rolesPendentesRestauracao: null,
+          ...(hadCrossRef ? { emailAlteradoPorGestao: null } : {}),
+          conflitoContasSeparadoEm: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+        actionsTaken.push(
+          `Permissões e vínculo limpos na conta ${CONTA_GESTAO_MARCIO_EMAIL}.`
+        );
+      }
+    }
+
+    for (const sDoc of realMsrDocs) {
+      const hadCrossRef =
+        (sDoc.emailAlteradoPorGestao?.emailAnterior || "").toLowerCase().trim() ===
+        CONTA_GESTAO_MARCIO_EMAIL;
+      if (hadCrossRef) {
+        await updateDoc(doc(db, "users", sDoc.uid), {
+          emailAlteradoPorGestao: null,
+          conflitoContasSeparadoEm: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+        actionsTaken.push(
+          `Histórico de vínculo cruzado removido da conta ${CONTA_SEPARADA_MSR_EMAIL}.`
+        );
+      }
+    }
+
+    // 3. Remove placeholders obsoletos quando o UID real já assumiu o respectivo e-mail
+    for (const pDoc of placeholderDocs) {
+      const pEmail = (pDoc.email || "").toLowerCase().trim();
+      if (
+        (pEmail === CONTA_GESTAO_MARCIO_EMAIL && realMarcioDocs.length > 0) ||
+        (pEmail === CONTA_SEPARADA_MSR_EMAIL && realMsrDocs.length > 0)
+      ) {
+        try {
+          await deleteDoc(doc(db, "users", pDoc.uid));
+          actionsTaken.push(`Pré-cadastro temporário (${pDoc.uid}) consolidado.`);
+        } catch {}
+      }
+    }
+
+    // 4. Garante que marciopsi@elosolucoeshumanas.com tenha seu próprio documento independente
+    let marcioReady = realMarcioDocs.length > 0;
+    if (!marcioReady) {
+      const existingMarcioPlaceholder = placeholderDocs.find(
+        (p) => (p.email || "").toLowerCase().trim() === CONTA_GESTAO_MARCIO_EMAIL
+      );
+      const existingUidSet = new Set(docsList.map((d) => d.uid));
+      const recoverableMarcioUid = Array.from(historicalMarcioUids).find(
+        (id) => !existingUidSet.has(id)
+      );
+
+      if (recoverableMarcioUid) {
+        await setDoc(doc(db, "users", recoverableMarcioUid), {
+          name: "Márcio Rocha (Gestão)",
+          email: CONTA_GESTAO_MARCIO_EMAIL,
+          role: "master",
+          roles: ["master", "profissional"],
+          ativo: true,
+          googleLinked: false,
+          modalidadeCredencial: "cortesia_plena",
+          isentoCobranca: true,
+          conflitoContasSeparadoEm: serverTimestamp(),
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+        marcioReady = true;
+        actionsTaken.push(
+          `Cadastro independente restaurado no UID original de ${CONTA_GESTAO_MARCIO_EMAIL}.`
+        );
+      } else if (!existingMarcioPlaceholder) {
+        await setDoc(doc(db, "users", DOC_SEPARADO_MARCIO_ID), {
+          name: "Márcio Rocha (Gestão)",
+          email: CONTA_GESTAO_MARCIO_EMAIL,
+          role: "master",
+          roles: ["master", "profissional"],
+          ativo: true,
+          preRegistered: true,
+          contaSeparada: true,
+          googleLinked: false,
+          modalidadeCredencial: "cortesia_plena",
+          isentoCobranca: true,
+          conflitoContasSeparadoEm: serverTimestamp(),
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+        marcioReady = true;
+        actionsTaken.push(
+          `Cadastro independente criado para ${CONTA_GESTAO_MARCIO_EMAIL}.`
+        );
+      } else {
+        marcioReady = true;
+      }
+    }
+
+    // 5. Garante que msr.rocha@gmail.com tenha seu próprio documento independente
+    let msrReady = realMsrDocs.length > 0;
+    if (!msrReady) {
+      const existingMsrPlaceholder = placeholderDocs.find(
+        (p) => (p.email || "").toLowerCase().trim() === CONTA_SEPARADA_MSR_EMAIL
+      );
+      const existingUidSet = new Set(docsList.map((d) => d.uid));
+      const recoverableMsrUid = Array.from(historicalMsrUids).find(
+        (id) => !existingUidSet.has(id)
+      );
+
+      if (recoverableMsrUid) {
+        await setDoc(doc(db, "users", recoverableMsrUid), {
+          name: "Márcio Rocha",
+          email: CONTA_SEPARADA_MSR_EMAIL,
+          role: "profissional",
+          roles: ["profissional"],
+          ativo: true,
+          googleLinked: false,
+          modalidadeCredencial: "cortesia_plena",
+          isentoCobranca: true,
+          conflitoContasSeparadoEm: serverTimestamp(),
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+        msrReady = true;
+        actionsTaken.push(
+          `Cadastro independente restaurado no UID próprio de ${CONTA_SEPARADA_MSR_EMAIL}.`
+        );
+      } else if (!existingMsrPlaceholder) {
+        await setDoc(doc(db, "users", DOC_SEPARADO_MSR_ID), {
+          name: "Márcio Rocha",
+          email: CONTA_SEPARADA_MSR_EMAIL,
+          role: "profissional",
+          roles: ["profissional"],
+          ativo: true,
+          preRegistered: true,
+          contaSeparada: true,
+          googleLinked: false,
+          modalidadeCredencial: "cortesia_plena",
+          isentoCobranca: true,
+          conflitoContasSeparadoEm: serverTimestamp(),
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+        msrReady = true;
+        actionsTaken.push(
+          `Cadastro independente criado para ${CONTA_SEPARADA_MSR_EMAIL}.`
+        );
+      } else {
+        msrReady = true;
+      }
+    }
+
+    if (actionsTaken.length > 0 || manualTrigger) {
+      try {
+        await addDoc(collection(db, "auditoria_gestao"), {
+          tipo: "separacao_contas_conflitantes",
+          contasSeparadas: [CONTA_GESTAO_MARCIO_EMAIL, CONTA_SEPARADA_MSR_EMAIL],
+          acoes: actionsTaken,
+          manualTrigger,
+          executadoPorUid: auth.currentUser?.uid || "",
+          executadoPorEmail: auth.currentUser?.email || profile?.email || "",
+          data: serverTimestamp(),
+        });
+      } catch {}
+    }
+
+    return { actionsTaken, marcioReady, msrReady };
+  };
+
+  // Auto-reconciliação segura no Firestore ao abrir sessão Master
+  useEffect(() => {
+    if (hasAutoSeparatedFirestoreRef.current) return;
+    if (!profile || !hasUserRole(profile, "master") || allUsers.length === 0) return;
+
+    const marcioExists = allUsers.some(
+      (u) => (u.email || "").toLowerCase().trim() === CONTA_GESTAO_MARCIO_EMAIL
+    );
+    const msrExists = allUsers.some(
+      (u) => (u.email || "").toLowerCase().trim() === CONTA_SEPARADA_MSR_EMAIL
+    );
+    const anyDuplicateConflict = allUsers.some((u) => Boolean(u.hasDuplicateEmailConflict));
+    const anyPendingRestore = allUsers.some((u) => Boolean((u as any).rolesPendentesRestauracao));
+    const anyCrossAuditTrail = allUsers.some((u) => {
+      const em = (u.email || "").toLowerCase().trim();
+      const ant = ((u as any).emailAlteradoPorGestao?.emailAnterior || "")
+        .toLowerCase()
+        .trim();
+      return (
+        CONTAS_SEPARACAO_ALVO.has(em) &&
+        CONTAS_SEPARACAO_ALVO.has(ant) &&
+        em !== ant
+      );
+    });
+
+    hasAutoSeparatedFirestoreRef.current = true;
+    if (
+      !marcioExists ||
+      !msrExists ||
+      anyDuplicateConflict ||
+      anyPendingRestore ||
+      anyCrossAuditTrail
+    ) {
+      runFirestoreAccountsSeparation(false)
+        .then((res) => {
+          if (res.actionsTaken.length > 0) {
+            showToast(
+              "Contas marciopsi@elosolucoeshumanas.com e msr.rocha@gmail.com separadas em cadastros independentes!",
+              "success"
+            );
+          }
+        })
+        .catch((err) => {
+          console.warn("Aviso na separação automática de cadastros:", err);
+        });
+    }
+  }, [profile, allUsers]);
+
+  // Auto-desvinculação segura no Firebase Auth caso AMBOS os provedores (senha + Google) estejam presos no mesmo UID
+  useEffect(() => {
+    if (hasAutoSeparatedAuthRef.current) return;
+    const currentUser = auth.currentUser;
+    if (!currentUser || !profile) return;
+
+    const details = extractAuthProviderDetails(currentUser);
+    if (!details.involvesSeparatedPair || currentUser.providerData.length < 2) {
+      return;
+    }
+
+    hasAutoSeparatedAuthRef.current = true;
+    (async () => {
+      try {
+        const otherRealMarcio = allUsers.some(
+          (u) =>
+            u.uid !== currentUser.uid &&
+            !isPlaceholderUserDocId(u.uid, u) &&
+            (u.email || "").toLowerCase().trim() === CONTA_GESTAO_MARCIO_EMAIL
+        );
+        const keepEmail = otherRealMarcio
+          ? CONTA_SEPARADA_MSR_EMAIL
+          : CONTA_GESTAO_MARCIO_EMAIL;
+
+        const providerToUnlink = currentUser.providerData.find(
+          (p) =>
+            (p.email || "").toLowerCase().trim() &&
+            (p.email || "").toLowerCase().trim() !== keepEmail
+        );
+
+        if (providerToUnlink) {
+          await unlink(currentUser, providerToUnlink.providerId);
+          const keptHasGoogle = currentUser.providerData.some(
+            (p) =>
+              p.providerId !== providerToUnlink.providerId &&
+              p.providerId === "google.com"
+          );
+          await updateDoc(doc(db, "users", currentUser.uid), {
+            email: keepEmail,
+            googleLinked: keptHasGoogle,
+            emailAlteradoPorGestao: null,
+            conflitoContasSeparadoEm: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+          setProfile((prev) =>
+            prev
+              ? { ...prev, email: keepEmail, googleLinked: keptHasGoogle, emailAlteradoPorGestao: null }
+              : prev
+          );
+          setAuthProviderTick((t) => t + 1);
+          await runFirestoreAccountsSeparation(false);
+          showToast(
+            `Provedor cruzado desvinculado! ${CONTA_GESTAO_MARCIO_EMAIL} e ${CONTA_SEPARADA_MSR_EMAIL} agora estão 100% separados.`,
+            "success"
+          );
+        }
+      } catch (autoUnlinkErr) {
+        console.warn("Aviso ao desvincular provedor cruzado automaticamente:", autoUnlinkErr);
+      }
+    })();
+  }, [user, profile, allUsers.length]);
+
+  const handleExecutarSeparacaoCompleta = async () => {
+    setSeparacaoFeedback(null);
+    setIsSeparatingAccounts(true);
+    try {
+      const currentUser = auth.currentUser;
+      const messages: string[] = [];
+
+      if (currentUser && currentUser.providerData.length >= 2) {
+        const details = extractAuthProviderDetails(currentUser);
+        if (details.hasCrossProviderMismatch) {
+          const otherRealMarcio = allUsers.some(
+            (u) =>
+              u.uid !== currentUser.uid &&
+              !isPlaceholderUserDocId(u.uid, u) &&
+              (u.email || "").toLowerCase().trim() === CONTA_GESTAO_MARCIO_EMAIL
+          );
+          const keepEmail = details.involvesSeparatedPair
+            ? otherRealMarcio
+              ? CONTA_SEPARADA_MSR_EMAIL
+              : CONTA_GESTAO_MARCIO_EMAIL
+            : (profile?.email || details.primaryEmail).toLowerCase().trim();
+
+          const providerToRemove = currentUser.providerData.find(
+            (p) =>
+              (p.email || "").toLowerCase().trim() &&
+              (p.email || "").toLowerCase().trim() !== keepEmail
+          );
+          if (providerToRemove) {
+            await unlink(currentUser, providerToRemove.providerId);
+            const keptHasGoogle = currentUser.providerData.some(
+              (p) =>
+                p.providerId !== providerToRemove.providerId &&
+                p.providerId === "google.com"
+            );
+            await updateDoc(doc(db, "users", currentUser.uid), {
+              email: keepEmail,
+              googleLinked: keptHasGoogle,
+              emailAlteradoPorGestao: null,
+              conflitoContasSeparadoEm: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            });
+            setProfile((prev) =>
+              prev
+                ? { ...prev, email: keepEmail, googleLinked: keptHasGoogle, emailAlteradoPorGestao: null }
+                : prev
+            );
+            setAuthProviderTick((t) => t + 1);
+            messages.push(
+              `Vínculo cruzado (${providerToRemove.email}) removido do seu UID atual.`
+            );
+          }
+        }
+      }
+
+      const fsResult = await runFirestoreAccountsSeparation(true);
+      messages.push(...fsResult.actionsTaken);
+
+      if (messages.length === 0) {
+        setSeparacaoFeedback({
+          type: "success",
+          text: `Verificação concluída: ${CONTA_GESTAO_MARCIO_EMAIL} e ${CONTA_SEPARADA_MSR_EMAIL} já estão em cadastros separados e independentes.`,
+        });
+      } else {
+        setSeparacaoFeedback({
+          type: "success",
+          text: `Separação concluída com sucesso! ${messages.join(" ")}`,
+        });
+      }
+      showToast("Contas verificadas e separadas com sucesso!", "success");
+    } catch (err: any) {
+      console.error("Erro ao executar separação de contas:", err);
+      setSeparacaoFeedback({
+        type: "error",
+        text: err?.message || "Não foi possível concluir a separação automática.",
+      });
+    } finally {
+      setIsSeparatingAccounts(false);
+    }
+  };
+
+  // Caso especial: UID atual possui APENAS 1 provedor (google.com = msr.rocha@gmail.com) e o titular deseja manter este UID como marciopsi@elosolucoeshumanas.com via senha própria
+  const handleSepararMantendoMarcioComSenha = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSeparacaoFeedback(null);
+    if (!auth.currentUser) return;
+    if (separacaoPwdInput.length < 6) {
+      setSeparacaoFeedback({
+        type: "error",
+        text: "Defina uma senha com pelo menos 6 caracteres para a conta marciopsi@elosolucoeshumanas.com.",
+      });
+      return;
+    }
+    if (separacaoPwdInput !== separacaoPwdConfirm) {
+      setSeparacaoFeedback({
+        type: "error",
+        text: "A confirmação da senha não coincide.",
+      });
+      return;
+    }
+
+    setIsSeparatingAccounts(true);
+    try {
+      const currentGoogle = getLinkedGoogleEmail(auth.currentUser);
+      const cred = EmailAuthProvider.credential(
+        CONTA_GESTAO_MARCIO_EMAIL,
+        separacaoPwdInput
+      );
+      try {
+        await linkWithCredential(auth.currentUser, cred);
+      } catch (linkErr: any) {
+        if (linkErr?.code === "auth/requires-recent-login" && currentGoogle) {
+          const gProv = new GoogleAuthProvider();
+          gProv.setCustomParameters({
+            prompt: "select_account",
+            login_hint: currentGoogle,
+          });
+          await reauthenticateWithPopup(auth.currentUser, gProv);
+          await linkWithCredential(auth.currentUser, cred);
+        } else if (linkErr?.code !== "auth/provider-already-linked") {
+          throw linkErr;
+        }
+      }
+
+      if (auth.currentUser.providerData.some((p) => p.providerId === "google.com")) {
+        await unlink(auth.currentUser, "google.com");
+      }
+
+      await updateDoc(doc(db, "users", auth.currentUser.uid), {
+        email: CONTA_GESTAO_MARCIO_EMAIL,
+        googleLinked: false,
+        emailAlteradoPorGestao: null,
+        conflitoContasSeparadoEm: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      setProfile((prev) =>
+        prev
+          ? {
+              ...prev,
+              email: CONTA_GESTAO_MARCIO_EMAIL,
+              googleLinked: false,
+              emailAlteradoPorGestao: null,
+            }
+          : prev
+      );
+      setAuthProviderTick((t) => t + 1);
+      await runFirestoreAccountsSeparation(true);
+      setSeparacaoPwdInput("");
+      setSeparacaoPwdConfirm("");
+      setSeparacaoFeedback({
+        type: "success",
+        text: `Pronto! Este painel agora pertence exclusivamente a ${CONTA_GESTAO_MARCIO_EMAIL} (acesso por senha) e o Google ${CONTA_SEPARADA_MSR_EMAIL} foi 100% liberado em cadastro separado.`,
+      });
+      showToast("Contas desvinculadas com sucesso!", "success");
+    } catch (err: any) {
+      setSeparacaoFeedback({
+        type: "error",
+        text: formatAuthEmailError(err, getLinkedGoogleEmail(auth.currentUser)),
+      });
+    } finally {
+      setIsSeparatingAccounts(false);
+    }
+  };
+
+  // Caso especial: manter este UID exclusivamente para o e-mail Google já conectado (ex: msr.rocha@gmail.com) e garantir marciopsi em outro cadastro separado
+  const handleSepararAlinhandoUidAoGoogleAtual = async () => {
+    setSeparacaoFeedback(null);
+    if (!auth.currentUser) return;
+    const gEmail = getLinkedGoogleEmail(auth.currentUser);
+    if (!gEmail) return;
+
+    setIsSeparatingAccounts(true);
+    try {
+      // Se houver senha de outro e-mail presa junto ao Google, remove o provedor password cruzado
+      const pwdEntry = auth.currentUser.providerData.find(
+        (p) => p.providerId === "password"
+      );
+      if (pwdEntry && (pwdEntry.email || "").toLowerCase().trim() !== gEmail) {
+        await unlink(auth.currentUser, "password");
+      }
+
+      await updateDoc(doc(db, "users", auth.currentUser.uid), {
+        email: gEmail,
+        googleLinked: true,
+        emailAlteradoPorGestao: null,
+        conflitoContasSeparadoEm: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      setProfile((prev) =>
+        prev
+          ? { ...prev, email: gEmail, googleLinked: true, emailAlteradoPorGestao: null }
+          : prev
+      );
+      setAuthProviderTick((t) => t + 1);
+      await runFirestoreAccountsSeparation(true);
+      setSeparacaoFeedback({
+        type: "success",
+        text: `Este UID foi alinhado exclusivamente a ${gEmail}, e a outra conta permanece independente em cadastro próprio!`,
+      });
+      showToast("Vínculo ajustado e contas separadas!", "success");
+    } catch (err: any) {
+      setSeparacaoFeedback({
+        type: "error",
+        text: formatAuthEmailError(err),
+      });
+    } finally {
+      setIsSeparatingAccounts(false);
+    }
+  };
+
+  // Botão rápido para desvincular Google cruzado quando o usuário já tem senha no UID atual
+  const handleUnlinkConflictingGoogleProvider = async () => {
+    if (!auth.currentUser) return;
+    const details = extractAuthProviderDetails(auth.currentUser);
+    if (!details.hasPassword) {
+      setSeparacaoFeedback(null);
+      setShowAccountDetailsModal(false);
+      setShowSepararContasModal(true);
+      return;
+    }
+
+    setIsSeparatingAccounts(true);
+    try {
+      const targetKeepEmail = (
+        details.passwordEmail ||
+        details.primaryEmail ||
+        profile?.email ||
+        ""
+      )
+        .toLowerCase()
+        .trim();
+      await unlink(auth.currentUser, "google.com");
+      if (targetKeepEmail) {
+        await updateDoc(doc(db, "users", auth.currentUser.uid), {
+          email: targetKeepEmail,
+          googleLinked: false,
+          emailAlteradoPorGestao: null,
+          conflitoContasSeparadoEm: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+        setProfile((prev) =>
+          prev
+            ? {
+                ...prev,
+                email: targetKeepEmail,
+                googleLinked: false,
+                emailAlteradoPorGestao: null,
+              }
+            : prev
+        );
+      }
+      setAuthProviderTick((t) => t + 1);
+      if (hasUserRole(profile, "master")) {
+        await runFirestoreAccountsSeparation(false);
+      }
+      showToast(
+        `Conta Google (${details.googleEmail}) desvinculada com sucesso!`,
+        "success"
+      );
+    } catch (err: any) {
+      showToast(formatAuthEmailError(err), "error");
+    } finally {
+      setIsSeparatingAccounts(false);
+    }
   };
 
   const formatAuthEmailError = (err: any, expectedGoogleEmail?: string): string => {
@@ -3849,7 +4751,7 @@ export function DashboardView({
       code === "auth/credential-already-in-use" ||
       code === "auth/account-exists-with-different-credential"
     ) {
-      return "Este e-mail ou conta Google já está vinculado a outro cadastro na plataforma.";
+      return "Este e-mail ou conta Google já está vinculado a outro cadastro independente na plataforma.";
     }
     if (code === "auth/requires-recent-login") {
       return "Por segurança, sua sessão precisa ser revalidada. Confirme sua identidade novamente para prosseguir.";
@@ -3911,6 +4813,18 @@ export function DashboardView({
       setChangeEmailError("O novo e-mail Google informado é igual à conta Google já conectada.");
       return;
     }
+    if (hintNewEmail) {
+      const ownedElsewhere = await checkEmailOwnedByAnotherUser(
+        hintNewEmail,
+        auth.currentUser.uid
+      );
+      if (ownedElsewhere) {
+        setChangeEmailError(
+          `O e-mail ${hintNewEmail} já pertence a outro cadastro separado na plataforma. Mantenha as contas desvinculadas.`
+        );
+        return;
+      }
+    }
 
     const googleProvider = new GoogleAuthProvider();
     googleProvider.setCustomParameters({
@@ -3961,6 +4875,25 @@ export function DashboardView({
         return;
       }
 
+      // Impede colisão de dois cadastros distintos caso o novo Google já pertença a outro usuário na coleção users
+      const ownedElsewhere = await checkEmailOwnedByAnotherUser(
+        linkedEmail,
+        linkRes.user.uid
+      );
+      if (ownedElsewhere) {
+        if (linkRes.user.providerData.length >= 2) {
+          try {
+            await unlink(linkRes.user, "google.com");
+          } catch {}
+        }
+        setAuthProviderTick((t) => t + 1);
+        setChangeEmailError(
+          `A conta ${linkedEmail} já possui um cadastro próprio e separado na plataforma. Não é permitido unificar os dois e-mails no mesmo UID.`
+        );
+        setIsChangingEmail(false);
+        return;
+      }
+
       if ((linkRes.user.email || "").toLowerCase().trim() !== linkedEmail) {
         try {
           await updateEmail(linkRes.user, linkedEmail);
@@ -3983,6 +4916,7 @@ export function DashboardView({
       if (profile) {
         setProfile({ ...profile, email: linkedEmail });
       }
+      setAuthProviderTick((t) => t + 1);
 
       try {
         await addDoc(collection(db, "auditoria_gestao"), {
@@ -4047,6 +4981,7 @@ export function DashboardView({
           setProfile({ ...profile, email: restoredEmail });
         }
       }
+      setAuthProviderTick((t) => t + 1);
       setPendingUnlinkedGoogleEmail("");
       setGoogleSwitchStep(1);
       showToast("Conta Google anterior mantida com segurança.", "success");
@@ -4125,6 +5060,19 @@ export function DashboardView({
         await reauthenticateWithPopup(auth.currentUser, googleProvider);
       }
 
+      // Impede sobrescrever com um e-mail que já pertence a outro cadastro separado
+      const ownedElsewhere = await checkEmailOwnedByAnotherUser(
+        newEmailClean,
+        auth.currentUser.uid
+      );
+      if (ownedElsewhere) {
+        setChangeEmailError(
+          `O endereço ${newEmailClean} já pertence a outra conta cadastrada na plataforma. Mantenha os cadastros separados ou informe outro e-mail.`
+        );
+        setIsChangingEmail(false);
+        return;
+      }
+
       // Executa a atualização no Firebase Auth
       let updatedDirectly = false;
       try {
@@ -4135,7 +5083,6 @@ export function DashboardView({
           updatedDirectly = true;
         }
       } catch (authErr: any) {
-        // Só faz fallback para updateEmail caso verifyBeforeUpdateEmail não seja suportado; caso contrário preserva o erro real
         if (authErr?.code === "auth/operation-not-allowed") {
           await updateEmail(auth.currentUser, newEmailClean);
           updatedDirectly = true;
@@ -4144,17 +5091,24 @@ export function DashboardView({
         }
       }
 
-      // Atualiza o documento no Firestore
+      // Só grava o novo e-mail definitivamente em users/{uid} quando updateEmail foi imediato; se aguarda link, registra como emailPendenteVerificacao para não causar conflito antes da confirmação
       const userRef = doc(db, "users", auth.currentUser.uid);
-      await updateDoc(userRef, {
-        email: newEmailClean,
-        emailUpdatedAt: serverTimestamp(),
-      });
-
-      // Atualiza estado local
-      if (profile) {
-        setProfile({ ...profile, email: newEmailClean });
+      if (updatedDirectly) {
+        await updateDoc(userRef, {
+          email: newEmailClean,
+          emailPendenteVerificacao: null,
+          emailUpdatedAt: serverTimestamp(),
+        });
+        if (profile) {
+          setProfile({ ...profile, email: newEmailClean });
+        }
+      } else {
+        await updateDoc(userRef, {
+          emailPendenteVerificacao: newEmailClean,
+          emailUpdatedAt: serverTimestamp(),
+        });
       }
+      setAuthProviderTick((t) => t + 1);
 
       // Registra auditoria
       try {
@@ -4164,6 +5118,7 @@ export function DashboardView({
           usuarioAlvoNome: profile?.name || "Usuário",
           emailAnterior: currentEmail,
           emailNovo: newEmailClean,
+          confirmacaoImediata: updatedDirectly,
           executadoPorUid: auth.currentUser.uid,
           executadoPorEmail: currentEmail,
           data: serverTimestamp(),
@@ -4175,9 +5130,14 @@ export function DashboardView({
       setChangeEmailSuccess(
         updatedDirectly
           ? "E-mail de acesso atualizado com sucesso no seu perfil e no login!"
-          : `E-mail atualizado no seu perfil! Um link de confirmação foi enviado para ${newEmailClean} para concluir a ativação no login por senha.`
+          : `Um link de confirmação foi enviado para ${newEmailClean}. Assim que você confirmar no link recebido, o novo e-mail passará a valer no login sem afetar outras contas.`
       );
-      showToast("E-mail de acesso atualizado com sucesso!", "success");
+      showToast(
+        updatedDirectly
+          ? "E-mail de acesso atualizado com sucesso!"
+          : `Link de confirmação enviado para ${newEmailClean}!`,
+        "success"
+      );
 
       setTimeout(() => {
         setShowChangeEmailModal(false);
@@ -4222,6 +5182,7 @@ export function DashboardView({
     try {
       const cred = EmailAuthProvider.credential(targetEmail, newDirectPassword);
       await linkWithCredential(auth.currentUser, cred);
+      setAuthProviderTick((t) => t + 1);
       showToast("Senha de acesso direto criada com sucesso! Agora você pode entrar com Google ou com sua senha.", "success");
       setShowCreatePasswordModal(false);
       setNewDirectPassword("");
@@ -4264,6 +5225,7 @@ export function DashboardView({
       await reauthenticateWithPopup(auth.currentUser, googleProvider);
       const cred = EmailAuthProvider.credential(targetEmail, newDirectPassword);
       await linkWithCredential(auth.currentUser, cred);
+      setAuthProviderTick((t) => t + 1);
       setDirectPasswordNeedsReauth(false);
       showToast("Senha de acesso direto criada com sucesso! Agora você pode entrar com Google ou com sua senha.", "success");
       setShowCreatePasswordModal(false);
@@ -4353,6 +5315,18 @@ export function DashboardView({
     setApoioSuccessMessage("");
 
     try {
+      const ownedElsewhere = await checkEmailOwnedByAnotherUser(
+        novoEmailClean,
+        selectedUserForApoio.uid
+      );
+      if (ownedElsewhere) {
+        setApoioErrorMessage(
+          `O endereço ${novoEmailClean} já está cadastrado em outro usuário na plataforma. Não é permitido vincular dois cadastros ao mesmo e-mail.`
+        );
+        setIsUpdatingEmailFromApoio(false);
+        return;
+      }
+
       const userRef = doc(db, "users", selectedUserForApoio.uid);
       await updateDoc(userRef, {
         email: novoEmailClean,
@@ -4430,7 +5404,7 @@ export function DashboardView({
     if (!profile || !isUserMaster) return;
 
     if (newRoles.length === 0) {
-      alert("É necessário selecionar pelo menos um nível de acesso.");
+      showToast("É necessário selecionar pelo menos um nível de acesso.", "error");
       return;
     }
 
@@ -7683,6 +8657,39 @@ export function DashboardView({
           )}
         </div>
       </nav>
+
+      {/* Alerta de Conflito / Vínculo Cruzado entre Contas na Sessão Atual */}
+      {activeSessionConflictInfo.hasConflict && (
+        <div className="bg-amber-50 border-b border-amber-200 px-4 sm:px-6 py-2.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-amber-950 animate-in fade-in">
+          <div className="flex items-start sm:items-center gap-2.5 min-w-0 flex-1">
+            <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5 sm:mt-0" />
+            <span className="leading-snug">
+              <strong>Vínculo cruzado detectado nesta sessão:</strong> identificamos credenciais misturadas (
+              {[
+                activeSessionConflictInfo.profileEmailNorm,
+                activeSessionConflictInfo.googleEmail,
+                activeSessionConflictInfo.passwordEmail,
+                activeSessionConflictInfo.emailAnteriorGestao,
+              ]
+                .filter(Boolean)
+                .filter((v, idx, arr) => arr.indexOf(v) === idx)
+                .join(" · ")}
+              ). Desvincule agora para manter cada conta independente.
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setSeparacaoFeedback(null);
+              setShowSepararContasModal(true);
+            }}
+            className="px-3.5 py-1.5 bg-amber-800 hover:bg-amber-900 text-white rounded-xl text-xs font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer flex items-center gap-1.5"
+          >
+            <ShieldAlert className="w-3.5 h-3.5" />
+            <span>Desvincular e Separar Contas</span>
+          </button>
+        </div>
+      )}
 
       {/* Professional Subscription Status Banner (Minimizable/Closable) */}
       {currentRole === "profissional" && subscriptionBannerState !== "closed" && (
@@ -15698,7 +16705,7 @@ export function DashboardView({
               <Users className="w-4 h-4 text-forest/70" />
               Níveis de Acesso
             </h2>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-2.5">
               <div className="relative">
                 <Search className="w-3.5 h-3.5 text-forest/40 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
@@ -15719,7 +16726,19 @@ export function DashboardView({
                   </button>
                 )}
               </div>
-              <span className="text-xs font-semibold text-forest/50 bg-warm px-3 py-1 rounded-full uppercase tracking-wider">
+              <button
+                type="button"
+                onClick={() => {
+                  setSeparacaoFeedback(null);
+                  setShowSepararContasModal(true);
+                }}
+                className="px-3 py-1.5 bg-warm hover:bg-forest/10 text-forest border border-soft rounded-xl text-xs font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer flex items-center gap-1.5"
+                title="Verificar e desvincular contas marciopsi@elosolucoeshumanas.com e msr.rocha@gmail.com"
+              >
+                <ShieldCheck className="w-3.5 h-3.5 text-forest/80" />
+                <span>Separar Contas</span>
+              </button>
+              <span className="text-xs font-medium text-forest/60 whitespace-nowrap shrink-0">
                 Gestão
               </span>
             </div>
@@ -15744,15 +16763,38 @@ export function DashboardView({
                   key={u.uid}
                   className="bg-white p-6 rounded-[2rem] shadow-sm border border-soft flex flex-col gap-4"
                 >
-                  <div className="flex items-start justify-between">
+                  <div className="flex items-start justify-between gap-2">
                     <h3 className="font-semibold text-lg text-forest break-words leading-tight">
                       {u.name}
                     </h3>
                   </div>
                   {u.email && (
-                    <div className="text-sm text-forest/70 truncate flex items-center gap-2">
-                      <Mail className="w-4 h-4 shrink-0" />{" "}
-                      <span className="truncate">{u.email}</span>
+                    <div className="flex flex-col gap-1">
+                      <div className="text-sm text-forest/70 truncate flex items-center gap-2">
+                        <Mail className="w-4 h-4 shrink-0" />{" "}
+                        <span className="truncate">{u.email}</span>
+                      </div>
+                      <div className="text-[11px] text-forest/55 flex flex-wrap items-center gap-1.5">
+                        {isPlaceholderUserDocId(u.uid, u) ? (
+                          <span>Cadastro separado · aguardando 1º login</span>
+                        ) : (
+                          <>
+                            <span className="font-mono tabular-nums">
+                              UID: {u.uid?.slice(0, 10)}…
+                            </span>
+                            <span aria-hidden="true">·</span>
+                            <span>
+                              {u.googleLinked ? "Google vinculado" : "E-mail e senha"}
+                            </span>
+                          </>
+                        )}
+                      </div>
+                      {Boolean(u.hasDuplicateEmailConflict) && (
+                        <div className="text-[11px] text-amber-800 font-medium flex items-center gap-1.5 mt-0.5">
+                          <AlertTriangle className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                          <span>E-mail duplicado em mais de um UID — use Separar Contas</span>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -15784,8 +16826,9 @@ export function DashboardView({
                                 let nextRoles = [...uRoles];
                                 if (isChecked) {
                                   if (nextRoles.length <= 1) {
-                                    alert(
+                                    showToast(
                                       "Cada usuário precisa ter pelo menos um nível de acesso.",
+                                      "error",
                                     );
                                     return;
                                   }
@@ -26007,6 +27050,47 @@ export function DashboardView({
               </div>
             </div>
 
+            {activeSessionConflictInfo.hasConflict && (
+              <div className="p-3.5 bg-amber-50/80 rounded-2xl border border-amber-200 flex flex-col gap-2.5 text-xs text-amber-950">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                  <span className="leading-relaxed">
+                    Identificamos um vínculo cruzado nesta sessão (e-mail do perfil{" "}
+                    <strong>{profile?.email}</strong> e provedor{" "}
+                    <strong>
+                      {activeSessionConflictInfo.googleEmail ||
+                        activeSessionConflictInfo.passwordEmail ||
+                        activeSessionConflictInfo.emailAnteriorGestao}
+                    </strong>
+                    ). Você pode separar os dois acessos sem perder dados.
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {activeSessionConflictInfo.hasGoogle && activeSessionConflictInfo.hasPassword && (
+                    <button
+                      type="button"
+                      disabled={isSeparatingAccounts}
+                      onClick={handleUnlinkConflictingGoogleProvider}
+                      className="px-3 py-1.5 bg-amber-800 hover:bg-amber-900 text-white rounded-xl text-xs font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-50"
+                    >
+                      {isSeparatingAccounts ? "Desvinculando..." : "Desvincular Google Cruzado"}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAccountDetailsModal(false);
+                      setSeparacaoFeedback(null);
+                      setShowSepararContasModal(true);
+                    }}
+                    className="px-3 py-1.5 bg-white hover:bg-amber-100/60 text-amber-950 border border-amber-300 rounded-xl text-xs font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                  >
+                    Abrir Painel de Separação
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div className="p-3 bg-sun/10 rounded-2xl border border-sun/30 flex items-start gap-2.5 text-xs text-forest/80 leading-relaxed">
               <Shield className="w-4 h-4 text-sun-dark shrink-0 mt-0.5" />
               <span>
@@ -26026,7 +27110,7 @@ export function DashboardView({
                   setChangeEmailSuccess("");
                   setShowChangeEmailModal(true);
                 }}
-                className="flex-1 py-2.5 px-4 bg-forest hover:bg-forest/90 text-white text-xs font-semibold rounded-xl shadow-xs transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                className="flex-1 py-2.5 px-4 bg-forest hover:bg-forest/90 text-white text-xs font-semibold rounded-xl shadow-xs transition-colors flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap shrink-0"
               >
                 <Edit3 className="w-4 h-4" />
                 <span>Alterar E-mail</span>
@@ -26036,7 +27120,7 @@ export function DashboardView({
                 <button
                   type="button"
                   onClick={handleUserSelfResetPassword}
-                  className="flex-1 py-2.5 px-4 bg-warm hover:bg-forest/10 text-forest text-xs font-semibold rounded-xl border border-soft transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                  className="flex-1 py-2.5 px-4 bg-warm hover:bg-forest/10 text-forest text-xs font-semibold rounded-xl border border-soft transition-colors flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap shrink-0"
                 >
                   <Key className="w-4 h-4 text-forest/70" />
                   <span>Redefinir Senha</span>
@@ -26052,12 +27136,247 @@ export function DashboardView({
                     setDirectPasswordNeedsReauth(false);
                     setShowCreatePasswordModal(true);
                   }}
-                  className="flex-1 py-2.5 px-4 bg-warm hover:bg-forest/10 text-forest text-xs font-semibold rounded-xl border border-soft transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                  className="flex-1 py-2.5 px-4 bg-warm hover:bg-forest/10 text-forest text-xs font-semibold rounded-xl border border-soft transition-colors flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap shrink-0"
                 >
                   <Lock className="w-4 h-4 text-forest/70" />
                   <span>Criar Senha Direta</span>
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Dedicado: Desvinculação e Separação de Contas em Conflito */}
+      {showSepararContasModal && (
+        <div className="fixed inset-0 bg-forest/50 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-xl rounded-3xl p-6 sm:p-8 shadow-2xl border border-soft animate-in fade-in zoom-in-95 duration-200 max-h-[92vh] overflow-y-auto flex flex-col gap-6">
+            <div className="flex items-start justify-between gap-4 border-b border-soft pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-warm flex items-center justify-center text-forest shrink-0">
+                  <ShieldCheck className="w-5 h-5 text-forest" />
+                </div>
+                <div>
+                  <h3 className="font-serif font-bold text-lg sm:text-xl text-forest">
+                    Separação e Desvinculação de Contas
+                  </h3>
+                  <p className="text-xs text-forest/65 mt-0.5">
+                    Independência completa entre {CONTA_GESTAO_MARCIO_EMAIL} e {CONTA_SEPARADA_MSR_EMAIL}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowSepararContasModal(false)}
+                className="p-2 text-forest/40 hover:text-forest hover:bg-warm rounded-full transition-colors cursor-pointer shrink-0"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {separacaoFeedback && (
+              <div
+                className={`p-3.5 rounded-2xl border text-xs flex items-start gap-2.5 leading-relaxed ${
+                  separacaoFeedback.type === "success"
+                    ? "bg-emerald-50 border-emerald-200 text-emerald-950"
+                    : separacaoFeedback.type === "error"
+                      ? "bg-rose-50 border-rose-200 text-rose-950"
+                      : "bg-warm border-soft text-forest"
+                }`}
+              >
+                {separacaoFeedback.type === "success" ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
+                ) : (
+                  <AlertTriangle className="w-4 h-4 text-rose-700 shrink-0 mt-0.5" />
+                )}
+                <span>{separacaoFeedback.text}</span>
+              </div>
+            )}
+
+            {/* Diagnóstico das duas contas no banco de dados */}
+            {hasUserRole(profile, "master") && (() => {
+              const marcioEntries = allUsers.filter(
+                (u) => (u.email || "").toLowerCase().trim() === CONTA_GESTAO_MARCIO_EMAIL
+              );
+              const msrEntries = allUsers.filter(
+                (u) => (u.email || "").toLowerCase().trim() === CONTA_SEPARADA_MSR_EMAIL
+              );
+              const marcioPrimary = marcioEntries[0];
+              const msrPrimary = msrEntries[0];
+
+              return (
+                <div className="divide-y divide-soft border-y border-soft py-1 text-xs">
+                  <div className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="font-semibold text-forest flex items-center gap-1.5">
+                        {marcioPrimary ? (
+                          <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
+                        ) : (
+                          <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0" />
+                        )}
+                        <span className="truncate">{CONTA_GESTAO_MARCIO_EMAIL}</span>
+                      </div>
+                      <div className="text-forest/60 mt-1 flex flex-wrap items-center gap-1.5">
+                        {marcioPrimary ? (
+                          <>
+                            <span>{formatUserRolesLabel(marcioPrimary) || "Gestão + Profissional"}</span>
+                            <span aria-hidden="true">·</span>
+                            <span className="font-mono tabular-nums">
+                              {isPlaceholderUserDocId(marcioPrimary.uid, marcioPrimary)
+                                ? "Aguardando 1º login independente"
+                                : `UID: ${marcioPrimary.uid?.slice(0, 12)}…`}
+                            </span>
+                          </>
+                        ) : (
+                          <span>Sem cadastro separado — clique abaixo para restaurar</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="font-semibold text-forest flex items-center gap-1.5">
+                        {msrPrimary ? (
+                          <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
+                        ) : (
+                          <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0" />
+                        )}
+                        <span className="truncate">{CONTA_SEPARADA_MSR_EMAIL}</span>
+                      </div>
+                      <div className="text-forest/60 mt-1 flex flex-wrap items-center gap-1.5">
+                        {msrPrimary ? (
+                          <>
+                            <span>{formatUserRolesLabel(msrPrimary) || "Profissional"}</span>
+                            <span aria-hidden="true">·</span>
+                            <span className="font-mono tabular-nums">
+                              {isPlaceholderUserDocId(msrPrimary.uid, msrPrimary)
+                                ? "Aguardando 1º login independente"
+                                : `UID: ${msrPrimary.uid?.slice(0, 12)}…`}
+                            </span>
+                          </>
+                        ) : (
+                          <span>Sem cadastro separado — clique abaixo para criar</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Diagnóstico da sessão autenticada neste navegador */}
+            <div className="text-xs text-forest/80 space-y-1.5">
+              <div className="font-semibold text-forest">Sessão conectada neste navegador</div>
+              <div className="flex flex-wrap items-center gap-1.5 text-forest/70">
+                <span>Perfil: <strong>{profile?.email || "—"}</strong></span>
+                <span aria-hidden="true">·</span>
+                <span className="font-mono tabular-nums">UID: {auth.currentUser?.uid?.slice(0, 12)}…</span>
+                {activeSessionConflictInfo.hasPassword && (
+                  <>
+                    <span aria-hidden="true">·</span>
+                    <span>Senha: {activeSessionConflictInfo.passwordEmail || "ativa"}</span>
+                  </>
+                )}
+                {activeSessionConflictInfo.hasGoogle && (
+                  <>
+                    <span aria-hidden="true">·</span>
+                    <span>Google: {activeSessionConflictInfo.googleEmail || "conectado"}</span>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Fluxo assistido quando há APENAS 1 provedor (Google) preso em UID cujo perfil pertence à outra conta */}
+            {activeSessionConflictInfo.hasConflict &&
+              activeSessionConflictInfo.providerCount === 1 &&
+              activeSessionConflictInfo.hasGoogle && (
+                <div className="pt-4 border-t border-soft space-y-4 text-xs">
+                  <p className="text-forest/80 leading-relaxed">
+                    Seu acesso atual possui apenas o login Google (
+                    <strong>{activeSessionConflictInfo.googleEmail}</strong>) conectado neste UID.
+                    Escolha como deseja desvincular definitivamente este UID:
+                  </p>
+
+                  <form onSubmit={handleSepararMantendoMarcioComSenha} className="space-y-3 bg-warm/40 p-4 rounded-2xl border border-soft">
+                    <div className="font-semibold text-forest">
+                      Opção 1: Manter este painel/UID para {CONTA_GESTAO_MARCIO_EMAIL} (acesso por senha) e soltar o Google {activeSessionConflictInfo.googleEmail}
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      <input
+                        type="password"
+                        required
+                        minLength={6}
+                        placeholder="Definir senha (mín. 6 caracteres)"
+                        value={separacaoPwdInput}
+                        onChange={(e) => setSeparacaoPwdInput(e.target.value)}
+                        className="w-full px-3 py-2 bg-white border border-soft rounded-xl text-xs text-forest focus:border-forest outline-none"
+                      />
+                      <input
+                        type="password"
+                        required
+                        minLength={6}
+                        placeholder="Confirmar senha"
+                        value={separacaoPwdConfirm}
+                        onChange={(e) => setSeparacaoPwdConfirm(e.target.value)}
+                        className="w-full px-3 py-2 bg-white border border-soft rounded-xl text-xs text-forest focus:border-forest outline-none"
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={isSeparatingAccounts}
+                      className="px-4 py-2 bg-forest hover:bg-forest/90 text-white rounded-xl text-xs font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-50 flex items-center gap-2"
+                    >
+                      {isSeparatingAccounts && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                      <span>Vincular Senha em {CONTA_GESTAO_MARCIO_EMAIL} e Desvincular Google</span>
+                    </button>
+                  </form>
+
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
+                    <span className="text-forest/75">
+                      <strong>Opção 2:</strong> Manter este UID exclusivamente para{" "}
+                      <strong>{activeSessionConflictInfo.googleEmail}</strong> e deixar{" "}
+                      <strong>{CONTA_GESTAO_MARCIO_EMAIL}</strong> em cadastro separado próprio.
+                    </span>
+                    <button
+                      type="button"
+                      disabled={isSeparatingAccounts}
+                      onClick={handleSepararAlinhandoUidAoGoogleAtual}
+                      className="px-4 py-2 bg-warm hover:bg-forest/10 text-forest border border-soft rounded-xl text-xs font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-50"
+                    >
+                      Deixar este UID com {activeSessionConflictInfo.googleEmail}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 border-t border-soft">
+              <button
+                type="button"
+                onClick={() => setShowSepararContasModal(false)}
+                className="w-full sm:w-auto px-4 py-2.5 bg-warm hover:bg-soft text-forest rounded-xl text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0"
+              >
+                Fechar
+              </button>
+
+              <button
+                type="button"
+                disabled={isSeparatingAccounts}
+                onClick={handleExecutarSeparacaoCompleta}
+                className="w-full sm:w-auto px-5 py-2.5 bg-forest hover:bg-forest/90 text-white rounded-xl text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0 disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {isSeparatingAccounts ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Separando contas...</span>
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="w-4 h-4" />
+                    <span>Verificar e Separar Contas Agora</span>
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>

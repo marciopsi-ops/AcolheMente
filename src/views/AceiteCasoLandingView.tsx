@@ -130,17 +130,149 @@ export function AceiteCasoLandingView({
     window.scrollTo({ top: 0, left: 0, behavior: "instant" });
   }, []);
 
+  const isPlaceholderUserDoc = (docId: string, data?: any): boolean => {
+    return (
+      docId.startsWith("pre_") ||
+      docId.startsWith("separado_") ||
+      Boolean(data?.preRegistered) ||
+      Boolean(data?.contaSeparada)
+    );
+  };
+
+  const SEPARATED_EMAILS_ALLOWLIST = new Set([
+    "marciopsi@elosolucoeshumanas.com",
+    "msr.rocha@gmail.com",
+  ]);
+
+  const resolveOrRecoverSeparatedProfile = async (
+    uid: string,
+    loginEmailRaw: string,
+    displayName?: string | null,
+    isGoogle = false
+  ): Promise<{ profile: any | null; error?: string }> => {
+    const normalizedEmail = (loginEmailRaw || "").toLowerCase().trim();
+    const userRef = doc(db, "users", uid);
+    const snap = await getDoc(userRef);
+
+    if (snap.exists()) {
+      const d = snap.data();
+      if (d.role === "profissional" && d.ativo === false) {
+        return {
+          profile: null,
+          error: "Sua conta está inativa. Entre em contato com a coordenação.",
+        };
+      }
+      return { profile: { uid, ...d } };
+    }
+
+    if (!normalizedEmail) {
+      return {
+        profile: null,
+        error: "Não foi possível identificar o e-mail de autenticação.",
+      };
+    }
+
+    const emailQuery = query(
+      collection(db, "users"),
+      where("email", "==", normalizedEmail)
+    );
+    const emailSnap = await getDocs(emailQuery);
+    const placeholderDoc = emailSnap.docs.find((d) =>
+      isPlaceholderUserDoc(d.id, d.data())
+    );
+
+    if (placeholderDoc) {
+      const preData = placeholderDoc.data();
+      if (preData.role === "profissional" && preData.ativo === false) {
+        return {
+          profile: null,
+          error: "Sua conta está inativa. Entre em contato com a coordenação.",
+        };
+      }
+      const intendedRoles = Array.isArray(preData.roles)
+        ? preData.roles
+        : preData.role
+          ? [preData.role]
+          : ["profissional"];
+      const needsMasterPromotion = intendedRoles.some((r: string) => r !== "profissional");
+
+      const migrated: Record<string, any> = {
+        ...preData,
+        email: normalizedEmail,
+        name: preData.name || displayName || "Profissional",
+        role: "profissional",
+        roles: ["profissional"],
+        preRegistered: false,
+        contaSeparada: false,
+        ...(isGoogle ? { googleLinked: true } : {}),
+        ...(needsMasterPromotion ? { rolesPendentesRestauracao: intendedRoles } : {}),
+        updatedAt: serverTimestamp(),
+      };
+      await setDoc(userRef, migrated);
+      if (placeholderDoc.id !== uid) {
+        try {
+          await deleteDoc(doc(db, "users", placeholderDoc.id));
+        } catch {
+          // Limpeza final será concluída pela sessão de Gestão se necessário
+        }
+      }
+      return { profile: { uid, ...migrated } };
+    }
+
+    if (SEPARATED_EMAILS_ALLOWLIST.has(normalizedEmail)) {
+      const defaultName =
+        displayName ||
+        (normalizedEmail === "marciopsi@elosolucoeshumanas.com"
+          ? "Márcio Rocha (Gestão)"
+          : "Márcio Rocha");
+      const freshSeparated: Record<string, any> = {
+        name: defaultName,
+        email: normalizedEmail,
+        role: "profissional",
+        roles: ["profissional"],
+        ativo: true,
+        googleLinked: isGoogle,
+        separadoDeConflito: true,
+        modalidadeCredencial: "cortesia_plena",
+        isentoCobranca: true,
+        ...(normalizedEmail === "marciopsi@elosolucoeshumanas.com"
+          ? { rolesPendentesRestauracao: ["master", "profissional"] }
+          : {}),
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      };
+      await setDoc(userRef, freshSeparated);
+      return { profile: { uid, ...freshSeparated } };
+    }
+
+    if (!emailSnap.empty) {
+      return {
+        profile: null,
+        error: `O e-mail (${normalizedEmail}) já está associado a outro identificador (UID) na plataforma. Acesse pelo método original dessa conta ou utilize a separação de contas no painel.`,
+      };
+    }
+
+    return {
+      profile: null,
+      error: `O e-mail (${normalizedEmail}) não possui cadastro ativo na plataforma. Acesse com o e-mail credenciado pela coordenação.`,
+    };
+  };
+
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (u) => {
       setAuthUser(u);
       if (u) {
         try {
-          const userSnap = await getDoc(doc(db, "users", u.uid));
-          if (userSnap.exists()) {
-            setUserProfile({ uid: u.uid, ...userSnap.data() });
-          } else {
-            setUserProfile(null);
-          }
+          const googleProvEmail = u.providerData.find(
+            (p) => p.providerId === "google.com"
+          )?.email;
+          const resolved = await resolveOrRecoverSeparatedProfile(
+            u.uid,
+            u.email || googleProvEmail || "",
+            u.displayName,
+            Boolean(googleProvEmail)
+          );
+          setUserProfile(resolved.profile);
         } catch (err) {
           console.error("Erro ao carregar perfil autenticado:", err);
           setUserProfile(null);
@@ -187,12 +319,13 @@ export function AceiteCasoLandingView({
           }
         }
 
-        // Se o profissional logou pela 1ª vez e o card apontava para um ID pré-cadastrado com o mesmo e-mail, sincroniza o UID
+        // Sincroniza UID apenas quando o card apontava para um ID provisório (pré-cadastrado), nunca sobrescrevendo outro UID real
         const authEmailNorm = (authUser.email || "").toLowerCase().trim();
         const assignedEmailNorm = (profDocData?.email || "").toLowerCase().trim();
         if (
           rawCard.profissionalId &&
           rawCard.profissionalId !== authUser.uid &&
+          isPlaceholderUserDoc(rawCard.profissionalId, profDocData) &&
           authEmailNorm &&
           assignedEmailNorm &&
           authEmailNorm === assignedEmailNorm
@@ -237,50 +370,21 @@ export function AceiteCasoLandingView({
     setAuthLoading(true);
     try {
       const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
-      const userRef = doc(db, "users", cred.user.uid);
-      const snap = await getDoc(userRef);
-
-      if (snap.exists()) {
-        const d = snap.data();
-        if (d.role === "profissional" && d.ativo === false) {
-          await signOut(auth);
-          setAuthError("Sua conta está inativa. Entre em contato com a coordenação.");
-          return;
-        }
-        setUserProfile({ uid: cred.user.uid, ...d });
-      } else {
-        const normalizedEmail = (cred.user.email || email).toLowerCase().trim();
-        const emailQuery = query(collection(db, "users"), where("email", "==", normalizedEmail));
-        const emailSnap = await getDocs(emailQuery);
-        if (!emailSnap.empty) {
-          const preDoc = emailSnap.docs[0];
-          const preData = preDoc.data();
-          if (preData.role === "profissional" && preData.ativo === false) {
-            await signOut(auth);
-            setAuthError("Sua conta está inativa. Entre em contato com a coordenação.");
-            return;
-          }
-          const migrated = {
-            ...preData,
-            email: normalizedEmail,
-            name: preData.name || cred.user.displayName || "Profissional",
-            updatedAt: serverTimestamp(),
-          };
-          await setDoc(userRef, migrated);
-          if (preDoc.id !== cred.user.uid) {
-            try {
-              await deleteDoc(doc(db, "users", preDoc.id));
-            } catch {}
-          }
-          setUserProfile({ uid: cred.user.uid, ...migrated });
-        } else {
-          await signOut(auth);
-          setAuthError(
+      const resolved = await resolveOrRecoverSeparatedProfile(
+        cred.user.uid,
+        cred.user.email || email,
+        cred.user.displayName,
+        false
+      );
+      if (!resolved.profile) {
+        await signOut(auth);
+        setAuthError(
+          resolved.error ||
             "Sua conta não possui perfil credenciado na plataforma. Entre em contato com a coordenação."
-          );
-          return;
-        }
+        );
+        return;
       }
+      setUserProfile(resolved.profile);
     } catch (err: any) {
       if (err.code === "auth/wrong-password" || err.code === "auth/invalid-credential") {
         setAuthError("E-mail ou senha incorretos.");
@@ -313,49 +417,21 @@ export function AceiteCasoLandingView({
         return;
       }
 
-      const userRef = doc(db, "users", result.user.uid);
-      const snap = await getDoc(userRef);
-
-      if (snap.exists()) {
-        const d = snap.data();
-        if (d.role === "profissional" && d.ativo === false) {
-          await signOut(auth);
-          setAuthError("Sua conta está inativa. Entre em contato com a coordenação.");
-          return;
-        }
-        setUserProfile({ uid: result.user.uid, ...d });
-      } else {
-        const emailQuery = query(collection(db, "users"), where("email", "==", googleEmail));
-        const emailSnap = await getDocs(emailQuery);
-        if (emailSnap.empty) {
-          await signOut(auth);
-          setAuthError(
+      const resolved = await resolveOrRecoverSeparatedProfile(
+        result.user.uid,
+        googleEmail,
+        result.user.displayName,
+        true
+      );
+      if (!resolved.profile) {
+        await signOut(auth);
+        setAuthError(
+          resolved.error ||
             `O e-mail (${googleEmail}) não possui cadastro na plataforma. Acesse com o e-mail credenciado pela coordenação.`
-          );
-          return;
-        }
-        const preDoc = emailSnap.docs[0];
-        const preData = preDoc.data();
-        if (preData.role === "profissional" && preData.ativo === false) {
-          await signOut(auth);
-          setAuthError("Sua conta está inativa. Entre em contato com a coordenação.");
-          return;
-        }
-        const migrated = {
-          ...preData,
-          email: googleEmail,
-          name: preData.name || result.user.displayName || "Profissional",
-          googleLinked: true,
-          updatedAt: serverTimestamp(),
-        };
-        await setDoc(userRef, migrated);
-        if (preDoc.id !== result.user.uid) {
-          try {
-            await deleteDoc(doc(db, "users", preDoc.id));
-          } catch {}
-        }
-        setUserProfile({ uid: result.user.uid, ...migrated });
+        );
+        return;
       }
+      setUserProfile(resolved.profile);
     } catch (err: any) {
       if (
         err.code === "auth/popup-closed-by-user" ||
