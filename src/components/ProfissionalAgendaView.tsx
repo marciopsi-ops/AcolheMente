@@ -119,14 +119,12 @@ export const minutosParaHora = (mins: number): string => {
 
 export const checarSobreposicaoHorario = (
   inicio1: number,
-  duracao1: number,
+  _duracao1: number,
   inicio2: number,
-  duracao2: number
+  _duracao2: number
 ): boolean => {
-  const fim1 = inicio1 + duracao1;
-  const fim2 = inicio2 + duracao2;
-  // Há sobreposição se um começa antes do outro terminar
-  return inicio1 < fim2 && fim1 > inicio2;
+  // Regra solicitada: para sinalizar conflito, usar sempre a regra mesmo horário + mesmo dia
+  return inicio1 === inicio2;
 };
 
 export type FrequenciaFixaAgenda = "nenhuma" | "semanal" | "quinzenal" | "mensal";
@@ -457,20 +455,16 @@ export function ProfissionalAgendaView({
     const duracaoMin = Number(formDuracao) || 50;
     const ignoreId = selectedAgendamentoParaEditar?.id;
 
-    // Busca agendamentos ativos na mesma data
+    // Busca agendamentos ativos no mesmo dia e mesmo horário
     const conflito = agendamentos.find((a) => {
       if (a.id === ignoreId) return false;
       if (a.data !== formData) return false;
-      // Sessões canceladas liberam o horário
       if (a.status === "cancelada") return false;
-
-      const outroInicio = horaParaMinutos(a.horario);
-      const outraDuracao = a.duracaoMinutos || 50;
-      return checarSobreposicaoHorario(inicioMin, duracaoMin, outroInicio, outraDuracao);
+      return a.horario === formHorario;
     });
 
     return conflito || null;
-  }, [formData, formHorario, formDuracao, selectedAgendamentoParaEditar, agendamentos]);
+  }, [formData, formHorario, selectedAgendamentoParaEditar, agendamentos]);
 
   // Datas calculadas da recorrência quando o profissional escolhe fixar na agenda
   const vaiGerarSerieFixa = useMemo(() => {
@@ -497,9 +491,7 @@ export function ProfissionalAgendaView({
       const conflito = agendamentos.find((a) => {
         if (a.data !== proximaDataStr) return false;
         if (a.status === "cancelada") return false;
-        const outroInicio = horaParaMinutos(a.horario);
-        const outraDuracao = a.duracaoMinutos || 50;
-        return checarSobreposicaoHorario(inicioMin, duracaoMin, outroInicio, outraDuracao);
+        return a.horario === formHorario;
       });
 
       if (conflito) {
@@ -525,9 +517,7 @@ export function ProfissionalAgendaView({
       if (a.id === agendamento.id) return false;
       if (a.data !== targetData) return false;
       if (a.status === "cancelada") return false;
-      const outroInicio = horaParaMinutos(a.horario);
-      const outraDuracao = a.duracaoMinutos || 50;
-      return checarSobreposicaoHorario(inicioMin, duracaoMin, outroInicio, outraDuracao);
+      return a.horario === targetHorario;
     }) || null;
   }, [remanejamentoModal, agendamentos]);
 
@@ -1337,16 +1327,12 @@ export function ProfissionalAgendaView({
     novoHorario: string,
     escopo: "apenas_este" | "serie_toda" = "apenas_este"
   ) => {
-    // Verificação preventiva de conflito
-    const inicioMin = horaParaMinutos(novoHorario);
-    const duracaoMin = agendamento.duracaoMinutos || 50;
+    // Verificação preventiva de conflito (mesmo horário + mesmo dia)
     const conflitoExistente = agendamentos.find((a) => {
       if (a.id === agendamento.id) return false;
       if (a.data !== novaData) return false;
       if (a.status === "cancelada") return false;
-      const outroInicio = horaParaMinutos(a.horario);
-      const outraDuracao = a.duracaoMinutos || 50;
-      return checarSobreposicaoHorario(inicioMin, duracaoMin, outroInicio, outraDuracao);
+      return a.horario === novoHorario;
     });
 
     if (conflitoExistente) {
@@ -1515,16 +1501,12 @@ export function ProfissionalAgendaView({
         modoOrigem: "dia",
       });
     } else {
-      // Agendamento avulso: verificar se há conflito de horário no destino
-      const inicioMin = horaParaMinutos(horaDestino);
-      const duracaoMin = draggedAgendamento.duracaoMinutos || 50;
+      // Agendamento avulso: verificar se há conflito de horário no destino (mesmo horário + mesmo dia)
       const conflitoExistente = agendamentos.find((a) => {
         if (a.id === draggedAgendamento.id) return false;
         if (a.data !== dataAlvo) return false;
         if (a.status === "cancelada") return false;
-        const outroInicio = horaParaMinutos(a.horario);
-        const outraDuracao = a.duracaoMinutos || 50;
-        return checarSobreposicaoHorario(inicioMin, duracaoMin, outroInicio, outraDuracao);
+        return a.horario === horaDestino;
       });
 
       if (conflitoExistente) {
@@ -2004,10 +1986,8 @@ export function ProfissionalAgendaView({
                   sessoesDoDia.forEach((s) => {
                     if (s.horario) {
                       const m = horaParaMinutos(s.horario);
-                      const dur = s.duracaoMinutos || 50;
-                      const fimM = m + dur;
                       if (m < minMinutos) minMinutos = Math.floor(m / 60) * 60;
-                      if (fimM > maxMinutos) maxMinutos = Math.ceil(fimM / 30) * 30;
+                      if (m > maxMinutos) maxMinutos = Math.ceil(m / 30) * 30;
                     }
                   });
 
@@ -2020,21 +2000,13 @@ export function ProfissionalAgendaView({
                     <div className="flex flex-col">
                       {SLOTS_GRADE_DIA.map((hora) => {
                         const slotMin = horaParaMinutos(hora);
-                        // Sessões que iniciam nesta faixa de 30 minutos
-                        const sessoesQueIniciam = sessoesDoDia.filter((s) => {
+                        // Atendimentos marcados exatamente neste horário
+                        const sessoesNesteHorario = sessoesDoDia.filter((s) => {
                           if (!s.horario) return false;
+                          if (s.horario === hora) return true;
                           const sMin = horaParaMinutos(s.horario);
                           return sMin >= slotMin && sMin < slotMin + 30;
                         });
-                        // Sessões em andamento/continuação que começaram antes, mas sua duração ainda ocupa esta faixa
-                        const sessoesEmAndamento = sessoesDoDia.filter((s) => {
-                          if (!s.horario) return false;
-                          const sMin = horaParaMinutos(s.horario);
-                          const sDur = s.duracaoMinutos || 50;
-                          const sFim = sMin + sDur;
-                          return sMin < slotMin && sFim > slotMin;
-                        });
-                        const temSessaoNestaFaixa = sessoesQueIniciam.length > 0 || sessoesEmAndamento.length > 0;
                         const isDragOverNestaHora = dragOverHora === hora;
                         const isHoraCheia = hora.endsWith(":00");
 
@@ -2084,8 +2056,8 @@ export function ProfissionalAgendaView({
                                   <span>Solte para mover para as {hora}</span>
                                 </div>
                               )}
-                              {/* 1. Sessões que iniciam nesta faixa de horário */}
-                              {sessoesQueIniciam.map((sessao) => (
+                              {sessoesNesteHorario.length > 0 ? (
+                                sessoesNesteHorario.map((sessao) => (
                                   <div
                                     key={sessao.id}
                                     draggable={true}
@@ -2144,11 +2116,7 @@ export function ProfissionalAgendaView({
                                       <div className="flex flex-wrap items-center gap-3 text-xs text-forest/70 mt-1.5">
                                         <span className="flex items-center gap-1 font-semibold text-forest">
                                           <Clock className="w-3.5 h-3.5 text-forest/50" />
-                                          {sessao.horario} às{" "}
-                                          {minutosParaHora(
-                                            horaParaMinutos(sessao.horario) + (sessao.duracaoMinutos || 50)
-                                          )}{" "}
-                                          ({sessao.duracaoMinutos || 50} min)
+                                          {sessao.horario} ({sessao.duracaoMinutos || 50} min)
                                         </span>
                                         <span className="flex items-center gap-1">
                                           {sessao.modalidade === "online" ? (
@@ -2294,70 +2262,9 @@ export function ProfissionalAgendaView({
                                   </button>
                                 </div>
                               </div>
-                            ))}
-
-                          {/* 2. Sessões em andamento que cobrem esta faixa de horário */}
-                          {sessoesEmAndamento.map((sessao) => {
-                            const sInicio = horaParaMinutos(sessao.horario);
-                            const sDur = sessao.duracaoMinutos || 50;
-                            const sFimStr = minutosParaHora(sInicio + sDur);
-
-                            return (
-                              <div
-                                key={`andamento-${sessao.id}-${hora}`}
-                                className={`py-2 px-3 rounded-xl border text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 transition-all ${
-                                  sessao.status === "realizada"
-                                    ? "bg-emerald-50/50 border-emerald-200 text-emerald-950"
-                                    : sessao.status === "falta_cobrada"
-                                    ? "bg-orange-50/50 border-orange-200 text-orange-950"
-                                    : sessao.status === "remarcada"
-                                    ? "bg-amber-50/50 border-amber-200 text-amber-950"
-                                    : sessao.status === "cancelada"
-                                    ? "bg-rose-50/40 border-rose-200 opacity-60 text-rose-900"
-                                    : "bg-forest/[0.04] border-forest/20 text-forest"
-                                }`}
-                              >
-                                <div className="flex items-center gap-2 min-w-0">
-                                  <div className="w-2 h-2 rounded-full bg-forest/50 shrink-0 animate-pulse" />
-                                  <span
-                                    onClick={() => {
-                                      if (sessao.pacienteId && onOpenPacienteDetalhes) {
-                                        onOpenPacienteDetalhes(sessao.pacienteId);
-                                      }
-                                    }}
-                                    className="font-bold truncate text-forest hover:underline cursor-pointer"
-                                    title="Ver prontuário do paciente"
-                                  >
-                                    {sessao.pacienteNome}
-                                  </span>
-                                  <span className="text-[11px] text-forest/70 font-medium whitespace-nowrap">
-                                    • Em atendimento até as <strong>{sFimStr}</strong>
-                                  </span>
-                                  <span className="text-[10px] text-forest/50 hidden md:inline">
-                                    (início às {sessao.horario} • {sDur} min)
-                                  </span>
-                                </div>
-
-                                <div className="flex items-center gap-2 shrink-0">
-                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-forest/10 text-forest border border-forest/15">
-                                    Ocupado até {sFimStr}
-                                  </span>
-                                  {sessao.pacienteId && onOpenPacienteDetalhes && (
-                                    <button
-                                      type="button"
-                                      onClick={() => onOpenPacienteDetalhes(sessao.pacienteId)}
-                                      className="text-[10px] text-forest/70 hover:text-forest underline cursor-pointer"
-                                    >
-                                      Ficha
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })}
-
-                          {/* 3. Slot Livre (apenas se nenhuma sessão estiver iniciando nem em andamento nesta faixa) */}
-                          {!temSessaoNestaFaixa && (
+                            ))
+                          ) : (
+                            /* Slot Livre com intervalo de 30 min */
                             <button
                               type="button"
                               onClick={() => handleOpenNovoAgendamento(dataStr, hora)}
@@ -3990,15 +3897,8 @@ export function ProfissionalAgendaView({
                 <div>
                   <span className="font-bold block">Horário Indisponível</span>
                   <span>
-                    Já existe atendimento para <strong>{conflitoRemanejamento.pacienteNome}</strong> das{" "}
-                    <strong>{conflitoRemanejamento.horario}</strong> às{" "}
-                    <strong>
-                      {minutosParaHora(
-                        horaParaMinutos(conflitoRemanejamento.horario) +
-                          (conflitoRemanejamento.duracaoMinutos || 50)
-                      )}
-                    </strong>{" "}
-                    ({conflitoRemanejamento.duracaoMinutos || 50} min). Escolha outro horário para confirmar.
+                    Já existe atendimento para <strong>{conflitoRemanejamento.pacienteNome}</strong> às{" "}
+                    <strong>{conflitoRemanejamento.horario}</strong> nesta data. Escolha outro horário para confirmar.
                   </span>
                 </div>
               </div>
