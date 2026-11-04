@@ -33,6 +33,7 @@ import {
   DollarSign,
   UserPlus,
   UserX,
+  GripVertical,
 } from "lucide-react";
 import {
   collection,
@@ -70,8 +71,8 @@ export interface AgendamentoSessao {
   observacoes?: string;
   isHorarioFixo?: boolean;
   diaSemanaFixo?: number; // 0 a 6
-  frequenciaRecorrencia?: "semanal" | "quinzenal";
-  frequencia?: "nenhuma" | "semanal" | "quinzenal";
+  frequenciaRecorrencia?: "semanal" | "quinzenal" | "mensal";
+  frequencia?: "nenhuma" | "semanal" | "quinzenal" | "mensal";
   origemTipo?: string;
   servicoB2BId?: string;
   createdAt?: any;
@@ -128,6 +129,91 @@ export const checarSobreposicaoHorario = (
   return inicio1 < fim2 && fim1 > inicio2;
 };
 
+export type FrequenciaFixaAgenda = "nenhuma" | "semanal" | "quinzenal" | "mensal";
+export type MesesFixacaoAgenda = 1 | 2 | 3;
+
+/**
+ * Gera todas as datas (YYYY-MM-DD) de um agendamento fixo a partir da data inicial:
+ * - "nenhuma": apenas [dataInicial]
+ * - "semanal": 1x por semana no mesmo dia da semana (+7 dias), 4 sessões por mês (4, 8 ou 12)
+ * - "quinzenal": a cada 2 semanas no mesmo dia da semana (+14 dias), 2 sessões por mês (2, 4 ou 6)
+ * - "mensal": mesmo dia da semana a cada mês (ex.: toda 1ª quarta-feira do mês) para os próximos 1, 2 ou 3 meses
+ */
+export const gerarDatasOcorrenciasFixas = (
+  dataInicialIso: string,
+  frequencia: FrequenciaFixaAgenda,
+  meses: MesesFixacaoAgenda
+): string[] => {
+  if (!dataInicialIso) return [];
+  const partes = dataInicialIso.split("-").map(Number);
+  if (partes.length !== 3 || partes.some((n) => Number.isNaN(n))) return [dataInicialIso];
+
+  const [anoBase, mesBase1, diaBase] = partes;
+  const mesBase = mesBase1 - 1;
+  const baseDate = new Date(anoBase, mesBase, diaBase, 12, 0, 0);
+  if (Number.isNaN(baseDate.getTime())) return [dataInicialIso];
+
+  if (frequencia === "nenhuma") {
+    return [formatarDataIso(baseDate)];
+  }
+
+  if (frequencia === "semanal") {
+    const totalOcorrencias = meses * 4;
+    const datas: string[] = [];
+    for (let i = 0; i < totalOcorrencias; i++) {
+      const d = new Date(anoBase, mesBase, diaBase + i * 7, 12, 0, 0);
+      datas.push(formatarDataIso(d));
+    }
+    return datas;
+  }
+
+  if (frequencia === "quinzenal") {
+    const totalOcorrencias = meses * 2;
+    const datas: string[] = [];
+    for (let i = 0; i < totalOcorrencias; i++) {
+      const d = new Date(anoBase, mesBase, diaBase + i * 14, 12, 0, 0);
+      datas.push(formatarDataIso(d));
+    }
+    return datas;
+  }
+
+  // Mensal: mesmo dia da semana a cada mês (ex.: toda 1ª quarta-feira do mês) pelos próximos N meses
+  const diaSemanaAlvo = baseDate.getDay();
+  const ordemNoMes = Math.floor((diaBase - 1) / 7) + 1; // 1ª, 2ª, 3ª, 4ª ou 5ª ocorrência no mês
+  const datas: string[] = [formatarDataIso(baseDate)];
+
+  for (let mOffset = 1; mOffset <= meses; mOffset++) {
+    const primeiroDoMes = new Date(anoBase, mesBase + mOffset, 1, 12, 0, 0);
+    const anoAlvo = primeiroDoMes.getFullYear();
+    const mesAlvo = primeiroDoMes.getMonth();
+    const offsetPrimeiroDia = (diaSemanaAlvo - primeiroDoMes.getDay() + 7) % 7;
+    let diaCandidato = 1 + offsetPrimeiroDia + (ordemNoMes - 1) * 7;
+    const ultimoDiaDoMes = new Date(anoAlvo, mesAlvo + 1, 0).getDate();
+    if (diaCandidato > ultimoDiaDoMes) {
+      diaCandidato -= 7;
+    }
+    const dataOcorrencia = new Date(anoAlvo, mesAlvo, diaCandidato, 12, 0, 0);
+    datas.push(formatarDataIso(dataOcorrencia));
+  }
+
+  return datas;
+};
+
+export const getFrequenciaFixaLabel = (
+  agendamento: Pick<AgendamentoSessao, "frequencia" | "frequenciaRecorrencia">,
+  curto = false
+): string => {
+  const freq = agendamento.frequencia || agendamento.frequenciaRecorrencia || "semanal";
+  if (curto) {
+    if (freq === "quinzenal") return "Fixo · Quinzenal";
+    if (freq === "mensal") return "Fixo · Mensal";
+    return "Fixo · Semanal";
+  }
+  if (freq === "quinzenal") return "Fixo Quinzenal";
+  if (freq === "mensal") return "Fixo Mensal";
+  return "Fixo Semanal";
+};
+
 export function ProfissionalAgendaView({
   profissionalUid,
   profissionalNome = "Profissional",
@@ -169,6 +255,25 @@ export function ProfissionalAgendaView({
   const [selectedAgendamentoParaEditar, setSelectedAgendamentoParaEditar] = useState<AgendamentoSessao | null>(null);
   const [agendamentoParaExcluir, setAgendamentoParaExcluir] = useState<AgendamentoSessao | null>(null);
 
+  // Estados de Drag and Drop & Remanejamento Rápido
+  const [draggedAgendamento, setDraggedAgendamento] = useState<AgendamentoSessao | null>(null);
+  const [dragOverDia, setDragOverDia] = useState<string | null>(null);
+  const [dragOverHora, setDragOverHora] = useState<string | null>(null);
+  const [toastMensagem, setToastMensagem] = useState<string | null>(null);
+  const [remanejamentoModal, setRemanejamentoModal] = useState<{
+    isOpen: boolean;
+    agendamento: AgendamentoSessao;
+    targetData: string;
+    targetHorario: string;
+    escopoSerie: "apenas_este" | "serie_toda";
+    modoOrigem: "semana" | "dia";
+  } | null>(null);
+
+  const showToast = (msg: string) => {
+    setToastMensagem(msg);
+    setTimeout(() => setToastMensagem(null), 3500);
+  };
+
   // Form State para Novo / Editar Agendamento
   const [formPacienteId, setFormPacienteId] = useState("");
   const [formPacienteNome, setFormPacienteNome] = useState("");
@@ -182,9 +287,10 @@ export function ProfissionalAgendaView({
   const [formLocalEndereco, setFormLocalEndereco] = useState("");
   const [formStatus, setFormStatus] = useState<"agendada" | "realizada" | "falta_cobrada" | "remarcada" | "cancelada">("agendada");
   const [formValor, setFormValor] = useState<string>("100");
-  const [formFrequenciaFixa, setFormFrequenciaFixa] = useState<"nenhuma" | "semanal" | "quinzenal">("nenhuma");
-  const [formGerarSemanas, setFormGerarSemanas] = useState(4); // quantas semanas gerar se fixo
+  const [formFrequenciaFixa, setFormFrequenciaFixa] = useState<FrequenciaFixaAgenda>("nenhuma");
+  const [formMesesFixar, setFormMesesFixar] = useState<MesesFixacaoAgenda>(1);
   const [formObservacoes, setFormObservacoes] = useState("");
+  const [formErroValidacao, setFormErroValidacao] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Form State para Cadastro Rápido de Paciente Externo (Plano Avançado)
@@ -366,21 +472,28 @@ export function ProfissionalAgendaView({
     return conflito || null;
   }, [formData, formHorario, formDuracao, selectedAgendamentoParaEditar, agendamentos]);
 
-  // Verificação de conflito nas semanas futuras se for Horário Fixo com recorrência
+  // Datas calculadas da recorrência quando o profissional escolhe fixar na agenda
+  const vaiGerarSerieFixa = useMemo(() => {
+    if (formFrequenciaFixa === "nenhuma") return false;
+    if (!selectedAgendamentoParaEditar) return true;
+    // Se estava avulso e o profissional decidiu fixar ao editar, também gera a série futura
+    return !selectedAgendamentoParaEditar.isHorarioFixo;
+  }, [formFrequenciaFixa, selectedAgendamentoParaEditar]);
+
+  const datasSerieFixa = useMemo(() => {
+    if (!vaiGerarSerieFixa || !formData) return [];
+    return gerarDatasOcorrenciasFixas(formData, formFrequenciaFixa, formMesesFixar);
+  }, [vaiGerarSerieFixa, formData, formFrequenciaFixa, formMesesFixar]);
+
+  // Verificação de conflito nas datas futuras se for Horário Fixo com recorrência
   const conflitosHorarioRecorrente = useMemo(() => {
-    if (formFrequenciaFixa === "nenhuma" || formGerarSemanas <= 1 || selectedAgendamentoParaEditar) return [];
-    if (!formData || !formHorario) return [];
+    if (!vaiGerarSerieFixa || datasSerieFixa.length <= 1 || !formHorario) return [];
 
     const inicioMin = horaParaMinutos(formHorario);
     const duracaoMin = Number(formDuracao) || 50;
-    const dataInicialObj = new Date(formData + "T12:00:00");
     const conflitos: { data: string; pacienteNome: string; horario: string }[] = [];
 
-    for (let semana = 1; semana < formGerarSemanas; semana++) {
-      const proximaData = new Date(dataInicialObj);
-      proximaData.setDate(dataInicialObj.getDate() + semana * 7);
-      const proximaDataStr = formatarDataIso(proximaData);
-
+    for (const proximaDataStr of datasSerieFixa.slice(1)) {
       const conflito = agendamentos.find((a) => {
         if (a.data !== proximaDataStr) return false;
         if (a.status === "cancelada") return false;
@@ -398,7 +511,25 @@ export function ProfissionalAgendaView({
       }
     }
     return conflitos;
-  }, [formFrequenciaFixa, formGerarSemanas, formData, formHorario, formDuracao, selectedAgendamentoParaEditar, agendamentos]);
+  }, [vaiGerarSerieFixa, datasSerieFixa, formHorario, formDuracao, agendamentos]);
+
+  // Conflito em tempo real ao remanejar via arrastar e soltar (mini modal de horário)
+  const conflitoRemanejamento = useMemo(() => {
+    if (!remanejamentoModal) return null;
+    const { agendamento, targetData, targetHorario } = remanejamentoModal;
+    if (!targetData || !targetHorario) return null;
+    const inicioMin = horaParaMinutos(targetHorario);
+    const duracaoMin = agendamento.duracaoMinutos || 50;
+
+    return agendamentos.find((a) => {
+      if (a.id === agendamento.id) return false;
+      if (a.data !== targetData) return false;
+      if (a.status === "cancelada") return false;
+      const outroInicio = horaParaMinutos(a.horario);
+      const outraDuracao = a.duracaoMinutos || 50;
+      return checarSobreposicaoHorario(inicioMin, duracaoMin, outroInicio, outraDuracao);
+    }) || null;
+  }, [remanejamentoModal, agendamentos]);
 
   // Navegação de Datas
   const hoje = useMemo(() => new Date(), []);
@@ -538,12 +669,13 @@ export function ProfissionalAgendaView({
   // Abertura do formulário de criação
   const handleOpenNovoAgendamento = (dataPrevia?: string, horaPrevia?: string) => {
     setSelectedAgendamentoParaEditar(null);
+    setFormErroValidacao("");
     setFormPacienteId("");
     setFormPacienteNome("");
     setFormPacienteTelefone("");
     setFormPacienteEmail("");
     setPacienteSearchQuery("");
-    setFormData(dataPrevia || new Date().toISOString().split("T")[0]);
+    setFormData(dataPrevia || formatarDataIso(new Date()));
     setFormHorario(horaPrevia || "14:00");
     setFormDuracao(50);
     setFormModalidade("online");
@@ -552,7 +684,7 @@ export function ProfissionalAgendaView({
     setFormStatus("agendada");
     setFormValor("100");
     setFormFrequenciaFixa("nenhuma");
-    setFormGerarSemanas(4);
+    setFormMesesFixar(1);
     setFormObservacoes("");
     setShowNovoModal(true);
   };
@@ -560,6 +692,7 @@ export function ProfissionalAgendaView({
   // Abertura para edição
   const handleOpenEditarAgendamento = (agendamento: AgendamentoSessao) => {
     setSelectedAgendamentoParaEditar(agendamento);
+    setFormErroValidacao("");
     setFormPacienteId(agendamento.pacienteId);
     setFormPacienteNome(agendamento.pacienteNome);
     setFormPacienteTelefone(agendamento.pacienteTelefone || "");
@@ -572,7 +705,15 @@ export function ProfissionalAgendaView({
     setFormLocalEndereco(agendamento.localEndereco || "");
     setFormStatus(agendamento.status);
     setFormValor(String(agendamento.valor || "100"));
-    setFormFrequenciaFixa(agendamento.isHorarioFixo ? (agendamento.frequencia || "semanal") : "nenhuma");
+    const freqSalva: FrequenciaFixaAgenda = agendamento.isHorarioFixo
+      ? agendamento.frequencia === "quinzenal" || agendamento.frequencia === "mensal"
+        ? agendamento.frequencia
+        : agendamento.frequenciaRecorrencia === "quinzenal" || agendamento.frequenciaRecorrencia === "mensal"
+          ? agendamento.frequenciaRecorrencia
+          : "semanal"
+      : "nenhuma";
+    setFormFrequenciaFixa(freqSalva);
+    setFormMesesFixar(1);
     setFormObservacoes(agendamento.observacoes || "");
     setShowNovoModal(true);
   };
@@ -808,19 +949,21 @@ export function ProfissionalAgendaView({
   // Submissão do agendamento (criação ou edição)
   const handleSubmitAgendamento = async (e: React.FormEvent) => {
     e.preventDefault();
+    setFormErroValidacao("");
+
     if (!formPacienteNome.trim()) {
-      alert("Por favor, selecione ou informe o paciente.");
+      setFormErroValidacao("Por favor, selecione ou informe o paciente.");
       return;
     }
     if (!formData || !formHorario) {
-      alert("Por favor, selecione a data e o horário da sessão.");
+      setFormErroValidacao("Por favor, selecione a data e o horário da sessão.");
       return;
     }
 
     // Regra rígida: Bloqueio absoluto de sobreposição de horário
     if (conflitoHorarioAtual) {
-      alert(
-        `Impossível agendar: Já existe um atendimento para ${conflitoHorarioAtual.pacienteNome} neste mesmo dia e horário (${conflitoHorarioAtual.horario}). Dois pacientes não podem ser agendados simultaneamente.`
+      setFormErroValidacao(
+        `Impossível agendar: Já existe um atendimento para ${conflitoHorarioAtual.pacienteNome} neste mesmo dia e horário (${conflitoHorarioAtual.horario}).`
       );
       return;
     }
@@ -828,8 +971,8 @@ export function ProfissionalAgendaView({
     if (conflitosHorarioRecorrente.length > 0) {
       const primeiro = conflitosHorarioRecorrente[0];
       const dataBr = primeiro.data.split("-").reverse().join("/");
-      alert(
-        `Impossível fixar este horário semanal: Há conflito em semana futura (${dataBr} às ${primeiro.horario}) com o atendimento de ${primeiro.pacienteNome}.`
+      setFormErroValidacao(
+        `Impossível fixar este horário: Há conflito em data futura (${dataBr} às ${primeiro.horario}) com o atendimento de ${primeiro.pacienteNome}.`
       );
       return;
     }
@@ -837,6 +980,17 @@ export function ProfissionalAgendaView({
     setIsSubmitting(true);
     try {
       const valorNum = parseFloat(formValor.replace(",", ".")) || 100;
+      const isFixoSelecionado = formFrequenciaFixa !== "nenhuma";
+      const partesData = formData.split("-").map(Number);
+      const diaSemanaCalculado =
+        partesData.length === 3
+          ? new Date(partesData[0], partesData[1] - 1, partesData[2], 12, 0, 0).getDay()
+          : undefined;
+
+      // Regra de segurança: Sempre que criar (ou passar a fixar) um evento/sessão fixo na agenda,
+      // categorizar exclusivamente como "agendada" para nunca replicar outro status em sessões futuras.
+      const statusEfetivo: AgendamentoSessao["status"] =
+        vaiGerarSerieFixa && isFixoSelecionado ? "agendada" : formStatus;
 
       // Traduz status para o modelo de historicoSessoes da ficha
       const statusAtendimentoMap: Record<string, any> = {
@@ -850,7 +1004,7 @@ export function ProfissionalAgendaView({
       if (selectedAgendamentoParaEditar) {
         // Atualizar existente
         const agendamentoRef = doc(db, "agendamentos", selectedAgendamentoParaEditar.id);
-        const updatePayload: Partial<AgendamentoSessao> = {
+        const updatePayload: Record<string, any> = {
           pacienteId: formPacienteId,
           pacienteNome: formPacienteNome,
           pacienteTelefone: formPacienteTelefone,
@@ -861,10 +1015,12 @@ export function ProfissionalAgendaView({
           modalidade: formModalidade,
           linkAtendimento: formLinkAtendimento,
           localEndereco: formLocalEndereco,
-          status: formStatus,
+          status: statusEfetivo,
           valor: valorNum,
-          isHorarioFixo: formFrequenciaFixa !== "nenhuma",
+          isHorarioFixo: isFixoSelecionado,
           frequencia: formFrequenciaFixa,
+          frequenciaRecorrencia: isFixoSelecionado ? formFrequenciaFixa : null,
+          diaSemanaFixo: isFixoSelecionado && diaSemanaCalculado !== undefined ? diaSemanaCalculado : null,
           observacoes: formObservacoes,
           updatedAt: serverTimestamp(),
         };
@@ -878,14 +1034,55 @@ export function ProfissionalAgendaView({
             data: formData,
             horario: formHorario,
             modalidade: formModalidade,
-            statusAtendimento: statusAtendimentoMap[formStatus] || "agendada",
+            statusAtendimento: statusAtendimentoMap[statusEfetivo] || "agendada",
             valor: valorNum,
             observacoes: formObservacoes,
           });
         }
+
+        // Se era avulso e o profissional ativou "Fixar na agenda" agora, cria as ocorrências futuras como "agendada"
+        if (vaiGerarSerieFixa && datasSerieFixa.length > 1) {
+          for (const proximaDataStr of datasSerieFixa.slice(1)) {
+            const recDoc: Record<string, any> = {
+              profissionalId: profissionalUid,
+              pacienteId: formPacienteId || "avulso",
+              pacienteNome: formPacienteNome,
+              pacienteTelefone: formPacienteTelefone,
+              pacienteEmail: formPacienteEmail,
+              data: proximaDataStr,
+              horario: formHorario,
+              duracaoMinutos: Number(formDuracao),
+              modalidade: formModalidade,
+              linkAtendimento: formLinkAtendimento,
+              localEndereco: formLocalEndereco,
+              status: "agendada",
+              valor: valorNum,
+              isHorarioFixo: true,
+              frequencia: formFrequenciaFixa,
+              frequenciaRecorrencia: formFrequenciaFixa,
+              ...(diaSemanaCalculado !== undefined ? { diaSemanaFixo: diaSemanaCalculado } : {}),
+              observacoes: formObservacoes,
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            };
+
+            const recDocRef = await addDoc(collection(db, "agendamentos"), recDoc);
+            if (formPacienteId) {
+              await sincronizarComFichaPaciente(formPacienteId, {
+                id: recDocRef.id,
+                data: proximaDataStr,
+                horario: formHorario,
+                modalidade: formModalidade,
+                statusAtendimento: "agendada",
+                valor: valorNum,
+                observacoes: formObservacoes,
+              });
+            }
+          }
+        }
       } else {
         // Criar novo agendamento
-        const baseDoc = {
+        const baseDoc: Record<string, any> = {
           profissionalId: profissionalUid,
           pacienteId: formPacienteId || "avulso",
           pacienteNome: formPacienteNome,
@@ -897,10 +1094,16 @@ export function ProfissionalAgendaView({
           modalidade: formModalidade,
           linkAtendimento: formLinkAtendimento,
           localEndereco: formLocalEndereco,
-          status: formStatus,
+          status: statusEfetivo,
           valor: valorNum,
-          isHorarioFixo: formFrequenciaFixa !== "nenhuma",
+          isHorarioFixo: isFixoSelecionado,
           frequencia: formFrequenciaFixa,
+          ...(isFixoSelecionado
+            ? {
+                frequenciaRecorrencia: formFrequenciaFixa,
+                ...(diaSemanaCalculado !== undefined ? { diaSemanaFixo: diaSemanaCalculado } : {}),
+              }
+            : {}),
           observacoes: formObservacoes,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
@@ -915,26 +1118,21 @@ export function ProfissionalAgendaView({
             data: formData,
             horario: formHorario,
             modalidade: formModalidade,
-            statusAtendimento: statusAtendimentoMap[formStatus] || "agendada",
+            statusAtendimento: statusAtendimentoMap[statusEfetivo] || "agendada",
             valor: valorNum,
             observacoes: formObservacoes,
           });
         }
 
-        // Se for Horário Fixo com geração de semanas futuras
-        if (formFrequenciaFixa !== "nenhuma" && formGerarSemanas > 1) {
-          const dataInicialObj = new Date(formData + "T12:00:00");
-          for (let semana = 1; semana < formGerarSemanas; semana++) {
-            const proximaData = new Date(dataInicialObj);
-            proximaData.setDate(dataInicialObj.getDate() + semana * 7);
-            const proximaDataStr = proximaData.toISOString().split("T")[0];
-
-            const recDoc = {
+        // Se for Horário Fixo, gera todas as ocorrências futuras respeitando Semanal, Quinzenal ou Mensal
+        // e sempre categorizadas como "agendada"
+        if (isFixoSelecionado && datasSerieFixa.length > 1) {
+          for (const proximaDataStr of datasSerieFixa.slice(1)) {
+            const recDoc: Record<string, any> = {
               ...baseDoc,
               data: proximaDataStr,
-              observacoes: formObservacoes
-                ? `${formObservacoes} (Horário Fixo Semanal)`
-                : "Horário Fixo Semanal Recorrente",
+              status: "agendada",
+              observacoes: formObservacoes,
             };
 
             const recDocRef = await addDoc(collection(db, "agendamentos"), recDoc);
@@ -946,6 +1144,7 @@ export function ProfissionalAgendaView({
                 modalidade: formModalidade,
                 statusAtendimento: "agendada",
                 valor: valorNum,
+                observacoes: formObservacoes,
               });
             }
           }
@@ -956,7 +1155,7 @@ export function ProfissionalAgendaView({
     } catch (err: any) {
       console.error("Erro ao salvar agendamento:", err);
       handleFirestoreError(err, OperationType.WRITE, "agendamentos");
-      alert("Não foi possível salvar o agendamento. Verifique sua conexão e tente novamente.");
+      setFormErroValidacao("Não foi possível salvar o agendamento. Verifique sua conexão e tente novamente.");
     } finally {
       setIsSubmitting(false);
     }
@@ -1071,15 +1270,57 @@ export function ProfissionalAgendaView({
         );
         const snapFuture = await getDocs(qFuture);
         const batchDeletes: Promise<void>[] = [];
+        const deletedIds = new Set<string>();
         snapFuture.forEach((docSnap) => {
           const dataAg = docSnap.data();
-          const isSamePatient = (pacId && pacId !== "avulso" && dataAg.pacienteId === pacId) ||
-                                (dataAg.paciente && dataAg.paciente === agendamentoParaExcluir.pacienteNome);
+          const isSamePatient =
+            (pacId && pacId !== "avulso" && dataAg.pacienteId === pacId) ||
+            ((!pacId || pacId === "avulso") &&
+              (dataAg.pacienteNome === agendamentoParaExcluir.pacienteNome ||
+                dataAg.paciente === agendamentoParaExcluir.pacienteNome));
           if (isSamePatient && dataAg.data && dataAg.data >= dataAlvo) {
+            deletedIds.add(docSnap.id);
             batchDeletes.push(deleteDoc(doc(db, "agendamentos", docSnap.id)));
           }
         });
         await Promise.all(batchDeletes);
+
+        if (pacId && pacId !== "avulso" && deletedIds.size > 0) {
+          try {
+            let targetRef = doc(db, "acolhimentos", pacId);
+            let docSnap = await getDoc(targetRef);
+            if (!docSnap.exists()) {
+              const pacRef = doc(db, "pacientes", pacId);
+              const pacSnap = await getDoc(pacRef);
+              if (pacSnap.exists()) {
+                targetRef = pacRef;
+                docSnap = pacSnap;
+              }
+            }
+            if (!docSnap.exists()) {
+              const corpRef = doc(db, "triagem_corporativa", pacId);
+              const corpSnap = await getDoc(corpRef);
+              if (corpSnap.exists()) {
+                targetRef = corpRef;
+                docSnap = corpSnap;
+              }
+            }
+            if (docSnap.exists()) {
+              const data = docSnap.data();
+              if (Array.isArray(data.historicoSessoes)) {
+                const filtrado = data.historicoSessoes
+                  .filter((s: any) => !deletedIds.has(s.id))
+                  .map((s: any, idx: number) => ({ ...s, numeroSessao: idx + 1 }));
+                await updateDoc(targetRef, {
+                  historicoSessoes: filtrado,
+                  updatedAt: serverTimestamp(),
+                });
+              }
+            }
+          } catch (syncErr) {
+            console.warn("Aviso ao sincronizar exclusão em série na ficha:", syncErr);
+          }
+        }
       }
 
       setAgendamentoParaExcluir(null);
@@ -1087,6 +1328,240 @@ export function ProfissionalAgendaView({
       console.error("Erro ao excluir agendamento:", err);
       alert("Erro ao excluir o agendamento.");
     }
+  };
+
+  // Helper de remanejamento rápido (arrastar e soltar na grade de semana ou dia)
+  const handleExecutarRemanejamento = async (
+    agendamento: AgendamentoSessao,
+    novaData: string,
+    novoHorario: string,
+    escopo: "apenas_este" | "serie_toda" = "apenas_este"
+  ) => {
+    // Verificação preventiva de conflito
+    const inicioMin = horaParaMinutos(novoHorario);
+    const duracaoMin = agendamento.duracaoMinutos || 50;
+    const conflitoExistente = agendamentos.find((a) => {
+      if (a.id === agendamento.id) return false;
+      if (a.data !== novaData) return false;
+      if (a.status === "cancelada") return false;
+      const outroInicio = horaParaMinutos(a.horario);
+      const outraDuracao = a.duracaoMinutos || 50;
+      return checarSobreposicaoHorario(inicioMin, duracaoMin, outroInicio, outraDuracao);
+    });
+
+    if (conflitoExistente) {
+      alert(
+        `Impossível mover: Já existe atendimento marcado para ${conflitoExistente.pacienteNome} nesta data às ${conflitoExistente.horario}.`
+      );
+      return false;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const partes = novaData.split("-").map(Number);
+      const novoDiaSemana =
+        partes.length === 3 ? new Date(partes[0], partes[1] - 1, partes[2], 12, 0, 0).getDay() : undefined;
+
+      const statusAtendimentoMap: Record<string, any> = {
+        agendada: "agendada",
+        realizada: "realizada",
+        falta_cobrada: "falta_cobrada",
+        remarcada: "desmarcada_antecedencia",
+        cancelada: "cancelada_sem_cobranca",
+      };
+
+      if (escopo === "apenas_este" || !agendamento.isHorarioFixo) {
+        // Atualiza apenas este agendamento
+        const agRef = doc(db, "agendamentos", agendamento.id);
+        const patch: Record<string, any> = {
+          data: novaData,
+          horario: novoHorario,
+          updatedAt: serverTimestamp(),
+        };
+        if (novoDiaSemana !== undefined && agendamento.isHorarioFixo) {
+          patch.diaSemanaFixo = novoDiaSemana;
+        }
+        await updateDoc(agRef, patch);
+
+        if (agendamento.pacienteId) {
+          await sincronizarComFichaPaciente(agendamento.pacienteId, {
+            id: agendamento.id,
+            data: novaData,
+            horario: novoHorario,
+            modalidade: agendamento.modalidade,
+            statusAtendimento: statusAtendimentoMap[agendamento.status] || "agendada",
+            valor: agendamento.valor || 100,
+            observacoes: agendamento.observacoes,
+          });
+        }
+      } else {
+        // Remaneja este e todos dali pra frente (série fixa)
+        const dataAlvoAntiga = agendamento.data;
+        const qFuture = query(
+          collection(db, "agendamentos"),
+          where("profissionalId", "==", profissionalUid || auth.currentUser?.uid)
+        );
+        const snapFuture = await getDocs(qFuture);
+        const batchUpdates: Promise<void>[] = [];
+        const updatedSessoesFicha: { id: string; data: string; horario: string }[] = [];
+
+        const dAntiga = new Date(agendamento.data + "T12:00:00");
+        const dNova = new Date(novaData + "T12:00:00");
+        const diffMs = dNova.getTime() - dAntiga.getTime();
+        const diffDias = Math.round(diffMs / (1000 * 60 * 60 * 24));
+
+        snapFuture.forEach((docSnap) => {
+          const dAg = docSnap.data();
+          const isSamePatient =
+            (agendamento.pacienteId && agendamento.pacienteId !== "avulso" && dAg.pacienteId === agendamento.pacienteId) ||
+            ((!agendamento.pacienteId || agendamento.pacienteId === "avulso") &&
+              (dAg.pacienteNome === agendamento.pacienteNome || dAg.paciente === agendamento.pacienteNome));
+
+          if (isSamePatient && dAg.data && dAg.data >= dataAlvoAntiga) {
+            const itemDate = new Date(dAg.data + "T12:00:00");
+            itemDate.setDate(itemDate.getDate() + diffDias);
+            const itemNovaDataStr = formatarDataIso(itemDate);
+            const itemDiaSemana = itemDate.getDay();
+
+            batchUpdates.push(
+              updateDoc(doc(db, "agendamentos", docSnap.id), {
+                data: itemNovaDataStr,
+                horario: novoHorario,
+                diaSemanaFixo: itemDiaSemana,
+                updatedAt: serverTimestamp(),
+              })
+            );
+            updatedSessoesFicha.push({
+              id: docSnap.id,
+              data: itemNovaDataStr,
+              horario: novoHorario,
+            });
+          }
+        });
+
+        await Promise.all(batchUpdates);
+
+        if (agendamento.pacienteId && agendamento.pacienteId !== "avulso" && updatedSessoesFicha.length > 0) {
+          try {
+            const mapUpdates = new Map(updatedSessoesFicha.map((u) => [u.id, u]));
+            let targetRef = doc(db, "acolhimentos", agendamento.pacienteId);
+            let docSnap = await getDoc(targetRef);
+            if (!docSnap.exists()) {
+              const pacRef = doc(db, "pacientes", agendamento.pacienteId);
+              const pacSnap = await getDoc(pacRef);
+              if (pacSnap.exists()) {
+                targetRef = pacRef;
+                docSnap = pacSnap;
+              }
+            }
+            if (!docSnap.exists()) {
+              const corpRef = doc(db, "triagem_corporativa", agendamento.pacienteId);
+              const corpSnap = await getDoc(corpRef);
+              if (corpSnap.exists()) {
+                targetRef = corpRef;
+                docSnap = corpSnap;
+              }
+            }
+            if (docSnap.exists()) {
+              const data = docSnap.data();
+              if (Array.isArray(data.historicoSessoes)) {
+                const atualizado = data.historicoSessoes.map((s: any) => {
+                  const up = mapUpdates.get(s.id);
+                  return up ? { ...s, data: up.data, horario: up.horario } : s;
+                });
+                await updateDoc(targetRef, {
+                  historicoSessoes: atualizado,
+                  updatedAt: serverTimestamp(),
+                });
+              }
+            }
+          } catch (syncErr) {
+            console.warn("Aviso ao sincronizar remanejamento de série na ficha:", syncErr);
+          }
+        }
+      }
+
+      showToast(`Atendimento remanejado com sucesso para ${novaData.split("-").reverse().join("/")} às ${novoHorario}!`);
+      return true;
+    } catch (err) {
+      console.error("Erro ao remanejar agendamento:", err);
+      alert("Não foi possível remanejar o atendimento.");
+      return false;
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Drop no Modo Dia: remaneja para o horário da linha (ou abre confirmação se fixo)
+  const handleDropDia = (horaDestino: string) => {
+    if (!draggedAgendamento) return;
+    const dataAlvo = formatarDataIso(currentDate);
+
+    // Se soltou no mesmo dia e mesma hora de início, cancela
+    if (draggedAgendamento.data === dataAlvo && draggedAgendamento.horario === horaDestino) {
+      setDragOverHora(null);
+      setDraggedAgendamento(null);
+      return;
+    }
+
+    if (draggedAgendamento.isHorarioFixo) {
+      // Agendamento fixo: solicita confirmação rápida do escopo
+      setRemanejamentoModal({
+        isOpen: true,
+        agendamento: draggedAgendamento,
+        targetData: dataAlvo,
+        targetHorario: horaDestino,
+        escopoSerie: "apenas_este",
+        modoOrigem: "dia",
+      });
+    } else {
+      // Agendamento avulso: verificar se há conflito de horário no destino
+      const inicioMin = horaParaMinutos(horaDestino);
+      const duracaoMin = draggedAgendamento.duracaoMinutos || 50;
+      const conflitoExistente = agendamentos.find((a) => {
+        if (a.id === draggedAgendamento.id) return false;
+        if (a.data !== dataAlvo) return false;
+        if (a.status === "cancelada") return false;
+        const outroInicio = horaParaMinutos(a.horario);
+        const outraDuracao = a.duracaoMinutos || 50;
+        return checarSobreposicaoHorario(inicioMin, duracaoMin, outroInicio, outraDuracao);
+      });
+
+      if (conflitoExistente) {
+        // Havendo conflito, abre o mini modal com o aviso de horário indisponível
+        setRemanejamentoModal({
+          isOpen: true,
+          agendamento: draggedAgendamento,
+          targetData: dataAlvo,
+          targetHorario: horaDestino,
+          escopoSerie: "apenas_este",
+          modoOrigem: "dia",
+        });
+      } else {
+        // Sem conflito: move diretamente com feedback imediato
+        handleExecutarRemanejamento(draggedAgendamento, dataAlvo, horaDestino, "apenas_este");
+      }
+    }
+
+    setDragOverHora(null);
+    setDraggedAgendamento(null);
+  };
+
+  // Drop no Modo Semana: abre o mini modal solicitando apenas o horário
+  const handleDropSemana = (dataDestino: string) => {
+    if (!draggedAgendamento) return;
+
+    setRemanejamentoModal({
+      isOpen: true,
+      agendamento: draggedAgendamento,
+      targetData: dataDestino,
+      targetHorario: draggedAgendamento.horario,
+      escopoSerie: "apenas_este",
+      modoOrigem: "semana",
+    });
+
+    setDragOverDia(null);
+    setDraggedAgendamento(null);
   };
 
   // Helper de link para o WhatsApp
@@ -1518,39 +1993,116 @@ export function ProfissionalAgendaView({
                     (a.horario || "").localeCompare(b.horario || "")
                   );
 
-                  const HORAS_GRADE = [
-                    "07:00", "08:00", "09:00", "10:00", "11:00", "12:00",
-                    "13:00", "14:00", "15:00", "16:00", "17:00", "18:00",
-                    "19:00", "20:00", "21:00"
-                  ];
+                  // Grade horária com quebra de 30 minutos (07:00, 07:30, ..., 21:30)
+                  // Expandida dinamicamente caso haja sessões antes das 07:00 ou após as 21:30
+                  const baseMin = 7 * 60; // 07:00
+                  const baseMax = 21 * 60 + 30; // 21:30
+
+                  let minMinutos = baseMin;
+                  let maxMinutos = baseMax;
+
+                  sessoesDoDia.forEach((s) => {
+                    if (s.horario) {
+                      const m = horaParaMinutos(s.horario);
+                      const dur = s.duracaoMinutos || 50;
+                      const fimM = m + dur;
+                      if (m < minMinutos) minMinutos = Math.floor(m / 60) * 60;
+                      if (fimM > maxMinutos) maxMinutos = Math.ceil(fimM / 30) * 30;
+                    }
+                  });
+
+                  const SLOTS_GRADE_DIA: string[] = [];
+                  for (let m = minMinutos; m <= maxMinutos; m += 30) {
+                    SLOTS_GRADE_DIA.push(minutosParaHora(m));
+                  }
 
                   return (
-                    <div className="flex flex-col divide-y divide-soft/70">
-                      {HORAS_GRADE.map((hora) => {
-                        const horaPrefixo = hora.split(":")[0];
-                        const sessoesNesteHorario = sessoesDoDia.filter((s) =>
-                          s.horario ? s.horario.startsWith(horaPrefixo) : false
-                        );
+                    <div className="flex flex-col">
+                      {SLOTS_GRADE_DIA.map((hora) => {
+                        const slotMin = horaParaMinutos(hora);
+                        // Sessões que iniciam nesta faixa de 30 minutos
+                        const sessoesQueIniciam = sessoesDoDia.filter((s) => {
+                          if (!s.horario) return false;
+                          const sMin = horaParaMinutos(s.horario);
+                          return sMin >= slotMin && sMin < slotMin + 30;
+                        });
+                        // Sessões em andamento/continuação que começaram antes, mas sua duração ainda ocupa esta faixa
+                        const sessoesEmAndamento = sessoesDoDia.filter((s) => {
+                          if (!s.horario) return false;
+                          const sMin = horaParaMinutos(s.horario);
+                          const sDur = s.duracaoMinutos || 50;
+                          const sFim = sMin + sDur;
+                          return sMin < slotMin && sFim > slotMin;
+                        });
+                        const temSessaoNestaFaixa = sessoesQueIniciam.length > 0 || sessoesEmAndamento.length > 0;
+                        const isDragOverNestaHora = dragOverHora === hora;
+                        const isHoraCheia = hora.endsWith(":00");
 
                         return (
                           <div
                             key={hora}
-                            className="py-2.5 sm:py-3 flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-4 group hover:bg-warm/30 rounded-xl px-2 transition-colors"
+                            onDragOver={(e) => {
+                              e.preventDefault();
+                              e.dataTransfer.dropEffect = "move";
+                              if (dragOverHora !== hora) setDragOverHora(hora);
+                            }}
+                            onDragLeave={(e) => {
+                              if (e.currentTarget === e.target) setDragOverHora(null);
+                            }}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              handleDropDia(hora);
+                            }}
+                            className={`py-2 sm:py-2.5 flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-4 group rounded-xl px-2 transition-all ${
+                              isHoraCheia ? "border-t border-soft/90" : "border-t border-dashed border-soft/50"
+                            } ${
+                              isDragOverNestaHora
+                                ? "bg-forest/10 ring-2 ring-forest/50 border-forest/30"
+                                : "hover:bg-warm/30"
+                            }`}
                           >
                             {/* Marcador de Hora */}
-                            <div className="w-16 shrink-0 flex items-center gap-1.5 text-xs font-bold text-forest/70 pt-1">
-                              <Clock className="w-3.5 h-3.5 text-forest/40" />
-                              <span>{hora}</span>
+                            <div className="w-16 shrink-0 flex items-center gap-1.5 text-xs pt-1">
+                              {isHoraCheia ? (
+                                <>
+                                  <Clock className="w-3.5 h-3.5 text-forest/60" />
+                                  <span className="font-bold text-forest">{hora}</span>
+                                </>
+                              ) : (
+                                <>
+                                  <span className="w-3.5 inline-flex justify-center text-[10px] text-forest/30 font-bold">•</span>
+                                  <span className="font-semibold text-forest/60">{hora}</span>
+                                </>
+                              )}
                             </div>
 
                             {/* Conteúdo da Hora */}
                             <div className="flex-1 flex flex-col gap-2">
-                              {sessoesNesteHorario.length > 0 ? (
-                                sessoesNesteHorario.map((sessao) => (
+                              {isDragOverNestaHora && (
+                                <div className="py-1 px-3 rounded-lg border border-dashed border-forest/60 bg-white/95 text-forest text-xs font-bold flex items-center justify-center gap-1.5 animate-pulse shadow-xs">
+                                  <Clock className="w-3.5 h-3.5 text-forest" />
+                                  <span>Solte para mover para as {hora}</span>
+                                </div>
+                              )}
+                              {/* 1. Sessões que iniciam nesta faixa de horário */}
+                              {sessoesQueIniciam.map((sessao) => (
                                   <div
                                     key={sessao.id}
-                                    className={`p-3 sm:p-4 rounded-xl border text-xs shadow-2xs transition-all hover:shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3 min-w-0 overflow-hidden ${
-                                      sessao.status === "realizada"
+                                    draggable={true}
+                                    onDragStart={(e) => {
+                                      e.dataTransfer.setData("text/plain", sessao.id);
+                                      e.dataTransfer.effectAllowed = "move";
+                                      setDraggedAgendamento(sessao);
+                                    }}
+                                    onDragEnd={() => {
+                                      setDraggedAgendamento(null);
+                                      setDragOverHora(null);
+                                      setDragOverDia(null);
+                                    }}
+                                    className={`p-3 sm:p-4 rounded-xl border text-xs shadow-2xs transition-all hover:shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3 min-w-0 overflow-hidden cursor-grab active:cursor-grabbing ${
+                                      draggedAgendamento?.id === sessao.id
+                                        ? "opacity-50 ring-2 ring-forest/40 scale-[0.99]"
+                                        : sessao.status === "realizada"
                                         ? "bg-emerald-50/70 border-emerald-200"
                                         : sessao.status === "falta_cobrada"
                                         ? "bg-orange-50/75 border-orange-300"
@@ -1563,8 +2115,15 @@ export function ProfissionalAgendaView({
                                   >
                                     <div className="min-w-0">
                                       <div className="flex flex-wrap items-center gap-2">
+                                        <div
+                                          className="flex items-center gap-1 text-forest/40 hover:text-forest"
+                                          title="Arraste para remanejar horário"
+                                        >
+                                          <GripVertical className="w-3.5 h-3.5 shrink-0" />
+                                        </div>
                                         <span
-                                          onClick={() => {
+                                          onClick={(e) => {
+                                            e.stopPropagation();
                                             if (sessao.pacienteId && onOpenPacienteDetalhes) {
                                               onOpenPacienteDetalhes(sessao.pacienteId);
                                             }
@@ -1577,7 +2136,7 @@ export function ProfissionalAgendaView({
                                         {getStatusBadge(sessao.status)}
                                         {sessao.isHorarioFixo && (
                                           <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700 flex items-center gap-0.5">
-                                            <Pin className="w-2.5 h-2.5" /> Fixo Semanal
+                                            <Pin className="w-2.5 h-2.5" /> {getFrequenciaFixaLabel(sessao)}
                                           </span>
                                         )}
                                       </div>
@@ -1585,7 +2144,11 @@ export function ProfissionalAgendaView({
                                       <div className="flex flex-wrap items-center gap-3 text-xs text-forest/70 mt-1.5">
                                         <span className="flex items-center gap-1 font-semibold text-forest">
                                           <Clock className="w-3.5 h-3.5 text-forest/50" />
-                                          {sessao.horario} ({sessao.duracaoMinutos || 50} min)
+                                          {sessao.horario} às{" "}
+                                          {minutosParaHora(
+                                            horaParaMinutos(sessao.horario) + (sessao.duracaoMinutos || 50)
+                                          )}{" "}
+                                          ({sessao.duracaoMinutos || 50} min)
                                         </span>
                                         <span className="flex items-center gap-1">
                                           {sessao.modalidade === "online" ? (
@@ -1731,20 +2294,81 @@ export function ProfissionalAgendaView({
                                   </button>
                                 </div>
                               </div>
-                            ))
-                          ) : (
-                            /* Slot Livre */
+                            ))}
+
+                          {/* 2. Sessões em andamento que cobrem esta faixa de horário */}
+                          {sessoesEmAndamento.map((sessao) => {
+                            const sInicio = horaParaMinutos(sessao.horario);
+                            const sDur = sessao.duracaoMinutos || 50;
+                            const sFimStr = minutosParaHora(sInicio + sDur);
+
+                            return (
+                              <div
+                                key={`andamento-${sessao.id}-${hora}`}
+                                className={`py-2 px-3 rounded-xl border text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 transition-all ${
+                                  sessao.status === "realizada"
+                                    ? "bg-emerald-50/50 border-emerald-200 text-emerald-950"
+                                    : sessao.status === "falta_cobrada"
+                                    ? "bg-orange-50/50 border-orange-200 text-orange-950"
+                                    : sessao.status === "remarcada"
+                                    ? "bg-amber-50/50 border-amber-200 text-amber-950"
+                                    : sessao.status === "cancelada"
+                                    ? "bg-rose-50/40 border-rose-200 opacity-60 text-rose-900"
+                                    : "bg-forest/[0.04] border-forest/20 text-forest"
+                                }`}
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <div className="w-2 h-2 rounded-full bg-forest/50 shrink-0 animate-pulse" />
+                                  <span
+                                    onClick={() => {
+                                      if (sessao.pacienteId && onOpenPacienteDetalhes) {
+                                        onOpenPacienteDetalhes(sessao.pacienteId);
+                                      }
+                                    }}
+                                    className="font-bold truncate text-forest hover:underline cursor-pointer"
+                                    title="Ver prontuário do paciente"
+                                  >
+                                    {sessao.pacienteNome}
+                                  </span>
+                                  <span className="text-[11px] text-forest/70 font-medium whitespace-nowrap">
+                                    • Em atendimento até as <strong>{sFimStr}</strong>
+                                  </span>
+                                  <span className="text-[10px] text-forest/50 hidden md:inline">
+                                    (início às {sessao.horario} • {sDur} min)
+                                  </span>
+                                </div>
+
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-forest/10 text-forest border border-forest/15">
+                                    Ocupado até {sFimStr}
+                                  </span>
+                                  {sessao.pacienteId && onOpenPacienteDetalhes && (
+                                    <button
+                                      type="button"
+                                      onClick={() => onOpenPacienteDetalhes(sessao.pacienteId)}
+                                      className="text-[10px] text-forest/70 hover:text-forest underline cursor-pointer"
+                                    >
+                                      Ficha
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+
+                          {/* 3. Slot Livre (apenas se nenhuma sessão estiver iniciando nem em andamento nesta faixa) */}
+                          {!temSessaoNestaFaixa && (
                             <button
                               type="button"
                               onClick={() => handleOpenNovoAgendamento(dataStr, hora)}
-                              className="w-full py-2 px-3 rounded-xl border border-dashed border-soft/80 hover:border-forest/40 hover:bg-forest/[0.03] text-left text-xs text-forest/40 hover:text-forest transition-all flex items-center justify-between gap-2 cursor-pointer group"
+                              className="w-full py-1.5 px-3 rounded-lg border border-dashed border-soft/70 hover:border-forest/40 hover:bg-forest/[0.03] text-left text-[11px] text-forest/45 hover:text-forest transition-all flex items-center justify-between gap-2 cursor-pointer group"
                             >
                               <span className="flex items-center gap-1.5 min-w-0">
-                                <Plus className="w-3.5 h-3.5 text-forest/40 group-hover:text-forest transition-colors shrink-0" />
-                                <span className="truncate">Horário vago • Clique para agendar às {hora}</span>
+                                <Plus className="w-3 h-3 text-forest/40 group-hover:text-forest transition-colors shrink-0" />
+                                <span className="truncate">Livre às {hora} • Clique para agendar</span>
                               </span>
-                              <span className="text-[10px] font-semibold text-forest/40 group-hover:text-forest bg-warm px-2 py-0.5 rounded-md shrink-0">
-                                Disponível
+                              <span className="text-[10px] font-semibold text-forest/40 group-hover:text-forest bg-warm px-1.5 py-0.5 rounded shrink-0">
+                                30 min
                               </span>
                             </button>
                           )}
@@ -1838,14 +2462,38 @@ export function ProfissionalAgendaView({
                 <div className="grid grid-cols-7 min-h-[480px] divide-x divide-soft">
                   {diasDaSemana.map((dia) => {
                     const sessoesDoDia = agendamentosPorData.get(dia.dataStr) || [];
+                    const isDragOverNesteDia = dragOverDia === dia.dataStr;
 
                     return (
                       <div
                         key={dia.dataStr}
-                        className={`p-1.5 sm:p-2 flex flex-col gap-2 relative min-w-0 ${
-                          dia.isHoje ? "bg-forest/[0.02]" : ""
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          e.dataTransfer.dropEffect = "move";
+                          if (dragOverDia !== dia.dataStr) setDragOverDia(dia.dataStr);
+                        }}
+                        onDragLeave={(e) => {
+                          if (e.currentTarget === e.target) setDragOverDia(null);
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          handleDropSemana(dia.dataStr);
+                        }}
+                        className={`p-1.5 sm:p-2 flex flex-col gap-2 relative min-w-0 transition-all ${
+                          isDragOverNesteDia
+                            ? "bg-forest/10 ring-2 ring-forest/40"
+                            : dia.isHoje
+                            ? "bg-forest/[0.02]"
+                            : ""
                         }`}
                       >
+                        {/* Indicador de Drop Zone ao arrastar */}
+                        {isDragOverNesteDia && (
+                          <div className="p-1 rounded-lg border border-dashed border-forest/60 bg-white/90 text-[10px] text-forest font-bold text-center animate-pulse">
+                            Solte para remanejar para cá
+                          </div>
+                        )}
+
                         {/* Botão rápido para adicionar no dia */}
                         <button
                           type="button"
@@ -1866,8 +2514,21 @@ export function ProfissionalAgendaView({
                           sessoesDoDia.map((sessao) => (
                             <div
                               key={sessao.id}
-                              className={`w-full min-w-0 overflow-hidden p-2 rounded-xl border text-xs shadow-2xs transition-all hover:shadow-xs group ${
-                                sessao.status === "realizada"
+                              draggable={true}
+                              onDragStart={(e) => {
+                                e.dataTransfer.setData("text/plain", sessao.id);
+                                e.dataTransfer.effectAllowed = "move";
+                                setDraggedAgendamento(sessao);
+                              }}
+                              onDragEnd={() => {
+                                setDraggedAgendamento(null);
+                                setDragOverDia(null);
+                                setDragOverHora(null);
+                              }}
+                              className={`w-full min-w-0 overflow-hidden p-2 rounded-xl border text-xs shadow-2xs transition-all hover:shadow-xs group cursor-grab active:cursor-grabbing ${
+                                draggedAgendamento?.id === sessao.id
+                                  ? "opacity-50 ring-2 ring-forest/40 scale-[0.98]"
+                                  : sessao.status === "realizada"
                                   ? "bg-emerald-50/70 border-emerald-200"
                                   : sessao.status === "falta_cobrada"
                                   ? "bg-orange-50/75 border-orange-300"
@@ -1884,6 +2545,7 @@ export function ProfissionalAgendaView({
                                   <div className="min-w-0">
                                     {/* Horário e Fixado */}
                                     <div className="flex flex-wrap items-center gap-1 mb-1">
+                                      <GripVertical className="w-3 h-3 text-forest/30 group-hover:text-forest/60 shrink-0" />
                                       <span className="font-bold text-forest inline-flex items-center gap-1 text-[11px] tabular-nums shrink-0">
                                         <Clock className="w-3 h-3 text-forest/60 shrink-0" />
                                         {sessao.horario}
@@ -1891,7 +2553,7 @@ export function ProfissionalAgendaView({
                                       {sessao.isHorarioFixo && (
                                         <span
                                           className="text-purple-700 font-bold text-[9px] bg-purple-100 px-1 py-0.5 rounded inline-flex items-center gap-0.5 leading-none shrink-0"
-                                          title="Horário semanal fixo"
+                                          title={getFrequenciaFixaLabel(sessao)}
                                         >
                                           <Pin className="w-2.5 h-2.5 shrink-0" />
                                           Fixo
@@ -2203,7 +2865,7 @@ export function ProfissionalAgendaView({
                           {getStatusBadge(item.status)}
                           {item.isHorarioFixo && (
                             <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700 flex items-center gap-0.5">
-                              <Pin className="w-2.5 h-2.5" /> Horário Fixo Semanal
+                              <Pin className="w-2.5 h-2.5" /> {getFrequenciaFixaLabel(item)}
                             </span>
                           )}
                         </div>
@@ -2640,10 +3302,10 @@ export function ProfissionalAgendaView({
                   </div>
                   <div className="flex-1">
                     <span className="font-bold text-amber-900 text-sm block">
-                      Conflito nas Semanas Futuras do Horário Fixo
+                      Conflito nas Datas Futuras do Horário Fixo
                     </span>
                     <p className="mt-0.5 text-amber-800 leading-relaxed">
-                      Este horário semanal coincide com atendimentos já marcados nas semanas seguintes:
+                      Este horário coincide com atendimentos já marcados nas datas seguintes da recorrência:
                     </p>
                     <ul className="mt-1 space-y-0.5 font-semibold text-amber-900 text-[11px]">
                       {conflitosHorarioRecorrente.map((c) => (
@@ -2653,7 +3315,7 @@ export function ProfissionalAgendaView({
                       ))}
                     </ul>
                     <span className="text-[11px] font-bold text-amber-700 block mt-1.5">
-                      💡 Selecione outro horário fixo livre para todas as semanas ou agende apenas para esta data.
+                      Escolha outro horário livre para todas as ocorrências ou selecione "Não fixar".
                     </span>
                   </div>
                 </div>
@@ -2710,50 +3372,105 @@ export function ProfissionalAgendaView({
                 <div>
                   <label className="block text-xs font-bold text-forest mb-1">Status da Sessão</label>
                   <select
-                    value={formStatus}
+                    value={vaiGerarSerieFixa ? "agendada" : formStatus}
+                    disabled={vaiGerarSerieFixa}
                     onChange={(e) => setFormStatus(e.target.value as any)}
-                    className="w-full px-3 py-2 bg-warm/30 border border-soft rounded-xl text-forest focus:outline-none text-xs sm:text-sm font-medium"
+                    className={`w-full px-3 py-2 border rounded-xl text-xs sm:text-sm font-medium focus:outline-none ${
+                      vaiGerarSerieFixa
+                        ? "bg-sky-50/70 border-sky-200 text-sky-900 font-semibold cursor-not-allowed"
+                        : "bg-warm/30 border-soft text-forest"
+                    }`}
                   >
                     <option value="agendada">Agendada</option>
-                    <option value="realizada">Realizada (Cobrada)</option>
-                    <option value="falta_cobrada">Falta Cobrada (Cobrar sessão)</option>
-                    <option value="remarcada">Remarcada (Sem cobrança)</option>
-                    <option value="cancelada">Cancelada (Sem cobrança)</option>
+                    {!vaiGerarSerieFixa && (
+                      <>
+                        <option value="realizada">Realizada (Cobrada)</option>
+                        <option value="falta_cobrada">Falta Cobrada (Cobrar sessão)</option>
+                        <option value="remarcada">Remarcada (Sem cobrança)</option>
+                        <option value="cancelada">Cancelada (Sem cobrança)</option>
+                      </>
+                    )}
                   </select>
+                  {vaiGerarSerieFixa && (
+                    <span className="block text-[11px] text-sky-800 mt-1 leading-snug">
+                      Ao fixar na agenda, todas as sessões são criadas como <strong>Agendada</strong>.
+                    </span>
+                  )}
                 </div>
               </div>
 
               {/* RECURSO DE FIXAR HORÁRIO */}
-              <div className="p-3 bg-purple-50/70 border border-purple-200 rounded-2xl flex flex-col gap-2">
-                <label className="flex items-center gap-2">
-                  <div className="font-bold text-purple-900 text-xs sm:text-sm flex items-center gap-1">
-                    <Pin className="w-3.5 h-3.5 text-purple-700" />
-                    Fixar paciente:
-                  </div>
-                  <select
-                    value={formFrequenciaFixa}
-                    onChange={(e) => setFormFrequenciaFixa(e.target.value as any)}
-                    className="px-2 py-1 bg-white border border-purple-300 rounded-lg text-purple-900 text-xs font-bold focus:outline-none"
+              <div className="p-3.5 bg-purple-50/70 border border-purple-200 rounded-2xl flex flex-col gap-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <label
+                    htmlFor="select-frequencia-fixa"
+                    className="font-bold text-purple-900 text-xs sm:text-sm flex items-center gap-1.5"
                   >
-                    <option value="nenhuma">Nenhuma</option>
+                    <Pin className="w-3.5 h-3.5 text-purple-700 shrink-0" />
+                    <span>Fixar na agenda:</span>
+                  </label>
+                  <select
+                    id="select-frequencia-fixa"
+                    value={formFrequenciaFixa}
+                    onChange={(e) => {
+                      const novaFreq = e.target.value as FrequenciaFixaAgenda;
+                      setFormFrequenciaFixa(novaFreq);
+                      if (novaFreq !== "nenhuma") {
+                        setFormStatus("agendada");
+                      }
+                    }}
+                    className="px-3 py-1.5 bg-white border border-purple-300 rounded-lg text-purple-900 text-xs font-bold focus:outline-none cursor-pointer"
+                  >
+                    <option value="nenhuma">Não fixar</option>
                     <option value="semanal">Semanal</option>
                     <option value="quinzenal">Quinzenal</option>
+                    <option value="mensal">Mensal</option>
                   </select>
-                </label>
+                </div>
 
-                {formFrequenciaFixa !== "nenhuma" && !selectedAgendamentoParaEditar && (
-                  <div className="mt-2 pt-2 border-t border-purple-200 flex items-center justify-between text-xs text-purple-900">
-                    <span>Gerar automaticamente para as próximas semanas:</span>
-                    <select
-                      value={formGerarSemanas}
-                      onChange={(e) => setFormGerarSemanas(Number(e.target.value))}
-                      className="px-2 py-1 bg-white border border-purple-300 rounded-lg text-purple-900 font-bold focus:outline-none"
-                    >
-                      <option value={1}>Apenas esta sessão</option>
-                      <option value={4}>Próximas 4 semanas/quinzenas</option>
-                      <option value={8}>Próximas 8 semanas/quinzenas</option>
-                      <option value={12}>Próximas 12 semanas/quinzenas</option>
-                    </select>
+                {vaiGerarSerieFixa && (
+                  <div className="pt-2.5 border-t border-purple-200 flex flex-col gap-2 text-xs text-purple-900">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <label htmlFor="select-meses-fixar" className="font-medium">
+                        Fixar pelos próximos:
+                      </label>
+                      <select
+                        id="select-meses-fixar"
+                        value={formMesesFixar}
+                        onChange={(e) =>
+                          setFormMesesFixar(Number(e.target.value) as MesesFixacaoAgenda)
+                        }
+                        className="px-3 py-1.5 bg-white border border-purple-300 rounded-lg text-purple-900 font-bold focus:outline-none cursor-pointer"
+                      >
+                        <option value={1}>1 mês</option>
+                        <option value={2}>2 meses</option>
+                        <option value={3}>3 meses</option>
+                      </select>
+                    </div>
+
+                    {datasSerieFixa.length > 0 && (
+                      <div className="text-[11px] text-purple-800/90 bg-white/80 border border-purple-200/80 rounded-xl px-3 py-2 leading-relaxed">
+                        <span className="font-semibold">
+                          {formFrequenciaFixa === "semanal" &&
+                            "1x por semana no mesmo dia da semana e horário"}
+                          {formFrequenciaFixa === "quinzenal" &&
+                            "A cada 2 semanas no mesmo dia da semana e horário"}
+                          {formFrequenciaFixa === "mensal" &&
+                            "1x por mês no mesmo dia da semana e horário"}
+                        </span>
+                        <span aria-hidden="true"> · </span>
+                        <span>
+                          {datasSerieFixa.length} sessões (
+                          {datasSerieFixa
+                            .map((d) => {
+                              const [, m, dia] = d.split("-");
+                              return `${dia}/${m}`;
+                            })
+                            .join(", ")}
+                          )
+                        </span>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -2771,6 +3488,13 @@ export function ProfissionalAgendaView({
                   className="w-full px-3 py-2 bg-warm/30 border border-soft rounded-xl text-forest focus:outline-none text-xs"
                 />
               </div>
+
+              {formErroValidacao && (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-center gap-2 text-xs text-rose-800 font-medium">
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{formErroValidacao}</span>
+                </div>
+              )}
 
               {/* MODAL FOOTER */}
               <div className="pt-3 border-t border-soft flex items-center justify-end gap-2">
@@ -3110,6 +3834,218 @@ export function ProfissionalAgendaView({
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* 9. MINI MODAL: REMANEJAMENTO RÁPIDO VIA ARRASTAR E SOLTAR */}
+      {remanejamentoModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-xl border border-soft p-5 sm:p-6 animate-in fade-in zoom-in-95 space-y-4">
+            <div className="flex items-center justify-between border-b border-soft pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-forest/10 flex items-center justify-center text-forest shrink-0">
+                  <CalendarDays className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-forest text-sm sm:text-base">Remanejar Atendimento</h4>
+                  <p className="text-[11px] text-forest/70">
+                    Defina o horário para confirmar o remanejamento.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRemanejamentoModal(null)}
+                className="w-7 h-7 rounded-lg hover:bg-soft/60 flex items-center justify-center text-forest/60 hover:text-forest transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Resumo do Atendimento */}
+            <div className="p-3 bg-warm/50 border border-soft rounded-xl space-y-1.5 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-forest/70 font-medium">Paciente:</span>
+                <span className="font-bold text-forest">{remanejamentoModal.agendamento.pacienteNome}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-forest/70 font-medium">De:</span>
+                <span className="font-mono text-forest/80">
+                  {remanejamentoModal.agendamento.data.split("-").reverse().join("/")} às{" "}
+                  {remanejamentoModal.agendamento.horario}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-forest/70 font-medium">Para o dia:</span>
+                <span className="font-bold text-emerald-800">
+                  {remanejamentoModal.targetData.split("-").reverse().join("/")} (
+                  {new Date(remanejamentoModal.targetData + "T12:00:00").toLocaleDateString("pt-BR", {
+                    weekday: "short",
+                  })}
+                  )
+                </span>
+              </div>
+            </div>
+
+            {/* Campo do Horário */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label htmlFor="input-novo-horario-remanejamento" className="block text-xs font-bold text-forest">
+                  Novo Horário da Sessão <span className="text-red-500">*</span>
+                </label>
+                {/* Botões de atalho para alternar minutos (:00 ou :30) */}
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] text-forest/50 font-medium">Minutos:</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const h = (remanejamentoModal.targetHorario || "14:00").split(":")[0] || "14";
+                      setRemanejamentoModal((prev) => (prev ? { ...prev, targetHorario: `${h}:00` } : prev));
+                    }}
+                    className={`px-2 py-0.5 rounded-md font-mono text-[11px] transition-colors cursor-pointer border ${
+                      remanejamentoModal.targetHorario?.endsWith(":00")
+                        ? "bg-forest text-white border-forest font-bold"
+                        : "bg-white text-forest/70 border-soft hover:bg-warm"
+                    }`}
+                  >
+                    :00
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const h = (remanejamentoModal.targetHorario || "14:00").split(":")[0] || "14";
+                      setRemanejamentoModal((prev) => (prev ? { ...prev, targetHorario: `${h}:30` } : prev));
+                    }}
+                    className={`px-2 py-0.5 rounded-md font-mono text-[11px] transition-colors cursor-pointer border ${
+                      remanejamentoModal.targetHorario?.endsWith(":30")
+                        ? "bg-forest text-white border-forest font-bold"
+                        : "bg-white text-forest/70 border-soft hover:bg-warm"
+                    }`}
+                  >
+                    :30
+                  </button>
+                </div>
+              </div>
+              <div className="relative">
+                <Clock className="w-4 h-4 text-forest/40 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  id="input-novo-horario-remanejamento"
+                  type="time"
+                  step="1800"
+                  required
+                  value={remanejamentoModal.targetHorario}
+                  onChange={(e) =>
+                    setRemanejamentoModal((prev) =>
+                      prev ? { ...prev, targetHorario: e.target.value } : prev
+                    )
+                  }
+                  className="w-full pl-9 pr-3 py-2 bg-warm/30 border border-soft rounded-xl text-forest font-bold text-sm focus:outline-none focus:ring-2 focus:ring-forest/30"
+                />
+              </div>
+            </div>
+
+            {/* Escopo de Série se for Horário Fixo */}
+            {remanejamentoModal.agendamento.isHorarioFixo && (
+              <div className="p-3 bg-purple-50/70 border border-purple-200 rounded-xl space-y-2 text-xs">
+                <span className="font-bold text-purple-900 block">
+                  Este atendimento é um {getFrequenciaFixaLabel(remanejamentoModal.agendamento)}:
+                </span>
+                <div className="flex flex-col gap-1.5">
+                  <label className="flex items-center gap-2 cursor-pointer font-medium text-purple-950">
+                    <input
+                      type="radio"
+                      name="escopoRemanejamento"
+                      checked={remanejamentoModal.escopoSerie === "apenas_este"}
+                      onChange={() =>
+                        setRemanejamentoModal((prev) =>
+                          prev ? { ...prev, escopoSerie: "apenas_este" } : prev
+                        )
+                      }
+                      className="text-forest focus:ring-forest"
+                    />
+                    <span>Mover apenas esta sessão</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer font-medium text-purple-950">
+                    <input
+                      type="radio"
+                      name="escopoRemanejamento"
+                      checked={remanejamentoModal.escopoSerie === "serie_toda"}
+                      onChange={() =>
+                        setRemanejamentoModal((prev) =>
+                          prev ? { ...prev, escopoSerie: "serie_toda" } : prev
+                        )
+                      }
+                      className="text-forest focus:ring-forest"
+                    />
+                    <span>Mover esta e todas as próximas da série</span>
+                  </label>
+                </div>
+              </div>
+            )}
+
+            {/* Aviso de conflito se horário bater com outro paciente */}
+            {conflitoRemanejamento && (
+              <div className="p-3 bg-rose-50 border border-rose-300 rounded-xl flex items-start gap-2.5 text-xs text-rose-900 animate-in fade-in">
+                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-bold block">Horário Indisponível</span>
+                  <span>
+                    Já existe atendimento para <strong>{conflitoRemanejamento.pacienteNome}</strong> das{" "}
+                    <strong>{conflitoRemanejamento.horario}</strong> às{" "}
+                    <strong>
+                      {minutosParaHora(
+                        horaParaMinutos(conflitoRemanejamento.horario) +
+                          (conflitoRemanejamento.duracaoMinutos || 50)
+                      )}
+                    </strong>{" "}
+                    ({conflitoRemanejamento.duracaoMinutos || 50} min). Escolha outro horário para confirmar.
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Botões do Rodapé */}
+            <div className="pt-2 border-t border-soft flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setRemanejamentoModal(null)}
+                className="px-4 py-2 rounded-xl border border-soft text-forest/70 hover:text-forest text-xs font-semibold cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={isSubmitting || Boolean(conflitoRemanejamento)}
+                onClick={async () => {
+                  const ok = await handleExecutarRemanejamento(
+                    remanejamentoModal.agendamento,
+                    remanejamentoModal.targetData,
+                    remanejamentoModal.targetHorario,
+                    remanejamentoModal.escopoSerie
+                  );
+                  if (ok) {
+                    setRemanejamentoModal(null);
+                  }
+                }}
+                className="px-5 py-2 rounded-xl bg-forest hover:bg-forest/90 text-white text-xs font-semibold transition-all shadow-xs disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer flex items-center gap-1.5"
+              >
+                {isSubmitting ? (
+                  <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <Check className="w-3.5 h-3.5" />
+                )}
+                <span>Confirmar Horário e Mover</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 10. TOAST FLUTUANTE DE FEEDBACK */}
+      {toastMensagem && (
+        <div className="fixed bottom-6 right-6 z-50 bg-forest text-white px-4 py-2.5 rounded-xl shadow-xl text-xs font-semibold flex items-center gap-2 border border-emerald-400/30 animate-in fade-in slide-in-from-bottom-2">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span>{toastMensagem}</span>
         </div>
       )}
       </div>
