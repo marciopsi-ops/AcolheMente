@@ -40,6 +40,7 @@ import {
 } from "lucide-react";
 import { auth, db, handleFirestoreError, OperationType } from "../lib/firebase";
 import { BrandLogo } from "../components/BrandLogo";
+import { buildWelcomeFirstContactMessage, formatWhatsAppPhone } from "../utils/formatters";
 
 interface AceiteCasoLandingViewProps {
   casoId: string;
@@ -1111,12 +1112,56 @@ export function AceiteCasoLandingView({
                     {card.telefone && (
                       <a
                         href={(() => {
-                          const digits = String(card.telefone).replace(/\D/g, "");
-                          const clean = digits.startsWith("55") ? digits : `55${digits}`;
-                          const nomePac = (card.nome || "Paciente").split(" ")[0];
-                          const msg = `Olá, ${nomePac}! Tudo bem? Sou ${profDisplayName}, psicólogo(a) credenciado(a) pelo Projeto AcolheMente Saúde. Recebi a confirmação do seu encaminhamento e gostaria de combinar o melhor dia e horário para a nossa primeira sessão.`;
+                          const clean = formatWhatsAppPhone(card.telefone);
+                          const msg = buildWelcomeFirstContactMessage({
+                            pacienteNome:
+                              card.nomeDesejado ||
+                              card.nomeCivil ||
+                              card.nome ||
+                              card.nomeCompleto,
+                            profissionalNome:
+                              userProfile?.name ||
+                              userProfile?.nome ||
+                              assignedProfProfile?.name ||
+                              assignedProfProfile?.nome ||
+                              card.aceitoPorNome ||
+                              profDisplayName,
+                            profissionalCrp:
+                              userProfile?.crp ||
+                              assignedProfProfile?.crp ||
+                              card.profissionalCrp,
+                            profissionalUid:
+                              (isAssignedProfessional ? authUser?.uid : card.profissionalId) ||
+                              userProfile?.uid ||
+                              assignedProfProfile?.uid ||
+                              card.profissionalId,
+                          });
                           return `https://wa.me/${clean}?text=${encodeURIComponent(msg)}`;
                         })()}
+                        onClick={() => {
+                          if (isAssignedProfessional && casoId && !card.contatoEnviado) {
+                            const nowIso = new Date().toISOString();
+                            updateDoc(doc(db, "acolhimentos", casoId), {
+                              contatoEnviado: true,
+                              contatoEnviadoEm: nowIso,
+                              primeiroContatoEnviado: true,
+                              primeiroContatoEnviadoEm: nowIso,
+                            }).catch((err) =>
+                              console.warn("Aviso ao registrar primeiro contato:", err)
+                            );
+                            setCard((prev: any) =>
+                              prev
+                                ? {
+                                    ...prev,
+                                    contatoEnviado: true,
+                                    contatoEnviadoEm: nowIso,
+                                    primeiroContatoEnviado: true,
+                                    primeiroContatoEnviadoEm: nowIso,
+                                  }
+                                : prev
+                            );
+                          }
+                        }}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="flex-1 py-3 px-5 bg-[#25D366] hover:bg-[#20b858] text-white rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-colors whitespace-nowrap"

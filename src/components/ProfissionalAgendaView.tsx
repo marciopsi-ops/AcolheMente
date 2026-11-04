@@ -1105,45 +1105,61 @@ export function ProfissionalAgendaView({
   };
 
   // Cores e estilos de badge de status
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status: string, compact = false) => {
+    const baseClasses = compact
+      ? "inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] leading-tight font-bold max-w-full"
+      : "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold whitespace-nowrap";
+
     switch (status) {
       case "realizada":
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 whitespace-nowrap">
-            <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
-            Realizada
+          <span
+            className={`${baseClasses} bg-emerald-100 text-emerald-800 border border-emerald-200`}
+            title="Realizada"
+          >
+            <CheckCircle2 className={`${compact ? "w-2.5 h-2.5" : "w-3 h-3"} text-emerald-600 shrink-0`} />
+            <span className={compact ? "truncate" : ""}>Realizada</span>
           </span>
         );
       case "falta_cobrada":
         return (
           <span
-            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-orange-100 text-orange-900 border border-orange-300 whitespace-nowrap"
+            className={`${baseClasses} bg-orange-100 text-orange-900 border border-orange-300`}
             title="Falta cobrada — contabilizada no faturamento do paciente"
           >
-            <UserX className="w-3 h-3 text-orange-700 shrink-0" />
-            <DollarSign className="w-2.5 h-2.5 -ml-1 text-orange-700 shrink-0" />
-            Falta Cobrada
+            <UserX className={`${compact ? "w-2.5 h-2.5" : "w-3 h-3"} text-orange-700 shrink-0`} />
+            <DollarSign className={`${compact ? "w-2 h-2" : "w-2.5 h-2.5"} -ml-1 text-orange-700 shrink-0`} />
+            <span className={compact ? "truncate" : ""}>Falta Cobrada</span>
           </span>
         );
       case "remarcada":
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-200 whitespace-nowrap">
-            <RotateCcw className="w-3 h-3 text-amber-600 shrink-0" />
-            Remarcada
+          <span
+            className={`${baseClasses} bg-amber-100 text-amber-800 border border-amber-200`}
+            title="Remarcada"
+          >
+            <RotateCcw className={`${compact ? "w-2.5 h-2.5" : "w-3 h-3"} text-amber-600 shrink-0`} />
+            <span className={compact ? "truncate" : ""}>Remarcada</span>
           </span>
         );
       case "cancelada":
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-rose-100 text-rose-800 border border-rose-200 whitespace-nowrap">
-            <XCircle className="w-3 h-3 text-rose-600 shrink-0" />
-            Cancelada
+          <span
+            className={`${baseClasses} bg-rose-100 text-rose-800 border border-rose-200`}
+            title="Cancelada"
+          >
+            <XCircle className={`${compact ? "w-2.5 h-2.5" : "w-3 h-3"} text-rose-600 shrink-0`} />
+            <span className={compact ? "truncate" : ""}>Cancelada</span>
           </span>
         );
       default:
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-sky-100 text-sky-800 border border-sky-200 whitespace-nowrap">
-            <Clock className="w-3 h-3 text-sky-600 shrink-0" />
-            Agendada
+          <span
+            className={`${baseClasses} bg-sky-100 text-sky-800 border border-sky-200`}
+            title="Agendada"
+          >
+            <Clock className={`${compact ? "w-2.5 h-2.5" : "w-3 h-3"} text-sky-600 shrink-0`} />
+            <span className={compact ? "truncate" : ""}>Agendada</span>
           </span>
         );
     }
@@ -1533,7 +1549,7 @@ export function ProfissionalAgendaView({
                                 sessoesNesteHorario.map((sessao) => (
                                   <div
                                     key={sessao.id}
-                                    className={`p-3 sm:p-4 rounded-xl border text-xs shadow-2xs transition-all hover:shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3 ${
+                                    className={`p-3 sm:p-4 rounded-xl border text-xs shadow-2xs transition-all hover:shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3 min-w-0 overflow-hidden ${
                                       sessao.status === "realizada"
                                         ? "bg-emerald-50/70 border-emerald-200"
                                         : sessao.status === "falta_cobrada"
@@ -1545,7 +1561,7 @@ export function ProfissionalAgendaView({
                                         : "bg-white border-soft hover:border-forest/40"
                                     }`}
                                   >
-                                    <div>
+                                    <div className="min-w-0">
                                       <div className="flex flex-wrap items-center gap-2">
                                         <span
                                           onClick={() => {
@@ -1611,7 +1627,7 @@ export function ProfissionalAgendaView({
                                 </div>
 
                                 {/* Ações Rápidas */}
-                                <div className="flex flex-wrap items-center gap-1.5 shrink-0 self-end md:self-center">
+                                <div className="flex flex-wrap items-center gap-1.5 max-w-full self-start md:self-center">
                                   {/* Mudança de status rápida */}
                                   <div className="flex flex-wrap items-center gap-1 bg-white p-1 rounded-xl border border-soft shadow-2xs">
                                     <button
@@ -1826,7 +1842,7 @@ export function ProfissionalAgendaView({
                     return (
                       <div
                         key={dia.dataStr}
-                        className={`p-1.5 sm:p-2 flex flex-col gap-2 relative ${
+                        className={`p-1.5 sm:p-2 flex flex-col gap-2 relative min-w-0 ${
                           dia.isHoje ? "bg-forest/[0.02]" : ""
                         }`}
                       >
@@ -1850,7 +1866,7 @@ export function ProfissionalAgendaView({
                           sessoesDoDia.map((sessao) => (
                             <div
                               key={sessao.id}
-                              className={`p-2 rounded-xl border text-xs shadow-2xs transition-all hover:shadow-xs group ${
+                              className={`w-full min-w-0 overflow-hidden p-2 rounded-xl border text-xs shadow-2xs transition-all hover:shadow-xs group ${
                                 sessao.status === "realizada"
                                   ? "bg-emerald-50/70 border-emerald-200"
                                   : sessao.status === "falta_cobrada"
@@ -1862,117 +1878,161 @@ export function ProfissionalAgendaView({
                                   : "bg-white border-soft hover:border-forest/40"
                               }`}
                             >
-                              {/* Horário e Fixado */}
-                              <div className="flex items-center justify-between gap-1 mb-1">
-                                <span className="font-bold text-forest flex items-center gap-1 text-[11px]">
-                                  <Clock className="w-3.5 h-3.5 text-forest/60" />
-                                  {sessao.horario}
-                                </span>
-                                {sessao.isHorarioFixo && (
-                                  <span
-                                    className="text-purple-600 font-bold text-[10px] bg-purple-100 px-1 rounded flex items-center gap-0.5"
-                                    title="Horário semanal fixo"
-                                  >
-                                    <Pin className="w-2.5 h-2.5" />
-                                    Fixo
-                                  </span>
-                                )}
-                              </div>
+                              <div className="flex items-stretch justify-between gap-1.5 min-w-0">
+                                {/* Coluna Esquerda: Dados da Sessão contidos dentro do quadrado */}
+                                <div className="flex-1 min-w-0 flex flex-col justify-between gap-1.5">
+                                  <div className="min-w-0">
+                                    {/* Horário e Fixado */}
+                                    <div className="flex flex-wrap items-center gap-1 mb-1">
+                                      <span className="font-bold text-forest inline-flex items-center gap-1 text-[11px] tabular-nums shrink-0">
+                                        <Clock className="w-3 h-3 text-forest/60 shrink-0" />
+                                        {sessao.horario}
+                                      </span>
+                                      {sessao.isHorarioFixo && (
+                                        <span
+                                          className="text-purple-700 font-bold text-[9px] bg-purple-100 px-1 py-0.5 rounded inline-flex items-center gap-0.5 leading-none shrink-0"
+                                          title="Horário semanal fixo"
+                                        >
+                                          <Pin className="w-2.5 h-2.5 shrink-0" />
+                                          Fixo
+                                        </span>
+                                      )}
+                                    </div>
 
-                              {/* Nome do Paciente */}
-                              <p
-                                className="font-bold text-forest text-[11px] sm:text-xs truncate leading-tight cursor-pointer hover:text-forest/80"
-                                title={sessao.pacienteNome}
-                                onClick={() => {
-                                  if (sessao.pacienteId && onOpenPacienteDetalhes) {
-                                    onOpenPacienteDetalhes(sessao.pacienteId);
-                                  }
-                                }}
-                              >
-                                {sessao.pacienteNome}
-                              </p>
+                                    {/* Nome do Paciente */}
+                                    <p
+                                      className="font-bold text-forest text-[11px] sm:text-xs leading-snug line-clamp-3 break-words cursor-pointer hover:text-forest/80 hover:underline"
+                                      title={sessao.pacienteNome}
+                                      onClick={() => {
+                                        if (sessao.pacienteId && onOpenPacienteDetalhes) {
+                                          onOpenPacienteDetalhes(sessao.pacienteId);
+                                        }
+                                      }}
+                                    >
+                                      {sessao.pacienteNome}
+                                    </p>
+                                  </div>
 
-                              {/* Modalidade & Status */}
-                              <div className="mt-1 flex items-center justify-between gap-1 text-[10px]">
-                                <span className="text-forest/60 flex items-center gap-0.5">
-                                  {sessao.modalidade === "online" ? (
-                                    <Video className="w-2.5 h-2.5 text-sky-600" />
-                                  ) : (
-                                    <MapPin className="w-2.5 h-2.5 text-emerald-600" />
-                                  )}
-                                  <span className="capitalize">{sessao.modalidade}</span>
-                                </span>
-                                {getStatusBadge(sessao.status)}
-                              </div>
+                                  {/* Modalidade & Status empilhados para nunca vazarem lateralmente */}
+                                  <div className="mt-1 flex flex-col items-start gap-1 text-[10px] min-w-0">
+                                    <span className="text-forest/70 inline-flex items-center gap-1 max-w-full min-w-0">
+                                      {sessao.modalidade === "online" ? (
+                                        <Video className="w-2.5 h-2.5 text-sky-600 shrink-0" />
+                                      ) : (
+                                        <MapPin className="w-2.5 h-2.5 text-emerald-600 shrink-0" />
+                                      )}
+                                      <span className="capitalize truncate">{sessao.modalidade}</span>
+                                    </span>
+                                    <div className="max-w-full min-w-0">
+                                      {getStatusBadge(sessao.status, true)}
+                                    </div>
+                                  </div>
+                                </div>
 
-                              {/* Ações Rápidas no Hover / Card */}
-                              <div className="mt-2 pt-1.5 border-t border-soft/60 flex items-center justify-between gap-1">
-                                {/* Menu rápido de status */}
-                                <div className="flex items-center gap-0.5">
+                                {/* Coluna Direita: Ícones de Comando em Linha Vertical dentro do quadrado */}
+                                <div className="shrink-0 pl-1.5 border-l border-soft/70 flex flex-col items-center justify-start gap-0.5">
                                   {sessao.status !== "realizada" && (
                                     <button
                                       type="button"
-                                      onClick={() => handleUpdateStatusRapido(sessao, "realizada")}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleUpdateStatusRapido(sessao, "realizada");
+                                      }}
                                       title="Marcar como Realizada (entra no faturamento)"
-                                      className="p-1 hover:bg-emerald-100 text-emerald-700 rounded transition-colors cursor-pointer"
+                                      aria-label="Marcar como Realizada"
+                                      className="w-6 h-6 flex items-center justify-center hover:bg-emerald-100 text-emerald-700 rounded-md transition-colors cursor-pointer"
                                     >
-                                      <Check className="w-3 h-3" />
+                                      <Check className="w-3.5 h-3.5 shrink-0" />
                                     </button>
                                   )}
                                   {sessao.status !== "falta_cobrada" && (
                                     <button
                                       type="button"
-                                      onClick={() => handleUpdateStatusRapido(sessao, "falta_cobrada")}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleUpdateStatusRapido(sessao, "falta_cobrada");
+                                      }}
                                       title="Marcar como Falta Cobrada (entra no faturamento)"
-                                      className="px-1 py-1 hover:bg-orange-100 text-orange-700 rounded transition-colors cursor-pointer inline-flex items-center"
+                                      aria-label="Marcar como Falta Cobrada"
+                                      className="w-6 h-6 flex items-center justify-center hover:bg-orange-100 text-orange-700 rounded-md transition-colors cursor-pointer"
                                     >
-                                      <UserX className="w-3 h-3" />
-                                      <DollarSign className="w-2.5 h-2.5 -ml-0.5" />
+                                      <UserX className="w-3 h-3 shrink-0" />
+                                      <DollarSign className="w-2.5 h-2.5 -ml-1 shrink-0" />
                                     </button>
                                   )}
                                   {sessao.status !== "remarcada" && (
                                     <button
                                       type="button"
-                                      onClick={() => handleUpdateStatusRapido(sessao, "remarcada")}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleUpdateStatusRapido(sessao, "remarcada");
+                                      }}
                                       title="Marcar como Remarcada (sem cobrança)"
-                                      className="p-1 hover:bg-amber-100 text-amber-700 rounded transition-colors cursor-pointer"
+                                      aria-label="Marcar como Remarcada"
+                                      className="w-6 h-6 flex items-center justify-center hover:bg-amber-100 text-amber-700 rounded-md transition-colors cursor-pointer"
                                     >
-                                      <RotateCcw className="w-3 h-3" />
+                                      <RotateCcw className="w-3.5 h-3.5 shrink-0" />
                                     </button>
                                   )}
                                   {sessao.status !== "cancelada" && (
                                     <button
                                       type="button"
-                                      onClick={() => handleUpdateStatusRapido(sessao, "cancelada")}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleUpdateStatusRapido(sessao, "cancelada");
+                                      }}
                                       title="Marcar como Cancelada (sem cobrança)"
-                                      className="p-1 hover:bg-rose-100 text-rose-700 rounded transition-colors cursor-pointer"
+                                      aria-label="Marcar como Cancelada"
+                                      className="w-6 h-6 flex items-center justify-center hover:bg-rose-100 text-rose-700 rounded-md transition-colors cursor-pointer"
                                     >
-                                      <X className="w-3 h-3" />
+                                      <X className="w-3.5 h-3.5 shrink-0" />
                                     </button>
                                   )}
-                                </div>
 
-                                <div className="flex items-center gap-1">
+                                  <div className="w-4 h-px bg-soft/80 my-0.5" aria-hidden="true" />
+
                                   {/* WhatsApp */}
                                   {sessao.pacienteTelefone && (
                                     <button
                                       type="button"
-                                      onClick={() => handleOpenWhatsApp(sessao)}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleOpenWhatsApp(sessao);
+                                      }}
                                       title="Abrir WhatsApp para confirmar sessão"
-                                      className="p-1 hover:bg-emerald-50 text-emerald-600 rounded transition-colors cursor-pointer"
+                                      aria-label="Confirmar via WhatsApp"
+                                      className="w-6 h-6 flex items-center justify-center hover:bg-emerald-100 text-emerald-600 rounded-md transition-colors cursor-pointer"
                                     >
-                                      <MessageSquare className="w-3 h-3" />
+                                      <MessageSquare className="w-3.5 h-3.5 shrink-0" />
                                     </button>
                                   )}
 
                                   {/* Editar */}
                                   <button
                                     type="button"
-                                    onClick={() => handleOpenEditarAgendamento(sessao)}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleOpenEditarAgendamento(sessao);
+                                    }}
                                     title="Editar agendamento"
-                                    className="p-1 hover:bg-forest/10 text-forest/70 hover:text-forest rounded transition-colors cursor-pointer"
+                                    aria-label="Editar agendamento"
+                                    className="w-6 h-6 flex items-center justify-center hover:bg-forest/10 text-forest/70 hover:text-forest rounded-md transition-colors cursor-pointer"
                                   >
-                                    <Edit2 className="w-3 h-3" />
+                                    <Edit2 className="w-3.5 h-3.5 shrink-0" />
+                                  </button>
+
+                                  {/* Excluir */}
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setAgendamentoParaExcluir(sessao);
+                                    }}
+                                    title="Excluir agendamento"
+                                    aria-label="Excluir agendamento"
+                                    className="w-6 h-6 flex items-center justify-center hover:bg-rose-100 text-rose-600 rounded-md transition-colors cursor-pointer"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5 shrink-0" />
                                   </button>
                                 </div>
                               </div>
@@ -2119,9 +2179,9 @@ export function ProfissionalAgendaView({
                 {agendamentosFiltrados.map((item) => (
                   <div
                     key={item.id}
-                    className="p-3 sm:p-4 hover:bg-warm/30 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-3"
+                    className="p-3 sm:p-4 hover:bg-warm/30 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-3 min-w-0 overflow-hidden"
                   >
-                    <div className="flex items-start gap-3">
+                    <div className="flex items-start gap-3 min-w-0">
                       <div className="w-11 h-11 rounded-xl bg-forest/10 flex flex-col items-center justify-center text-forest shrink-0">
                         <span className="text-[10px] font-bold uppercase leading-none">
                           {item.data
@@ -2135,7 +2195,7 @@ export function ProfissionalAgendaView({
                         </span>
                       </div>
 
-                      <div>
+                      <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="text-sm font-bold text-forest">
                             {item.pacienteNome}
@@ -2184,7 +2244,7 @@ export function ProfissionalAgendaView({
                     </div>
 
                     {/* Botões de Ação na Linha */}
-                    <div className="flex flex-wrap items-center gap-2 self-end md:self-center shrink-0">
+                    <div className="flex flex-wrap items-center gap-2 max-w-full self-start md:self-center">
                       {/* Mudança rápida de status */}
                       <div className="flex flex-wrap items-center gap-1 bg-warm p-1 rounded-xl border border-soft">
                         <button

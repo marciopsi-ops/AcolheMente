@@ -57,6 +57,7 @@ import {
   GENERO_OPCOES,
   TERAPIA_ANTERIOR_OPCOES,
 } from "../constants/opcoesCadastroPaciente";
+import { buildWelcomeFirstContactMessage, formatWhatsAppPhone } from "../utils/formatters";
 
 interface FichaPacienteExternoModalProps {
   paciente: any;
@@ -608,14 +609,72 @@ export function FichaPacienteExternoModal({
   // WhatsApp
   const telRaw = telDisplay.replace(/\D/g, "");
   const openWhatsApp = (msgPersonalizada?: string) => {
-    if (!telRaw) {
+    const cleanNum = formatWhatsAppPhone(telDisplay);
+    if (!cleanNum) {
       showToast("Este paciente não possui telefone/WhatsApp cadastrado.", "warning");
       return;
     }
-    const msg =
-      msgPersonalizada ||
-      `Olá ${nomeDisplay}! Tudo bem? Gostaria de alinhar nosso próximo atendimento.`;
-    const cleanNum = telRaw.startsWith("55") ? telRaw : `55${telRaw}`;
+
+    let msg = msgPersonalizada || "";
+    if (!msg) {
+      const isProfCaller =
+        effectiveRole === "profissional" ||
+        Boolean(loggedUid && loggedUid === currentPaciente?.profissionalId);
+      const hasRecordedSessions =
+        Array.isArray(currentPaciente.historicoSessoes) &&
+        currentPaciente.historicoSessoes.length > 0;
+
+      if (
+        isCorporativo &&
+        isProfCaller &&
+        (!hasRecordedSessions || !currentPaciente.primeiroContatoFichaEnviado)
+      ) {
+        const matchedProf = allUsers.find(
+          (u) =>
+            Boolean(currentPaciente.profissionalId) &&
+            (u.uid === currentPaciente.profissionalId ||
+              u.id === currentPaciente.profissionalId)
+        );
+        msg = buildWelcomeFirstContactMessage({
+          pacienteNome: nomeDisplay,
+          profissionalNome:
+            profile?.name ||
+            profile?.nome ||
+            matchedProf?.name ||
+            matchedProf?.nome ||
+            currentPaciente.profissionalNome ||
+            user?.displayName,
+          profissionalCrp:
+            profile?.crp ||
+            matchedProf?.crp ||
+            currentPaciente.profissionalCrp,
+          profissionalUid:
+            loggedUid ||
+            currentPaciente.profissionalId ||
+            matchedProf?.uid ||
+            matchedProf?.id,
+        });
+
+        if (currentPaciente.id && !currentPaciente.primeiroContatoFichaEnviado) {
+          const nowIso = new Date().toISOString();
+          const patch = {
+            primeiroContatoEnviado: true,
+            primeiroContatoEnviadoEm: currentPaciente.primeiroContatoEnviadoEm || nowIso,
+            primeiroContatoFichaEnviado: true,
+          };
+          updateDoc(doc(db, targetCollection, currentPaciente.id), patch).catch((err) =>
+            console.warn("Aviso ao registrar primeiro contato corporativo:", err)
+          );
+          const nextPac = { ...latestPacienteRef.current, ...patch };
+          latestPacienteRef.current = nextPac;
+          setCurrentPaciente(nextPac);
+          onUpdatePaciente(nextPac);
+        }
+      } else {
+        msg = `Olá ${nomeDisplay}! Tudo bem? Gostaria de alinhar nosso próximo atendimento.`;
+      }
+    }
+
     window.open(`https://wa.me/${cleanNum}?text=${encodeURIComponent(msg)}`, "_blank");
   };
 

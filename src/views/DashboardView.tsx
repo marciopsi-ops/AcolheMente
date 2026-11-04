@@ -220,7 +220,14 @@ import {
   getPlanDisplayName,
   getCredentialBadgeMeta,
 } from "../types/planosProfissionais";
-import { formatProfessionalName, formatCnpj, isValidCnpj, getCnpjValidationError } from "../utils/formatters";
+import {
+  formatProfessionalName,
+  formatCnpj,
+  isValidCnpj,
+  getCnpjValidationError,
+  buildWelcomeFirstContactMessage,
+  formatWhatsAppPhone,
+} from "../utils/formatters";
 import { ProfissionalAgendaView } from "../components/ProfissionalAgendaView";
 import { FeatureGate } from "../components/FeatureGate";
 import { FichaPacienteExternoModal } from "../components/FichaPacienteExternoModal";
@@ -5460,7 +5467,7 @@ export function DashboardView({
     e.preventDefault();
   };
 
-  const handleOpenPatientWhatsApp = (card: Acolhimento) => {
+  const handleOpenPatientWhatsApp = (card: Acolhimento, forceWelcome = false) => {
     if (currentRole === "profissional" && card.atribuicaoStatus !== "Aceito") {
       showToast(
         "Os dados de contato do paciente e o canal de WhatsApp só são liberados após o aceite formal do caso.",
@@ -5469,39 +5476,105 @@ export function DashboardView({
       return;
     }
 
-    const rawFirstName = (
-      profile?.name ||
-      profile?.nome ||
-      user?.displayName ||
-      "Profissional"
-    )
-      .trim()
-      .split(" ")[0];
-    const profFirstName = rawFirstName
-      ? rawFirstName.charAt(0).toUpperCase() + rawFirstName.slice(1)
-      : "Profissional";
-    const patientFirstName = (card.nomeDesejado || card.nomeCivil || card.nome || "Paciente").trim().split(" ")[0];
-    const origin = typeof window !== "undefined" ? window.location.origin : "https://acolhemente.com.br";
-    const profUid = profile?.uid || card.profissionalId || "";
-    const linkPerfil = profUid ? `${origin}/?prof=${profUid}` : origin;
-    const defaultMsg = `Olá, ${patientFirstName}! 👋 Tudo bem? Sou o(a) psicólogo(a) ${profFirstName}, responsável pelo seu acompanhamento no Projeto AcolheMente Saúde. Estou entrando em contato para combinarmos a nossa primeira sessão! Você também pode conhecer mais sobre o meu perfil e atuação em: ${linkPerfil}`;
     const rawPhone =
       card.telefone ||
       card.whatsapp ||
       (card as any).celular ||
       (card as any).telefoneContato ||
       "";
-    const cleanPhone = rawPhone.replace(/\D/g, "");
-    if (!cleanPhone) {
+    const phoneWithCountry = formatWhatsAppPhone(rawPhone);
+    if (!phoneWithCountry) {
       showToast("O paciente não possui telefone/WhatsApp cadastrado.", "error");
       return;
     }
-    const phoneWithCountry =
-      cleanPhone.length >= 10 && !cleanPhone.startsWith("55")
-        ? `55${cleanPhone}`
-        : cleanPhone;
+
+    const patientFullName =
+      card.nomeDesejado ||
+      card.nomeCivil ||
+      card.nome ||
+      (card as any).nomeCompleto ||
+      "Paciente";
+    const patientFirstName = patientFullName.trim().split(/\s+/)[0] || "Paciente";
+
+    const matchedProf = allUsers.find(
+      (u) =>
+        Boolean(card.profissionalId) &&
+        (u.uid === card.profissionalId || u.id === card.profissionalId)
+    );
+
+    const isProfessionalCaller =
+      currentRole === "profissional" ||
+      Boolean(card.atribuicaoStatus === "Aceito" && card.profissionalId && card.profissionalId === user?.uid);
+
+    let messageToSend: string;
+
+    if (isProfessionalCaller) {
+      const hasRecordedSessions =
+        Array.isArray(card.historicoSessoes) && card.historicoSessoes.length > 0;
+      const isFirstCallFromFicha =
+        forceWelcome || !hasRecordedSessions || !(card as any).primeiroContatoFichaEnviado;
+
+      if (isFirstCallFromFicha) {
+        const profUid =
+          user?.uid ||
+          profile?.uid ||
+          card.profissionalId ||
+          matchedProf?.uid ||
+          matchedProf?.id ||
+          "";
+        const profFullName =
+          profile?.name ||
+          profile?.nome ||
+          matchedProf?.name ||
+          matchedProf?.nome ||
+          card.aceitoPorNome ||
+          card.profissionalNome ||
+          user?.displayName ||
+          "Profissional AcolheMente";
+        const profCrp =
+          profile?.crp ||
+          matchedProf?.crp ||
+          (card as any).profissionalCrp ||
+          "";
+
+        messageToSend = buildWelcomeFirstContactMessage({
+          pacienteNome: patientFullName,
+          profissionalNome: profFullName,
+          profissionalCrp: profCrp,
+          profissionalUid: profUid,
+        });
+
+        if (!card.isPacienteTeste && card.id && !(card as any).primeiroContatoFichaEnviado) {
+          const nowIso = new Date().toISOString();
+          const patch = {
+            contatoEnviado: true,
+            contatoEnviadoEm: card.contatoEnviadoEm || nowIso,
+            primeiroContatoEnviado: true,
+            primeiroContatoEnviadoEm: (card as any).primeiroContatoEnviadoEm || nowIso,
+            primeiroContatoFichaEnviado: true,
+          };
+          updateDoc(doc(db, "acolhimentos", card.id), patch).catch((err) =>
+            console.warn("Aviso ao registrar primeiro contato na ficha:", err)
+          );
+          setSelectedCard((prev: any) =>
+            prev && prev.id === card.id ? { ...prev, ...patch } : prev
+          );
+          setMeusPacientes((prev) =>
+            prev.map((p) => (p.id === card.id ? ({ ...p, ...patch } as any) : p))
+          );
+          setAcolhimentos((prev) =>
+            prev.map((p) => (p.id === card.id ? ({ ...p, ...patch } as any) : p))
+          );
+        }
+      } else {
+        messageToSend = `Olá, *${patientFirstName}*! 👋 Tudo bem? Gostaria de alinhar nosso próximo atendimento.`;
+      }
+    } else {
+      messageToSend = `Olá, *${patientFirstName}*! 👋 Tudo bem? Aqui é da equipe de Acolhimento do *Projeto AcolheMente Saúde*.`;
+    }
+
     window.open(
-      `https://wa.me/${phoneWithCountry}?text=${encodeURIComponent(defaultMsg)}`,
+      `https://wa.me/${phoneWithCountry}?text=${encodeURIComponent(messageToSend)}`,
       "_blank"
     );
   };
@@ -13118,17 +13191,16 @@ export function DashboardView({
 
                           {/* Lado Direito: Ações Rápidas & Seta de Expansão */}
                           <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
-                            {p.telefone && p.atribuicaoStatus === "Aceito" && (
-                              <a
-                                href={`https://wa.me/55${p.telefone.replace(/\D/g, "")}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="hidden sm:flex px-2 py-1.5 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 rounded-xl text-xs font-semibold items-center gap-1 border border-emerald-200 transition-colors shadow-2xs whitespace-nowrap shrink-0"
+                            {(p.telefone || p.whatsapp) && p.atribuicaoStatus === "Aceito" && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenPatientWhatsApp(p)}
+                                className="hidden sm:flex px-2 py-1.5 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 rounded-xl text-xs font-semibold items-center gap-1 border border-emerald-200 transition-colors shadow-2xs whitespace-nowrap shrink-0 cursor-pointer"
                                 title="Conversar no WhatsApp"
                               >
                                 <Phone className="w-3.5 h-3.5 text-emerald-600" />
                                 <span>WhatsApp</span>
-                              </a>
+                              </button>
                             )}
 
                             {(!p.atribuicaoStatus || p.atribuicaoStatus === "Pendente") ? (
@@ -18740,19 +18812,33 @@ export function DashboardView({
                         </button>
 
                         {selectedCard.atribuicaoStatus === "Aceito" && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setShowContratoModal(true);
-                            }}
-                            className="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold transition-all shadow-2xs flex items-center justify-center gap-2 cursor-pointer"
-                            title="Gerar ou editar o contrato terapêutico com aceite digital para este paciente"
-                          >
-                            <FileSignature className="w-4 h-4 text-sun" />
-                            {selectedCard.contratoAssinado
-                              ? "Ver Contrato Assinado"
-                              : "Gerar / Enviar Contrato"}
-                          </button>
+                          <>
+                            {(selectedCard.telefone || selectedCard.whatsapp) && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenPatientWhatsApp(selectedCard, true)}
+                                className="px-4 py-2.5 bg-[#25D366] hover:bg-[#20b858] text-white rounded-xl text-xs font-bold transition-all shadow-2xs flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap"
+                                title="Enviar mensagem de boas-vindas com o link da sua página profissional no WhatsApp"
+                              >
+                                <Phone className="w-4 h-4 text-white" />
+                                <span>Chamar Paciente no WhatsApp</span>
+                              </button>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setShowContratoModal(true);
+                              }}
+                              className="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold transition-all shadow-2xs flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap"
+                              title="Gerar ou editar o contrato terapêutico com aceite digital para este paciente"
+                            >
+                              <FileSignature className="w-4 h-4 text-sun" />
+                              {selectedCard.contratoAssinado
+                                ? "Ver Contrato Assinado"
+                                : "Gerar / Enviar Contrato"}
+                            </button>
+                          </>
                         )}
 
                         <button

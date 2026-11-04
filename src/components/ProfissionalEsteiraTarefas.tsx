@@ -46,6 +46,7 @@ import {
   isRegistroAtivoParaReajuste,
   parseValorMonetarioSeguro,
 } from "../utils/reajusteAnual";
+import { buildWelcomeFirstContactMessage, formatWhatsAppPhone } from "../utils/formatters";
 export interface UserProfile {
   uid?: string;
   id?: string;
@@ -802,12 +803,44 @@ export function ProfissionalEsteiraTarefas({
     }
   };
 
-  const openWhatsApp = (phone: string, name: string) => {
+  const openWhatsApp = (card: ProfEntityCard) => {
+    const phone = card.entityContact;
     if (!phone) return;
-    const cleanPhone = phone.replace(/\D/g, "");
-    const formattedPhone = cleanPhone.length <= 11 ? `55${cleanPhone}` : cleanPhone;
-    const msg = encodeURIComponent(`Olá ${name}, tudo bem? Sou o(a) ${profile?.name || "seu(sua) terapeuta"} do Projeto AcolheMente.`);
-    window.open(`https://wa.me/${formattedPhone}?text=${msg}`, "_blank");
+    const formattedPhone = formatWhatsAppPhone(phone);
+    if (!formattedPhone) return;
+
+    let msgText: string;
+    if (card.entityType === "paciente" || card.entityType === "paciente_corporativo") {
+      const sessoes =
+        card.entityType === "paciente"
+          ? card.patientObj?.historicoSessoes
+          : card.corporateFichaObj?.historicoSessoes;
+      const primeiroFichaEnviado =
+        card.entityType === "paciente"
+          ? card.patientObj?.primeiroContatoFichaEnviado
+          : card.corporateFichaObj?.primeiroContatoFichaEnviado;
+      const hasSessions = Array.isArray(sessoes) && sessoes.length > 0;
+
+      if (!hasSessions || !primeiroFichaEnviado) {
+        msgText = buildWelcomeFirstContactMessage({
+          pacienteNome: card.entityName,
+          profissionalNome: profile?.name || (profile as any)?.nome,
+          profissionalCrp: profile?.crp,
+          profissionalUid: profile?.uid || profile?.id,
+        });
+      } else {
+        const firstName = (card.entityName || "Paciente").trim().split(/\s+/)[0] || "Paciente";
+        msgText = `Olá, *${firstName}*! 👋 Tudo bem? Gostaria de alinhar nosso próximo atendimento.`;
+      }
+    } else {
+      const firstName = (card.entityName || "Olá").trim().split(/\s+/)[0] || "Olá";
+      msgText = `Olá, *${firstName}*! Tudo bem?`;
+    }
+
+    window.open(
+      `https://wa.me/${formattedPhone}?text=${encodeURIComponent(msgText)}`,
+      "_blank"
+    );
   };
 
   return (
@@ -1204,8 +1237,8 @@ export function ProfissionalEsteiraTarefas({
                       {/* WhatsApp Button / Locked Contact Indicator */}
                       {card.entityContact ? (
                         <button
-                          onClick={() => openWhatsApp(card.entityContact!, card.entityName)}
-                          className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-semibold transition-colors flex items-center gap-1 shadow-xs"
+                          onClick={() => openWhatsApp(card)}
+                          className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-semibold transition-colors flex items-center gap-1 shadow-xs cursor-pointer"
                           title="Abrir conversa no WhatsApp com o cliente"
                         >
                           <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />

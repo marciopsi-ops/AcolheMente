@@ -156,3 +156,66 @@ export function getCnpjValidationError(
   return null;
 }
 
+/**
+ * Normaliza telefone brasileiro para links wa.me (apenas dígitos com DDI 55).
+ */
+export function formatWhatsAppPhone(phone: string | null | undefined): string {
+  if (!phone) return "";
+  const digits = String(phone).replace(/\D/g, "");
+  if (!digits) return "";
+  if (digits.length >= 10 && digits.length <= 11 && !digits.startsWith("55")) {
+    return `55${digits}`;
+  }
+  return digits.startsWith("55") ? digits : `55${digits}`;
+}
+
+export interface WelcomeFirstContactParams {
+  pacienteNome?: string | null;
+  profissionalNome?: string | null;
+  profissionalCrp?: string | null;
+  profissionalUid?: string | null;
+  origin?: string | null;
+}
+
+/**
+ * Gera a mensagem padrão oficial de boas-vindas e primeiro contato do profissional
+ * após o aceite da atribuição, incluindo CRP e link direto da página pública do profissional.
+ */
+export function buildWelcomeFirstContactMessage({
+  pacienteNome,
+  profissionalNome,
+  profissionalCrp,
+  profissionalUid,
+  origin,
+}: WelcomeFirstContactParams): string {
+  const firstName =
+    String(pacienteNome || "Paciente")
+      .trim()
+      .split(/\s+/)[0] || "Paciente";
+
+  const rawProf = String(profissionalNome || "").trim();
+  const safeProfSource = rawProf && !rawProf.includes("@") ? rawProf : "";
+  const profName =
+    formatProfessionalName(safeProfSource) ||
+    safeProfSource ||
+    "Profissional AcolheMente";
+
+  const crpNormalized = String(profissionalCrp || "")
+    .replace(/^crp\s*[:\-]?\s*/i, "")
+    .trim();
+  const crpSegment = crpNormalized ? ` (CRP: *${crpNormalized}*)` : "";
+
+  const baseOrigin = (
+    origin ||
+    (typeof window !== "undefined"
+      ? window.location.origin
+      : "https://acolhemente.com.br")
+  ).replace(/\/+$/, "");
+
+  const cleanUid = String(profissionalUid || "").trim();
+  const linkPerfilProf = cleanUid
+    ? `${baseOrigin}/?prof=${cleanUid}`
+    : `${baseOrigin}/?view=profissionais`;
+
+  return `Olá, *${firstName}*! 👋 Tudo bem? 🌿\n\nSou o(a) psicólogo(a) *${profName}*${crpSegment}, responsável pelo seu acolhimento e acompanhamento no *Projeto AcolheMente Saúde*.\n\nEstou entrando em contato para combinarmos o melhor dia e horário da semana para a realização da nossa primeira sessão.\n\nVocê também pode conhecer mais sobre minha trajetória, abordagens e formação visitando a minha página profissional na plataforma:\n${linkPerfilProf}\n\nQual dia e período da semana fica mais confortável para você? Fico no aguardo!`;
+}

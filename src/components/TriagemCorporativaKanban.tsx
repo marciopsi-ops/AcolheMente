@@ -54,6 +54,7 @@ import {
   formatPerfilCurtoLabel,
   formatPerfilSelectOption,
 } from "../types/faturamento";
+import { buildWelcomeFirstContactMessage, formatWhatsAppPhone } from "../utils/formatters";
 
 interface TriagemCorporativaKanbanProps {
   currentRole: "master" | "triagem" | "profissional";
@@ -350,20 +351,33 @@ export const TriagemCorporativaKanban: React.FC<TriagemCorporativaKanbanProps> =
 
   // Helper de link de WhatsApp
   const handleAbrirWhatsApp = (ficha: FichaBordoCorporativa) => {
-    const rawNumber = ficha.colaboradorWhatsapp?.replace(/\D/g, "");
-    if (!rawNumber) {
+    const fullNumber = formatWhatsAppPhone(ficha.colaboradorWhatsapp);
+    if (!fullNumber) {
       showToast("WhatsApp do colaborador não informado.");
       return;
     }
-    const fullNumber = rawNumber.startsWith("55") ? rawNumber : `55${rawNumber}`;
-    const colabFirstName = ficha.colaboradorNome?.trim().split(" ")[0] || "Olá";
-    const msg = currentRole === "profissional"
-      ? encodeURIComponent(
-          `Olá, ${colabFirstName}! 👋 Tudo bem? Sou o(a) psicólogo(a) responsável pelo seu acolhimento no Projeto AcolheMente Saúde. Estou entrando em contato para combinarmos o melhor dia e horário para a nossa primeira sessão!`
-        )
-      : encodeURIComponent(
-          `Olá, ${ficha.colaboradorNome}! Aqui é da equipe AcolheMente em relação ao seu benefício corporativo da empresa *${ficha.empresaNome}*.`
-        );
+    const msg =
+      currentRole === "profissional"
+        ? encodeURIComponent(
+            buildWelcomeFirstContactMessage({
+              pacienteNome:
+                ficha.beneficiarioTipo === "dependente" && ficha.dependenteInfo
+                  ? ficha.dependenteInfo
+                  : ficha.colaboradorNome,
+              profissionalNome:
+                currentUserProfile?.name ||
+                currentUserProfile?.nome ||
+                ficha.profissionalNome,
+              profissionalCrp: currentUserProfile?.crp,
+              profissionalUid:
+                currentUserProfile?.uid ||
+                currentUserProfile?.id ||
+                ficha.profissionalId,
+            })
+          )
+        : encodeURIComponent(
+            `Olá, ${ficha.colaboradorNome}! Aqui é da equipe AcolheMente em relação ao seu benefício corporativo da empresa *${ficha.empresaNome}*.`
+          );
     window.open(`https://wa.me/${fullNumber}?text=${msg}`, "_blank");
   };
 
