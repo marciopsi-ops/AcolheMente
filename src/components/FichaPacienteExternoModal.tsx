@@ -821,8 +821,8 @@ export function FichaPacienteExternoModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center px-1 sm:px-4 bg-forest/25 backdrop-blur-sm animate-in fade-in py-1 sm:py-3">
-      <div className="bg-white rounded-2xl sm:rounded-3xl w-full max-w-[98vw] 2xl:max-w-[1550px] h-[96vh] sm:h-[95vh] flex flex-col shadow-2xl border border-soft overflow-hidden animate-in zoom-in-95">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center px-1 sm:px-4 bg-forest/25 backdrop-blur-sm animate-in fade-in pt-8 sm:pt-12 pb-2 sm:pb-4">
+      <div className="bg-white rounded-2xl sm:rounded-3xl w-full max-w-[98vw] 2xl:max-w-[1550px] max-h-[92vh] sm:max-h-[90vh] h-[90vh] sm:h-[88vh] flex flex-col shadow-2xl border border-soft overflow-hidden animate-in zoom-in-95">
         {/* =========================================================================
             HEADER DA FICHA DE BORDO UNIFICADA (EXTERNO & CORPORATIVO)
         ========================================================================== */}
@@ -861,6 +861,10 @@ export function FichaPacienteExternoModal({
                       <Building2 className="w-3 h-3 text-blue-700" />
                       Convênio Corporativo
                     </span>
+                  ) : currentPaciente.viaAcesso === "Triagem Acessível" || currentPaciente.tipo === "acolhimento" ? (
+                    <span className="text-[9px] sm:text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md bg-teal-50 text-teal-800 border border-teal-200 shrink-0">
+                      Valor Acessível
+                    </span>
                   ) : (
                     <span className="text-[9px] sm:text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-200 shrink-0">
                       Carteira Particular
@@ -889,34 +893,26 @@ export function FichaPacienteExternoModal({
                             : "Atendimento Interrompido"}
                     </span>
                   ) : (
-                    <select
-                      value={statusAtual}
-                      onChange={(e) => {
-                        handlePatchFields(
-                          { statusTratamento: e.target.value, status: e.target.value },
-                          true
-                        );
-                      }}
-                      className={`text-[9px] sm:text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full border shrink-0 cursor-pointer focus:outline-none transition-colors ${
-                        statusAtual === "Em Atendimento" || statusAtual === "Ativo"
+                    <span
+                      className={`text-[9px] sm:text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full border shrink-0 ${
+                        !statusAtual || statusAtual === "Em Atendimento" || statusAtual === "Ativo"
                           ? "bg-emerald-100 text-emerald-800 border-emerald-200"
                           : statusAtual === "Em Pausa" || statusAtual === "Standby"
                             ? "bg-amber-100 text-amber-900 border-amber-300"
                             : statusAtual === "Concluído" || statusAtual === "Alta"
                               ? "bg-blue-100 text-blue-800 border-blue-200"
-                              : "bg-slate-100 text-slate-700 border-slate-200"
+                              : "bg-rose-100 text-rose-800 border-rose-200"
                       }`}
                     >
-                      <option value="Em Atendimento">Em Atendimento</option>
-                      <option value="Em Pausa">Em Pausa</option>
-                      <option value="Concluído">Concluído (Alta)</option>
-                      <option value="Inativo">Inativo / Desligado</option>
-                    </select>
+                      {!statusAtual || statusAtual === "Em Atendimento" || statusAtual === "Ativo"
+                        ? "Em Atendimento"
+                        : statusAtual}
+                    </span>
                   )}
                 </div>
 
                 {/* Linha 2: Metadados Limpos com Separadores Tipográficos */}
-                <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 text-[10px] sm:text-[11px] font-medium text-forest/70 mt-0.5 tabular-nums">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] sm:text-[11px] font-medium text-forest/70 mt-0.5 tabular-nums">
                   <span className="font-mono text-forest/60 shrink-0">
                     #{currentPaciente.id?.slice(0, 6)}
                   </span>
@@ -1189,9 +1185,9 @@ export function FichaPacienteExternoModal({
             )}
           </div>
 
-          {/* Lado Direito: Ações de Status Sincronizadas (Carteira Externa vs Kanban Corporativo) */}
+          {/* Lado Direito: Ações de Status Sincronizadas (Kanban Corporativo) */}
           <div className="flex items-center gap-1 sm:gap-2 shrink-0">
-            {isCorporativo ? (
+            {isCorporativo && (
               <>
                 {statusCorp === "solicitacao_servico" && (
                   <button
@@ -1242,19 +1238,6 @@ export function FichaPacienteExternoModal({
                   </button>
                 )}
               </>
-            ) : (
-              <button
-                type="button"
-                onClick={() => {
-                  const novo = statusAtual === "Inativo" ? "Em Atendimento" : "Inativo";
-                  handlePatchFields({ statusTratamento: novo, status: novo }, true);
-                  showToast(`Status alterado para: ${novo}`, "info");
-                }}
-                className="flex items-center gap-1 font-bold text-[10px] sm:text-xs px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg sm:rounded-xl border border-soft bg-warm/50 text-forest/70 hover:text-forest transition-colors shadow-2xs cursor-pointer whitespace-nowrap"
-              >
-                <UserX className="w-3.5 h-3.5 text-forest/50 shrink-0" />
-                <span>{statusAtual === "Inativo" ? "Reativar Paciente" : "Arquivar"}</span>
-              </button>
             )}
           </div>
         </div>

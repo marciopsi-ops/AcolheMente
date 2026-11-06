@@ -404,7 +404,7 @@ export const TriagemCorporativaKanban: React.FC<TriagemCorporativaKanbanProps> =
             </span>
           </div>
           <h2 className="text-base sm:text-lg font-bold font-serif text-forest leading-tight">
-            {isProfissional ? "Acolhimento Corporativo • Meus Pacientes" : "Esteira & Kanban Corporativo"}
+            {isProfissional ? "Acolhimento Corporativo" : "Esteira & Kanban Corporativo"}
           </h2>
           <p className="text-[10px] sm:text-[11px] text-forest/70 max-w-2xl mt-0.5 leading-relaxed">
             {isProfissional
@@ -413,64 +413,6 @@ export const TriagemCorporativaKanban: React.FC<TriagemCorporativaKanbanProps> =
           </p>
         </div>
 
-        {/* Subabas: Solicitação de Serviço -> Atendimento -> Altas / Interrupções */}
-        <div className="flex items-center gap-1 bg-warm p-1 rounded-xl border border-soft self-start md:self-auto shrink-0 w-full sm:w-auto overflow-x-auto no-scrollbar">
-          <button
-            type="button"
-            onClick={() => setModoKanban("solicitacoes")}
-            className={`flex-1 sm:flex-initial px-2.5 sm:px-3.5 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold transition-all flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer ${
-              modoKanban === "solicitacoes"
-                ? "bg-white text-forest shadow-2xs"
-                : "text-forest/65 hover:text-forest"
-            }`}
-          >
-            <Clock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-            <span className="hidden sm:inline">Solicitação de Serviço</span>
-            <span className="sm:hidden">Solicitações</span>
-            <span
-              className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold tabular-nums shrink-0 ${
-                solicitacoes.length > 0
-                  ? "bg-amber-100 text-amber-900"
-                  : "bg-forest/10 text-forest/65"
-              }`}
-            >
-              {solicitacoes.length}
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setModoKanban("atendimento")}
-            className={`flex-1 sm:flex-initial px-2.5 sm:px-3.5 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold transition-all flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer ${
-              modoKanban === "atendimento"
-                ? "bg-white text-forest shadow-2xs"
-                : "text-forest/65 hover:text-forest"
-            }`}
-          >
-            <Layers className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-            <span>Atendimento</span>
-            <span className="px-1.5 py-0.5 rounded-md text-[10px] bg-emerald-100 text-emerald-800 font-bold tabular-nums shrink-0">
-              {pacientesAtivos.length}
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setModoKanban("desfechos")}
-            className={`flex-1 sm:flex-initial px-2.5 sm:px-3.5 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold transition-all flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer ${
-              modoKanban === "desfechos"
-                ? "bg-white text-forest shadow-2xs"
-                : "text-forest/65 hover:text-forest"
-            }`}
-          >
-            <UserCheck className="w-3.5 h-3.5 text-purple-600 shrink-0" />
-            <span className="hidden sm:inline">Altas / Interrupções</span>
-            <span className="sm:hidden">Desfechos</span>
-            <span className="px-1.5 py-0.5 rounded-md text-[10px] bg-purple-100 text-purple-800 font-bold tabular-nums shrink-0">
-              {altas.length + interrupcoes.length}
-            </span>
-          </button>
-        </div>
       </div>
 
       {/* CARDS ENXUTOS E MINIMALISTAS - ESTILO AGENDA */}

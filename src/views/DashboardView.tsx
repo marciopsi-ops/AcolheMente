@@ -17124,8 +17124,8 @@ export function DashboardView({
           }}
         />
       ) : selectedCard ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-1 sm:px-4 bg-forest/25 backdrop-blur-sm animate-in fade-in py-1 sm:py-3">
-          <div className="bg-white rounded-2xl sm:rounded-3xl w-full max-w-[98vw] 2xl:max-w-[1550px] h-[96vh] sm:h-[95vh] flex flex-col shadow-2xl border border-soft overflow-hidden animate-in zoom-in-95">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center px-1 sm:px-4 bg-forest/25 backdrop-blur-sm animate-in fade-in pt-8 sm:pt-12 pb-2 sm:pb-4">
+          <div className="bg-white rounded-2xl sm:rounded-3xl w-full max-w-[98vw] 2xl:max-w-[1550px] max-h-[92vh] sm:max-h-[90vh] h-[90vh] sm:h-[88vh] flex flex-col shadow-2xl border border-soft overflow-hidden animate-in zoom-in-95">
             {/* Header Compacto & Otimizado para Telas Pequenas */}
             <div className="px-3 sm:px-6 py-2 sm:py-3 flex flex-col border-b border-soft bg-gradient-to-r from-warm/70 via-white to-warm/40 gap-1.5 sm:gap-2 shrink-0">
               <div className="flex justify-between items-center gap-2">
@@ -17529,6 +17529,7 @@ export function DashboardView({
                 <button
                   type="button"
                   onClick={() => {
+                    if (selectedCard?.id) setAgendaPreselectedPacienteId(selectedCard.id);
                     setSelectedCard(null);
                     setActiveTab("agenda");
                   }}

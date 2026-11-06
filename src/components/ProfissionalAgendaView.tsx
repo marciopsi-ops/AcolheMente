@@ -245,6 +245,7 @@ export function ProfissionalAgendaView({
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("todos");
   const [modalidadeFilter, setModalidadeFilter] = useState<"todas" | "online" | "presencial">("todas");
   const [apenasFixos, setApenasFixos] = useState(false);
+  const [filtroApenasHojeLista, setFiltroApenasHojeLista] = useState(false);
 
   // Modais
   const [showNovoModal, setShowNovoModal] = useState(false);
@@ -264,7 +265,7 @@ export function ProfissionalAgendaView({
     targetData: string;
     targetHorario: string;
     escopoSerie: "apenas_este" | "serie_toda";
-    modoOrigem: "semana" | "dia";
+    modoOrigem: "semana" | "dia" | "manual";
   } | null>(null);
 
   const showToast = (msg: string) => {
@@ -558,6 +559,9 @@ export function ProfissionalAgendaView({
 
   const handleToday = () => {
     setCurrentDate(new Date());
+    if (viewMode === "lista") {
+      setFiltroApenasHojeLista(true);
+    }
   };
 
   // Cálculo da Semana Atual (Segunda a Domingo)
@@ -625,8 +629,13 @@ export function ProfissionalAgendaView({
 
   // Filtragem dos Agendamentos
   const agendamentosFiltrados = useMemo(() => {
+    const hojeIso = formatarDataIso(hoje);
     return agendamentos
       .filter((a) => {
+        // No modo lista, se o filtro "Hoje" estiver ativado, exibe somente os atendimentos de hoje
+        if (viewMode === "lista" && filtroApenasHojeLista) {
+          if (a.data !== hojeIso) return false;
+        }
         if (statusFilter !== "todos" && a.status !== statusFilter) return false;
         if (modalidadeFilter !== "todas" && a.modalidade !== modalidadeFilter) return false;
         if (apenasFixos && !a.isHorarioFixo) return false;
@@ -643,7 +652,7 @@ export function ProfissionalAgendaView({
         const dataB = `${b.data} ${b.horario || "00:00"}`;
         return dataA.localeCompare(dataB);
       });
-  }, [agendamentos, statusFilter, modalidadeFilter, apenasFixos, searchTerm]);
+  }, [agendamentos, statusFilter, modalidadeFilter, apenasFixos, searchTerm, viewMode, filtroApenasHojeLista, hoje]);
 
   // Agrupar agendamentos por data para visão de semana e calendário
   const agendamentosPorData = useMemo(() => {
@@ -1659,10 +1668,19 @@ export function ProfissionalAgendaView({
         </div>
       </div>
 
-      {/* 2. CARDS DE INDICADORES MENSAIS EM TEMPO REAL - COMPACTOS E OTIMIZADOS VERTICALMENTE */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+      {/* 2. CARDS DE INDICADORES MENSAIS EM TEMPO REAL - INTERATIVOS E OTIMIZADOS VERTICALMENTE */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
         {/* Total do Mês */}
-        <div className="bg-white px-2.5 py-1.5 rounded-xl border border-soft shadow-2xs flex items-center justify-between gap-1.5">
+        <button
+          type="button"
+          onClick={() => setStatusFilter("todos")}
+          title="Ver todos os status"
+          className={`bg-white px-2.5 py-1.5 rounded-xl border shadow-2xs flex items-center justify-between gap-1.5 text-left cursor-pointer transition-all hover:border-forest/40 ${
+            statusFilter === "todos"
+              ? "border-forest/50 ring-2 ring-forest/20 bg-forest/[0.02]"
+              : "border-soft"
+          }`}
+        >
           <div className="min-w-0">
             <span className="text-[9px] sm:text-[10px] font-semibold text-forest/60 uppercase tracking-wider block truncate">
               Total Mês
@@ -1674,10 +1692,43 @@ export function ProfissionalAgendaView({
           <div className="w-6 h-6 rounded-lg bg-forest/5 flex items-center justify-center shrink-0">
             <CalendarDays className="w-3 h-3 text-forest/50" />
           </div>
-        </div>
+        </button>
+
+        {/* Agendadas */}
+        <button
+          type="button"
+          onClick={() => setStatusFilter(statusFilter === "agendada" ? "todos" : "agendada")}
+          title="Filtrar por Agendadas"
+          className={`bg-white px-2.5 py-1.5 rounded-xl border shadow-2xs flex items-center justify-between gap-1.5 text-left cursor-pointer transition-all hover:border-sky-400 ${
+            statusFilter === "agendada"
+              ? "border-sky-500 ring-2 ring-sky-300 bg-sky-50/50"
+              : "border-soft"
+          }`}
+        >
+          <div className="min-w-0">
+            <span className="text-[9px] sm:text-[10px] font-semibold text-sky-700 uppercase tracking-wider block truncate">
+              Agendadas
+            </span>
+            <span className="text-sm sm:text-base font-bold text-sky-700 leading-tight block tabular-nums">
+              {metricasMensais.agendadas}
+            </span>
+          </div>
+          <div className="w-6 h-6 rounded-lg bg-sky-50 flex items-center justify-center shrink-0">
+            <Clock className="w-3 h-3 text-sky-600" />
+          </div>
+        </button>
 
         {/* Realizadas */}
-        <div className="bg-white px-2.5 py-1.5 rounded-xl border border-soft shadow-2xs flex items-center justify-between gap-1.5">
+        <button
+          type="button"
+          onClick={() => setStatusFilter(statusFilter === "realizada" ? "todos" : "realizada")}
+          title="Filtrar por Realizadas"
+          className={`bg-white px-2.5 py-1.5 rounded-xl border shadow-2xs flex items-center justify-between gap-1.5 text-left cursor-pointer transition-all hover:border-emerald-400 ${
+            statusFilter === "realizada"
+              ? "border-emerald-500 ring-2 ring-emerald-300 bg-emerald-50/50"
+              : "border-soft"
+          }`}
+        >
           <div className="min-w-0">
             <span className="text-[9px] sm:text-[10px] font-semibold text-emerald-700 uppercase tracking-wider block truncate">
               Realizadas
@@ -1689,10 +1740,19 @@ export function ProfissionalAgendaView({
           <div className="w-6 h-6 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0">
             <CheckCircle2 className="w-3 h-3 text-emerald-600" />
           </div>
-        </div>
+        </button>
 
         {/* Faltas Cobradas */}
-        <div className="bg-white px-2.5 py-1.5 rounded-xl border border-soft shadow-2xs flex items-center justify-between gap-1.5">
+        <button
+          type="button"
+          onClick={() => setStatusFilter(statusFilter === "falta_cobrada" ? "todos" : "falta_cobrada")}
+          title="Filtrar por Faltas Cobradas"
+          className={`bg-white px-2.5 py-1.5 rounded-xl border shadow-2xs flex items-center justify-between gap-1.5 text-left cursor-pointer transition-all hover:border-orange-400 ${
+            statusFilter === "falta_cobrada"
+              ? "border-orange-500 ring-2 ring-orange-300 bg-orange-50/50"
+              : "border-soft"
+          }`}
+        >
           <div className="min-w-0">
             <span className="text-[9px] sm:text-[10px] font-semibold text-orange-800 uppercase tracking-wider block truncate">
               Faltas Cobradas
@@ -1705,10 +1765,19 @@ export function ProfissionalAgendaView({
             <UserX className="w-3 h-3 text-orange-700" />
             <DollarSign className="w-2.5 h-2.5 -ml-0.5 text-orange-700" />
           </div>
-        </div>
+        </button>
 
         {/* Remarcadas */}
-        <div className="bg-white px-2.5 py-1.5 rounded-xl border border-soft shadow-2xs flex items-center justify-between gap-1.5">
+        <button
+          type="button"
+          onClick={() => setStatusFilter(statusFilter === "remarcada" ? "todos" : "remarcada")}
+          title="Filtrar por Remarcadas"
+          className={`bg-white px-2.5 py-1.5 rounded-xl border shadow-2xs flex items-center justify-between gap-1.5 text-left cursor-pointer transition-all hover:border-amber-400 ${
+            statusFilter === "remarcada"
+              ? "border-amber-500 ring-2 ring-amber-300 bg-amber-50/50"
+              : "border-soft"
+          }`}
+        >
           <div className="min-w-0">
             <span className="text-[9px] sm:text-[10px] font-semibold text-amber-700 uppercase tracking-wider block truncate">
               Remarcadas
@@ -1720,10 +1789,19 @@ export function ProfissionalAgendaView({
           <div className="w-6 h-6 rounded-lg bg-amber-50 flex items-center justify-center shrink-0">
             <RotateCcw className="w-3 h-3 text-amber-600" />
           </div>
-        </div>
+        </button>
 
         {/* Canceladas */}
-        <div className="bg-white px-2.5 py-1.5 rounded-xl border border-soft shadow-2xs flex items-center justify-between gap-1.5 col-span-2 sm:col-span-1">
+        <button
+          type="button"
+          onClick={() => setStatusFilter(statusFilter === "cancelada" ? "todos" : "cancelada")}
+          title="Filtrar por Canceladas"
+          className={`bg-white px-2.5 py-1.5 rounded-xl border shadow-2xs flex items-center justify-between gap-1.5 text-left cursor-pointer transition-all hover:border-rose-400 ${
+            statusFilter === "cancelada"
+              ? "border-rose-500 ring-2 ring-rose-300 bg-rose-50/50"
+              : "border-soft"
+          }`}
+        >
           <div className="min-w-0">
             <span className="text-[9px] sm:text-[10px] font-semibold text-rose-700 uppercase tracking-wider block truncate">
               Canceladas
@@ -1735,7 +1813,7 @@ export function ProfissionalAgendaView({
           <div className="w-6 h-6 rounded-lg bg-rose-50 flex items-center justify-center shrink-0">
             <XCircle className="w-3 h-3 text-rose-600" />
           </div>
-        </div>
+        </button>
       </div>
 
       {/* 3. BARRA DE CONTROLE: NAVEGAÇÃO DE DATAS, VISUALIZAÇÃO E FILTROS */}
@@ -1754,7 +1832,12 @@ export function ProfissionalAgendaView({
             <button
               type="button"
               onClick={handleToday}
-              className="px-2.5 py-1 text-xs font-bold text-forest hover:bg-white rounded-lg transition-colors cursor-pointer"
+              className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-colors cursor-pointer ${
+                (viewMode === "dia" && formatarDataIso(currentDate) === formatarDataIso(hoje)) ||
+                (viewMode === "lista" && filtroApenasHojeLista)
+                  ? "bg-forest text-white shadow-2xs"
+                  : "text-forest hover:bg-white"
+              }`}
             >
               Hoje
             </button>
@@ -1778,12 +1861,19 @@ export function ProfissionalAgendaView({
                     month: "long",
                     year: "numeric",
                   })
+                : viewMode === "lista" && filtroApenasHojeLista
+                ? `Hoje, ${hoje.toLocaleDateString("pt-BR", {
+                    day: "numeric",
+                    month: "long",
+                    year: "numeric",
+                  })}`
                 : currentDate.toLocaleDateString("pt-BR", {
                     month: "long",
                     year: "numeric",
                   })}
             </span>
-            {viewMode === "dia" && formatarDataIso(currentDate) === formatarDataIso(hoje) && (
+            {((viewMode === "dia" && formatarDataIso(currentDate) === formatarDataIso(hoje)) ||
+              (viewMode === "lista" && filtroApenasHojeLista)) && (
               <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-forest text-white">
                 Hoje
               </span>
@@ -1889,6 +1979,23 @@ export function ProfissionalAgendaView({
             <option value="online">Online</option>
             <option value="presencial">Presencial</option>
           </select>
+
+          {/* Toggle Apenas Hoje na Lista */}
+          {viewMode === "lista" && (
+            <button
+              type="button"
+              onClick={() => setFiltroApenasHojeLista(!filtroApenasHojeLista)}
+              title="Filtrar agendamentos de hoje na lista"
+              className={`px-3 py-1.5 rounded-lg font-medium transition-all flex items-center gap-1.5 cursor-pointer ${
+                filtroApenasHojeLista
+                  ? "bg-forest text-white font-bold shadow-xs"
+                  : "bg-warm/60 text-forest/70 border border-soft hover:text-forest"
+              }`}
+            >
+              <CalendarIcon className="w-3 h-3" />
+              <span>Hoje {filtroApenasHojeLista ? "✓" : ""}</span>
+            </button>
+          )}
 
           {/* Toggle Horário Fixo */}
           <button
@@ -2163,6 +2270,19 @@ export function ProfissionalAgendaView({
                                   <div className="flex flex-wrap items-center gap-1 bg-white p-1 rounded-xl border border-soft shadow-2xs">
                                     <button
                                       type="button"
+                                      onClick={() => handleUpdateStatusRapido(sessao, "agendada")}
+                                      title="Marcar como Agendada"
+                                      className={`px-2 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer transition-all whitespace-nowrap ${
+                                        sessao.status === "agendada"
+                                          ? "bg-sky-600 text-white"
+                                          : "text-sky-700 hover:bg-sky-50"
+                                      }`}
+                                    >
+                                      <Clock className="w-3 h-3 shrink-0" />
+                                      <span>Agendada</span>
+                                    </button>
+                                    <button
+                                      type="button"
                                       onClick={() => handleUpdateStatusRapido(sessao, "realizada")}
                                       title="Marcar Realizada (entra no faturamento)"
                                       className={`px-2 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer transition-all whitespace-nowrap ${
@@ -2190,13 +2310,18 @@ export function ProfissionalAgendaView({
                                     </button>
                                     <button
                                       type="button"
-                                      onClick={() => handleUpdateStatusRapido(sessao, "remarcada")}
-                                      title="Marcar Remarcada (isenta de cobrança)"
-                                      className={`px-2 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer transition-all whitespace-nowrap ${
-                                        sessao.status === "remarcada"
-                                          ? "bg-amber-600 text-white"
-                                          : "text-amber-700 hover:bg-amber-50"
-                                      }`}
+                                      onClick={() => {
+                                        setRemanejamentoModal({
+                                          isOpen: true,
+                                          agendamento: sessao,
+                                          targetData: sessao.data,
+                                          targetHorario: sessao.horario,
+                                          escopoSerie: "apenas_este",
+                                          modoOrigem: "manual",
+                                        });
+                                      }}
+                                      title="Remarcar data e horário deste atendimento"
+                                      className="px-2 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer transition-all whitespace-nowrap text-amber-700 hover:bg-amber-50"
                                     >
                                       <RotateCcw className="w-3 h-3 shrink-0" />
                                       <span>Remarcar</span>
@@ -2500,6 +2625,20 @@ export function ProfissionalAgendaView({
 
                                 {/* Coluna Direita: Ícones de Comando em Linha Vertical dentro do quadrado */}
                                 <div className="shrink-0 pl-1.5 border-l border-soft/70 flex flex-col items-center justify-start gap-0.5">
+                                  {sessao.status !== "agendada" && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleUpdateStatusRapido(sessao, "agendada");
+                                      }}
+                                      title="Marcar como Agendada"
+                                      aria-label="Marcar como Agendada"
+                                      className="w-6 h-6 flex items-center justify-center hover:bg-sky-100 text-sky-700 rounded-md transition-colors cursor-pointer"
+                                    >
+                                      <Clock className="w-3.5 h-3.5 shrink-0" />
+                                    </button>
+                                  )}
                                   {sessao.status !== "realizada" && (
                                     <button
                                       type="button"
@@ -2529,20 +2668,25 @@ export function ProfissionalAgendaView({
                                       <DollarSign className="w-2.5 h-2.5 -ml-1 shrink-0" />
                                     </button>
                                   )}
-                                  {sessao.status !== "remarcada" && (
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleUpdateStatusRapido(sessao, "remarcada");
-                                      }}
-                                      title="Marcar como Remarcada (sem cobrança)"
-                                      aria-label="Marcar como Remarcada"
-                                      className="w-6 h-6 flex items-center justify-center hover:bg-amber-100 text-amber-700 rounded-md transition-colors cursor-pointer"
-                                    >
-                                      <RotateCcw className="w-3.5 h-3.5 shrink-0" />
-                                    </button>
-                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setRemanejamentoModal({
+                                        isOpen: true,
+                                        agendamento: sessao,
+                                        targetData: sessao.data,
+                                        targetHorario: sessao.horario,
+                                        escopoSerie: "apenas_este",
+                                        modoOrigem: "manual",
+                                      });
+                                    }}
+                                    title="Remarcar"
+                                    aria-label="Remarcar"
+                                    className="w-6 h-6 flex items-center justify-center hover:bg-amber-100 text-amber-700 rounded-md transition-colors cursor-pointer"
+                                  >
+                                    <RotateCcw className="w-3.5 h-3.5 shrink-0" />
+                                  </button>
                                   {sessao.status !== "cancelada" && (
                                     <button
                                       type="button"
@@ -2723,24 +2867,70 @@ export function ProfissionalAgendaView({
         </div>
       ) : (
         /* VISÃO EM LISTA CRONOLÓGICA COM ROLAGEM HORIZONTAL E VERTICAL */
-        <div className="bg-white rounded-2xl border border-soft shadow-xs">
+        <div className="bg-white rounded-2xl border border-soft shadow-xs overflow-hidden">
+          {/* Banner de filtro ativo de Hoje no modo lista */}
+          {filtroApenasHojeLista && (
+            <div className="p-3 bg-forest/5 border-b border-soft flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-xs font-semibold text-forest">
+                <span className="w-2 h-2 rounded-full bg-forest animate-pulse" />
+                <span>
+                  Exibindo somente agendamentos de <strong>Hoje ({hoje.toLocaleDateString("pt-BR", { weekday: "short", day: "numeric", month: "short" })})</strong>
+                </span>
+                <span className="px-2 py-0.5 rounded-full bg-forest/10 font-bold text-[10px]">
+                  {agendamentosFiltrados.length} {agendamentosFiltrados.length === 1 ? "atendimento" : "atendimentos"}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setFiltroApenasHojeLista(false)}
+                className="text-xs font-bold text-forest hover:underline cursor-pointer flex items-center gap-1"
+              >
+                <X className="w-3 h-3" />
+                <span>Ver todos os agendamentos</span>
+              </button>
+            </div>
+          )}
+
           {agendamentosFiltrados.length === 0 ? (
             <div className="p-12 text-center">
               <CalendarIcon className="w-12 h-12 text-forest/20 mx-auto mb-3" />
               <h3 className="text-base font-bold text-forest">Nenhum agendamento encontrado</h3>
               <p className="text-xs sm:text-sm text-forest/60 max-w-md mx-auto mt-1">
-                {searchTerm || statusFilter !== "todos" || apenasFixos
+                {filtroApenasHojeLista
+                  ? `Você não possui atendimentos agendados para hoje${statusFilter !== "todos" ? ` com status "${statusFilter}"` : ""}.`
+                  : searchTerm || statusFilter !== "todos" || apenasFixos
                   ? "Tente ajustar os filtros de busca para encontrar suas sessões."
                   : "Você ainda não possui agendamentos cadastrados. Clique em '+ Novo Agendamento' para iniciar!"}
               </p>
-              <button
-                type="button"
-                onClick={() => handleOpenNovoAgendamento()}
-                className="mt-4 px-4 py-2 rounded-xl bg-forest text-white font-semibold text-xs inline-flex items-center gap-1.5 shadow-xs cursor-pointer hover:bg-forest/90"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Agendar Primeira Sessão</span>
-              </button>
+              <div className="flex flex-wrap items-center justify-center gap-2 mt-4">
+                {filtroApenasHojeLista && (
+                  <button
+                    type="button"
+                    onClick={() => setFiltroApenasHojeLista(false)}
+                    className="px-4 py-2 rounded-xl bg-warm border border-soft text-forest font-semibold text-xs inline-flex items-center gap-1.5 shadow-xs cursor-pointer hover:bg-warm/80"
+                  >
+                    <List className="w-3.5 h-3.5" />
+                    <span>Ver Todos os Agendamentos</span>
+                  </button>
+                )}
+                {statusFilter !== "todos" && (
+                  <button
+                    type="button"
+                    onClick={() => setStatusFilter("todos")}
+                    className="px-4 py-2 rounded-xl bg-warm border border-soft text-forest font-semibold text-xs inline-flex items-center gap-1.5 shadow-xs cursor-pointer hover:bg-warm/80"
+                  >
+                    <span>Limpar Filtro de Status</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => handleOpenNovoAgendamento()}
+                  className="px-4 py-2 rounded-xl bg-forest text-white font-semibold text-xs inline-flex items-center gap-1.5 shadow-xs cursor-pointer hover:bg-forest/90"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Agendar Atendimento</span>
+                </button>
+              </div>
             </div>
           ) : (
             <div className="w-full">
@@ -2818,6 +3008,20 @@ export function ProfissionalAgendaView({
                       <div className="flex flex-wrap items-center gap-1 bg-warm p-1 rounded-xl border border-soft">
                         <button
                           type="button"
+                          onClick={() => handleUpdateStatusRapido(item, "agendada")}
+                          title="Marcar como Agendada"
+                          className={`px-2 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer transition-all whitespace-nowrap ${
+                            item.status === "agendada"
+                              ? "bg-sky-600 text-white shadow-2xs"
+                              : "text-sky-700 hover:bg-sky-100"
+                          }`}
+                        >
+                          <Clock className="w-3 h-3 shrink-0" />
+                          <span className="hidden sm:inline">Agendada</span>
+                        </button>
+
+                        <button
+                          type="button"
                           onClick={() => handleUpdateStatusRapido(item, "realizada")}
                           title="Marcar Realizada (entra no faturamento)"
                           className={`px-2 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer transition-all whitespace-nowrap ${
@@ -2847,13 +3051,18 @@ export function ProfissionalAgendaView({
 
                         <button
                           type="button"
-                          onClick={() => handleUpdateStatusRapido(item, "remarcada")}
-                          title="Marcar Remarcada (sem cobrança)"
-                          className={`px-2 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer transition-all whitespace-nowrap ${
-                            item.status === "remarcada"
-                              ? "bg-amber-600 text-white shadow-2xs"
-                              : "text-amber-700 hover:bg-amber-100"
-                          }`}
+                          onClick={() => {
+                            setRemanejamentoModal({
+                              isOpen: true,
+                              agendamento: item,
+                              targetData: item.data,
+                              targetHorario: item.horario,
+                              escopoSerie: "apenas_este",
+                              modoOrigem: "manual",
+                            });
+                          }}
+                          title="Remarcar data e horário"
+                          className="px-2 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer transition-all whitespace-nowrap text-amber-700 hover:bg-amber-100"
                         >
                           <RotateCcw className="w-3 h-3 shrink-0" />
                           <span className="hidden sm:inline">Remarcar</span>
@@ -2974,19 +3183,21 @@ export function ProfissionalAgendaView({
                         )}
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setFormPacienteId("");
-                        setFormPacienteNome("");
-                        setFormPacienteTelefone("");
-                        setFormPacienteEmail("");
-                        setPacienteSearchQuery("");
-                      }}
-                      className="px-2 py-1 text-xs text-forest/60 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                    >
-                      Trocar
-                    </button>
+                    {!selectedAgendamentoParaEditar && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFormPacienteId("");
+                          setFormPacienteNome("");
+                          setFormPacienteTelefone("");
+                          setFormPacienteEmail("");
+                          setPacienteSearchQuery("");
+                        }}
+                        className="px-2 py-1 text-xs text-forest/60 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                      >
+                        Trocar
+                      </button>
+                    )}
                   </div>
                 ) : (
                   <div>
@@ -3782,59 +3993,64 @@ export function ProfissionalAgendaView({
                   {remanejamentoModal.agendamento.horario}
                 </span>
               </div>
-              <div className="flex items-center justify-between">
-                <span className="text-forest/70 font-medium">Para o dia:</span>
-                <span className="font-bold text-emerald-800">
-                  {remanejamentoModal.targetData.split("-").reverse().join("/")} (
-                  {new Date(remanejamentoModal.targetData + "T12:00:00").toLocaleDateString("pt-BR", {
-                    weekday: "short",
-                  })}
-                  )
-                </span>
-              </div>
             </div>
 
-            {/* Campo do Horário */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <label htmlFor="input-novo-horario-remanejamento" className="block text-xs font-bold text-forest">
-                  Novo Horário da Sessão <span className="text-red-500">*</span>
+            {/* Campos de Nova Data e Horário */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label htmlFor="input-nova-data-remanejamento" className="block text-xs font-bold text-forest mb-1">
+                  Nova Data <span className="text-red-500">*</span>
                 </label>
-                {/* Botões de atalho para alternar minutos (:00 ou :30) */}
-                <div className="flex items-center gap-1">
-                  <span className="text-[10px] text-forest/50 font-medium">Minutos:</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const h = (remanejamentoModal.targetHorario || "14:00").split(":")[0] || "14";
-                      setRemanejamentoModal((prev) => (prev ? { ...prev, targetHorario: `${h}:00` } : prev));
-                    }}
-                    className={`px-2 py-0.5 rounded-md font-mono text-[11px] transition-colors cursor-pointer border ${
-                      remanejamentoModal.targetHorario?.endsWith(":00")
-                        ? "bg-forest text-white border-forest font-bold"
-                        : "bg-white text-forest/70 border-soft hover:bg-warm"
-                    }`}
-                  >
-                    :00
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const h = (remanejamentoModal.targetHorario || "14:00").split(":")[0] || "14";
-                      setRemanejamentoModal((prev) => (prev ? { ...prev, targetHorario: `${h}:30` } : prev));
-                    }}
-                    className={`px-2 py-0.5 rounded-md font-mono text-[11px] transition-colors cursor-pointer border ${
-                      remanejamentoModal.targetHorario?.endsWith(":30")
-                        ? "bg-forest text-white border-forest font-bold"
-                        : "bg-white text-forest/70 border-soft hover:bg-warm"
-                    }`}
-                  >
-                    :30
-                  </button>
-                </div>
+                <input
+                  id="input-nova-data-remanejamento"
+                  type="date"
+                  required
+                  value={remanejamentoModal.targetData}
+                  onChange={(e) =>
+                    setRemanejamentoModal((prev) =>
+                      prev ? { ...prev, targetData: e.target.value } : prev
+                    )
+                  }
+                  className="w-full px-3 py-2 bg-warm/30 border border-soft rounded-xl text-forest font-bold text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-forest/30"
+                />
               </div>
-              <div className="relative">
-                <Clock className="w-4 h-4 text-forest/40 absolute left-3 top-1/2 -translate-y-1/2" />
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label htmlFor="input-novo-horario-remanejamento" className="block text-xs font-bold text-forest">
+                    Novo Horário <span className="text-red-500">*</span>
+                  </label>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const h = (remanejamentoModal.targetHorario || "14:00").split(":")[0] || "14";
+                        setRemanejamentoModal((prev) => (prev ? { ...prev, targetHorario: `${h}:00` } : prev));
+                      }}
+                      className={`px-1.5 py-0.5 rounded font-mono text-[10px] border cursor-pointer ${
+                        remanejamentoModal.targetHorario?.endsWith(":00")
+                          ? "bg-forest text-white border-forest font-bold"
+                          : "bg-white text-forest/70 border-soft"
+                      }`}
+                    >
+                      :00
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const h = (remanejamentoModal.targetHorario || "14:00").split(":")[0] || "14";
+                        setRemanejamentoModal((prev) => (prev ? { ...prev, targetHorario: `${h}:30` } : prev));
+                      }}
+                      className={`px-1.5 py-0.5 rounded font-mono text-[10px] border cursor-pointer ${
+                        remanejamentoModal.targetHorario?.endsWith(":30")
+                          ? "bg-forest text-white border-forest font-bold"
+                          : "bg-white text-forest/70 border-soft"
+                      }`}
+                    >
+                      :30
+                    </button>
+                  </div>
+                </div>
                 <input
                   id="input-novo-horario-remanejamento"
                   type="time"
@@ -3846,7 +4062,7 @@ export function ProfissionalAgendaView({
                       prev ? { ...prev, targetHorario: e.target.value } : prev
                     )
                   }
-                  className="w-full pl-9 pr-3 py-2 bg-warm/30 border border-soft rounded-xl text-forest font-bold text-sm focus:outline-none focus:ring-2 focus:ring-forest/30"
+                  className="w-full px-3 py-2 bg-warm/30 border border-soft rounded-xl text-forest font-bold text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-forest/30"
                 />
               </div>
             </div>
