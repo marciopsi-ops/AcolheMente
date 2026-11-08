@@ -331,9 +331,33 @@
         "updatedAt": { "type": "timestamp" }
       },
       "required": ["titulo", "tipo", "descricao", "criadorId"]
+    },
+    "FaculdadeLead": {
+      "title": "FaculdadeLead",
+      "description": "Leads de instituições de ensino superior, clínicas-escola (SPAs) e núcleos de apoio ao estudante.",
+      "type": "object",
+      "properties": {
+        "nomeInstituicao": { "type": "string" },
+        "tipoSetor": { "type": "string" },
+        "responsavelNome": { "type": "string" },
+        "cargo": { "type": "string" },
+        "email": { "type": "string" },
+        "telefone": { "type": "string" },
+        "tipoParceria": { "type": "string" },
+        "observacoes": { "type": "string" },
+        "status": { "type": "string", "enum": ["Novo Contato", "Em Negociação", "Parceria Ativa", "Arquivado"] },
+        "anotacoesInternas": { "type": "string" },
+        "createdAt": { "type": "timestamp" },
+        "updatedAt": { "type": "timestamp" }
+      },
+      "required": ["nomeInstituicao", "tipoSetor", "responsavelNome", "email", "telefone", "tipoParceria", "status", "createdAt"]
     }
   },
   "firestore": {
+    "faculdade_leads": {
+      "schema": { "$ref": "#/entities/FaculdadeLead" },
+      "description": "Cadastros institucionais de faculdades, clínicas-escola e institutos de formação para parcerias e continuidade clínica."
+    },
     "empresa_leads": {
       "schema": { "$ref": "#/entities/EmpresaLead" },
       "description": "Controle corporativo de empresas clientes diretas, canais de benefícios e empresas conectadas."

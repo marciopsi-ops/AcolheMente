@@ -3244,6 +3244,9 @@ export function DashboardView({
             },
             (error) => {
               console.error("Error loading faculdade_leads:", error);
+              try {
+                handleFirestoreError(error, OperationType.GET, "faculdade_leads");
+              } catch (e) {}
             }
           );
         }

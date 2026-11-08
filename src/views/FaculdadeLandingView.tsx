@@ -1,7 +1,7 @@
 import { ArrowLeft, Building2, CheckCircle2, ShieldCheck, Users, HeartHandshake, PhoneCall, ExternalLink, ArrowRight } from "lucide-react";
 import React, { useState, useEffect, FormEvent } from "react";
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
-import { db } from "../lib/firebase";
+import { db, handleFirestoreError, OperationType } from "../lib/firebase";
 import { BrandLogo } from "../components/BrandLogo";
 import { Footer } from "../components/Footer";
 import { Breadcrumbs } from "../components/Breadcrumbs";
@@ -50,6 +50,7 @@ export function FaculdadeLandingView({ onBack, onGoHome }: { onBack: () => void;
     } catch (err: any) {
       console.error("Erro ao enviar cadastro de parceria institucional:", err);
       setErrorMsg("Ocorreu um erro ao enviar sua solicitação. Tente novamente.");
+      handleFirestoreError(err, OperationType.CREATE, "faculdade_leads");
     } finally {
       setIsSubmitting(false);
     }

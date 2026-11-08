@@ -110,6 +110,11 @@ service cloud.firestore {
       allow create, read, update, delete: if true;
     }
 
+    // Leads Faculdades e Clínicas-Escola
+    match /faculdade_leads/{leadId} {
+      allow create, read, update, delete: if true;
+    }
+
     // Doações
     match /doacoes/{doacaoId} {
       allow create, read, update, delete: if true;

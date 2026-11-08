@@ -32,7 +32,7 @@ import {
   addDoc,
   serverTimestamp,
 } from "firebase/firestore";
-import { db } from "../lib/firebase";
+import { db, handleFirestoreError, OperationType } from "../lib/firebase";
 
 export interface FaculdadeLead {
   id: string;
@@ -90,6 +90,9 @@ export function GestaoFaculdadesView() {
       (err) => {
         console.error("Erro ao carregar faculdade_leads:", err);
         setLoading(false);
+        try {
+          handleFirestoreError(err, OperationType.GET, "faculdade_leads");
+        } catch (e) {}
       }
     );
     return () => unsubscribe();
@@ -103,6 +106,7 @@ export function GestaoFaculdadesView() {
       });
     } catch (err) {
       console.error("Erro ao atualizar status do lead institucional:", err);
+      handleFirestoreError(err, OperationType.UPDATE, `faculdade_leads/${id}`);
     }
   };
 
@@ -118,6 +122,7 @@ export function GestaoFaculdadesView() {
       setIsEditingNotes(false);
     } catch (err) {
       console.error("Erro ao salvar anotações internas:", err);
+      handleFirestoreError(err, OperationType.UPDATE, `faculdade_leads/${selectedLead.id}`);
     } finally {
       setIsSavingNotes(false);
     }
@@ -134,6 +139,7 @@ export function GestaoFaculdadesView() {
       }
     } catch (err) {
       console.error("Erro ao excluir lead institucional:", err);
+      handleFirestoreError(err, OperationType.DELETE, `faculdade_leads/${id}`);
     }
   };
 
@@ -169,6 +175,7 @@ export function GestaoFaculdadesView() {
     } catch (err) {
       console.error("Erro ao cadastrar instituição:", err);
       setCreateError("Ocorreu um erro ao salvar o registro.");
+      handleFirestoreError(err, OperationType.CREATE, "faculdade_leads");
     } finally {
       setIsCreating(false);
     }
