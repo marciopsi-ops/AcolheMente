@@ -56,6 +56,7 @@ import { ExternalPatientLandingView } from "./views/ExternalPatientLandingView";
 import { PortalEmpresaView } from "./views/PortalEmpresaView";
 import { BlogView } from "./views/BlogView";
 import { ColetaFaturamentoView } from "./views/ColetaFaturamentoView";
+import { FaculdadeLandingView } from "./views/FaculdadeLandingView";
 import { DocumentoPublicoView } from "./components/DocumentoPublicoView";
 
 import { Footer } from "./components/Footer";
@@ -209,6 +210,45 @@ const JORNADAS_DATA = {
         iconBg: "bg-sun-dark text-forest border-sun-dark",
         badgeBg: "bg-sun/30 text-amber-950 font-bold",
         cardBg: "bg-warm/80 backdrop-blur-xs border-soft/80",
+      },
+    ],
+  },
+  faculdade: {
+    id: "faculdade" as const,
+    badge: "Para Faculdades, SPAs e Alunos",
+    tituloAba: "Faculdades & Clínicas",
+    subtitulo: "Parceria Acadêmica & Continuidade Ética",
+    descricao: "Conectamos sua instituição de ensino a uma ponte segura de transição clínica: continuidade para pacientes que concluem o ciclo na clínica-escola (SPA), retaguarda ágil para o Núcleo de Apoio (NAE/NAP) e psicoterapia com valor social para o Tripé Formativo de estudantes de Psicologia e Terapia.",
+    linhaCor: "border-forest/40",
+    ctaText: "Conhecer Parceria para Faculdades",
+    ctaView: "faculdade" as const,
+    passos: [
+      {
+        num: "01",
+        titulo: "Credenciamento Ágil Sem Custos",
+        descricao: "Termo de parceria institucional simples e gratuito, garantindo conformidade com o Código de Ética do CFP e proteção LGPD.",
+        icon: Building2,
+        iconBg: "bg-forest text-white border-forest",
+        badgeBg: "bg-forest/10 text-forest font-bold",
+        cardBg: "bg-forest/[0.04] backdrop-blur-xs border-forest/15",
+      },
+      {
+        num: "02",
+        titulo: "Link ou Guia Digital Exclusivo",
+        descricao: "Sua clínica-escola ou NAE recebe uma página e link dedicados para encaminhar alunos e pacientes em transição de forma rápida.",
+        icon: SearchCheck,
+        iconBg: "bg-sun text-forest border-sun",
+        badgeBg: "bg-sun/30 text-amber-950 font-bold",
+        cardBg: "bg-forest/[0.04] backdrop-blur-xs border-forest/15",
+      },
+      {
+        num: "03",
+        titulo: "Acolhimento em Rede Verificada",
+        descricao: "Atendimento humanizado com valores sociais estudantis e foco especial no Tripé Formativo (terapia para alunos de Psicologia e Terapia).",
+        icon: HeartHandshake,
+        iconBg: "bg-sun-dark text-forest border-sun-dark",
+        badgeBg: "bg-sun/30 text-amber-950 font-bold",
+        cardBg: "bg-forest/[0.04] backdrop-blur-xs border-forest/15",
       },
     ],
   },
@@ -412,6 +452,7 @@ export default function App() {
     | "profissional"
     | "blog"
     | "cadastro_externo"
+    | "faculdade"
   >(() => {
     const params = new URLSearchParams(window.location.search);
     const pathname = window.location.pathname;
@@ -439,6 +480,7 @@ export default function App() {
         "profissional",
         "blog",
         "cadastro_externo",
+        "faculdade",
       ].includes(viewParam)
     ) {
       return viewParam;
@@ -782,6 +824,8 @@ export default function App() {
     content = <DoacaoView onNavigate={handleNavigate} />;
   } else if (currentView === "profissional") {
     content = <ProfissionalLandingView onNavigate={handleNavigate} />;
+  } else if (currentView === "faculdade") {
+    content = <FaculdadeLandingView onBack={handleGoToLanding} onGoHome={handleGoToLanding} />;
   } else {
     content = (
       <div className="flex h-screen items-center justify-center bg-warm">
@@ -905,7 +949,8 @@ function LandingPage({
       | "empresa"
       | "doacao"
       | "profissional"
-      | "blog",
+      | "blog"
+      | "faculdade",
   ) => void;
   onSelectArtigo?: (artigoId: string) => void;
   doacoesAtivas?: boolean;
@@ -914,7 +959,7 @@ function LandingPage({
 }) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [showCvvModal, setShowCvvModal] = useState(false);
-  const [jornadaPublico, setJornadaPublico] = useState<"paciente" | "empresa" | "terapeuta">("paciente");
+  const [jornadaPublico, setJornadaPublico] = useState<"paciente" | "empresa" | "faculdade" | "terapeuta">("paciente");
   const [artigosPublicados, setArtigosPublicados] = useState<ArtigoBlog[]>([]);
   const [loadingArtigos, setLoadingArtigos] = useState(true);
 
@@ -1237,7 +1282,7 @@ function LandingPage({
               </span>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 lg:gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
               {/* Card 1: Paciente */}
               <div className="relative group">
                 {/* Glow Aura sutil no hover */}
@@ -1284,7 +1329,30 @@ function LandingPage({
                 </motion.button>
               </div>
 
-              {/* Card 3: Terapeuta / Psicólogo */}
+              {/* Card 3: Faculdades & Clínicas-Escola (4ª Via) */}
+              <div className="relative group">
+                {/* Glow Aura sutil no hover */}
+                <div className="absolute -inset-1 bg-gradient-to-r from-sun/70 via-forest/30 to-sun/70 rounded-3xl blur-md opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none -z-10" />
+                <motion.button
+                  type="button"
+                  whileHover={{ y: -4 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => onNavigate("faculdade")}
+                  className="w-full h-full p-6 sm:p-7 bg-sun hover:bg-sun-dark text-forest rounded-2xl border border-sun-dark/40 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col items-center text-center cursor-pointer"
+                >
+                  <div className="w-13 h-13 rounded-2xl bg-white/90 backdrop-blur-md border border-white/70 group-hover:bg-forest text-forest group-hover:text-white flex items-center justify-center shrink-0 transition-all duration-300 shadow-2xs mb-4">
+                    <BookOpen className="w-6 h-6" />
+                  </div>
+                  <h3 className="text-base sm:text-lg font-bold text-forest tracking-tight leading-snug group-hover:text-forest">
+                    Faculdades & Clínicas-Escola
+                  </h3>
+                  <p className="text-xs sm:text-sm text-forest/90 group-hover:text-forest font-medium mt-1.5 leading-relaxed transition-colors">
+                    Continuidade pós-estágio para pacientes e convênio para universitários.
+                  </p>
+                </motion.button>
+              </div>
+
+              {/* Card 4: Terapeuta / Psicólogo */}
               <div className="relative group">
                 {/* Glow Aura sutil no hover */}
                 <div className="absolute -inset-1 bg-gradient-to-r from-sun/70 via-amber-300/50 to-forest/30 rounded-3xl blur-md opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none -z-10" />
@@ -1333,10 +1401,10 @@ function LandingPage({
               Um caminho estruturado e acolhedor para cada perfil. Passe o mouse ou clique para explorar a jornada:
             </p>
 
-            {/* 3 Abas com Glassmorphism: Paciente | Empresa | Psicólogo/Terapeuta */}
-            <div className="w-full max-w-xl mx-auto mb-6 sm:mb-8 relative z-10">
-              <div className="grid grid-cols-3 gap-1 p-1 sm:p-1.5 bg-warm/80 backdrop-blur-md rounded-2xl sm:rounded-full border border-white/80 shadow-inner">
-                {(["paciente", "empresa", "terapeuta"] as const).map((tabKey) => {
+            {/* Abas com Glassmorphism: Paciente | Empresa | Faculdades | Terapeuta */}
+            <div className="w-full max-w-2xl mx-auto mb-6 sm:mb-8 relative z-10">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-1.5 bg-warm/80 backdrop-blur-md rounded-3xl sm:rounded-full border border-white/80 shadow-inner">
+                {(["paciente", "empresa", "faculdade", "terapeuta"] as const).map((tabKey) => {
                   const item = JORNADAS_DATA[tabKey];
                   const isActive = jornadaPublico === tabKey;
                   return (
@@ -1345,9 +1413,11 @@ function LandingPage({
                       type="button"
                       onMouseEnter={() => setJornadaPublico(tabKey)}
                       onClick={() => setJornadaPublico(tabKey)}
-                      className={`py-2 sm:py-2.5 px-2 sm:px-4 rounded-xl sm:rounded-full text-xs sm:text-sm font-bold transition-all duration-200 cursor-pointer text-center flex items-center justify-center gap-1.5 sm:gap-2 leading-tight ${
+                      className={`py-2.5 px-2 sm:py-3 sm:px-3 rounded-2xl sm:rounded-3xl text-xs font-bold transition-all duration-200 cursor-pointer text-center flex flex-col items-center justify-center gap-1.5 leading-tight ${
                         isActive
                           ? tabKey === "empresa"
+                            ? "bg-forest text-white shadow-xs"
+                            : tabKey === "faculdade"
                             ? "bg-forest text-white shadow-xs"
                             : tabKey === "terapeuta"
                             ? "bg-sun-dark text-forest shadow-xs"
@@ -1355,10 +1425,17 @@ function LandingPage({
                           : "text-forest/70 hover:text-forest hover:bg-white/60"
                       }`}
                     >
-                      {tabKey === "paciente" && <User className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />}
-                      {tabKey === "empresa" && <Building2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />}
-                      {tabKey === "terapeuta" && <PsiIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />}
-                      <span className="truncate">{item.tituloAba}</span>
+                      {tabKey === "paciente" && <User className="w-5 h-5 shrink-0" />}
+                      {tabKey === "empresa" && <Building2 className="w-5 h-5 shrink-0" />}
+                      {tabKey === "faculdade" && <BookOpen className="w-5 h-5 shrink-0" />}
+                      {tabKey === "terapeuta" && <PsiIcon className="w-5 h-5 shrink-0" />}
+
+                      <span className={`text-[10px] sm:text-xs text-center leading-tight whitespace-normal ${isActive ? "block" : "hidden sm:block"}`}>
+                        {tabKey === "paciente" && <>Paciente</>}
+                        {tabKey === "empresa" && <>Empresa<br />(NR-1)</>}
+                        {tabKey === "faculdade" && <>Faculdades<br />& Clínicas</>}
+                        {tabKey === "terapeuta" && <>Psicólogo /<br />Terapeuta</>}
+                      </span>
                     </button>
                   );
                 })}

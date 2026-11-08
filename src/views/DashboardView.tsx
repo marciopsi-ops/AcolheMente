@@ -189,6 +189,7 @@ import { GestaoEsteiraTarefas } from "../components/GestaoEsteiraTarefas";
 import { ProfissionalEsteiraTarefas } from "../components/ProfissionalEsteiraTarefas";
 import { ProfissionalDocumentosManager } from "../components/ProfissionalDocumentosManager";
 import { GestaoBlogView } from "../components/GestaoBlogView";
+import { GestaoFaculdadesView } from "../components/GestaoFaculdadesView";
 import { ProfissionalBlogView } from "../components/ProfissionalBlogView";
 import { NotificationRulesManager } from "../components/NotificationRulesManager";
 import { PatientNotificationModal } from "../components/PatientNotificationModal";
@@ -1497,6 +1498,7 @@ export function DashboardView({
       doacoes: "Apoio Acessível & Doações",
       profissionais: "Profissionais Parceiros",
       empresas: "Empresas Parceiras",
+      faculdades: "Faculdades & Clínicas-Escola",
       tarefas: "Tarefas & Pendências",
       acessos: "Níveis de Acesso",
       eventos: "Eventos e Parcerias",
@@ -1529,6 +1531,7 @@ export function DashboardView({
     | "doacoes"
     | "profissionais"
     | "empresas"
+    | "faculdades"
     | "tarefas"
     | "acessos"
     | "pacientes"
@@ -2378,6 +2381,8 @@ export function DashboardView({
     [],
   );
   const [empresasLeads, setEmpresasLeads] = useState<EmpresaLead[]>([]);
+  const [faculdadesLeads, setFaculdadesLeads] = useState<any[]>([]);
+  const [filtroCanalAcesso, setFiltroCanalAcesso] = useState<"todos" | "particular" | "estudante" | "corporativo">("todos");
   const [complianceMessages, setComplianceMessages] = useState<any[]>([]);
   const [isReconciling, setIsReconciling] = useState(false);
   const [showComplianceModal, setShowComplianceModal] = useState(false);
@@ -2936,6 +2941,7 @@ export function DashboardView({
     let unsubProAtivos: (() => void) | undefined;
     let unsubMeusPacientes: (() => void) | undefined;
     let unsubEmpresas: (() => void) | undefined;
+    let unsubFaculdades: (() => void) | undefined;
     let unsubConfig: (() => void) | undefined;
     let unsubComplianceMsg: (() => void) | undefined;
     let unsubProfile: (() => void) | undefined;
@@ -3228,6 +3234,18 @@ export function DashboardView({
               } catch (e) {}
             },
           );
+
+          unsubFaculdades = onSnapshot(
+            query(collection(db, "faculdade_leads")),
+            (snapshot) => {
+              const list: any[] = [];
+              snapshot.forEach((d) => list.push({ id: d.id, ...d.data() }));
+              setFaculdadesLeads(list);
+            },
+            (error) => {
+              console.error("Error loading faculdade_leads:", error);
+            }
+          );
         }
 
         if (hasMaster || hasTriagem) {
@@ -3355,6 +3373,7 @@ export function DashboardView({
         if (unsubProAtivos) unsubProAtivos();
         if (unsubMeusPacientes) unsubMeusPacientes();
         if (unsubEmpresas) unsubEmpresas();
+        if (unsubFaculdades) unsubFaculdades();
         if (unsubConfig) unsubConfig();
         if (unsubComplianceMsg) unsubComplianceMsg();
         if (unsubProfile) unsubProfile();
@@ -3367,6 +3386,7 @@ export function DashboardView({
         unsubProAtivos = undefined;
         unsubMeusPacientes = undefined;
         unsubEmpresas = undefined;
+        unsubFaculdades = undefined;
         unsubComplianceMsg = undefined;
         unsubProfile = undefined;
         unsubExternos = undefined;
@@ -3379,6 +3399,7 @@ export function DashboardView({
         setProfissionaisLeads([]);
         setProfissionaisAtivos([]);
         setEmpresasLeads([]);
+        setFaculdadesLeads([]);
         setMeusPacientes([]);
         setPacientesExternos([]);
         setEmpresasProfissionalB2B([]);
@@ -3397,6 +3418,7 @@ export function DashboardView({
       if (unsubProAtivos) unsubProAtivos();
       if (unsubMeusPacientes) unsubMeusPacientes();
       if (unsubEmpresas) unsubEmpresas();
+      if (unsubFaculdades) unsubFaculdades();
       if (unsubConfig) unsubConfig();
       if (unsubComplianceMsg) unsubComplianceMsg();
       if (unsubProfile) unsubProfile();
@@ -6492,15 +6514,41 @@ export function DashboardView({
   const lowerQuery = searchQuery.toLowerCase();
 
   const filteredAcolhimentos = acolhimentos
-    .filter(
-      (a) =>
+    .filter((a) => {
+      const matchSearch =
         !searchQuery ||
         a.nomeCivil?.toLowerCase().includes(lowerQuery) ||
         a.nome?.toLowerCase().includes(lowerQuery) ||
         a.nomeDesejado?.toLowerCase().includes(lowerQuery) ||
         a.motivo?.toLowerCase().includes(lowerQuery) ||
-        a.telefone?.toLowerCase().includes(lowerQuery),
-    )
+        a.telefone?.toLowerCase().includes(lowerQuery) ||
+        (a as any).instituicaoNome?.toLowerCase().includes(lowerQuery) ||
+        (a as any).estudanteTipo?.toLowerCase().includes(lowerQuery) ||
+        (a as any).abordagemTeorica?.toLowerCase().includes(lowerQuery);
+
+      if (!matchSearch) return false;
+
+      if (filtroCanalAcesso === "estudante") {
+        return (
+          a.viaAcesso === "Estudante & Clínica-Escola" ||
+          Boolean((a as any).estudanteTipo) ||
+          Boolean((a as any).clinicaEscolaOrigem) ||
+          Boolean((a as any).instituicaoNome)
+        );
+      }
+      if (filtroCanalAcesso === "corporativo") {
+        return a.viaAcesso === "Corporativo" || Boolean((a as any).empresa);
+      }
+      if (filtroCanalAcesso === "particular") {
+        return (
+          (a.viaAcesso === "Particular" || !a.viaAcesso) &&
+          !(a as any).estudanteTipo &&
+          !(a as any).clinicaEscolaOrigem &&
+          !(a as any).empresa
+        );
+      }
+      return true;
+    })
     .sort((a, b) => {
       if (acessiveisSortOrder === "alfabetica") {
         const nameA = (a.nome || a.nomeCivil || "").toLowerCase();
@@ -7772,6 +7820,9 @@ export function DashboardView({
   const pendingEmpresasCount = empresasLeads.filter(
     (e) => !e.status || e.status === "Aguardando" || e.notificacao,
   ).length;
+  const pendingFaculdadesCount = faculdadesLeads.filter(
+    (f) => !f.status || f.status === "Novo Contato",
+  ).length;
 
   const calculateHorasMensais = (acols: Acolhimento[]) => {
     return acols.reduce((sum, a) => {
@@ -8511,6 +8562,18 @@ export function DashboardView({
                     {pendingEmpresasCount > 0 && (
                       <span className="bg-red-500 text-white text-[10px] w-4 h-4 flex items-center justify-center rounded-full font-bold ml-1">
                         {pendingEmpresasCount}
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => setActiveTab("faculdades")}
+                    className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap relative flex items-center gap-1.5 ${activeTab === "faculdades" ? "bg-white shadow-sm text-forest font-bold" : "text-forest/70/70 hover:text-forest/70"}`}
+                  >
+                    <BookOpen className="w-3.5 h-3.5 text-forest/70" />
+                    <span>Faculdades & Clínicas</span>
+                    {pendingFaculdadesCount > 0 && (
+                      <span className="bg-red-500 text-white text-[10px] min-w-4 h-4 px-1 flex items-center justify-center rounded-full font-bold ml-1">
+                        {pendingFaculdadesCount}
                       </span>
                     )}
                   </button>
@@ -14072,6 +14135,32 @@ export function DashboardView({
                 </button>
               </div>
 
+              {/* Seletor de Canal / Via de Acesso */}
+              <div className="bg-white border border-soft rounded-lg p-0.5 flex items-center shadow-2xs">
+                <span className="text-[10px] sm:text-[11px] font-bold text-forest/50 pl-1.5 pr-0.5 hidden lg:flex items-center gap-1 shrink-0">
+                  <span>Canal:</span>
+                </span>
+                {[
+                  { id: "todos", label: "Todos" },
+                  { id: "particular", label: "Particular" },
+                  { id: "estudante", label: "🎓 Estudante / SPA" },
+                  { id: "corporativo", label: "Empresas" },
+                ].map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => setFiltroCanalAcesso(c.id as any)}
+                    className={`px-1.5 sm:px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] transition-all cursor-pointer ${
+                      filtroCanalAcesso === c.id
+                        ? "bg-forest text-white font-bold shadow-2xs"
+                        : "text-forest/60 hover:text-forest font-medium"
+                    }`}
+                  >
+                    {c.label}
+                  </button>
+                ))}
+              </div>
+
               {/* Campo de Busca Rápida no Kanban */}
               <div className="relative">
                 <Search className="w-3.5 h-3.5 text-forest/40 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -14349,17 +14438,62 @@ export function DashboardView({
                                     <span className="text-[10px] font-bold text-forest/70 bg-warm px-2 py-0.5 rounded-md border border-soft shrink-0">
                                       #{cardIdx + 1}
                                     </span>
-                                    {card.viaAcesso && card.viaAcesso !== "Particular" && (
-                                      <span
-                                        className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border shrink-0 ${
-                                          card.viaAcesso === "Corporativo"
-                                            ? "bg-blue-50 text-blue-900 border-blue-200"
-                                            : "bg-emerald-50 text-emerald-900 border-emerald-200"
-                                        }`}
-                                      >
-                                        {card.viaAcesso}
-                                      </span>
-                                    )}
+                                    {(() => {
+                                      const isEstudante =
+                                        card.viaAcesso === "Estudante & Clínica-Escola" ||
+                                        Boolean(card.estudanteTipo) ||
+                                        Boolean(card.clinicaEscolaOrigem) ||
+                                        Boolean(card.instituicaoNome);
+
+                                      if (isEstudante) {
+                                        if (card.clinicaEscolaOrigem) {
+                                          return (
+                                            <span
+                                              className="text-[9px] font-bold px-2 py-0.5 rounded-full border border-amber-300 bg-amber-50 text-amber-950 flex items-center gap-1 shrink-0"
+                                              title={`Continuidade SPA - ${card.instituicaoNome || ""}`}
+                                            >
+                                              <span>🏥 Continuidade SPA</span>
+                                              {card.instituicaoNome && <span className="opacity-75">· {card.instituicaoNome}</span>}
+                                            </span>
+                                          );
+                                        }
+                                        if (card.estudanteTipo?.includes("Psicologia")) {
+                                          return (
+                                            <span
+                                              className="text-[9px] font-bold px-2 py-0.5 rounded-full border border-purple-300 bg-purple-50 text-purple-950 flex items-center gap-1 shrink-0"
+                                              title={`Tripé Formativo: Psicologia - ${card.abordagemTeorica || ""}`}
+                                            >
+                                              <span>🎓 Tripé Psicologia</span>
+                                              {card.abordagemTeorica && <span className="opacity-75">({card.abordagemTeorica})</span>}
+                                            </span>
+                                          );
+                                        }
+                                        return (
+                                          <span
+                                            className="text-[9px] font-bold px-2 py-0.5 rounded-full border border-indigo-200 bg-indigo-50 text-indigo-950 flex items-center gap-1 shrink-0"
+                                            title={`Universitário - ${card.instituicaoNome || ""}`}
+                                          >
+                                            <span>🎓 Universitário</span>
+                                            {card.instituicaoNome && <span className="opacity-75">· {card.instituicaoNome}</span>}
+                                          </span>
+                                        );
+                                      }
+
+                                      if (card.viaAcesso && card.viaAcesso !== "Particular") {
+                                        return (
+                                          <span
+                                            className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border shrink-0 ${
+                                              card.viaAcesso === "Corporativo"
+                                                ? "bg-blue-50 text-blue-900 border-blue-200"
+                                                : "bg-emerald-50 text-emerald-900 border-emerald-200"
+                                            }`}
+                                          >
+                                            {card.viaAcesso}
+                                          </span>
+                                        );
+                                      }
+                                      return null;
+                                    })()}
                                     {!isCardInStandby(card) && (card.status === "Alta" || card.ativo === false || card.desligado || card.statusInativacao === "Inativo" || card.statusInativacao === "Desligado") && (
                                       <span className="text-[9px] font-bold text-rose-800 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-200 flex items-center gap-0.5 shrink-0">
                                         <XCircle className="w-2.5 h-2.5 text-rose-600" />
@@ -16664,6 +16798,10 @@ export function DashboardView({
             })()}
           </div>
         </div>
+      ) : activeTab === "faculdades" ? (
+        <div className="flex-1 overflow-auto p-4 sm:p-6 md:p-8 flex items-start flex-col gap-6 slide-up w-full">
+          <GestaoFaculdadesView />
+        </div>
       ) : activeTab === "compliance" ? (
         <div className="flex-1 overflow-auto p-6 md:p-8 flex items-start flex-col gap-8 slide-up">
           <div className="w-full flex items-center justify-between bg-white px-5 py-3 sm:py-3.5 rounded-2xl shadow-xs border border-soft">
@@ -18220,6 +18358,66 @@ export function DashboardView({
                       />
                     </div>
                   </div>
+                </div>
+              )}
+
+              {/* DADOS ACADÊMICOS & CLÍNICA-ESCOLA (Visível quando for estudante ou encaminhado por SPA) */}
+              {(selectedCard.viaAcesso === "Estudante & Clínica-Escola" ||
+                Boolean(selectedCard.estudanteTipo) ||
+                Boolean(selectedCard.instituicaoNome) ||
+                Boolean(selectedCard.clinicaEscolaOrigem)) && (
+                <div id="sec-academico" className="bg-gradient-to-br from-indigo-50/70 via-purple-50/40 to-white p-4 sm:p-6 rounded-2xl border border-indigo-200/80 shadow-2xs space-y-4">
+                  <div className="flex items-center justify-between border-b border-indigo-200/70 pb-3">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-indigo-950 flex items-center gap-2">
+                      <BookOpen className="w-4 h-4 text-indigo-700" />
+                      <span>Programa Acadêmico & Clínica-Escola</span>
+                    </h4>
+                    <span className="text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-900 border border-indigo-300">
+                      {selectedCard.clinicaEscolaOrigem
+                        ? "Continuidade SPA (6 Meses)"
+                        : selectedCard.estudanteTipo || "Universitário"}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                    <EditableField
+                      label="Faculdade / Clínica-Escola"
+                      value={selectedCard.instituicaoNome}
+                      field="instituicaoNome"
+                      onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
+                      isEditing={isEditingCard}
+                    />
+                    <EditableField
+                      label="Perfil Acadêmico"
+                      value={selectedCard.estudanteTipo}
+                      field="estudanteTipo"
+                      onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
+                      isEditing={isEditingCard}
+                    />
+                    <EditableField
+                      label="Abordagem de Preferência (Tripé)"
+                      value={selectedCard.abordagemTeorica}
+                      field="abordagemTeorica"
+                      onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
+                      isEditing={isEditingCard}
+                    />
+                    <EditableField
+                      label="Encaminhado por Clínica-Escola (SPA)?"
+                      value={selectedCard.clinicaEscolaOrigem ? "Sim (Continuidade pós-estágio)" : "Não"}
+                      field="clinicaEscolaOrigem"
+                      onChange={(f, v) => handleUpdateAcolhimentoProperty(selectedCard.id, f, v)}
+                      isEditing={isEditingCard}
+                    />
+                  </div>
+
+                  {selectedCard.abordagemTeorica && (
+                    <div className="p-3 bg-white/90 rounded-xl border border-indigo-200 flex items-center gap-2.5 text-xs text-indigo-950">
+                      <Sparkles className="w-4 h-4 text-purple-600 shrink-0" />
+                      <span>
+                        <strong>Dica para Atribuição de Profissional:</strong> O estudante indicou preferência pela abordagem <strong>{selectedCard.abordagemTeorica}</strong> para sua psicoterapia pessoal no Tripé Formativo. Priorize profissionais credenciados com essa especialidade técnica.
+                      </span>
+                    </div>
+                  )}
                 </div>
               )}
 

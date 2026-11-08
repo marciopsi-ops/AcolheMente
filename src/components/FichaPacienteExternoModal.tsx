@@ -32,8 +32,8 @@ import {
   X,
   Trash2,
 } from "lucide-react";
-import { doc, getDoc, updateDoc, serverTimestamp, collection, query, where, getDocs, deleteDoc } from "firebase/firestore";
-import { db, handleFirestoreError, OperationType } from "../lib/firebase";
+import { doc, getDoc, updateDoc, serverTimestamp, collection, query, where, getDocs, deleteDoc, addDoc } from "firebase/firestore";
+import { db, auth, handleFirestoreError, OperationType } from "../lib/firebase";
 import { PacienteProntuarioModal, ProntuarioRegistroItem } from "./PacienteProntuarioModal";
 import { PacienteFaturamentoSpreadsheet, SessaoFaturamentoItem } from "./PacienteFaturamentoSpreadsheet";
 import { ContratoGeradorModal } from "./ContratoGeradorModal";
@@ -364,7 +364,7 @@ export function FichaPacienteExternoModal({
     });
   };
 
-  // Sincronização reversa: ao atualizar sessões na planilha, reflete status/data/valor em "agendamentos" caso a sessão tenha origem na Agenda
+  // Sincronização reversa ponta a ponta: ao atualizar sessões na planilha, reflete status/data/valor em "agendamentos" e remove as excluídas
   const syncSessoesToAgendamentos = async (novasSessoes: SessaoFaturamentoItem[]) => {
     const mapToAgendaStatus: Record<string, string> = {
       agendada: "agendada",
@@ -375,28 +375,112 @@ export function FichaPacienteExternoModal({
       falta_sem_aviso: "cancelada",
     };
 
+    // Verificação inteligente de conflitos (mesma data e hora)
+    const countMap = new Map<string, number>();
+    novasSessoes.forEach((s) => {
+      if (s.data && s.horario) {
+        const key = `${s.data}_${s.horario}`;
+        countMap.set(key, (countMap.get(key) || 0) + 1);
+      }
+    });
+    const temConflito = Array.from(countMap.values()).some((c) => c > 1);
+    if (temConflito) {
+      showToast("⚠️ Conflito detectado: Existem múltiplos atendimentos lançados para a mesma data e horário.", "warning");
+    }
+
+    const currentIds = new Set(novasSessoes.map((s) => s.id).filter(Boolean));
+    const oldSessoes = Array.isArray(currentPaciente.historicoSessoes) ? currentPaciente.historicoSessoes : [];
+
+    // Se alguma sessão foi excluída na ficha, remove também do agendamento correspondente
+    for (const oldS of oldSessoes) {
+      if (
+        oldS.id &&
+        !currentIds.has(oldS.id) &&
+        !oldS.id.startsWith("sessao_") &&
+        !oldS.id.startsWith("lote_") &&
+        !oldS.id.startsWith("sess-")
+      ) {
+        try {
+          await deleteDoc(doc(db, "agendamentos", oldS.id));
+        } catch (err) {
+          console.warn("Aviso ao excluir agendamento sincronizado:", err);
+        }
+      }
+    }
+
+    const profId = currentPaciente.profissionalId || auth.currentUser?.uid;
+    let houveAtualizacaoDeIds = false;
+
     await Promise.all(
       novasSessoes.map(async (s) => {
-        if (!s.id || s.id.startsWith("sessao_") || s.id.startsWith("lote_")) return;
+        if (!s.data) return;
+        const isSpreadsheetCreated = s.id && s.id.startsWith("sess-");
+        const agId = s.id && !s.id.startsWith("sessao_") && !s.id.startsWith("lote_") && !isSpreadsheetCreated ? s.id : null;
+
         try {
-          const agRef = doc(db, "agendamentos", s.id);
-          const agSnap = await getDoc(agRef);
-          if (agSnap.exists()) {
-            await updateDoc(agRef, {
+          if (agId) {
+            const agRef = doc(db, "agendamentos", agId);
+            const agSnap = await getDoc(agRef);
+            if (agSnap.exists()) {
+              await updateDoc(agRef, {
+                data: s.data,
+                ...(s.horario ? { horario: s.horario } : {}),
+                modalidade: s.modalidade || "online",
+                valor: Number(s.valor) || 0,
+                status: mapToAgendaStatus[s.statusAtendimento] || "agendada",
+                ...(s.observacoes !== undefined ? { observacoes: s.observacoes } : {}),
+                updatedAt: serverTimestamp(),
+              });
+            } else {
+              const newAgRef = await addDoc(collection(db, "agendamentos"), {
+                profissionalId: profId,
+                pacienteId: currentPaciente.id,
+                pacienteNome: nomeDisplay,
+                pacienteTelefone: telDisplay,
+                pacienteEmail: emailDisplay,
+                data: s.data,
+                horario: s.horario || "14:00",
+                duracaoMinutos: 50,
+                modalidade: s.modalidade || "online",
+                status: mapToAgendaStatus[s.statusAtendimento] || "agendada",
+                valor: Number(s.valor) || 0,
+                observacoes: s.observacoes || "",
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
+              });
+              s.id = newAgRef.id;
+              houveAtualizacaoDeIds = true;
+            }
+          } else {
+            // Sessão criada na ficha de bordo: cria o documento correspondente na agenda
+            const newAgRef = await addDoc(collection(db, "agendamentos"), {
+              profissionalId: profId,
+              pacienteId: currentPaciente.id,
+              pacienteNome: nomeDisplay,
+              pacienteTelefone: telDisplay,
+              pacienteEmail: emailDisplay,
               data: s.data,
-              ...(s.horario ? { horario: s.horario } : {}),
-              modalidade: s.modalidade,
-              valor: Number(s.valor) || 0,
+              horario: s.horario || "14:00",
+              duracaoMinutos: 50,
+              modalidade: s.modalidade || "online",
               status: mapToAgendaStatus[s.statusAtendimento] || "agendada",
-              ...(s.observacoes !== undefined ? { observacoes: s.observacoes } : {}),
+              valor: Number(s.valor) || 0,
+              observacoes: s.observacoes || "",
+              createdAt: serverTimestamp(),
               updatedAt: serverTimestamp(),
             });
+            s.id = newAgRef.id;
+            houveAtualizacaoDeIds = true;
           }
-        } catch {
-          // Ignora silenciosamente sessões manuais que não pertencem à coleção agendamentos
+        } catch (err) {
+          console.warn("Aviso ao sincronizar sessão com a agenda:", err);
         }
       })
     );
+
+    if (houveAtualizacaoDeIds) {
+      await handlePatchFields({ historicoSessoes: novasSessoes }, true);
+    }
   };
 
   const handleCloseModal = async () => {

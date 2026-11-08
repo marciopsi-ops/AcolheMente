@@ -34,7 +34,7 @@ import {
   formatPerfilCurtoLabel,
   extractLegacySyncFields,
 } from "../types/faturamento";
-import { doc, getDoc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { doc, getDoc, updateDoc, serverTimestamp, deleteDoc } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { PerfisFaturamentoManagerModal } from "./PerfisFaturamentoManagerModal";
 import { PainelReajusteAnualContrato } from "./PainelReajusteAnualContrato";
@@ -337,6 +337,16 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
     isConsolidado?: boolean;
   }>({ isOpen: false });
 
+  const [modalCopiarAnterior, setModalCopiarAnterior] = useState<{
+    isOpen: boolean;
+    data: string;
+    horario: string;
+  }>({
+    isOpen: false,
+    data: new Date().toISOString().split("T")[0],
+    horario: "14:00",
+  });
+
   const [modalNf, setModalNf] = useState<boolean>(false);
   const [modalCarneLeao, setModalCarneLeao] = useState<boolean>(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
@@ -374,6 +384,22 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
     });
     return Array.from(setMeses).sort().reverse();
   }, [itensSessoes, currentMonthStr]);
+
+  // Detecção inteligente de conflitos de data e horário (mesma data e hora)
+  const conflitosDataHoraMap = useMemo(() => {
+    const counts = new Map<string, number>();
+    itensSessoes.forEach((s) => {
+      if (s.data && s.horario) {
+        const key = `${s.data}_${s.horario}`;
+        counts.set(key, (counts.get(key) || 0) + 1);
+      }
+    });
+    const conflitantes = new Set<string>();
+    counts.forEach((count, key) => {
+      if (count > 1) conflitantes.add(key);
+    });
+    return conflitantes;
+  }, [itensSessoes]);
 
   // Métricas Consolidadas do Período (Gerencial + Separação Tributável IRPF vs Caixa s/ IR vs PJ)
   const metricas = useMemo(() => {
@@ -463,10 +489,53 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
     setItensSessoes(atualizadas);
     try {
       await onSaveSessoes(atualizadas);
-      showToast(`Sessão #${novoNumero} adicionada!`, "success");
+      showToast(`✨ Nova Sessão #${novoNumero} adicionada com sucesso!`, "success");
     } catch (err) {
       console.error("Erro ao salvar nova sessão:", err);
       showToast("Erro ao adicionar sessão.", "error");
+    }
+  };
+
+  const handleExecutarCopiarAnterior = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (itensSessoes.length === 0) return;
+    const sessaoOrigem = itensSessoes[itensSessoes.length - 1];
+    const novoNumero =
+      itensSessoes.length > 0
+        ? Math.max(...itensSessoes.map((s) => s.numeroSessao || 0)) + 1
+        : 1;
+
+    const novaSessaoRaw: SessaoFaturamentoItem = {
+      id: `sess-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+      numeroSessao: novoNumero,
+      data: modalCopiarAnterior.data,
+      horario: modalCopiarAnterior.horario,
+      modalidade: sessaoOrigem.modalidade || "online",
+      statusAtendimento: "agendada",
+      valor: sessaoOrigem.valor,
+      statusPagamento: "pendente",
+      formaPagamento: sessaoOrigem.formaPagamento || "Pix",
+      ...(sessaoOrigem.perfilFaturamentoId
+        ? { perfilFaturamentoId: sessaoOrigem.perfilFaturamentoId }
+        : {}),
+      ...(typeof sessaoOrigem.declararIrOverride === "boolean"
+        ? { declararIrOverride: sessaoOrigem.declararIrOverride }
+        : {}),
+      observacoes: sessaoOrigem.observacoes ? `Cópia de #${sessaoOrigem.numeroSessao}` : "",
+    };
+
+    const atualizadas = [...itensSessoes, novaSessaoRaw];
+    setItensSessoes(atualizadas);
+    try {
+      await onSaveSessoes(atualizadas);
+      showToast(
+        `✨ Sessão #${novoNumero} duplicada com sucesso para ${modalCopiarAnterior.data.split("-").reverse().join("/")} às ${modalCopiarAnterior.horario}!`,
+        "success"
+      );
+      setModalCopiarAnterior({ isOpen: false, data: "", horario: "14:00" });
+    } catch (err) {
+      console.error("Erro ao salvar sessão copiada:", err);
+      showToast("Erro ao copiar sessão.", "error");
     }
   };
 
@@ -640,6 +709,15 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
 
       setItensSessoes(atualizadas);
       await onSaveSessoes(atualizadas);
+
+      if (id && !id.startsWith("sessao_") && !id.startsWith("lote_") && !id.startsWith("sess-")) {
+        try {
+          await deleteDoc(doc(db, "agendamentos", id));
+        } catch (err) {
+          console.warn("Aviso ao excluir agendamento correspondente:", err);
+        }
+      }
+
       showToast(`Sessão #${numeroSessao} excluída com sucesso.`, "info");
       setSessaoParaExcluir(null);
     } catch (err) {
@@ -945,14 +1023,47 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
             </button>
           )}
 
-          <button
-            type="button"
-            onClick={handleAdicionarSessao}
-            className="px-2.5 py-1 sm:px-3 sm:py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1 shadow-2xs cursor-pointer active:scale-95 whitespace-nowrap"
-          >
-            <Plus className="w-3.5 h-3.5 text-sun" />
-            <span>Nova Sessão</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleAdicionarSessao}
+              className="px-2.5 py-1 sm:px-3 sm:py-1.5 bg-forest hover:bg-forest/90 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1 shadow-2xs cursor-pointer active:scale-95 whitespace-nowrap"
+              title="Adicionar nova sessão em branco"
+            >
+              <Plus className="w-3.5 h-3.5 text-sun" />
+              <span>Adicionar Sessão</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                if (itensSessoes.length === 0) {
+                  showToast("Não há sessão anterior para copiar.", "warning");
+                  return;
+                }
+                const ultima = itensSessoes[itensSessoes.length - 1];
+                let dataSugerida = new Date().toISOString().split("T")[0];
+                try {
+                  if (ultima.data) {
+                    const [ano, mes, dia] = ultima.data.split("-").map(Number);
+                    const dObj = new Date(ano, mes - 1, dia);
+                    dObj.setDate(dObj.getDate() + 7);
+                    dataSugerida = dObj.toISOString().split("T")[0];
+                  }
+                } catch {}
+                setModalCopiarAnterior({
+                  isOpen: true,
+                  data: dataSugerida,
+                  horario: ultima.horario || "14:00",
+                });
+              }}
+              className="px-2.5 py-1 sm:px-3 sm:py-1.5 bg-warm hover:bg-warm/80 text-forest border border-soft rounded-lg text-xs font-bold transition-all flex items-center gap-1 shadow-2xs cursor-pointer active:scale-95 whitespace-nowrap"
+              title="Copiar dados da sessão anterior informando nova data e horário"
+            >
+              <Copy className="w-3.5 h-3.5 text-forest/70" />
+              <span>Copiar Anterior</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1177,6 +1288,7 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
               <tr className="bg-warm/40 text-[10px] font-bold uppercase tracking-wider text-forest/70 border-b border-soft">
                 <th className="py-2.5 px-3 w-10 text-center">#</th>
                 <th className="py-2.5 px-3 min-w-[110px]">Data</th>
+                <th className="py-2.5 px-3 min-w-[95px]">Horário</th>
                 <th className="py-2.5 px-3 min-w-[100px]">Modalidade</th>
                 <th className="py-2.5 px-3 min-w-[125px]">Status Atendimento</th>
                 <th className="py-2.5 px-3 min-w-[95px]">Valor (R$)</th>
@@ -1193,6 +1305,7 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
                 const declaraIrLinha = shouldDeclararIrForItem(sessao, perfilLinha);
                 const statusFiscalLinha = resolveStatusFiscalSessao(sessao, perfilLinha);
                 const isPjLinha = perfilLinha.via === "PJ";
+                const isConflito = sessao.data && sessao.horario && conflitosDataHoraMap.has(`${sessao.data}_${sessao.horario}`);
 
                 return (
                   <tr key={sessao.id} className="hover:bg-warm/30 transition-colors">
@@ -1203,10 +1316,30 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
 
                     {/* Data */}
                     <td className="py-2 px-3">
+                      <div className="flex flex-col gap-0.5">
+                        <input
+                          type="date"
+                          value={sessao.data || ""}
+                          onChange={(e) => handleUpdateItem(sessao.id, "data", e.target.value)}
+                          className="bg-transparent font-mono tabular-nums font-medium text-xs text-forest px-1 py-0.5 rounded border border-transparent hover:border-soft focus:border-forest/40 focus:bg-white outline-none w-full"
+                        />
+                        {isConflito && (
+                          <span
+                            className="px-1 py-0.2 rounded bg-amber-100 text-amber-800 font-bold text-[9px] inline-flex items-center gap-0.5 w-fit"
+                            title="Conflito: Existe outro atendimento lançado nesta mesma data e horário"
+                          >
+                            ⚠️ Conflito
+                          </span>
+                        )}
+                      </div>
+                    </td>
+
+                    {/* Horário */}
+                    <td className="py-2 px-3">
                       <input
-                        type="date"
-                        value={sessao.data || ""}
-                        onChange={(e) => handleUpdateItem(sessao.id, "data", e.target.value)}
+                        type="time"
+                        value={sessao.horario || "14:00"}
+                        onChange={(e) => handleUpdateItem(sessao.id, "horario", e.target.value)}
                         className="bg-transparent font-mono tabular-nums font-medium text-xs text-forest px-1 py-0.5 rounded border border-transparent hover:border-soft focus:border-forest/40 focus:bg-white outline-none w-full"
                       />
                     </td>
@@ -1515,6 +1648,81 @@ export const PacienteFaturamentoSpreadsheet: React.FC<PacienteFaturamentoSpreads
       {/* ========================================================================================= */}
       {/* MODAL 1: RECIBO CLÍNICO / TERAPÊUTICO (IMPRESSÃO / PDF LIMPO)                            */}
       {/* ========================================================================================= */}
+      {/* MODAL: COPIAR SESSÃO ANTERIOR (COM DATA E HORÁRIO) */}
+      {modalCopiarAnterior.isOpen && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl border border-soft shadow-2xl max-w-md w-full p-6 space-y-5 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between pb-3 border-b border-soft">
+              <div className="flex items-center gap-2">
+                <Copy className="w-5 h-5 text-forest" />
+                <h3 className="font-serif font-bold text-base text-forest">
+                  Copiar Sessão Anterior
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModalCopiarAnterior({ isOpen: false, data: "", horario: "14:00" })}
+                className="p-1 hover:bg-warm rounded-lg text-forest/50 hover:text-forest cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleExecutarCopiarAnterior} className="space-y-4">
+              <p className="text-xs text-forest/70">
+                Defina a nova data e horário para a sessão copiada. Ela será sincronizada automaticamente com a sua agenda clínica.
+              </p>
+
+              <div>
+                <label className="block text-xs font-bold text-forest mb-1">
+                  Nova Data <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={modalCopiarAnterior.data}
+                  onChange={(e) =>
+                    setModalCopiarAnterior((prev) => ({ ...prev, data: e.target.value }))
+                  }
+                  className="w-full px-3 py-2 bg-warm/40 border border-soft rounded-xl text-forest font-bold text-sm focus:outline-none focus:ring-2 focus:ring-forest/30"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-forest mb-1">
+                  Novo Horário <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="time"
+                  required
+                  value={modalCopiarAnterior.horario}
+                  onChange={(e) =>
+                    setModalCopiarAnterior((prev) => ({ ...prev, horario: e.target.value }))
+                  }
+                  className="w-full px-3 py-2 bg-warm/40 border border-soft rounded-xl text-forest font-bold text-sm focus:outline-none focus:ring-2 focus:ring-forest/30"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-soft">
+                <button
+                  type="button"
+                  onClick={() => setModalCopiarAnterior({ isOpen: false, data: "", horario: "14:00" })}
+                  className="px-4 py-2 bg-warm hover:bg-warm/80 text-forest rounded-xl text-xs font-bold transition-all cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-forest hover:bg-forest/90 text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs"
+                >
+                  Copiar e Inserir Sessão
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {modalRecibo.isOpen && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl border border-soft shadow-2xl max-w-xl w-full p-6 space-y-5 animate-in fade-in zoom-in-95 max-h-[90vh] overflow-y-auto">

@@ -1,4 +1,4 @@
-import { ArrowLeft, CheckCircle2, Leaf, Laptop, ShieldCheck, DollarSign, Building2, User, LifeBuoy, PhoneCall, ExternalLink } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Leaf, Laptop, ShieldCheck, DollarSign, Building2, User, LifeBuoy, PhoneCall, ExternalLink, BookOpen } from "lucide-react";
 import { Footer } from "../components/Footer";
 import { FormEvent, useState, useEffect } from "react";
 import { collection, addDoc, serverTimestamp, getDocs, query, where, updateDoc, doc } from "firebase/firestore";
@@ -13,14 +13,16 @@ import pacienteHero from '../assets/images/paciente_hero_laptop_therapist_178243
 import logoImage from '../assets/images/logo_acolhe.svg';
 import { BrandLogo } from '../components/BrandLogo';
 
-type AccessType = "Particular" | "Corporativo";
+type AccessType = "Particular" | "Corporativo" | "Estudante";
 
 export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' | 'acolhimento' | 'dashboard' | 'profile') => void }) {
   const [accessType, setAccessType] = useState<AccessType>(() => {
     const params = new URLSearchParams(window.location.search);
     const via = params.get("via")?.toLowerCase();
     const convenio = params.get("convenio") || params.get("empresa") || params.get("codigo") || params.get("codigo_empresa");
+    const hasFaculdadeParam = Boolean(params.get("faculdade") || params.get("instituicao") || params.get("spa") || params.get("clinica"));
     if (via === "corporativo" || Boolean(convenio)) return "Corporativo";
+    if (via === "estudante" || via === "faculdade" || via === "clinica-escola" || hasFaculdadeParam) return "Estudante";
     return "Particular";
   });
   const [step, setStep] = useState<number>(1);
@@ -76,6 +78,18 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
   const [melhoresPeriodos, setMelhoresPeriodos] = useState<string[]>([]);
   const [lgpdAceite, setLgpdAceite] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string>("");
+
+  // Student & Clinic-School Fields
+  const [estudanteTipo, setEstudanteTipo] = useState("Universitário Geral");
+  const [clinicaEscolaOrigem, setClinicaEscolaOrigem] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("origem") === "spa" || params.get("spa") === "true";
+  });
+  const [instituicaoNome, setInstituicaoNome] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("faculdade") || params.get("instituicao") || params.get("spa") || "";
+  });
+  const [abordagemTeorica, setAbordagemTeorica] = useState("");
 
   const totalSteps = 4;
   const currentVisualStep = step;
@@ -214,7 +228,11 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
         responsavelNome: responsavelNome.trim(),
         responsavelCpf: responsavelCpf.trim(),
         comoConheceu,
-        viaAcesso: "Particular",
+        viaAcesso: accessType === "Estudante" ? "Estudante & Clínica-Escola" : "Particular",
+        estudanteTipo: accessType === "Estudante" ? estudanteTipo : "",
+        clinicaEscolaOrigem: accessType === "Estudante" ? clinicaEscolaOrigem : false,
+        instituicaoNome: accessType === "Estudante" ? instituicaoNome.trim() : "",
+        abordagemTeorica: accessType === "Estudante" ? abordagemTeorica : "",
         empresa: "",
         fonteRenda,
         faixaSalarial,
@@ -564,66 +582,80 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
       <main className="flex-1 flex flex-col items-center pb-16 w-full">
         <Breadcrumbs items={[{ label: "Início", onClick: () => onNavigate("landing") }, { label: "Iniciar Acolhimento", active: true }]} />
         
-        {/* SELETOR DE VIA DE ACESSO (APENAS NA VIA PARTICULAR) */}
-        {accessType === "Particular" && (
-          <div className="w-full max-w-[1440px] px-6 md:px-12 pt-6 pb-2 animate-in fade-in duration-300">
-            <div className="bg-white/95 backdrop-blur-sm p-5 md:p-6 rounded-3xl border border-soft shadow-xs flex flex-col md:flex-row items-center justify-between gap-6">
-              <div className="flex flex-col text-center md:text-left">
-                <span className="text-[11px] font-bold uppercase tracking-widest text-forest/60 mb-1">
-                  Via de Acesso ao Atendimento
-                </span>
-                <h3 className="font-serif text-lg md:text-2xl font-semibold text-forest">
-                  Como você deseja iniciar seu acolhimento?
-                </h3>
-              </div>
+        {/* SELETOR DE VIA DE ACESSO */}
+        <div className="w-full max-w-[1440px] px-6 md:px-12 pt-6 pb-2 animate-in fade-in duration-300">
+          <div className="bg-white/95 backdrop-blur-sm p-5 md:p-6 rounded-3xl border border-soft shadow-xs flex flex-col md:flex-row items-center justify-between gap-6">
+            <div className="flex flex-col text-center md:text-left">
+              <span className="text-[11px] font-bold uppercase tracking-widest text-forest/60 mb-1">
+                Via de Acesso ao Atendimento
+              </span>
+              <h3 className="font-serif text-lg md:text-2xl font-semibold text-forest">
+                Como você deseja iniciar seu acolhimento?
+              </h3>
+            </div>
 
-              <div className="flex flex-col sm:flex-row items-center gap-3.5 w-full md:w-auto">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAccessType("Particular");
-                    setStep(1);
-                    setErrorMsg("");
-                  }}
-                  className="w-full sm:w-auto px-5 py-3 rounded-2xl border transition-all flex items-center gap-3.5 cursor-pointer bg-forest text-white border-forest shadow-md text-left"
-                >
-                  <div className="w-9 h-9 rounded-xl bg-white/15 flex items-center justify-center shrink-0">
-                    <User className="w-4.5 h-4.5 text-white" />
-                  </div>
-                  <div className="flex flex-col pr-2">
-                    <span className="text-xs font-bold uppercase tracking-wider leading-snug">
-                      Particular
-                    </span>
-                    <span className="text-[11px] text-white/80 font-medium whitespace-nowrap leading-snug">
-                      Valor Acessível
-                    </span>
-                  </div>
-                </button>
+            <div className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto">
+              <button
+                type="button"
+                onClick={() => {
+                  setAccessType("Particular");
+                  setStep(1);
+                  setErrorMsg("");
+                }}
+                className={`w-full sm:w-auto px-4 py-3 rounded-2xl border transition-all flex items-center gap-3 cursor-pointer text-left ${
+                  accessType === "Particular" ? "bg-forest text-white border-forest shadow-md" : "bg-warm hover:bg-white text-forest border-soft"
+                }`}
+              >
+                <div className="w-8 h-8 rounded-xl bg-white/15 flex items-center justify-center shrink-0">
+                  <User className="w-4 h-4 text-current" />
+                </div>
+                <div className="flex flex-col pr-1">
+                  <span className="text-xs font-bold uppercase tracking-wider leading-snug">Particular</span>
+                  <span className="text-[10px] opacity-80 font-medium">Valor Acessível</span>
+                </div>
+              </button>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAccessType("Corporativo");
-                    setErrorMsg("");
-                  }}
-                  className="w-full sm:w-auto px-5 py-3 rounded-2xl border transition-all flex items-center gap-3.5 cursor-pointer bg-warm hover:bg-white text-forest border-soft hover:border-sun-dark shadow-2xs hover:shadow-xs group text-left"
-                >
-                  <div className="w-9 h-9 rounded-xl bg-sun-light group-hover:bg-sun flex items-center justify-center shrink-0 transition-colors text-forest">
-                    <Building2 className="w-4.5 h-4.5" />
-                  </div>
-                  <div className="flex flex-col pr-2">
-                    <span className="text-xs font-bold uppercase tracking-wider text-forest leading-snug">
-                      Corporativo
-                    </span>
-                    <span className="text-[11px] text-forest/70 font-medium whitespace-nowrap leading-snug">
-                      Empresa Parceira
-                    </span>
-                  </div>
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setAccessType("Estudante");
+                  setStep(1);
+                  setErrorMsg("");
+                }}
+                className={`w-full sm:w-auto px-4 py-3 rounded-2xl border transition-all flex items-center gap-3 cursor-pointer text-left ${
+                  accessType === "Estudante" ? "bg-forest text-white border-forest shadow-md" : "bg-warm hover:bg-white text-forest border-soft"
+                }`}
+              >
+                <div className="w-8 h-8 rounded-xl bg-sun-light flex items-center justify-center shrink-0 text-forest">
+                  <BookOpen className="w-4 h-4" />
+                </div>
+                <div className="flex flex-col pr-1">
+                  <span className="text-xs font-bold uppercase tracking-wider leading-snug">Estudante</span>
+                  <span className="text-[10px] opacity-80 font-medium">Clínica-Escola & Tripé</span>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setAccessType("Corporativo");
+                  setErrorMsg("");
+                }}
+                className={`w-full sm:w-auto px-4 py-3 rounded-2xl border transition-all flex items-center gap-3 cursor-pointer text-left ${
+                  accessType === "Corporativo" ? "bg-forest text-white border-forest shadow-md" : "bg-warm hover:bg-white text-forest border-soft"
+                }`}
+              >
+                <div className="w-8 h-8 rounded-xl bg-sun-light flex items-center justify-center shrink-0 text-forest">
+                  <Building2 className="w-4 h-4" />
+                </div>
+                <div className="flex flex-col pr-1">
+                  <span className="text-xs font-bold uppercase tracking-wider leading-snug">Corporativo</span>
+                  <span className="text-[10px] opacity-80 font-medium">Empresa Parceira</span>
+                </div>
+              </button>
             </div>
           </div>
-        )}
+        </div>
 
         {/* FLUXO CORPORATIVO DEDICADO */}
         {accessType === "Corporativo" ? (
@@ -853,6 +885,86 @@ export function AcolhimentoView({ onNavigate }: { onNavigate: (view: 'landing' |
                     
                     {step === 1 && (
                       <div className="flex flex-col gap-5 animate-in fade-in duration-500">
+                        {accessType === "Estudante" && (
+                          <div className="p-5 rounded-2xl bg-warm/80 border border-soft/80 flex flex-col gap-4">
+                            <div className="flex items-center gap-2">
+                              <span className="px-2.5 py-0.5 bg-sun text-forest font-bold text-[10px] uppercase rounded">Programa Universitário</span>
+                              <span className="text-xs font-semibold text-forest">Continuidade & Tripé Clínico</span>
+                            </div>
+
+                            <div>
+                              <label className="block text-xs font-semibold uppercase tracking-wider text-forest/70 mb-1.5">Nome da Faculdade / Universidade ou Clínica-Escola *</label>
+                              <input 
+                                required
+                                type="text"
+                                value={instituicaoNome}
+                                onChange={(e) => setInstituicaoNome(e.target.value)}
+                                placeholder="Ex: USP, UNIP, PUC, Instituto de Psicanálise..."
+                                className="w-full px-4 py-2.5 bg-white border border-soft rounded-xl text-forest text-sm"
+                              />
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                              <div>
+                                <label className="block text-xs font-semibold uppercase tracking-wider text-forest/70 mb-1.5">Perfil Acadêmico *</label>
+                                <select
+                                  value={estudanteTipo}
+                                  onChange={(e) => setEstudanteTipo(e.target.value)}
+                                  className="w-full px-4 py-2.5 bg-white border border-soft rounded-xl text-forest text-sm"
+                                >
+                                  <option value="Universitário Geral">Estudante Universitário Geral</option>
+                                  <option value="Psicologia / Terapia (Tripé Formativo)">Estudante de Psicologia / Psicanálise (Tripé Formativo)</option>
+                                </select>
+                              </div>
+
+                              {estudanteTipo.includes("Psicologia") ? (
+                                <div>
+                                  <label className="block text-xs font-semibold uppercase tracking-wider text-forest/70 mb-1.5">Abordagem Teórica de Preferência</label>
+                                  <select
+                                    value={abordagemTeorica}
+                                    onChange={(e) => setAbordagemTeorica(e.target.value)}
+                                    className="w-full px-4 py-2.5 bg-white border border-soft rounded-xl text-forest text-sm"
+                                  >
+                                    <option value="">Selecione...</option>
+                                    <option value="Psicanálise">Psicanálise</option>
+                                    <option value="Terapia Cognitivo-Comportamental (TCC)">TCC</option>
+                                    <option value="Fenomenológica / Existencial">Fenomenológica / Existencial</option>
+                                    <option value="Humanista">Humanista</option>
+                                    <option value="Analítica / Junguiana">Analítica / Junguiana</option>
+                                    <option value="Outra / Indiferente">Outra / Indiferente</option>
+                                  </select>
+                                </div>
+                              ) : (
+                                <div className="flex items-center pt-5">
+                                  <label className="flex items-center gap-2 cursor-pointer">
+                                    <input 
+                                      type="checkbox"
+                                      checked={clinicaEscolaOrigem}
+                                      onChange={(e) => setClinicaEscolaOrigem(e.target.checked)}
+                                      className="w-4 h-4 rounded text-forest focus:ring-forest"
+                                    />
+                                    <span className="text-xs font-semibold text-forest">Vim encaminhado por Clínica-Escola (SPA) / Fim de ciclo de 6 meses</span>
+                                  </label>
+                                </div>
+                              )}
+                            </div>
+
+                            {estudanteTipo.includes("Psicologia") && (
+                              <div className="flex items-center">
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                  <input 
+                                    type="checkbox"
+                                    checked={clinicaEscolaOrigem}
+                                    onChange={(e) => setClinicaEscolaOrigem(e.target.checked)}
+                                    className="w-4 h-4 rounded text-forest focus:ring-forest"
+                                  />
+                                  <span className="text-xs font-semibold text-forest">Vim encaminhado por Clínica-Escola (SPA) / Estágio Supervisionado</span>
+                                </label>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
                         <div>
                           <label className="block text-sm font-semibold uppercase tracking-wider text-forest/70 mb-2">O tratamento é para você ou para outra pessoa?</label>
                           <select 
