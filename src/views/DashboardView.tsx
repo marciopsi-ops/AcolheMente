@@ -22093,10 +22093,38 @@ export function DashboardView({
                   favorecidoPix: "Rede AcolheMente Saúde Mental",
                 };
                 const newConfig = { ...currentConfig, [campo]: valor };
-                handleUpdateEmpresaProperties(selectedEmpresa.id, {
+                const updates: any = {
                   faturamentoConfig: newConfig,
                   [campo]: valor,
-                });
+                };
+                if (campo === "valorMensal") {
+                  newConfig.valorFixoMensal = valor;
+                  updates.valorFixoMensal = valor;
+                } else if (campo === "valorFixoMensal") {
+                  newConfig.valorMensal = valor;
+                  updates.valorMensal = valor;
+                }
+
+                // Sincroniza também a cláusula textual de resumo para manter o contrato e o Portal do RH alinhados
+                const mod = newConfig.modeloCobranca || "por_vida";
+                const pVida = Number(newConfig.valorPorVida ?? 18);
+                const pMensal = Number(newConfig.valorMensal ?? newConfig.valorFixoMensal ?? 0);
+                let resumo = "";
+                if (mod === "fixo_mensal" && pMensal > 0) {
+                  resumo = `R$ ${pMensal.toFixed(2)} mensal (Mensalidade Fixa)`;
+                } else if (mod === "por_vida" && pVida > 0) {
+                  resumo = `R$ ${pVida.toFixed(2)} por vida/mês`;
+                } else if (mod === "faixas_vidas") {
+                  resumo = "Tabela escalonada por faixas de vidas";
+                } else if (mod === "franquia_excedente") {
+                  resumo = `Franquia fixa de R$ ${pMensal.toFixed(2)} + excedente R$ ${pVida.toFixed(2)}/vida`;
+                }
+                if (resumo) {
+                  updates.valoresDefinidos = resumo;
+                  updates.valoresAcertados = resumo;
+                }
+
+                handleUpdateEmpresaProperties(selectedEmpresa.id, updates);
                 showToast("Parâmetros financeiros atualizados com sucesso!", "success");
               };
 
@@ -22545,149 +22573,6 @@ export function DashboardView({
                           ))}
                         </div>
                       </div>
-                    </div>
-
-                    {/* Bloco de Sincronização & Valores Contratuais (Por Vida vs Fixo Mensal) */}
-                    <div className="pt-3 border-t border-soft space-y-3">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="flex flex-col gap-1">
-                          <div className="flex items-center justify-between ml-1">
-                            <label className="text-[10px] font-bold uppercase text-forest/70">
-                              Valor por Vida Acordado (R$)
-                            </label>
-                            <span className="text-[9px] text-forest/50 font-mono">Por colaborador / mês</span>
-                          </div>
-                          <div className="flex items-center gap-2 bg-warm/20 border border-soft px-3 py-1.5 rounded-xl focus-within:border-sun-dark">
-                            <span className="text-xs font-bold text-forest/50">R$</span>
-                            <input
-                              type="number"
-                              step="0.01"
-                              min="0"
-                              className="w-full text-sm font-mono font-bold text-forest outline-none bg-transparent"
-                              placeholder="0,00"
-                              value={selectedEmpresa.valorPorVida !== undefined ? selectedEmpresa.valorPorVida : (selectedEmpresa.faturamentoConfig?.valorPorVida || "")}
-                              onChange={(e) => {
-                                const val = parseFloat(e.target.value) || 0;
-                                handleUpdateEmpresaProperty(selectedEmpresa.id, "valorPorVida", val);
-                                const curConfig = selectedEmpresa.faturamentoConfig || {};
-                                handleUpdateEmpresaProperty(selectedEmpresa.id, "faturamentoConfig", {
-                                  ...curConfig,
-                                  valorPorVida: val,
-                                });
-                              }}
-                            />
-                          </div>
-                        </div>
-
-                        <div className="flex flex-col gap-1">
-                          <div className="flex items-center justify-between ml-1">
-                            <label className="text-[10px] font-bold uppercase text-forest/70">
-                              Valor Mensal Contratual (R$)
-                            </label>
-                            <span className="text-[9px] text-forest/50 font-mono">Fixo / Mensalidade</span>
-                          </div>
-                          <div className="flex items-center gap-2 bg-warm/20 border border-soft px-3 py-1.5 rounded-xl focus-within:border-sun-dark">
-                            <span className="text-xs font-bold text-forest/50">R$</span>
-                            <input
-                              type="number"
-                              step="0.01"
-                              min="0"
-                              className="w-full text-sm font-mono font-bold text-forest outline-none bg-transparent"
-                              placeholder="0,00"
-                              value={selectedEmpresa.valorMensal !== undefined ? selectedEmpresa.valorMensal : (selectedEmpresa.valorFixoMensal !== undefined ? selectedEmpresa.valorFixoMensal : (selectedEmpresa.faturamentoConfig?.valorMensal || selectedEmpresa.faturamentoConfig?.valorFixoMensal || ""))}
-                              onChange={(e) => {
-                                const val = parseFloat(e.target.value) || 0;
-                                handleUpdateEmpresaProperty(selectedEmpresa.id, "valorMensal", val);
-                                handleUpdateEmpresaProperty(selectedEmpresa.id, "valorFixoMensal", val);
-                                const curConfig = selectedEmpresa.faturamentoConfig || {};
-                                handleUpdateEmpresaProperty(selectedEmpresa.id, "faturamentoConfig", {
-                                  ...curConfig,
-                                  valorMensal: val,
-                                  valorFixoMensal: val,
-                                });
-                              }}
-                            />
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Diagnóstico Contratual e Cálculos Rápidos */}
-                      {(() => {
-                        const vidasNum = parseInt(String(selectedEmpresa.quantidadeVidas || selectedEmpresa.colaboradores || "").replace(/\D/g, ""), 10) || 0;
-                        const porVidaNum = Number(selectedEmpresa.valorPorVida ?? selectedEmpresa.faturamentoConfig?.valorPorVida ?? 0);
-                        const mensalNum = Number(selectedEmpresa.valorMensal ?? selectedEmpresa.valorFixoMensal ?? selectedEmpresa.faturamentoConfig?.valorMensal ?? selectedEmpresa.faturamentoConfig?.valorFixoMensal ?? 0);
-                        const calculadoMensal = vidasNum * porVidaNum;
-                        const porVidaEquiv = vidasNum > 0 && mensalNum > 0 ? mensalNum / vidasNum : 0;
-
-                        return (
-                          <div className="bg-warm/30 border border-soft rounded-xl p-3 space-y-2">
-                            <div className="flex items-center justify-between text-xs">
-                              <span className="font-bold text-forest flex items-center gap-1.5">
-                                <Calculator className="w-3.5 h-3.5 text-sun-dark" />
-                                Alinhamento de Contrato & Diagnóstico:
-                              </span>
-                              <span className="text-[10px] font-bold text-forest/70">
-                                {porVidaNum > 0 && mensalNum > 0
-                                  ? "Modelo Híbrido (Por Vida + Mensal)"
-                                  : porVidaNum > 0
-                                  ? "Modelo Variável (Por Vida)"
-                                  : mensalNum > 0
-                                  ? "Modelo Fixo Mensal"
-                                  : "Sem precificação definida"}
-                              </span>
-                            </div>
-
-                            <div className="flex flex-wrap items-center gap-2 pt-1">
-                              {vidasNum > 0 && porVidaNum > 0 && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    handleUpdateEmpresaProperty(selectedEmpresa.id, "valorMensal", calculadoMensal);
-                                    handleUpdateEmpresaProperty(selectedEmpresa.id, "valorFixoMensal", calculadoMensal);
-                                    const curConfig = selectedEmpresa.faturamentoConfig || {};
-                                    handleUpdateEmpresaProperty(selectedEmpresa.id, "faturamentoConfig", {
-                                      ...curConfig,
-                                      valorMensal: calculadoMensal,
-                                      valorFixoMensal: calculadoMensal,
-                                    });
-                                    const novoResumo = `R$ ${porVidaNum.toFixed(2)} por vida | R$ ${calculadoMensal.toFixed(2)} mensal`;
-                                    handleUpdateEmpresaProperty(selectedEmpresa.id, "valoresDefinidos", novoResumo);
-                                    handleUpdateEmpresaProperty(selectedEmpresa.id, "valoresAcertados", novoResumo);
-                                    showToast(`Mensalidade sincronizada: R$ ${calculadoMensal.toFixed(2)} (${vidasNum} vidas × R$ ${porVidaNum.toFixed(2)})`, "success");
-                                  }}
-                                  className="text-[11px] bg-forest text-white hover:bg-forest/90 px-2.5 py-1 rounded-lg font-bold flex items-center gap-1 cursor-pointer shadow-2xs"
-                                >
-                                  <Sparkles className="w-3 h-3 text-sun" />
-                                  <span>Sugerir Mensal: R$ {calculadoMensal.toFixed(2)}</span>
-                                </button>
-                              )}
-
-                              {vidasNum > 0 && mensalNum > 0 && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    const porVidaFixed = Number(porVidaEquiv.toFixed(2));
-                                    handleUpdateEmpresaProperty(selectedEmpresa.id, "valorPorVida", porVidaFixed);
-                                    const curConfig = selectedEmpresa.faturamentoConfig || {};
-                                    handleUpdateEmpresaProperty(selectedEmpresa.id, "faturamentoConfig", {
-                                      ...curConfig,
-                                      valorPorVida: porVidaFixed,
-                                    });
-                                    const novoResumo = `R$ ${porVidaFixed.toFixed(2)} por vida | R$ ${mensalNum.toFixed(2)} mensal`;
-                                    handleUpdateEmpresaProperty(selectedEmpresa.id, "valoresDefinidos", novoResumo);
-                                    handleUpdateEmpresaProperty(selectedEmpresa.id, "valoresAcertados", novoResumo);
-                                    showToast(`Valor por vida sincronizado: R$ ${porVidaFixed.toFixed(2)}/vida`, "success");
-                                  }}
-                                  className="text-[11px] bg-emerald-100 hover:bg-emerald-200 text-emerald-900 px-2.5 py-1 rounded-lg font-bold flex items-center gap-1 cursor-pointer"
-                                >
-                                  <Coins className="w-3 h-3" />
-                                  <span>Sugerir Por Vida: R$ {porVidaEquiv.toFixed(2)}</span>
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })()}
                     </div>
                   </div>
 

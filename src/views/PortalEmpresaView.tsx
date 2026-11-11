@@ -1538,7 +1538,7 @@ export function PortalEmpresaView({
     const chavePix = fc.chavePix || empresaAtiva?.chavePix || "financeiro@acolhemente.com.br";
     const favorecidoPix = fc.favorecidoPix || empresaAtiva?.favorecidoPix || "Rede AcolheMente Saúde e Bem-Estar";
     const franquiaMinimaVidas = fc.franquiaMinimaVidas || empresaAtiva?.franquiaMinimaVidas || 0;
-    const valorFixoMensal = fc.valorFixoMensal || empresaAtiva?.valorFixoMensal || 0;
+    const valorFixoMensal = fc.valorFixoMensal || fc.valorMensal || empresaAtiva?.valorFixoMensal || empresaAtiva?.valorMensal || 0;
 
     const servicosAdicionaisMesAtual: ServicoAdicionalItem[] = Array.isArray(empresaAtiva?.servicosAdicionaisMesAtual)
       ? empresaAtiva.servicosAdicionaisMesAtual
@@ -2542,7 +2542,7 @@ export function PortalEmpresaView({
                         R$ {faturamentoAtualCalculado.valorTotal.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                       </h3>
                       <span className="text-xs text-white/70">
-                        ({vidasCadastradasAtivas} vidas ativas × R$ {(faturamentoConfig.valorPorVida || 18).toFixed(2)}
+                        ({faturamentoAtualCalculado.observacoes || `${vidasCadastradasAtivas} vidas ativas`}
                         {faturamentoAtualCalculado.totalServicosAdicionais > 0
                           ? ` + R$ ${faturamentoAtualCalculado.totalServicosAdicionais.toFixed(2)} serviços extras`
                           : ""}
@@ -4042,10 +4042,14 @@ export function PortalEmpresaView({
                 <div>
                   <div className="flex items-baseline gap-2">
                     <span className="text-2xl font-bold text-forest">{faturaExibida.quantidadeVidasFechamento}</span>
-                    <span className="text-xs text-forest/60">× R$ {(faturaExibida.valorPorVida || 18).toFixed(2)}/vida</span>
+                    <span className="text-xs text-forest/60">
+                      {faturamentoConfig.modeloCobranca === "fixo_mensal"
+                        ? "vidas ativas (Mensalidade Fixa)"
+                        : `× R$ ${(faturaExibida.valorPorVida || 18).toFixed(2)}/vida`}
+                    </span>
                   </div>
                   <p className="text-[10px] text-forest/70 mt-1">
-                    Subtotal vidas: <strong className="text-forest">R$ {faturaExibida.subtotalVidas.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</strong>
+                    {faturaExibida.observacoes || `Subtotal vidas: R$ ${faturaExibida.subtotalVidas.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`}
                   </p>
                 </div>
               </div>
@@ -4141,7 +4145,9 @@ export function PortalEmpresaView({
                           {faturaExibida.quantidadeVidasFechamento} vidas
                         </td>
                         <td className="p-3 text-right font-mono text-forest/80">
-                          R$ {(faturaExibida.valorPorVida || 18).toFixed(2)}
+                          {faturamentoConfig.modeloCobranca === "fixo_mensal"
+                            ? "Fixo Mensal"
+                            : `R$ ${(faturaExibida.valorPorVida || 18).toFixed(2)}`}
                         </td>
                         <td className="p-3 text-right font-bold font-mono text-forest">
                           R$ {faturaExibida.subtotalVidas.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
@@ -5280,7 +5286,9 @@ export function PortalEmpresaView({
                         {faturaParaVisualizar?.quantidadeVidasFechamento || faturamentoAtualCalculado.quantidadeVidasFechamento} vidas
                       </td>
                       <td className="p-3 text-right font-mono">
-                        R$ {((faturaParaVisualizar?.valorPorVida || faturamentoConfig.valorPorVida) || 18).toFixed(2)}
+                        {faturamentoConfig.modeloCobranca === "fixo_mensal"
+                          ? "Fixo Mensal"
+                          : `R$ ${((faturaParaVisualizar?.valorPorVida || faturamentoConfig.valorPorVida) || 18).toFixed(2)}`}
                       </td>
                       <td className="p-3 text-right font-bold font-mono">
                         R$ {(faturaParaVisualizar?.subtotalVidas || faturamentoAtualCalculado.subtotalVidas).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
