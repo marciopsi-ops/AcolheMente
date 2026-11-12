@@ -70,3 +70,44 @@ body {
 .animate-carousel-scroll {
   animation: carousel-scroll 55s linear infinite;
 }
+
+/* Otimização de Impressão e Geração de PDF (Padrão A4) */
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  
+  /* Oculta todos os elementos da página por padrão */
+  body * {
+    visibility: hidden;
+  }
+
+  /* Exibe exclusivamente a folha A4 e seus filhos */
+  .a4-print-sheet,
+  .a4-print-sheet * {
+    visibility: visible;
+  }
+
+  .a4-print-sheet {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    min-height: 100vh !important;
+    margin: 0 !important;
+    padding: 12mm 15mm !important;
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    background: white !important;
+  }
+
+  @page {
+    size: A4 portrait;
+    margin: 0;
+  }
+}

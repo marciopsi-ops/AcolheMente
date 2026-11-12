@@ -1031,7 +1031,7 @@ export const ProfissionalDocumentosManager: React.FC<ProfissionalDocumentosManag
             {/* A4 Sheet Container */}
             <div className="p-4 sm:p-8 overflow-y-auto bg-slate-100 flex justify-center flex-1">
               <div 
-                className="w-full max-w-[210mm] min-h-[297mm] bg-white p-8 sm:p-14 shadow-xl rounded-xl border border-slate-200 flex flex-col justify-between text-slate-900 print:shadow-none print:border-none print:p-0"
+                className="a4-print-sheet w-full max-w-[210mm] min-h-[297mm] bg-white p-8 sm:p-14 shadow-xl rounded-xl border border-slate-200 flex flex-col justify-between text-slate-900"
                 style={{
                   backgroundColor: documentoVisualizar.whiteLabelEnabled || profissionalProfile?.whiteLabelEnabled
                     ? (documentoVisualizar.whiteLabelConfig?.backgroundColor || profissionalProfile?.whiteLabelConfig?.backgroundColor || "#FFFFFF")

@@ -435,7 +435,11 @@ export function ProfissionalAgendaView({
       });
     }
 
-    return list;
+    return list.sort((a, b) => {
+      const nomeA = (a.nomeCivil || a.nome || a.nomeDesejado || "").toLowerCase();
+      const nomeB = (b.nomeCivil || b.nome || b.nomeDesejado || "").toLowerCase();
+      return nomeA.localeCompare(nomeB, "pt-BR");
+    });
   }, [pacientesAtivos, pacientesExternos, fichasCorporativas, empresasB2B, isPlanoAvancado]);
 
   // Lista de pacientes elegíveis para agendamento (ativos + externos)

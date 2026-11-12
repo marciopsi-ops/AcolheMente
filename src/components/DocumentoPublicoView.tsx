@@ -190,7 +190,7 @@ export const DocumentoPublicoView: React.FC<DocumentoPublicoViewProps> = ({
       </div>
 
       {/* A4 Sheet Container */}
-      <div className="w-full max-w-[210mm] min-h-[297mm] bg-white p-8 sm:p-14 shadow-2xl rounded-2xl border border-slate-300 flex flex-col justify-between text-slate-900 print:shadow-none print:border-none print:p-0">
+      <div className="a4-print-sheet w-full max-w-[210mm] min-h-[297mm] bg-white p-8 sm:p-14 shadow-2xl rounded-2xl border border-slate-300 flex flex-col justify-between text-slate-900">
         <div>
           {/* Header Timbrado */}
           <div
