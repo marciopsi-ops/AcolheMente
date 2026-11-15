@@ -21074,7 +21074,7 @@ export function DashboardView({
                             .slice(0, 4)
                             .toUpperCase() || "CORP";
                           const randomNum = Math.floor(1000 + Math.random() * 9000);
-                          const generatedCode = `${prefix}-${randomNum}`;
+                          const generatedCode = `${prefix}${randomNum}`;
                           handleUpdateEmpresaProperty(selectedEmpresa.id, "codigoAcesso", generatedCode);
                           setSelectedEmpresa((prev) => (prev ? { ...prev, codigoAcesso: generatedCode } : null));
                           showToast(`Código do colaborador "${generatedCode}" gerado com sucesso!`, "success");

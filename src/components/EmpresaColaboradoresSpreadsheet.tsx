@@ -736,7 +736,7 @@ export const EmpresaColaboradoresSpreadsheet: React.FC<EmpresaColaboradoresSprea
                     .replace(/[^a-zA-Z]/g, "")
                     .slice(0, 4)
                     .toUpperCase() || "CORP";
-                  const newCode = `${prefix}-${Math.floor(1000 + Math.random() * 9000)}`;
+                  const newCode = `${prefix}${Math.floor(1000 + Math.random() * 9000)}`;
                   onUpdateCodigoAcesso(newCode);
                 }}
                 className="px-3 py-1.5 bg-sun hover:bg-sun-dark text-forest rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"

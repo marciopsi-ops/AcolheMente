@@ -331,7 +331,7 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
     const params = new URLSearchParams(window.location.search);
     const code = params.get("codigo") || params.get("code") || params.get("convenio") || params.get("empresa");
     if (code) {
-      setInputCode(code);
+      setInputCode(code.toUpperCase().replace(/[^A-Z0-9]/g, ""));
     }
   }, []);
 
@@ -586,19 +586,19 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
   // Validação estrita do Código Corporativo gerado na Gestão ou Portal de RH
   const handleValidateCompanyCode = async (e: React.FormEvent) => {
     e.preventDefault();
-    const cleanCode = inputCode.trim().toUpperCase();
+    const cleanCode = inputCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
     if (!cleanCode) {
-      setCodeError("Por favor, digite o código de acesso fornecido pelo RH da sua empresa.");
+      setCodeError("Por favor, digite o código de acesso fornecido pelo RH da sua empresa (somente letras e números).");
       return;
     }
 
     const codigosReservadosInvalidos = new Set([
-      "EMP-2026",
+      "EMP2026",
       "DEMO",
       "TESTE",
-      "NOME-CORP",
-      "SEU-CODIGO",
-      "SOLICITAR-AO-RH",
+      "NOMECORP",
+      "SEUCODIGO",
+      "SOLICITARAORH",
     ]);
 
     if (cleanCode.length < 4 || codigosReservadosInvalidos.has(cleanCode)) {
@@ -613,7 +613,7 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
 
     const isEmpresaElegivelComCodigo = (data: any, targetCode: string) => {
       if (!data || typeof data.codigoAcesso !== "string") return false;
-      const storedCode = data.codigoAcesso.trim().toUpperCase();
+      const storedCode = data.codigoAcesso.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
       if (!storedCode || storedCode.length < 4 || codigosReservadosInvalidos.has(storedCode)) {
         return false;
       }
@@ -1186,12 +1186,15 @@ export function AcolhimentoCorporativoView({ onBackToSelection, onNavigate }: Ac
                 type="text"
                 value={inputCode}
                 onChange={(e) => {
-                  setInputCode(e.target.value.toUpperCase());
+                  setInputCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""));
                   setCodeError("");
                 }}
-                placeholder="Digite o código oficial fornecido pelo seu RH"
+                placeholder="Digite o código oficial (somente letras e números)"
                 className="w-full font-mono font-bold text-center tracking-widest text-base uppercase px-4 py-3 bg-warm/30 border border-soft rounded-xl focus:outline-none focus:border-forest text-forest placeholder:font-sans placeholder:normal-case placeholder:tracking-normal placeholder:text-forest/40"
               />
+              <p className="text-[11px] text-forest/60 text-center">
+                Somente letras e números (sem hífen ou espaço).
+              </p>
             </div>
 
             {codeError && (

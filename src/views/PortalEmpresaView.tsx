@@ -325,7 +325,7 @@ export function PortalEmpresaView({
       let candidate = "";
       for (let attempt = 0; attempt < 5; attempt++) {
         const randomNum = Math.floor(1000 + Math.random() * 9000);
-        const testCode = `${prefix}-${randomNum}`;
+        const testCode = `${prefix}${randomNum}`;
         const existingSnap = await getDocs(
           query(collection(db, "empresa_leads"), where("codigoAcesso", "==", testCode))
         );
@@ -335,7 +335,7 @@ export function PortalEmpresaView({
         }
       }
       if (!candidate) {
-        candidate = `${prefix}-${Math.floor(10000 + Math.random() * 90000)}`;
+        candidate = `${prefix}${Math.floor(10000 + Math.random() * 90000)}`;
       }
 
       const patch = {

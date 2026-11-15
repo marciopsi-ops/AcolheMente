@@ -84,7 +84,7 @@ export function EmpresaBeneficioManager({ empresa, onUpdateSuccess }: EmpresaBen
       .toUpperCase() || "CORP";
     
     const randomNum = Math.floor(1000 + Math.random() * 9000);
-    const newCode = `${prefix}-${randomNum}`;
+    const newCode = `${prefix}${randomNum}`;
     setCodigoAcesso(newCode);
   };
 
@@ -210,12 +210,15 @@ export function EmpresaBeneficioManager({ empresa, onUpdateSuccess }: EmpresaBen
     setFeedback(null);
 
     try {
-      const cleanCode = codigoAcesso.trim().toUpperCase();
-      const reservedInvalid = ["EMP-2026", "DEMO", "TESTE", "NOME-CORP", "SEU-CODIGO", "SOLICITAR-AO-RH"];
+      const cleanCode = codigoAcesso.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+      const reservedInvalid = ["EMP2026", "DEMO", "TESTE", "NOMECORP", "SEUCODIGO", "SOLICITARAORH"];
       if (cleanCode && (cleanCode.length < 4 || reservedInvalid.includes(cleanCode))) {
-        setFeedback("Código reservado ou muito curto. Clique em 'Gerar Automático' para criar um código válido.");
+        setFeedback("Código reservado ou muito curto. Clique em 'Gerar Automático' para criar um código válido (mínimo 4 caracteres, somente letras e números).");
         setIsSaving(false);
         return;
+      }
+      if (cleanCode !== codigoAcesso) {
+        setCodigoAcesso(cleanCode);
       }
       const updates = {
         codigoAcesso: cleanCode,
@@ -320,8 +323,8 @@ export function EmpresaBeneficioManager({ empresa, onUpdateSuccess }: EmpresaBen
             <input 
               type="text"
               value={codigoAcesso}
-              onChange={(e) => setCodigoAcesso(e.target.value.toUpperCase())}
-              placeholder="Clique em Gerar Automático"
+              onChange={(e) => setCodigoAcesso(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))}
+              placeholder="Ex: ACOL1234 (letras e números)"
               className="flex-1 font-mono font-bold text-sm tracking-wider uppercase px-4 py-2.5 bg-white border border-soft rounded-xl focus:outline-none focus:border-sun-dark text-forest"
             />
             <button
@@ -335,7 +338,7 @@ export function EmpresaBeneficioManager({ empresa, onUpdateSuccess }: EmpresaBen
             </button>
           </div>
           <p className="text-[11px] text-forest/60">
-            Este código é repassado aos funcionários da empresa para desbloquear o formulário corporativo exclusivo.
+            Somente letras e números (sem hífen ou espaço) para facilitar a digitação dos colaboradores.
           </p>
         </div>
 
